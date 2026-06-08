@@ -1,0 +1,144 @@
+# Phase 3 — User Survey Experience
+
+## Purpose
+
+Implement the survey-taking experience for authenticated users.
+
+This phase introduces survey rendering, progress tracking, response persistence, and survey completion.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+
+---
+
+# Goals
+
+Allow users to:
+
+* browse available surveys
+* start surveys
+* answer questions
+* save progress
+* resume progress
+* submit surveys
+
+Survey statuses:
+
+```txt
+not_started
+in_progress
+completed
+abandoned
+```
+
+---
+
+# Survey UI Requirements
+
+Survey experience should use:
+
+```txt
+one question per page
+```
+
+Display:
+
+* question text
+* answer control
+* progress indicator
+* previous button
+* next button
+
+Supported question types:
+
+```txt
+text
+integer
+single_select
+multi_select
+```
+
+---
+
+# Backend Requirements
+
+Implement:
+
+```txt
+POST /api/surveys/:id/start
+POST /api/surveys/:id/answer
+POST /api/surveys/:id/complete
+
+GET /api/my-surveys
+GET /api/my-surveys/:attemptId
+```
+
+Responses must persist between sessions.
+
+---
+
+# Conditional Logic
+
+Implement:
+
+```txt
+JUMP_TO_QUESTION
+```
+
+only.
+
+Behavior:
+
+If answer selection matches a conditional rule:
+
+```txt
+navigate to target_question_id
+```
+
+Otherwise:
+
+```txt
+advance by display_order
+```
+
+Do not implement:
+
+```txt
+SHOW_QUESTION
+HIDE_QUESTION
+JUMP_TO_PAGE
+END_SURVEY
+```
+
+---
+
+# Non-Goals
+
+Do not implement:
+
+* survey builder
+* reporting
+* analytics
+* CSV export
+
+---
+
+# Validation
+
+Verify:
+
+* survey starts
+* survey resumes
+* required validation works
+* conditional jumps work
+* survey completes
+* status updates correctly
+
+Stop after user survey functionality is complete.

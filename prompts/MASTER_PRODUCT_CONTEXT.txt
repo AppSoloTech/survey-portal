@@ -1,0 +1,255 @@
+# Survey Portal MVP - Master Product Context
+
+## Product Overview
+
+This application is a secure web-based survey portal that allows organizations to create, distribute, complete, and analyze surveys.
+
+The platform contains two primary user experiences:
+
+1. User Portal
+2. Admin Portal
+
+The User Portal allows end users to register, authenticate, complete surveys, and view their survey history.
+
+The Admin Portal allows administrators to create survey templates, define questions and answer options, configure conditional logic, review survey results, and perform reporting.
+
+This application is not intended to become:
+
+* a public polling platform
+* a marketing automation platform
+* a CRM
+* a project management system
+* a SurveyMonkey clone with every advanced feature
+* a no-code workflow automation platform
+
+The goal is a maintainable survey platform that solves the client's business process.
+
+---
+
+# Primary Business Goals
+
+The system must allow administrators to:
+
+* create surveys
+* edit surveys
+* publish surveys
+* retire surveys
+* review survey responses
+* review survey completion status
+* export survey data
+
+The system must allow users to:
+
+* register
+* login
+* browse available surveys
+* complete surveys
+* save progress
+* resume incomplete surveys
+* submit surveys
+* review previously completed surveys
+
+---
+
+# Core Survey Concepts
+
+## Survey
+
+A Survey represents a collection of questions presented to a user.
+
+A survey may contain:
+
+* pages
+* sections
+* questions
+* conditional navigation
+
+Surveys should be editable by administrators without requiring code changes.
+
+---
+
+## Question
+
+A Question represents a prompt presented to a survey participant.
+
+Supported MVP question types:
+
+* text
+* integer
+* single-select
+* multi-select
+
+Future question types may be added later.
+
+Do not implement future question types unless explicitly requested.
+
+---
+
+## Answer Option
+
+Answer options belong to supported selection-based questions.
+
+Examples:
+
+* Yes
+* No
+* Not Applicable
+
+Answer options may contain hidden metadata.
+
+---
+
+## Hidden Tags
+
+Hidden tags are attached to answer options.
+
+Users must never see hidden tags.
+
+Example:
+
+Question:
+Is the site compliant?
+
+Answer:
+Yes
+
+Hidden Tag:
+non-compliant = false
+
+Answer:
+No
+
+Hidden Tag:
+violation
+
+These tags exist for reporting, filtering, analytics, and future business rules.
+
+Hidden tags are business metadata, not user-facing content.
+
+---
+
+## Conditional Logic
+
+Conditional logic controls survey navigation.
+
+MVP support includes:
+
+* show question based on answer
+* hide question based on answer
+* jump to question based on answer
+* jump to page based on answer
+
+Example:
+
+If Question 5 = No
+
+Then jump to Question 12
+
+The implementation should be data-driven and configurable through the admin interface.
+
+Avoid implementing advanced rule engines unless explicitly requested.
+
+---
+
+## Survey Status
+
+Every survey attempt should maintain status.
+
+Supported statuses:
+
+* not_started
+* in_progress
+* completed
+* abandoned
+
+Administrators should be able to view survey status information.
+
+---
+
+# Reporting Goals
+
+Administrators should be able to:
+
+* view survey completion statistics
+* view individual responses
+* review hidden tags associated with responses
+* identify incomplete surveys
+* export survey results
+
+Reporting should prioritize correctness and maintainability over visual complexity.
+
+---
+
+# Security Goals
+
+The application stores business data and user information.
+
+Security requirements:
+
+* bcrypt password hashing
+* JWT authentication
+* role-based authorization
+* protected API routes
+* server-side validation
+* parameterized database queries
+
+Never trust frontend input.
+
+Authorization checks must exist on the server.
+
+---
+
+# User Roles
+
+## User
+
+Can:
+
+* complete surveys
+* view own survey history
+* manage own account
+
+Cannot:
+
+* create surveys
+* edit surveys
+* access reporting
+
+## Admin
+
+Can:
+
+* create surveys
+* edit surveys
+* publish surveys
+* review responses
+* export results
+* manage survey availability
+
+---
+
+# MVP Philosophy
+
+Favor:
+
+* maintainability
+* simplicity
+* clarity
+* predictable behavior
+
+Avoid:
+
+* overengineering
+* premature optimization
+* unnecessary abstractions
+* speculative future architecture
+
+Build only what is required for the current phase.
+
+Future requirements can be added later when validated by real users.
+
+---
+
+# Long-Term Vision
+
+The long-term goal is to create a flexible survey platform that allows non-technical administrators to manage surveys without developer involvement while maintaining a simple and understandable architecture.

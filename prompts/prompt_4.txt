@@ -1,0 +1,143 @@
+# Phase 4 — Admin Survey Builder MVP
+
+## Purpose
+
+Implement an administrator interface for creating and maintaining surveys.
+
+The goal is a maintainable business tool, not a SurveyMonkey clone.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+
+---
+
+# Goals
+
+Allow administrators to:
+
+* create surveys
+* edit surveys
+* publish surveys
+* retire surveys
+* create questions
+* edit questions
+* reorder questions
+* create answer options
+* edit answer options
+* create answer tags
+* edit answer tags
+* create conditional rules
+
+---
+
+# Builder Requirements
+
+Implement a form-based survey builder.
+
+Do not implement drag-and-drop.
+
+Survey editing should be clear and maintainable.
+
+---
+
+# Question Management
+
+Support:
+
+```txt
+text
+integer
+single_select
+multi_select
+```
+
+Administrators should be able to:
+
+* add questions
+* delete questions
+* reorder questions
+* mark required questions
+* edit question text
+
+---
+
+# Hidden Tag Management
+
+Administrators should be able to:
+
+* add tags
+* edit tags
+* remove tags
+
+Tags must remain hidden from survey participants.
+
+---
+
+# Conditional Rule Management
+
+Administrators should be able to create:
+
+```txt
+JUMP_TO_QUESTION
+```
+
+rules.
+
+Rule creation should allow:
+
+```txt
+source question
+source answer option
+target question
+```
+
+Do not build additional rule types.
+
+---
+
+# Survey Publishing
+
+Survey statuses:
+
+```txt
+draft
+published
+retired
+```
+
+Only published surveys should be visible to users.
+
+---
+
+# Non-Goals
+
+Do not implement:
+
+* analytics
+* reporting
+* CSV export
+* advanced visual builder
+* drag-and-drop designer
+* scoring engine
+
+---
+
+# Validation
+
+Verify:
+
+* surveys can be created
+* questions can be managed
+* answer options can be managed
+* tags can be managed
+* conditional rules can be created
+* published surveys appear to users
+
+Stop after admin builder functionality is complete.

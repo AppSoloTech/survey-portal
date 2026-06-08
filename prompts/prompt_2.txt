@@ -1,0 +1,119 @@
+# Phase 2 — Survey Database Model and API Foundation
+
+## Purpose
+
+Implement the survey data model described in DATA_MODEL_VISION.md.
+
+This phase creates the database schema and foundational APIs required for future survey functionality.
+
+No survey-taking UI should be built during this phase.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+
+Schema must remain aligned with DATA_MODEL_VISION.md.
+
+If implementation requires deviation, stop and explain before proceeding.
+
+---
+
+# Goals
+
+Create:
+
+* Survey schema
+* Survey Question schema
+* Answer Option schema
+* Answer Tag schema
+* Conditional Logic Rule schema
+* Survey Attempt schema
+* Survey Response schema
+
+Create migrations.
+
+Create seed data.
+
+---
+
+# Backend Requirements
+
+Implement foundational CRUD APIs:
+
+```txt
+GET /api/surveys
+GET /api/surveys/:id
+POST /api/surveys
+PUT /api/surveys/:id
+```
+
+Admin-only routes should require authorization.
+
+---
+
+# Seed Data
+
+Create:
+
+* one admin account
+* one test survey
+* multiple question types
+* sample answer tags
+* sample conditional rule
+
+Purpose:
+
+Allow future phases to test against realistic data.
+
+---
+
+# Conditional Logic Requirements
+
+Only support schema creation.
+
+Do not implement runtime logic evaluation yet.
+
+Store:
+
+```txt
+JUMP_TO_QUESTION
+JUMP_TO_PAGE
+SHOW_QUESTION
+HIDE_QUESTION
+END_SURVEY
+```
+
+Only as supported action types.
+
+Do not build behavior yet.
+
+---
+
+# Non-Goals
+
+Do not implement:
+
+* survey runner
+* admin builder UI
+* analytics
+* reporting
+* CSV export
+
+---
+
+# Validation
+
+Verify:
+
+* migrations run successfully
+* seed data loads
+* APIs return survey structures
+* relationships match DATA_MODEL_VISION.md
+
+Stop after schema and APIs are complete.

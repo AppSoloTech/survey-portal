@@ -1,0 +1,265 @@
+# Phase 0 — Project Foundation and Scaffolding
+
+## Purpose
+
+Create the initial project foundation for the Survey Portal MVP.
+
+This phase should establish the repo structure, frontend app, backend app, TypeScript configuration, PostgreSQL connection layer, environment variable handling, and basic health checks. I have local database variables in root .env for local work right now. Consider a dynamic that would allow for easy toggle of local and hosted database usage. Ex: RUN_ENV=dev and RUN_ENV=prod
+
+Do not build survey features yet.
+
+---
+
+# Required Reading
+
+Before implementing, read:
+
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+
+Follow those documents unless this phase prompt explicitly says otherwise.
+
+---
+
+# Phase Goals
+
+Create a maintainable full-stack TypeScript application using:
+
+* React + TypeScript frontend
+* Node.js + Express + TypeScript backend
+* PostgreSQL database
+* Azure-ready environment configuration
+
+The preferred MVP deployment model is:
+
+* React app built into static assets
+* Express serves the React build
+* Express exposes API routes under `/api`
+* one Azure App Service hosts the full app
+
+---
+
+# Suggested Project Structure
+
+Create a structure similar to:
+
+```txt
+survey-portal/
+├── apps/
+│   ├── web/
+│   └── api/
+├── packages/
+│   └── shared/
+├── database/
+│   ├── migrations/
+│   └── seeds/
+├── markdown/
+├── prompts/
+├── notes/
+├── .env.example
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+If a simpler structure is more appropriate, use judgment, but keep frontend, backend, shared code, database scripts, and documentation clearly separated.
+
+---
+
+# Backend Requirements
+
+Set up an Express + TypeScript backend.
+
+Required backend features:
+
+* Express server
+* `/api/health` route
+* PostgreSQL connection module
+* environment variable loading for local development
+* production-safe environment variable pattern
+* basic error handling middleware
+* basic request logging
+* CORS configured only if needed for local development
+
+Do not hardcode secrets.
+
+Do not create production credentials.
+
+Use `.env.example` to document required variables.
+
+Expected variables may include:
+
+```txt
+NODE_ENV=
+PORT=
+DATABASE_URL=
+JWT_SECRET=
+```
+
+Use a placeholder value in `.env.example`, not real secrets.
+
+---
+
+# Frontend Requirements
+
+Set up a React + TypeScript frontend.
+
+Required frontend features:
+
+* basic app shell
+* basic routing
+* placeholder pages:
+
+  * Home
+  * Login
+  * Register
+  * User Dashboard
+  * Admin Dashboard
+  * Not Found
+* simple navigation placeholder
+* API health check utility or simple call to `/api/health`
+
+Do not implement real authentication yet.
+
+Do not implement survey screens yet.
+
+---
+
+# Shared Package Requirements
+
+If using `packages/shared`, include only minimal shared types/constants for now.
+
+Possible examples:
+
+```ts
+export type UserRole = "user" | "admin";
+export type SurveyStatus = "not_started" | "in_progress" | "completed" | "abandoned";
+```
+
+Do not overbuild shared abstractions.
+
+---
+
+# Database Requirements
+
+Create a basic database folder.
+
+Include:
+
+* migrations folder
+* seeds folder
+* short README or notes explaining how migrations will be handled
+
+For this phase, create only minimal database scaffolding.
+
+Do not create the full survey schema yet unless needed to prove the connection layer.
+
+A simple test migration is acceptable, such as creating a minimal `app_health_check` table, but avoid building feature tables in this phase.
+
+---
+
+# Root Scripts
+
+Add useful scripts from the project root.
+
+Examples:
+
+```json
+{
+  "scripts": {
+    "dev": "...",
+    "dev:web": "...",
+    "dev:api": "...",
+    "build": "...",
+    "build:web": "...",
+    "build:api": "...",
+    "start": "...",
+    "typecheck": "...",
+    "lint": "..."
+  }
+}
+```
+
+Use the package manager already chosen for the project.
+
+If no package manager has been chosen, use npm.
+
+---
+
+# Azure Readiness
+
+Prepare the app so it can eventually be deployed to Azure App Service.
+
+This phase should ensure:
+
+* backend can read config from environment variables
+* production build can serve React static files from Express
+* no local-only assumptions are baked into production startup
+* secrets are not committed
+* `.env.example` documents configuration
+
+Do not actually deploy to Azure in this phase.
+
+---
+
+# Non-Goals
+
+Do not implement:
+
+* real registration
+* real login
+* JWT issuing
+* bcrypt hashing
+* survey builder
+* survey taking
+* admin reporting
+* conditional logic
+* CSV export
+* Azure deployment
+* password reset
+* email verification
+* OAuth
+* payment features
+
+---
+
+# Validation
+
+After implementation, run:
+
+```bash
+npm install
+npm run typecheck
+npm run build
+npm run dev
+```
+
+Also verify manually:
+
+* frontend starts
+* backend starts
+* `/api/health` returns a healthy response
+* React app can load in browser
+* placeholder routes work
+* no real secrets are committed
+
+If any command is not available, explain why and provide the correct command.
+
+---
+
+# Expected Output
+
+When finished, summarize:
+
+* files created
+* project structure
+* scripts added
+* environment variables required
+* validation commands run
+* any assumptions made
+* any deferred work
+
+Do not proceed to Phase 1.

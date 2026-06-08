@@ -1,0 +1,130 @@
+# Global Development Environment
+
+This file records environment assumptions for the Survey Portal MVP.
+
+It should be updated when tooling, deployment targets, or local setup requirements change.
+
+---
+
+## Project Type
+
+Full-stack TypeScript web application:
+
+- React frontend
+- Node.js + Express backend
+- PostgreSQL database
+- Express serves the production React build
+- REST APIs live under `/api`
+
+---
+
+## Package Manager
+
+Use npm unless the repository later commits a different lockfile and updates this document.
+
+Expected root commands after scaffolding:
+
+```bash
+npm install
+npm run dev
+npm run typecheck
+npm run build
+npm run lint
+```
+
+If a command is not yet available, document that in the phase log instead of inventing a replacement.
+
+---
+
+## Local Environment Variables
+
+Local secrets belong in `.env`.
+
+The repository should commit `.env.example` with placeholder values only.
+
+Expected variables may include:
+
+```txt
+NODE_ENV=
+PORT=
+DATABASE_URL=
+JWT_SECRET=
+JWT_EXPIRES_IN=
+```
+
+If the implementation uses split PostgreSQL variables instead of `DATABASE_URL`, document the exact variables in `.env.example` and keep the database connection module consistent.
+
+Never commit real credentials, production secrets, or client data.
+
+---
+
+## Database Assumptions
+
+Local development uses PostgreSQL.
+
+Production target:
+
+- Azure PostgreSQL Flexible Server
+
+Database work should use explicit migrations. Seed data must be fake, minimal, and safe to commit.
+
+---
+
+## Hosting Assumptions
+
+MVP production target:
+
+- Azure App Service
+- Azure PostgreSQL Flexible Server
+
+Azure deployment is not required until a phase explicitly asks for it.
+
+Production configuration belongs in Azure App Service environment variables, not in source control.
+
+---
+
+## Repository Hygiene
+
+Keep generated files out of source control unless they are intentionally part of the app.
+
+Expected ignored files include:
+
+- `.env`
+- `.env.*`
+- `node_modules/`
+- build output
+- coverage output
+- local logs
+
+`.env.example` should remain tracked.
+
+---
+
+## Validation Baseline
+
+Once the project is scaffolded, every implementation phase should run the relevant available checks:
+
+- install dependencies when needed
+- typecheck
+- build
+- lint
+- backend startup
+- frontend startup
+- API health check
+- relevant manual workflow checks
+
+Record unavailable or failing checks in `markdown/PHASE_LOG.md`.
+
+---
+
+## Open Environment Decisions
+
+These should be resolved during Phase 0:
+
+- exact Node.js version
+- exact npm version
+- frontend build tool
+- database migration tool
+- backend query approach
+- local development port assignments
+- whether local dev uses one combined process or separate web/api processes

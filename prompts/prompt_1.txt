@@ -1,0 +1,146 @@
+# Phase 1 — Authentication and Role System
+
+## Purpose
+
+Implement the authentication and authorization foundation for the Survey Portal MVP.
+
+This phase establishes user registration, login, JWT authentication, role handling, protected routes, and server-side authorization.
+
+No survey functionality should be implemented during this phase.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* markdown/FLOW.md
+
+---
+
+# Goals
+
+Implement:
+
+* User registration
+* User login
+* Password hashing using bcrypt
+* JWT authentication
+* User role support
+* Protected API routes
+* Protected frontend routes
+* Authentication persistence
+
+Supported roles:
+
+```txt
+user
+admin
+```
+
+---
+
+# Backend Requirements
+
+Create:
+
+```txt
+POST /api/auth/register
+POST /api/auth/login
+GET /api/auth/me
+POST /api/auth/logout
+```
+
+Registration fields:
+
+```txt
+first_name
+last_name
+email
+password
+```
+
+Requirements:
+
+* email uniqueness enforced
+* password hashed with bcrypt
+* JWT issued on successful login
+* server-side validation
+* role stored in database
+
+---
+
+# Frontend Requirements
+
+Create:
+
+```txt
+/login
+/register
+```
+
+Features:
+
+* registration form
+* login form
+* validation feedback
+* authentication state management
+* logout action
+
+Create route guards:
+
+```txt
+ProtectedRoute
+AdminRoute
+```
+
+---
+
+# Database Requirements
+
+Create initial User schema.
+
+Suggested fields:
+
+```txt
+id
+first_name
+last_name
+email
+password_hash
+role
+created_at
+updated_at
+```
+
+Do not create survey tables yet.
+
+---
+
+# Non-Goals
+
+Do not implement:
+
+* password reset
+* email verification
+* OAuth
+* survey functionality
+* admin management screens
+
+---
+
+# Validation
+
+Verify:
+
+* user can register
+* duplicate email is rejected
+* user can login
+* password hashing works
+* protected routes require authentication
+* admin routes require admin role
+
+Stop after auth functionality is complete.
