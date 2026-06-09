@@ -27,15 +27,12 @@ export async function loginUser(input: {
   });
 }
 
-export async function fetchCurrentUser(token: string): Promise<AuthMeResponse> {
-  return apiRequest<AuthMeResponse>("/api/auth/me", {
-    headers: buildAuthHeaders(token)
-  });
+export async function fetchCurrentUser(): Promise<AuthMeResponse> {
+  return apiRequest<AuthMeResponse>("/api/auth/me");
 }
 
-export async function logoutUser(token: string): Promise<void> {
+export async function logoutUser(): Promise<void> {
   await apiRequest<void>("/api/auth/logout", {
-    headers: buildAuthHeaders(token),
     method: "POST"
   });
 }
@@ -43,6 +40,7 @@ export async function logoutUser(token: string): Promise<void> {
 async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...init.headers
@@ -58,12 +56,6 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return response.json() as Promise<T>;
-}
-
-function buildAuthHeaders(token: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${token}`
-  };
 }
 
 async function readErrorMessage(response: Response): Promise<string> {

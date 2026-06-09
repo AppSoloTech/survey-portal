@@ -1,0 +1,203 @@
+# Claude Review Handoff — Phase 3
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current Phase 3 diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_3.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- architectural consistency
+- product UX alignment
+- maintainability
+- unnecessary complexity
+- security concerns
+- auth and data exchange security concerns
+- database integrity and extensibility
+- response persistence correctness
+- conditional navigation correctness
+- app environment safety
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_3.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Migrated frontend authentication away from local-storage bearer JWTs.
+- Login and registration now set a server-controlled httpOnly auth cookie.
+- Logout clears the auth cookie.
+- Auth middleware now reads JWTs from the `survey_portal_auth` cookie.
+- Development CORS now allows credentialed frontend requests.
+- Frontend auth API calls now use `credentials: "include"` and no longer pass bearer tokens.
+- Added shared survey attempt and response API types.
+- Added `POST /api/surveys/:id/start`.
+- Added `POST /api/surveys/:id/answer`.
+- Added `POST /api/surveys/:id/complete`.
+- Added `GET /api/my-surveys`.
+- Added `GET /api/my-surveys/:attemptId`.
+- Implemented one-active-attempt reuse for active attempts.
+- Enforced published-only starts for standard users.
+- Allowed existing attempts to resume after a survey is retired, while excluding draft surveys from user access.
+- Persisted and updated text, integer, single-select, and multi-select answers.
+- Replaced selected options on answer update.
+- Rejected answers for completed attempts.
+- Validated:
+  - required text answers are non-empty
+  - required integer answers are integers
+  - required single-select answers include exactly one selected option
+  - required multi-select answers include at least one selected option
+  - selected options belong to the answered question
+  - answered questions belong to the survey
+  - attempts belong to the authenticated user and survey
+- Implemented MVP `JUMP_TO_QUESTION` conditional navigation for `equals`.
+- Added a one-question-at-a-time user survey dashboard with survey browsing, start/resume, progress indicator, previous/next controls, and submit flow.
+- Documented cookie behavior tradeoffs in `markdown/PHASE_LOG.md`.
+
+Non-goals:
+
+- Admin survey builder UI.
+- Admin response reporting UI.
+- CSV export.
+- Automated abandonment.
+- Editing completed attempts.
+- Server-side JWT revocation/token versioning.
+- Future conditional actions:
+  - `SHOW_QUESTION`
+  - `HIDE_QUESTION`
+  - `JUMP_TO_PAGE`
+  - `END_SURVEY`
+- Browser automation or visual regression testing.
+
+Known tradeoffs:
+
+- The auth cookie is a session cookie with JWT expiry still enforced by token verification. Logout clears the browser cookie but does not revoke an already-issued JWT server-side.
+- Cookie settings use `SameSite=Lax`, `httpOnly`, `path=/`, and `secure` only in production. This supports local HTTP development while requiring HTTPS semantics in production.
+- Optional questions can save a blank response row so users can move forward in a one-question flow without adding a separate skip endpoint.
+- The frontend mirrors conditional navigation for previous-button behavior, but the backend remains the authority for answer validation and next-question decisions.
+- Survey attempt APIs are implemented in `apps/api/src/routes/surveys.ts`, which is now large. This kept helpers close to existing survey mapping logic, but may deserve extraction once tests or admin reporting grow.
+
+Deferred work:
+
+- Add automated backend tests for cookie auth, survey attempt ownership, response validation, and completion validation.
+- Add browser-based route/layout inspection when automation is available.
+- Add server-side JWT revocation or token versioning if immediate logout invalidation becomes required.
+- Add route-level tests for retired survey resume behavior.
+- Consider extracting survey-attempt service helpers from the route file after behavior stabilizes.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Expected new files:
+
+```txt
+apps/web/src/api/surveys.ts
+notes/claude_handoff_phase_3.txt
+```
+
+Expected modified files include:
+
+```txt
+apps/api/src/app.ts
+apps/api/src/auth.ts
+apps/api/src/middleware/auth.ts
+apps/api/src/routes/auth.ts
+apps/api/src/routes/surveys.ts
+apps/web/src/api/auth.ts
+apps/web/src/auth/AuthContext.tsx
+apps/web/src/pages/UserDashboard.tsx
+apps/web/src/styles.css
+markdown/PHASE_LOG.md
+packages/shared/src/index.ts
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run build -w packages/shared
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run build -w packages/shared`.
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Not run: live API/database smoke tests for Phase 3 endpoints.
+- Not run: browser visual inspection.
+- Not run: automated backend tests.
+
+Manual testing:
+
+- No live browser or database-backed manual survey-taking test was run in this pass.
+
+## Specific Questions
+
+Does the cookie auth migration satisfy the Phase 3 requirement that JWTs are no longer stored in local storage?
+
+Are the cookie settings appropriate for local development and production hardening?
+
+Does the backend sufficiently enforce all authorization and validation rules from `prompts/prompt_3.txt`?
+
+Does `POST /api/surveys/:id/start` correctly avoid duplicate active attempts and prevent starts for draft/retired surveys?
+
+Does the implementation preserve the MVP rule that already-started attempts can be resumed and completed even if the survey is later retired?
+
+Is the optional-question blank response tradeoff acceptable, or should the API expose an explicit skip action later?
+
+Is `JUMP_TO_QUESTION` evaluation limited enough to avoid accidentally implementing future action types?
+
+Does the frontend survey runner provide the required one-question-per-page experience without exposing hidden tags?
+
+Should the route helper code in `apps/api/src/routes/surveys.ts` be extracted now, or is it acceptable until tests/reporting expand?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_3.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

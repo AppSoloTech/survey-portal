@@ -654,3 +654,139 @@ Deferred findings:
 - Review findings addressed or deferred: Yes
 - Manual testing complete: Yes; API/database checks, user/admin survey visibility, and admin create/update smoke tests passed.
 - Ready to commit: Yes
+
+---
+
+## Phase 3 — User Survey Experience
+
+Date:
+2026-06-09
+
+Status:
+Completed after Claude review fixes
+
+Prompt:
+`prompts/prompt_3.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_3.txt`
+- Claude review: `notes/claude_review_phase_3.txt`
+
+## Goals
+
+- Migrate authentication from frontend local-storage bearer tokens to server-set httpOnly cookies.
+- Let authenticated users browse, start, resume, answer, save progress, and submit surveys.
+- Persist survey responses and evaluate MVP `JUMP_TO_QUESTION` conditional navigation.
+
+## Built
+
+- Auth responses now set an httpOnly `survey_portal_auth` cookie and no longer return JWTs to the frontend.
+- Logout clears the auth cookie; frontend API calls use `credentials: "include"`.
+- Auth middleware now reads JWTs from the cookie while preserving server-side user lookup and role authorization.
+- Added Phase 3 APIs:
+  - `POST /api/surveys/:id/start`
+  - `POST /api/surveys/:id/answer`
+  - `POST /api/surveys/:id/complete`
+  - `GET /api/my-surveys`
+  - `GET /api/my-surveys/:attemptId`
+- Added response persistence, selected option replacement, active-attempt reuse, completion locking, and required-answer validation.
+- Added post-review hardening so abandoned attempts cannot accept answers and concurrent starts return the existing active attempt instead of surfacing a unique-constraint error.
+- Added one-question-at-a-time user dashboard UI with progress, previous/next navigation, start/resume, and submit flow.
+
+## Important Decisions
+
+### Cookie Auth
+
+Decision:
+Use a server-set JWT cookie with `httpOnly`, `SameSite=Lax`, `path=/`, and `secure` only when `RUN_ENV=prod`.
+
+Reason:
+This removes JWT exposure to browser JavaScript and works for local HTTP development while preparing the production path to require HTTPS cookies.
+
+Tradeoff:
+The MVP still uses stateless JWT expiry rather than server-side token revocation. The cookie is a session cookie, so browser session behavior controls persistence while the JWT expiry remains the server-side validity limit.
+
+### Optional Question Skips
+
+Decision:
+Allow optional questions to save an intentionally blank response row.
+
+Reason:
+The MVP has one question per page and no separate skip endpoint; a blank optional response lets users advance and resume correctly.
+
+Tradeoff:
+Reports must distinguish blank optional responses from meaningful answers.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run build -w packages/shared
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Results:
+
+- Passed: shared package build refreshed downstream workspace types.
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Not run yet: browser visual inspection.
+
+## Follow-Up Tasks
+
+- Add automated route tests for cookie auth and survey attempt validation.
+- Run browser-based route/layout inspection when automation is available.
+- Consider server-side JWT revocation or token versioning if logout semantics need to invalidate active cookies immediately.
+- Confirm whether completed attempts should prevent future repeat attempts through the start endpoint.
+- Hoist pure navigation helpers to `packages/shared` if frontend/backend conditional navigation logic grows.
+- Define whether changed branching answers should prune now-unreachable responses before reporting.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_3.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None.
+
+Suggested improvements:
+
+- S1: `answer` blocked completed attempts but not abandoned attempts.
+- S2: concurrent starts could surface a unique-constraint error instead of returning the existing active attempt.
+- S3/S4/S6/Q1: shared navigation helper extraction, route-service extraction, unreachable-response policy, and repeat-after-completion decision are useful future work.
+
+Accepted fixes:
+
+- Fixed S1: abandoned attempts now return 409 from the answer route.
+- Fixed S2: start now catches the one-active-attempt unique violation and returns the existing active attempt.
+
+Deferred findings:
+
+- Shared navigation helper extraction.
+- Survey attempt/response service extraction.
+- Branch-change unreachable-response policy before reporting.
+- Repeat-after-completion product decision.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude review found no blocking issues.
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Typecheck/lint/build only so far.
+- Ready to commit: Yes; live API/browser smoke testing is still recommended before tagging the phase done.

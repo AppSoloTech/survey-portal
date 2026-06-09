@@ -16,11 +16,8 @@ import {
   registerUser
 } from "../api/auth.js";
 
-const storageKey = "survey_portal_auth_token";
-
 interface AuthContextValue {
   user: AuthUser | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
@@ -36,35 +33,23 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(storageKey));
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(token));
+  const [isLoading, setIsLoading] = useState(true);
 
-  const storeSession = useCallback((nextToken: string, nextUser: AuthUser) => {
-    localStorage.setItem(storageKey, nextToken);
-    setToken(nextToken);
+  const storeSession = useCallback((nextUser: AuthUser) => {
     setUser(nextUser);
   }, []);
 
   const clearSession = useCallback(() => {
-    localStorage.removeItem(storageKey);
-    setToken(null);
     setUser(null);
   }, []);
 
   useEffect(() => {
     let isActive = true;
 
-    if (!token) {
-      setIsLoading(false);
-      return () => {
-        isActive = false;
-      };
-    }
-
     setIsLoading(true);
 
-    fetchCurrentUser(token)
+    fetchCurrentUser()
       .then((response) => {
         if (isActive) {
           setUser(response.user);
@@ -83,13 +68,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isActive = false;
-    };
-  }, [clearSession, token]);
+      };
+  }, [clearSession]);
 
   const login = useCallback(
     async (input: { email: string; password: string }) => {
       const response = await loginUser(input);
-      storeSession(response.token, response.user);
+      storeSession(response.user);
     },
     [storeSession]
   );
@@ -102,34 +87,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: string;
     }) => {
       const response = await registerUser(input);
-      storeSession(response.token, response.user);
+      storeSession(response.user);
     },
     [storeSession]
   );
 
   const logout = useCallback(async () => {
-    if (token) {
-      try {
-        await logoutUser(token);
-      } catch {
-        // Local token removal is the source of truth for bearer-token logout.
-      }
+    try {
+      await logoutUser();
+    } catch {
+      // Clearing client state keeps the UI usable if the session is already gone.
     }
 
     clearSession();
-  }, [clearSession, token]);
+  }, [clearSession]);
 
   const value = useMemo(
     () => ({
       user,
-      token,
-      isAuthenticated: Boolean(user && token),
+      isAuthenticated: Boolean(user),
       isLoading,
       login,
       register,
       logout
     }),
-    [isLoading, login, logout, register, token, user]
+    [isLoading, login, logout, register, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

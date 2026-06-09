@@ -12,7 +12,6 @@ export interface AuthUser {
 
 export interface AuthResponse {
   user: AuthUser;
-  token: string;
 }
 
 export interface AuthMeResponse {
@@ -103,6 +102,67 @@ export interface SurveyListResponse {
 
 export interface SurveyResponse {
   survey: Survey;
+}
+
+export interface SurveyResponseAnswer {
+  id: number;
+  surveyAttemptId: number;
+  questionId: number;
+  answerText: string | null;
+  answerInteger: number | null;
+  selectedAnswerOptionIds: number[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SurveyAttempt {
+  id: number;
+  surveyId: number;
+  userId: number;
+  status: SurveyAttemptStatus;
+  startedAt: string | null;
+  lastActivityAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  responses: SurveyResponseAnswer[];
+}
+
+export interface SurveyAttemptSummary {
+  attempt: SurveyAttempt | null;
+  survey: Survey;
+}
+
+export interface SurveyAttemptDetail {
+  attempt: SurveyAttempt;
+  survey: Survey;
+  currentQuestion: SurveyQuestion | null;
+}
+
+export interface MySurveysResponse {
+  surveys: SurveyAttemptSummary[];
+}
+
+export interface MySurveyResponse {
+  attempt: SurveyAttempt;
+  survey: Survey;
+  currentQuestion: SurveyQuestion | null;
+}
+
+export interface StartSurveyResponse {
+  attempt: SurveyAttempt;
+  survey: Survey;
+  currentQuestion: SurveyQuestion | null;
+}
+
+export interface AnswerSurveyResponse {
+  attempt: SurveyAttempt;
+  currentQuestion: SurveyQuestion | null;
+  isCompleteReady: boolean;
+}
+
+export interface CompleteSurveyResponse {
+  attempt: SurveyAttempt;
 }
 
 export interface HealthResponse {

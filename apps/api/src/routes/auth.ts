@@ -3,10 +3,11 @@ import pg from "pg";
 
 import {
   hashPassword,
+  clearAuthCookie,
   mapUserRecord,
   normalizeEmail,
   passwordVerificationDecoyHash,
-  signAuthToken,
+  setAuthCookie,
   verifyPassword,
   type UserRecord,
   type UserWithPasswordRecord
@@ -41,7 +42,8 @@ authRouter.post("/register", async (req, res, next) => {
     );
 
     const user = mapUserRecord(result.rows[0]);
-    res.status(201).json({ user, token: signAuthToken(user) });
+    setAuthCookie(res, user);
+    res.status(201).json({ user });
   } catch (error) {
     if (isUniqueEmailError(error)) {
       res.status(409).json({ error: "Email is already registered" });
@@ -78,7 +80,8 @@ authRouter.post("/login", async (req, res, next) => {
     }
 
     const user = mapUserRecord(record);
-    res.json({ user, token: signAuthToken(user) });
+    setAuthCookie(res, user);
+    res.json({ user });
   } catch (error) {
     next(error);
   }
@@ -88,7 +91,8 @@ authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user: (req as AuthenticatedRequest).user });
 });
 
-authRouter.post("/logout", requireAuth, (_req, res) => {
+authRouter.post("/logout", (_req, res) => {
+  clearAuthCookie(res);
   res.status(204).send();
 });
 

@@ -12,7 +12,6 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 - Add rate limiting to `/api/auth/login` and `/api/auth/register` before public exposure or hosted deployment.
 - Add maximum password length validation to avoid bcrypt's 72-byte truncation edge case.
-- Phase 3: migrate from local-storage bearer JWTs to httpOnly, SameSite cookie auth before persisted survey response data is implemented.
 - Add an automated backend auth test harness before auth-sensitive behavior grows further.
 
 ### Environment And Deployment
@@ -31,6 +30,10 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Validate conditional rule references belong to the same survey when rule-management endpoints are added.
 - Require at least one question before publishing a survey once admin-builder publish flows exist.
 - Add explicit length bounds for survey titles/descriptions and future question/option text writes.
+- Decide whether completed survey attempts should prevent later repeat attempts through the start endpoint.
+- Hoist pure survey navigation helpers into `packages/shared` if frontend and backend conditional navigation logic grows.
+- Extract survey attempt/response lifecycle helpers from `apps/api/src/routes/surveys.ts` before admin reporting adds more table readers.
+- Define whether changed branching answers should prune now-unreachable saved responses or keep them as historical response data before reporting.
 
 ### Frontend Validation
 
@@ -41,3 +44,4 @@ Review this file before starting each implementation phase. When a follow-up is 
 ## Completed Follow-Ups
 
 - Phase 2: Added a safe local admin seed in `database/seeds/0001_phase_2_seed.sql`.
+- Phase 3: Migrated from local-storage bearer JWTs to httpOnly, SameSite cookie auth before persisted survey response data was implemented.

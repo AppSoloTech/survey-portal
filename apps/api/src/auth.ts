@@ -1,10 +1,12 @@
 import bcrypt from "bcrypt";
+import type { CookieOptions, Response } from "express";
 import jwt from "jsonwebtoken";
 import type { AuthUser, UserRole } from "@survey-portal/shared";
 
 import { config } from "./config.js";
 
 const passwordHashRounds = 12;
+export const authCookieName = "survey_portal_auth";
 // Keeps the missing-email login path on bcrypt's cost curve.
 export const passwordVerificationDecoyHash =
   "$2b$12$8SieWt0hrB3qCXmmOLVx0./gPRcGtMVGksMgSKVYUemYs/XzZCTlK";
@@ -77,6 +79,23 @@ export function verifyAuthToken(token: string): JwtPayload {
   }
 
   return payload;
+}
+
+export function setAuthCookie(res: Response, user: AuthUser): void {
+  res.cookie(authCookieName, signAuthToken(user), getAuthCookieOptions());
+}
+
+export function clearAuthCookie(res: Response): void {
+  res.clearCookie(authCookieName, getAuthCookieOptions());
+}
+
+function getAuthCookieOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    path: "/",
+    sameSite: "lax",
+    secure: config.isProduction
+  };
 }
 
 function isJwtPayload(payload: string | jwt.JwtPayload): payload is JwtPayload {

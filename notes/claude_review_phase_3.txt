@@ -1,0 +1,209 @@
+# Claude Code Review — Phase 3: User Survey Experience
+
+Reviewer: Claude Code
+Date: 2026-06-09
+Branch: phase-3-user-survey-experience
+Scope reviewed: current Phase 3 diff only (git diff + untracked apps/web/src/api/surveys.ts)
+
+Reference docs read: ARCHITECTURE_PRINCIPLES.md, DATA_MODEL_VISION.md, FLOW.md,
+REVIEW_CHECKLIST.md, PHASE_LOG.md, prompts/prompt_3.txt, notes/claude_handoff_phase_3.txt,
+plus database/migrations/0003_surveys.sql and apps/api/src/config.ts for verification.
+
+Overall assessment: Strong, scope-disciplined implementation that satisfies the Phase 3
+prompt and the required security migration. No blocking (critical) issues found. A small
+number of correctness/consistency gaps and maintainability items are listed below.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+None blocking commit.
+
+The high-risk areas called out in the prompt were each verified and pass:
+
+- JWT removed from local storage: confirmed. AuthContext no longer stores a token;
+  `storageKey`/`localStorage` are gone, and the bearer header path was removed from
+  apps/web/src/api/auth.ts. (prompt requirement met)
+- httpOnly cookie auth: login/register call `setAuthCookie`, logout calls
+  `clearAuthCookie`, and `requireAuth` reads only the `survey_portal_auth` cookie.
+  The Authorization-header path was fully removed, so there is no lingering bearer
+  acceptance. (met)
+- Server-side authorization preserved: every Phase 3 route is behind `requireAuth`;
+  admin survey mutations remain behind `requireRole("admin")`. (met)
+- Cross-user attempt isolation: confirmed. Every attempt/response query is scoped by
+  `user_id` (fetchAttemptForUser, fetchActiveAttempt, fetchAttemptWithResponses,
+  fetchAttemptsByCondition, and the complete UPDATE all include `user_id = $n`).
+  A user cannot read or mutate another user's attempt. (met)
+- Hidden tags never exposed to participants: confirmed. All user-facing paths call
+  `fetchSurveyStructures({ includeHiddenTags: false })`; `answerTags` is only attached
+  when `includeHiddenTags` is true, and the shared `AnswerOption.answerTags` field is
+  optional, so it is omitted from JSON for standard users. (met)
+- Anonymous access blocked: all `/api/surveys/:id/(start|answer|complete)` and
+  `/api/my-surveys` routes require auth. (met)
+- Conditional logic stays in MVP scope: `resolveNextQuestion` only evaluates
+  `actionType === "JUMP_TO_QUESTION"` and `conditionOperator === "equals"`; future
+  action types are never evaluated. (met)
+- Parameterized SQL throughout; no string interpolation of user input. (met)
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+S1. (Correctness, low) `answer` does not block `abandoned` attempts.
+    apps/api/src/routes/surveys.ts:261 only rejects `status === "completed"`. The
+    `complete` route correctly rejects `abandoned` (409), but `answer` would persist
+    a new response to an abandoned attempt. Today this is only theoretical (no code
+    path produces `abandoned` in this phase, and `fetchActiveAttempt` excludes it),
+    but the answer endpoint trusts a client-supplied `attemptId`, so a user could
+    target their own abandoned attempt. Recommend treating any non-`in_progress`
+    (or non-`not_started`) status as not answerable, mirroring the complete route.
+
+S2. (Robustness, low) Start has a check-then-insert race.
+    apps/api/src/routes/surveys.ts:191-226 calls `fetchActiveAttempt` then inserts.
+    Integrity is protected by the partial unique index
+    `survey_attempts_one_active_per_user_survey_idx`, so no duplicate can be created —
+    but two concurrent starts (e.g. double-click) make the second INSERT throw a
+    unique-violation that surfaces as a 500. Recommend catching the unique violation
+    and re-returning the existing active attempt (same shape as the existing-attempt
+    branch).
+
+S3. (Maintainability) Duplicated navigation logic across tiers.
+    `resolveNextQuestion` and `findFirstQuestion` are implemented twice — backend
+    (surveys.ts:1406-1438) and frontend (UserDashboard.tsx:491-523) — with identical
+    rule-matching semantics. Because a shared package already exists
+    (`packages/shared`), consider hoisting the pure navigation helpers there so the
+    frontend "previous/next mirror" can never drift from the server authority. This
+    is the single most valuable cleanup for future-proofing conditional logic.
+
+S4. (Maintainability) surveys.ts is now ~1,000 lines mixing admin survey CRUD,
+    attempt lifecycle, response persistence, navigation, and validation. It is
+    coherent and readable today, but I agree with the handoff's own note: extract an
+    attempt/response service module (and the navigation helpers from S3) before the
+    admin-reporting phase adds more readers of the same tables. Not needed for this
+    commit.
+
+S5. (UX, low) Progress indicator counts position in the full question list, not in
+    the navigation path. UserDashboard.tsx:347-348 uses `findIndex` over
+    `survey.questions`, so after a JUMP_TO_QUESTION the displayed "Question X of N"
+    can jump non-monotonically (e.g. "3 of 10" -> "7 of 10"). Acceptable for MVP;
+    a path-relative counter would be more accurate later.
+
+S6. (Correctness, low) Stale answers after changing an earlier branching answer.
+    If a user answers a branch source, proceeds down the jump target, then uses
+    Previous to change the source answer to a different branch, previously-saved
+    answers on the now-unreachable path remain in the DB. Completion validation
+    re-walks the live path and ignores them, so this is harmless for completion, but
+    those orphaned responses will appear in reporting. Worth a documented decision
+    (prune unreachable responses vs. keep full history) before the reporting phase.
+
+S7. (Minor) Loop-guard inconsistency. `determineCurrentQuestion` returns `null` on a
+    detected navigation loop (treating the survey as "done"), while
+    `validateReachedRequiredQuestions` returns an error. A looped survey would show
+    "Ready to submit" and then fail on submit. Forward-only MVP jumps make this
+    unreachable in practice; just noting the asymmetry.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+A1. No server-side JWT revocation on logout. Logout clears the cookie; an
+    already-issued JWT remains valid until expiry (1h). Correctly documented in
+    PHASE_LOG.md and listed as deferred. Acceptable for MVP.
+
+A2. CSRF protection relies on `SameSite=Lax` rather than CSRF tokens. With Lax,
+    cross-site POST/fetch do not carry the cookie, which covers the state-changing
+    endpoints here, and in production the SPA is same-origin (served by Express).
+    Acceptable for MVP; revisit if any cross-site embedding or cookie-bearing GET
+    mutations are introduced.
+
+A3. `secure` cookie only when `RUN_ENV=prod`. Required to support local HTTP dev.
+    Config already hard-fails prod startup on placeholder/short JWT secrets and on
+    `NODE_ENV != production`, so the dev-only relaxation cannot silently leak into a
+    prod boot. Good environment hygiene. Acceptable.
+
+A4. Optional questions persist a blank response row to allow forward movement
+    without a dedicated skip endpoint. Documented. The answer-shape CHECK constraint
+    permits an all-null row, and `hasMeaningfulResponse` correctly distinguishes
+    blank from answered. Acceptable; the reporting implication (blank vs answered) is
+    already noted in PHASE_LOG.md.
+
+A5. Full survey definition (all questions + conditional rules, minus tags) is sent to
+    the client to drive one-question-at-a-time rendering and the Previous button.
+    This exposes branching structure but not hidden tags. Acceptable and consistent
+    with the documented frontend-mirroring approach.
+
+A6. Anonymous page loads issue one `GET /api/auth/me` that 401s (httpOnly cookies are
+    not readable from JS, so the client must probe). Inherent to the cookie approach.
+    Acceptable.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS
+================================================================================
+
+Q1. Repeat attempts: the model enforces one *active* attempt, but a user whose
+    attempt is `completed` can still call `start` again — `fetchActiveAttempt`
+    excludes completed, and a published survey would then create a *new* in_progress
+    attempt. DATA_MODEL_VISION recommends "one active/completed attempt per user per
+    survey." If repeat-after-completion should be disallowed, `start` needs an
+    additional check for an existing completed attempt. Confirm intended behavior.
+    (In the current UI a completed survey shows "View" and routes to fetchMySurvey,
+    so the UI does not trigger this — but the API allows it.)
+
+Q2. Assumption: Azure App Service terminates TLS at a proxy and the Express app is
+    served same-origin with the SPA in prod (so no CORS in prod and `secure` cookies
+    are delivered over the edge HTTPS). This matches ARCHITECTURE_PRINCIPLES. If a
+    separate web origin is ever used in prod, the cookie `SameSite`/CORS settings
+    must be revisited.
+
+Q3. Assumption: `abandoned` is only ever set by a future admin/automated process
+    (out of scope here). S1 matters more if that assumption changes.
+
+================================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================================
+
+- One-question-per-page experience is implemented as specified: question text,
+  type-appropriate control, progress bar, Previous, and Next/Submit. (FLOW + prompt)
+- Start/Resume/View labels are derived from attempt status, and the list shows a
+  status pill — clear separation of available vs in-progress vs completed.
+- Required vs optional is reflected client-side (`required` on inputs) while the
+  server remains the validation authority, per "never rely on frontend validation."
+- No hidden-tag/internal terminology leaks into user-facing copy or payloads.
+- Completed attempts render a terminal "Survey submitted" panel; per-question review
+  of completed answers is intentionally minimal (reporting is out of scope).
+- Loading / empty ("No published surveys are available.") / error states are handled
+  in the dashboard. Good coverage for an MVP.
+- Minor UX polish opportunities (non-blocking): progress numbering under jumps (S5),
+  and there is no inline confirmation after a blank optional question is saved — the
+  user just advances, which is the intended flow.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+Recommendation: READY TO COMMIT (with optional pre-commit nits).
+
+Rationale:
+- All Phase 3 prompt requirements and the required cookie-auth migration are met.
+- All listed non-goals were respected (no builder, reporting, CSV, abandonment
+  automation, completed-attempt editing, or future conditional actions).
+- Security boundaries (auth, per-user authorization, hidden-tag privacy,
+  parameterized SQL) verified. DB constraints back the application-level invariants.
+- Documentation (PHASE_LOG.md) and handoff are complete and accurate.
+
+Suggested (optional) before commit — both are small and low-risk:
+- S1: also reject `abandoned` in the answer route (one condition).
+- S2: catch the start unique-violation and return the existing attempt (avoids a
+  rare 500).
+
+Recommended to fold into FOLLOW_UPS.md (do not block this commit):
+- S3 (hoist navigation helpers to shared), S4 (extract attempt/response service),
+  S6 (orphaned-response policy), and Q1 (repeat-after-completion decision).
+
+Validation gaps to flag for the human developer (per the handoff, not run):
+- No automated backend tests yet for cookie auth, attempt ownership, response
+  validation, completion validation, or retired-survey resume.
+- No live API/DB smoke test or browser inspection in this pass. Recommend at least
+  a manual end-to-end run (register -> start -> answer text/integer/single/multi ->
+  trigger a JUMP_TO_QUESTION -> Previous -> complete -> verify another user gets 404
+  on the attempt) before tagging the phase done.
