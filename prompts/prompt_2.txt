@@ -1,4 +1,4 @@
-# Phase 2 — Survey Database Model and API Foundation
+# Phase 2 — Survey Database Model, Seeds, and API Foundation
 
 ## Purpose
 
@@ -16,11 +16,14 @@ Read before implementation:
 
 * markdown/ARCHITECTURE_PRINCIPLES.md
 * markdown/DATA_MODEL_VISION.md
+* markdown/FOLLOW_UPS.md
 * prompts/MASTER_PRODUCT_CONTEXT.txt
 
 Schema must remain aligned with DATA_MODEL_VISION.md.
 
 If implementation requires deviation, stop and explain before proceeding.
+
+Before implementation, review markdown/FOLLOW_UPS.md and decide which active follow-ups belong in this phase.
 
 ---
 
@@ -38,7 +41,7 @@ Create:
 
 Create migrations.
 
-Create seed data.
+Create seed data, including one admin account.
 
 ---
 
@@ -75,23 +78,26 @@ Allow future phases to test against realistic data.
 
 # Conditional Logic Requirements
 
-Only support schema creation.
+Create schema capable of storing conditional rules.
 
-Do not implement runtime logic evaluation yet.
-
-Store:
+For MVP supported behavior, only seed or use:
 
 ```txt
 JUMP_TO_QUESTION
+```
+
+Do not implement runtime logic evaluation yet.
+
+The schema may include fields needed for future rule actions:
+
+```txt
 JUMP_TO_PAGE
 SHOW_QUESTION
 HIDE_QUESTION
 END_SURVEY
 ```
 
-Only as supported action types.
-
-Do not build behavior yet.
+Do not expose or implement behavior for `SHOW_QUESTION`, `HIDE_QUESTION`, `JUMP_TO_PAGE`, or `END_SURVEY`.
 
 ---
 
