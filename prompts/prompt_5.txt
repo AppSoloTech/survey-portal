@@ -1,0 +1,268 @@
+# Phase 5 — Admin Builder UX Polish
+
+## Purpose
+
+Improve the administrator survey-building experience now that the Phase 4
+builder works functionally.
+
+The current builder is usable, but it feels clunky. Sections do not feel visually
+distinct enough, mobile is harder to digest, and several add/save/publish actions
+require the user to learn implicit behavior.
+
+Also fix the survey-taking input-state regression found during manual testing:
+answers from one text question must never appear in another text question when
+conditional navigation jumps between questions.
+
+This phase should make the builder feel like a clear operational workflow.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/PHASE_4_UI_TEST_PLAN.md
+* markdown/REVIEW_CHECKLIST.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* prompts/prompt_4.txt
+* phase-4-test-notes.txt, if present locally
+
+---
+
+# Goals
+
+Improve the admin survey builder so administrators can:
+
+* understand the survey construction workflow at a glance
+* clearly distinguish survey metadata, questions, options, tags, and rules
+* understand which button saves which piece of data
+* add answer options without confusion about separate save actions
+* add jump rules and see the add-rule form reset afterward
+* publish or retire a completed survey from an obvious location
+* save draft survey construction progress without feeling forced to publish
+* use the builder comfortably on mobile and desktop
+* preserve correct per-question answer state in the base-user survey-taking flow
+
+---
+
+# Required Bug Fix
+
+## Survey-Taking Text State Isolation
+
+Fix the base-user survey-taking issue found during manual testing:
+
+```txt
+Question 1 is a text question.
+Question 2 has a skip condition to Question 5.
+Question 5 is also a text question.
+After entering text in Question 1 and taking the skip path from Question 2,
+Question 5 incorrectly displays the value entered for Question 1.
+```
+
+Expected behavior:
+
+* each question input must be keyed and hydrated by question identity, not by
+  question type, position, or reusable component state
+* Question 5 must not inherit Question 1's unsaved or saved text
+* returning to Question 2 and choosing a non-skip path must not incorrectly clear
+  persisted answers for unrelated questions
+* taking the skip path again must show Question 5's own saved answer, or an empty
+  field if Question 5 has never been answered
+
+Preserve the Phase 3 behavior that users can go backward, resume in-progress
+attempts, save answers, and complete reachable required questions.
+
+---
+
+# UX Requirements
+
+The admin builder should remain a dense business tool, not a marketing page or a
+visual survey designer.
+
+Make the interface easier to scan by improving:
+
+* section hierarchy
+* spacing
+* headings
+* form grouping
+* action placement
+* button labels
+* success/error feedback
+* mobile stacking
+
+Sections should feel visually distinct without using decorative cards inside
+cards. Repeated items such as questions, answer options, tags, and rules may use
+compact cards or rows.
+
+Use clear labels and action text. Avoid requiring users to infer whether a button
+updates survey metadata, question text, option text, tags, or rules.
+
+---
+
+# Required Improvements
+
+## Jump Rule Form Reset
+
+After an administrator successfully adds a new jump rule:
+
+* clear the source question selection
+* clear the source answer option selection
+* clear the target question selection
+* leave the form ready for another rule
+* do not clear existing saved rules
+
+Empty should be the default add-rule state.
+
+## Answer Option Editing Clarity
+
+For selection questions, make it clear that:
+
+* saving a question updates question-level fields only
+* adding an option creates a new answer option
+* saving an option row updates that specific answer option
+* reordering an option changes order only
+* deleting an option removes that option only
+
+Improve labels, grouping, and placement so the user does not have to learn this
+through trial and error.
+
+Avoid vague button text where the scope is unclear. Prefer scoped actions such as:
+
+```txt
+Save question
+Add option
+Save option
+Delete option
+```
+
+Add short inline status feedback where helpful, for example after saving a
+question, saving an option, adding a tag, or adding a rule.
+
+## Survey Completion / Publish Action Placement
+
+When survey construction is complete, the next action should be obvious.
+
+Add a clear publish/status action area near the bottom of the builder as well as
+wherever status is currently managed.
+
+The bottom action area should:
+
+* show the current survey status
+* make the next status action clear
+* allow publishing when validation passes
+* allow retiring a published survey
+* preserve backend validation messages when publishing is blocked
+
+Do not bypass backend publish validation.
+
+## Draft Save State
+
+Make it clear that survey construction is saved while the survey remains a draft.
+
+Administrators should not feel like they must publish to save work.
+
+At minimum:
+
+* show save feedback for survey metadata
+* show save feedback for question, option, tag, and rule changes
+* make draft status feel like a saved working state
+* avoid wording that implies publish is required to preserve changes
+
+If a broader dirty-state indicator is added, keep it reliable and scoped. Do not
+show "saved" for changes that have not been successfully persisted by the API.
+
+---
+
+# Mobile Requirements
+
+Mobile layout should be more digestible than Phase 4.
+
+Improve:
+
+* vertical rhythm
+* section separation
+* button wrapping
+* row controls
+* form field spacing
+* question and option action placement
+
+Action buttons must not overflow or visually collide on narrow screens.
+
+Long labels should wrap cleanly.
+
+---
+
+# Backend Requirements
+
+Prefer frontend/UI improvements only.
+
+Do not add new tables for this phase.
+
+Do not weaken existing server-side validation, admin authorization, hidden-tag
+privacy, response-data protections, or publish rules.
+
+Only adjust API behavior if a small change is required to support reliable save
+feedback or status actions. Any API change must be server-validated and
+admin-only.
+
+---
+
+# Required Validation
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Also perform a manual browser pass for the admin builder if possible:
+
+* create or select a draft survey
+* edit and save survey metadata
+* add a text question
+* add a single-select question
+* add at least two answer options
+* save an option row and confirm the UI communicates what was saved
+* add a tag and confirm the UI does not reset saved tag values
+* add a jump rule and confirm the add-rule form resets to empty
+* publish from the bottom action area
+* confirm backend validation messages still appear when publish is blocked
+* inspect mobile width for overflow, cramped controls, and unclear grouping
+* as a base user, reproduce the text-question jump path and confirm Question 5
+  does not inherit Question 1's value
+
+Record manual test results in `markdown/PHASE_LOG.md`.
+
+---
+
+# Non-Goals
+
+Do not implement:
+
+* reporting
+* analytics
+* CSV export
+* drag-and-drop
+* survey preview mode
+* new question types
+* advanced branching logic
+* backend route/service extraction unless required for a small supporting change
+
+---
+
+# Closeout Requirements
+
+Before committing:
+
+* update `markdown/PHASE_LOG.md`
+* update `markdown/FOLLOW_UPS.md` if any follow-ups are completed or added
+* create a handoff note at `notes/claude_handoff_phase_5.txt`
+* request Claude review using `markdown/REVIEW_CHECKLIST.md`
+* address or document review findings before commit
