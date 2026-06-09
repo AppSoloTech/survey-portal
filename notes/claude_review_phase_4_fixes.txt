@@ -1,0 +1,209 @@
+# Claude Review — Phase 4 Post-Review Fixes (C1 / S1 / S2)
+
+Reviewer: Claude Code
+Scope: Only the post-review fixes for the original Phase 4 findings C1, S1, S2,
+plus the matching admin UI changes and the FOLLOW_UPS.md / PHASE_LOG.md updates.
+Did not re-review unrelated Phase 4 scope except to confirm no regression.
+
+Files inspected:
+- apps/api/src/routes/surveys.ts (delete guards, insert-shift helpers,
+  forward-only rule validation, status-body validation)
+- apps/web/src/pages/AdminDashboard.tsx (disabled deletes, forward-only rule
+  dropdowns, tag field state)
+- database/migrations/0003_surveys.sql (cascade behavior, integrity context)
+- markdown/FOLLOW_UPS.md, markdown/PHASE_LOG.md
+
+Bottom line: S1 and S2 are fully and correctly addressed. C1 is addressed for the
+direct delete actions but is NOT fully closed: a published/retired survey can be
+reverted to draft with no restriction, and the delete guard keys on draft status,
+so the original cascade-into-response-data hazard is still reachable in two steps.
+This is the one item to decide before claiming C1 closed.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+C1-RESIDUAL. The draft-only delete guard is bypassable via status revert, so
+collected response data can still be cascade-deleted.
+
+  - The new guards are correct as written:
+      * DELETE question (surveys.ts:500-503) returns 409 unless status='draft'.
+      * DELETE option   (surveys.ts:741-744) returns 409 unless status='draft'.
+  - But the guard assumes "draft" implies "no collected responses." That
+    assumption does not hold, because a survey can be moved back to draft:
+      * PATCH /:id/status accepts any valid status with no transition rule
+        (validateSurveyStatusBody, surveys.ts:2567-2579; handler 233-258 only
+        validates readiness when going TO published, never restricts going TO
+        draft).
+      * PUT /:id likewise accepts status='draft' (validateSurveyBody:2536/2553).
+    Reverting to draft is a plain UPDATE (status='draft', published_at=null);
+    survey_attempts and survey_response_answers are NOT touched and persist.
+  - The cascade path the original C1 named is unchanged:
+      survey_questions -> survey_response_answers (0003:118, ON DELETE CASCADE)
+      answer_options    -> survey_response_selected_options (0003:143, CASCADE)
+    So the sequence "revert published survey to draft -> delete question/option"
+    still permanently destroys every respondent's answer to that question/option.
+
+  Impact: same irreversible response-data loss as the original C1, now requiring
+  one extra admin action (revert to draft). For an internal admin tool this is a
+  realistic foot-gun, not a hardened boundary.
+
+  Recommendation (pick one):
+    a) Base the delete guard on the absence of collected responses rather than on
+       draft status (e.g. block delete when an attempt/response references the
+       question or option), which is robust regardless of status churn; OR
+    b) Restrict the status transition itself: refuse to move a survey back to
+       draft once it has any attempts/responses (return 409), so "draft" keeps
+       its implied "no responses" meaning; OR
+    c) If reverting-to-draft-then-editing is an accepted business choice, document
+       it explicitly and downgrade the C1 "completed" claim to "partially
+       addressed" with this residual path called out.
+
+  Note: if reverting a published survey to draft is itself undesirable
+  (it silently un-publishes a live survey and nulls published_at), option (b)
+  also closes that separate concern.
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+- S1 is correctly hardened (no further code change needed; smoke test still owed).
+  shiftQuestionDisplayOrdersForInsert (1825-1855) and
+  shiftOptionDisplayOrdersForInsert (1857-1887) now use two statements:
+    1) park every row at display_order + offset, offset = max(display_order)+1000;
+    2) one UPDATE that subtracts offset and adds 1 to rows at/after the insert
+       position, opening a gap at the target slot.
+  This is safe against survey_questions_display_order_unique (0003:31) and the
+  answer_options unique (0003:44): the parked range (>= max+1001) and the final
+  range (<= max+1) are disjoint, so no row collides with another at any point of
+  the single final UPDATE, and the data-modifying-CTE double-write is gone. It now
+  matches the proven reorder helpers (reorderQuestions/reorderOptions, 1933-1987).
+  The active follow-up for a live insert-at-position/reorder smoke test
+  (FOLLOW_UPS.md:34) is correctly retained — keep it open; this path was still not
+  exercised against a real DB.
+
+- S2 is fully covered on all three paths.
+    * Create: POST /:id/rules -> validateConditionalRuleReferences, which now
+      rejects target.display_order <= source.display_order (surveys.ts:2133-2135).
+    * Update: PUT /:id/rules/:ruleId uses the same validator (1023-1027).
+    * Publish: validateSurveyCanPublish flags any rule with
+      target_question.display_order <= source_question.display_order (2070).
+  Self-targets (display_order equal) are rejected by the `<=`. Good.
+  Minor latent gap (optional): a rule that is forward-valid at creation can become
+  backward later if questions are reordered/inserted; this is only re-checked at
+  publish time, not on the reorder/insert write. Publish validation does catch it,
+  so completion can never ship a backward jump — acceptable for MVP, worth a note.
+
+- RuleEditor edit-on-published (AdminDashboard.tsx:1196-1288) is not disabled when
+  the survey is published, mirroring the backend (rule writes are allowed on
+  published surveys). That is internally consistent, but editing/deleting jump
+  rules on a live survey changes navigation for in-progress attempts. Not a data
+  cascade and out of C1/S1/S2 scope; flag for the reporting/published-edit policy.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+- Tag and rule structural deletes remain unguarded by status. This is acceptable
+  for this fix set because neither cascades into response records: answer_tags and
+  conditional_logic_rules have no inbound foreign key from response tables. Editing
+  or deleting tags on a published survey changes future hidden-tag reporting
+  semantics but does not destroy collected responses; that belongs to the
+  reporting-phase policy, not C1.
+- The UI treats "published OR retired" as locked (isPublished = status !== "draft",
+  AdminDashboard.tsx:709) and the backend enforces draft-only deletes. UI and
+  backend agree, including the 409 vs disabled-button experience.
+- The two-statement park-then-set runs inside the existing insert transactions
+  (POST questions 295-330; POST options 553-580), so a mid-shift failure rolls back
+  cleanly. Good.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS
+================================================================================
+
+Direct answers to the handoff's specific questions:
+
+- Did the non-draft delete guards fully address C1 for question and option deletes?
+  Partially. They fully block the *direct* delete-on-published path. They do NOT
+  cover the revert-to-draft-then-delete path (see C1-RESIDUAL), so the underlying
+  data-loss hazard is reduced but not eliminated.
+
+- Any remaining destructive builder actions that can cascade into response data?
+  Yes, indirectly: status revert to draft re-enables question/option deletes that
+  cascade. No other action does: tag/rule deletes do not touch response tables, and
+  there is no DELETE /surveys/:id route. Option/question UPDATEs are non-destructive
+  to responses (text/help/required edits; type change blocked on non-draft, 439-445).
+
+- Is the two-statement insert-shift safe with the existing unique constraints?
+  Yes. The +1000 parking offset guarantees the parked and final display_order
+  ranges are disjoint, so the final single UPDATE never transiently violates
+  (survey_id, display_order) or (question_id, display_order). Confirmed against
+  0003:31 and 0003:44. Live smoke test still recommended before relying on it.
+
+- Does forward-only validation cover both rule write paths and publish validation?
+  Yes — create, update, and publish all enforce target after source (2133, 1023,
+  2070). Assumption: display_order is the intended ordering proxy for "after,"
+  which matches how the runner and fetchSurveyStructures order questions.
+
+- Does the admin UI mirror the backend policy?
+  Yes. Question delete (947) and option delete (990) buttons are disabled when
+  status !== draft; add-rule target dropdown lists only forward questions (110-114,
+  771) and the Add-rule button is disabled when no forward target exists (780-784);
+  the existing-rule target dropdown is forward-only and recomputes when the source
+  changes via controlled state (1213-1227, 1262-1271). Tag fields start empty and
+  preserve persisted key/value across unrelated saves via controlled state + effect
+  (1128-1144). No UI/backend divergence found.
+
+- Are FOLLOW_UPS.md and PHASE_LOG.md accurate?
+  Accurate about what code changed (FOLLOW_UPS:48-50; PHASE_LOG:834-836, 912-916).
+  One overstatement: the C1 completed entry "Blocked ... to prevent cascade
+  deletion of collected response data" (FOLLOW_UPS:48; PHASE_LOG:912) reads as a
+  full close, but the revert-to-draft path leaves the hazard reachable. Recommend
+  rewording to "blocked direct deletes outside draft" and adding a follow-up for
+  the revert path (or implementing option (a)/(b) above and keeping the strong
+  wording).
+
+Open decisions for the human developer:
+- Should a survey with collected attempts/responses be allowed to return to draft
+  at all? Resolving this also resolves C1-RESIDUAL.
+
+================================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================================
+
+- Forward-only jump rules now match DATA_MODEL_VISION Q6's MVP recommendation, and
+  the UI makes the constraint visible (only forward targets are offered, and the
+  Add-rule action disables when the selected source is the last question). This is
+  the right "guide the admin into valid surveys" behavior for an operational tool.
+- The disabled delete buttons on published/retired surveys communicate the
+  draft-only edit policy directly in the UI rather than only via a 409, which suits
+  the business-tool experience.
+- The residual revert-to-draft path is a UX as well as a data concern: an admin who
+  reverts to draft to "fix a typo" then deletes a question would not expect live
+  responses to vanish. Whichever option is chosen for C1-RESIDUAL, the behavior
+  should be explicit (blocked with a clear message) rather than silent.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+Recommendation: APPROVE the S1 and S2 fixes as-is; APPROVE the C1 delete guards as
+a correct partial fix, with one decision to record before treating C1 as closed.
+
+- S1: safe and consistent with the reorder helpers. Commit-ready. Keep the live
+  insert/reorder smoke-test follow-up open (it is).
+- S2: complete across create, update, and publish. Commit-ready.
+- C1: the delete guards are correct and worth committing, but they do not fully
+  satisfy the stated goal "prevent cascade deletion of collected response data"
+  because of the revert-to-draft loophole. Before sign-off, either:
+    * implement option (a) (guard on existing responses) or (b) (block revert when
+      responses exist) to truly close C1; or
+    * soften the C1 "completed" wording in FOLLOW_UPS.md:48 / PHASE_LOG:912 and add
+      an active follow-up for the revert path.
+- No new security, authorization, hidden-tag-exposure, or SQL-injection issues were
+  introduced by these fixes. All new SQL is parameterized.
+
+Validation still outstanding (unchanged from handoff, worth running before sign-off):
+live insert-at-position + reorder smoke test, and a manual check that reverting a
+survey with responses to draft and deleting a question behaves the way the team
+decides it should.

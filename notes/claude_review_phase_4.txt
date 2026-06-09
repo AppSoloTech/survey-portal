@@ -1,0 +1,236 @@
+# Claude Review — Phase 4 (Admin Survey Builder MVP)
+
+Reviewer: Claude Code
+Scope: Phase 4 diff only (apps/api/src/routes/surveys.ts, apps/web/src/api/surveys.ts,
+apps/web/src/pages/AdminDashboard.tsx, apps/web/src/styles.css) plus the existing
+schema in database/migrations/0003_surveys.sql for integrity context.
+
+Overall: The phase is well-structured, stays within scope, and meets the core
+security and validation requirements. Authentication + admin authorization are
+enforced on every builder write route, hidden tags are not exposed to standard
+users, cross-survey conditional rules are rejected, and publish validation is
+present. There is one important data-integrity decision to make before production
+(cascade deletes on published surveys) and one SQL pattern in the insert path that
+should be hardened and exercised against a live database. Neither blocks a phase
+commit if documented.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+C1. Deleting questions/options from a published or retired survey silently
+    destroys collected response data.
+    - DELETE /:id/questions/:questionId (surveys.ts:479-516) issues a plain
+      `delete from survey_questions`. The schema cascades:
+        survey_questions -> survey_response_answers (ON DELETE CASCADE, 0003:118)
+        survey_questions -> answer_options -> survey_response_selected_options
+      So deleting a question on a live survey permanently removes every user's
+      answer to it.
+    - DELETE option (surveys.ts:707-751) cascades answer_options ->
+      survey_response_selected_options (0003:143), destroying the record that a
+      user selected that option — which is also the path hidden-tag reporting
+      depends on (DATA_MODEL_VISION "Hidden Tag Resolution", lines 503-518).
+    - There is no guard tying destructive edits to survey status. The handoff
+      itself flags this (questions at handoff:142 and 225) and FOLLOW_UPS:36
+      already records the open decision.
+
+    Impact: irreversible loss of business/response data and broken reporting once
+    surveys are published. This is the central finding for the review's
+    "database integrity" and "published-survey editing policy" goals.
+
+    Recommendation (pick one, before production / before the reporting phase):
+      a) Block delete (and ideally option/tag structural deletes) when
+         survey.status <> 'draft', returning a clear 409; OR
+      b) Soft-delete / version published structure; OR
+      c) If destructive edits on published surveys are an accepted business
+         choice, require an explicit confirmation flag and document it.
+
+    Note: deletes correctly do NOT leave dangling conditional rules — option and
+    target-question FKs on conditional_logic_rules cascade (0003:65,68), satisfying
+    prompt_4's "must not leave broken conditional rules or answer options."
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+S1. Insert-time display-order shift updates the same rows twice in one statement.
+    - shiftQuestionDisplayOrdersForInsert (surveys.ts:1801-1829) and
+      shiftOptionDisplayOrdersForInsert (1831-1859) use a data-modifying CTE
+      (`moved` UPDATEs every row +offset) AND an outer UPDATE that rewrites the
+      same rows `where id = moved.id`. PostgreSQL treats "modify the same row from
+      two parts of one statement" as unsupported/undefined — only one update is
+      applied and the ordering is unpredictable, which can defeat the very
+      offset-parking the code relies on to avoid the
+      survey_questions_display_order_unique (0003:31) / answer_options unique
+      (0003:44) constraints.
+    - The reorder helpers reorderQuestions/reorderOptions (1905-1959) do this
+      correctly with TWO separate statements (park-then-set). The insert path
+      should follow the same two-statement pattern for consistency and safety.
+    - Practical severity is currently low: the admin UI's "Add question/option"
+      never sends displayOrder, so it always appends (no row is shifted). The
+      hazard is only hit by a mid-list insert with an explicit displayOrder via
+      the API. Per the handoff, reorder/insert was never exercised against a live
+      DB (typecheck/build/lint only), so please add a real insert-at-position and
+      reorder smoke test before relying on it.
+
+S2. Jump rules are not constrained to forward targets.
+    - validateConditionalRuleReferences (surveys.ts:2057-2105) and publish
+      validation (1994-2055) accept a target question with any display order,
+      including the source itself or an earlier question. The runner has a
+      loop guard, but the failure mode is that completion then returns
+      "Survey navigation contains a loop" (2945-2948), making the survey
+      impossible to finish. DATA_MODEL_VISION Q6 (lines 579-585) recommends
+      forward-only jumps for MVP. Recommend validating
+      target.displayOrder > source.displayOrder on create/update and in publish
+      validation.
+
+S3. Two admin paths validate-then-write outside a transaction (minor TOCTOU).
+    - PUT /:id metadata (surveys.ts:129-203) runs validateSurveyCanPublish then
+      UPDATE on the pool, unlike PATCH /:id/status which wraps both in a
+      transaction (205-275). Rule create/update also validate references on the
+      pool (914-1041). Admin-only and low risk, but wrapping the PUT publish path
+      and rule writes in a transaction would make the guarantees uniform.
+
+S4. POST /api/surveys allows creating a survey directly as `retired`.
+    - validateSurveyBody only blocks `published` on create (surveys.ts:85). A new
+      survey created as `retired` is odd (the UI always sends `draft`). Consider
+      forcing new surveys to `draft`.
+
+S5. Accessibility / feedback in the dense builder.
+    - Several inputs rely on placeholder only with no associated <label>:
+      option text (AdminDashboard.tsx:859, 928) and tag key/value
+      (898-899, 917-918). Add aria-label for screen-reader users.
+    - The "Saved" notice (applyUpdatedSurvey, line 106) persists until the next
+      action with no auto-dismiss; consider a timed clear.
+    - Uncontrolled inputs use defaultValue keyed by id; after a save that the
+      server normalizes (e.g. trims), the field keeps the locally typed value
+      until the row id changes. Cosmetic only.
+
+S6. surveys.ts is now ~3,180 lines mixing builder writes, Phase 3 runner, and
+    response readers. As the handoff and FOLLOW_UPS:35 note, extract the builder
+    router/service (and the attempt/response helpers) before reporting adds more
+    table readers. Acceptable to defer this phase.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+- Keeping the builder APIs in apps/api/src/routes/surveys.ts for this phase is
+  acceptable given it kept the new code next to the Phase 3 structure mapping;
+  extraction is correctly deferred (S6).
+- A single large AdminDashboard component is acceptable for a form-based,
+  no-drag-and-drop operational tool per prompt_4. Extraction into smaller builder
+  components can wait.
+- Reorder via temporary +offset then contiguous 1..N assignment is sound in the
+  two-statement reorder helpers (the unique constraints are respected because the
+  offset exceeds max(display_order)). See S1 for the insert variant.
+- Blocking question-type changes after publish while allowing text/help/required
+  edits is a reasonable MVP line.
+- Reorder endpoints require the full id set exactly once
+  (validateQuestionReorderIds / validateOptionReorderIds, 1861-1903), preventing
+  partial reorders from dropping rows. Good.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS
+================================================================================
+
+Direct answers to the handoff's specific questions:
+
+- Does every builder write route enforce auth + admin role?
+  YES. Every POST/PUT/PATCH/DELETE under /api/surveys for surveys, questions,
+  options, tags, rules, and status uses requireAuth + requireRole("admin").
+  requireRole returns 403 for non-admins and 401 when unauthenticated
+  (middleware/auth.ts:62-78). User survey-taking routes (start/answer/complete,
+  my-surveys) correctly use requireAuth only.
+
+- Is Phase 3 standard-user behavior preserved for draft/published/retired?
+  YES. start requires status='published' (surveys.ts:1100-1111); already-started
+  attempts remain resumable/completable; buildMySurveyResponse drops draft
+  surveys (2268). Non-admin GET uses includeAllStatuses=false (32-74).
+
+- Are hidden tags absent from standard-user APIs/UI?
+  YES. answerTags are only attached when includeHiddenTags is true (1557-1559),
+  which is set only for admin GET and the admin-only builder write responses.
+  All user paths (GET list/detail as non-admin, my-surveys, start/answer/complete)
+  pass includeHiddenTags=false. The shared option type leaves answerTags
+  undefined otherwise, so nothing leaks.
+
+- Is publish validation sufficient?
+  Mostly. validateSurveyCanPublish (1994-2055) requires >=1 question, every
+  selection question to have >=1 option, and every rule to reference valid
+  same-survey questions/options with equals/JUMP_TO_QUESTION. Gap: it does not
+  enforce forward-only jump targets (S2).
+
+- Are cross-survey conditional rules fully rejected?
+  YES. validateConditionalRuleReferences checks source question belongs to the
+  survey, source option belongs to the source question, and target question
+  belongs to the same survey (2057-2105); publish-time re-validation repeats this
+  via joins scoped to survey_id (2025-2052).
+
+- Is the temporary-offset reorder safe with the unique constraints?
+  For the reorder endpoints, yes (two-statement park-then-set). For the
+  insert-shift helpers, the single-statement double-update is fragile — see S1.
+
+- Should editing/deleting questions/options be restricted once published?
+  YES, recommended — this is C1. Deletes currently cascade into response history.
+
+- Acceptable to keep builder APIs in surveys.ts for now?
+  Yes for this phase; extract before reporting (S6).
+
+- Does the UI satisfy the form-based business-tool experience without drifting
+  into unnecessary complexity?
+  Yes. It is appropriately dense and operational, no DnD, no marketing styling.
+
+- Accessibility/usability issues to fix before commit?
+  Minor only (S5); none are blockers.
+
+Open decisions for the client/human developer:
+- Confirm the published-survey destructive-edit policy (C1).
+- Confirm whether backward jumps are ever allowed (S2).
+
+Assumption verified during review: the central error handler hides internal
+detail in production and only adds `detail` in non-production
+(middleware/error-handler.ts:5-12), so 500s do not leak implementation details.
+
+================================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================================
+
+- Conditional-logic scope: MASTER_PRODUCT_CONTEXT (lines 132-150) lists
+  show/hide/jump-to-question/jump-to-page as MVP actions, while prompt_4 and
+  DATA_MODEL_VISION explicitly narrow the MVP build to JUMP_TO_QUESTION only.
+  The implementation correctly follows the narrower, more specific phase docs and
+  only exposes/forces JUMP_TO_QUESTION + equals. Flagging the doc tension so the
+  master context can be reconciled later; no action needed in this phase.
+- Hidden tags are handled exactly as the Hidden Tag Principle requires: stored,
+  attached to options, visible to admins in the builder, never to participants.
+- The admin builder is a working operational tool (create/edit/publish/retire,
+  question/option/tag/rule CRUD, up/down reordering), matching prompt_4's
+  "business tool, not a marketing page" and the dense-layout requirement.
+- Survey concept naming is consistent across API and UI (survey, question, answer
+  option, hidden tag, conditional logic / jump rule, attempt, response).
+- Reporting/analytics/CSV export remain correctly out of scope per Non-Goals.
+- Several previously-tracked FOLLOW_UPS are resolved by this phase: cross-survey
+  rule validation, "require >=1 question before publishing," and length bounds on
+  title/description/question/option/tag text.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+Recommendation: APPROVE for the Phase 4 commit, with documented follow-ups.
+
+- No security, authentication, authorization, hidden-tag-exposure, or SQL-injection
+  blockers were found. Validation is server-side and parameterized throughout.
+- Before production (and before the reporting phase), resolve:
+    * C1 — published-survey destructive-edit / cascade data-loss policy.
+    * S1 — harden the insert-shift SQL to the two-statement pattern and add a live
+      insert-at-position + reorder smoke test (this path was never run against a DB).
+- Recommended soon, not blocking: S2 (forward-only jump validation).
+- Before merging, record C1 and S1/S2 in markdown/FOLLOW_UPS.md and summarize
+  accepted/deferred findings in markdown/PHASE_LOG.md (per REVIEW_CHECKLIST
+  "Review And Memory").
+
+Validation still outstanding per the handoff and worth running before sign-off:
+live admin CRUD smoke test, cross-survey rule rejection check, and a
+publish-without-questions check through the running API.

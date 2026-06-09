@@ -790,3 +790,166 @@ Deferred findings:
 - Review findings addressed or deferred: Yes
 - Manual testing complete: Typecheck/lint/build only so far.
 - Ready to commit: Yes; live API/browser smoke testing is still recommended before tagging the phase done.
+
+---
+
+## Phase 4 — Admin Survey Builder MVP
+
+Date:
+2026-06-09
+
+Status:
+Implemented after Claude review fixes
+
+Prompt:
+`prompts/prompt_4.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_4.txt`
+- Claude review: `notes/claude_review_phase_4.txt`
+
+## Goals
+
+- Let administrators create, edit, publish, and retire surveys.
+- Add form-based management for questions, answer options, hidden answer tags, and MVP `JUMP_TO_QUESTION` conditional rules.
+- Enforce authentication and admin authorization for all builder writes.
+- Preserve Phase 3 standard user survey-taking behavior.
+
+## Built
+
+- Added admin-only builder APIs under `/api/surveys` for:
+  - survey metadata and status transitions
+  - question create/edit/delete/reorder
+  - answer option create/edit/delete/reorder
+  - hidden answer tag create/edit/delete
+  - conditional rule create/edit/delete
+- Added publish validation requiring at least one question, answer options for selection questions, and valid same-survey conditional rule references.
+- Added server-side length and enum validation for survey builder writes.
+- Preserved hidden tag isolation by only including `answerTags` when admin paths request hidden tags.
+- Replaced the placeholder admin dashboard with a dense form-based survey builder UI.
+- Added admin frontend API helpers and responsive builder styles.
+- Added post-review hardening so question and answer option deletes are blocked outside draft surveys and against saved response rows.
+- Hardened insert-at-position display-order shifting to use the same two-statement park-then-set approach as reorder endpoints.
+- Added forward-only validation for `JUMP_TO_QUESTION` rules.
+
+## Important Decisions
+
+### Form-Based Builder
+
+Decision:
+Use explicit forms and up/down reorder buttons instead of drag-and-drop.
+
+Reason:
+Phase 4 asks for a maintainable business tool, not a visual designer. This keeps the workflow understandable and keeps ordering operations easy to validate server-side.
+
+Tradeoff:
+The first builder UI is a large single React component and may need extraction after review fixes or before reporting expands the admin area.
+
+### Admin-Only Hidden Tags
+
+Decision:
+Expose answer tags only through admin survey structure responses and builder write responses.
+
+Reason:
+Tags are business metadata for reporting and rules, not participant-facing content.
+
+Tradeoff:
+The shared type still allows optional `answerTags`, so review and tests must keep checking that user survey APIs call the structure loader with hidden tags disabled.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+curl -sS http://127.0.0.1:3000/api/health
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Passed: API health returned `status: ok` and `database: connected`.
+- Not run: automated backend route tests.
+- Not run: browser visual inspection.
+- Not run: live admin builder CRUD smoke test.
+- Not run: live cross-survey conditional-rule rejection smoke test.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_4.txt`
+
+Status:
+
+- Completed
+
+Verdict:
+
+- Approve for commit, with documented follow-ups.
+
+Critical issues:
+
+- C1: Deleting questions/options from a published or retired survey can cascade into collected response data. This must be resolved before production or reporting.
+
+Suggested improvements:
+
+- S1: Insert-time display-order shifting uses a fragile data-modifying CTE plus outer update pattern. Harden it to the same two-statement approach used by reorder helpers and smoke-test insert-at-position.
+- S2: Conditional jump rules currently allow backward/self targets, which can make a survey uncompletable. Enforce forward-only jumps or document an intentional exception.
+- S3/S4/S5/S6: Consider transaction consistency for validate-then-write paths, force new surveys to draft, improve minor accessibility/feedback details, and split the now-large survey route file before reporting work expands.
+
+Accepted follow-ups:
+
+- Fixed C1: question and answer option deletes now return 409 once a survey is no longer draft, returning attempted surveys to draft is blocked, and saved response rows block destructive question/option deletes even if a survey is draft.
+- Fixed S1 code hardening: insert-at-position order shifting now uses two statements instead of a data-modifying CTE that rewrites the same rows.
+- Fixed S2: rule creation/update and publish validation reject backward or self-targeting `JUMP_TO_QUESTION` rules.
+- Kept active follow-up for the live insert-at-position/reorder smoke test.
+- Added active follow-up to extract Phase 4 builder routes/services before admin reporting.
+
+Resolved previous follow-ups:
+
+- Same-survey conditional rule validation is implemented.
+- At-least-one-question publish validation is implemented.
+- Explicit length bounds for survey builder writes are implemented.
+- Response-data destructive question/option delete protection is implemented.
+- Forward-only jump rule validation is implemented.
+
+Second Claude review:
+
+- `notes/claude_review_phase_4_fixes.txt`
+
+Status:
+
+- Completed
+
+Verdict:
+
+- S1 and S2 were fully fixed; C1 needed one more response-preservation guard.
+
+Residual C1 fix:
+
+- Blocked moving a published or retired survey back to draft once it has attempts.
+- Added saved-response checks before deleting a question or answer option, preventing cascade deletion even if a survey is draft.
+- Kept the non-draft delete guards and UI-disabled delete buttons from the first C1 pass.
+- Re-ran `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` after this residual fix.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Claude review created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; no auth, authorization, hidden-tag-exposure, or SQL-injection blockers found.
+- Review findings addressed or deferred: Yes; C1/S1 code hardening/S2 are fixed, and the remaining live ordering smoke test is documented in `markdown/FOLLOW_UPS.md`.
+- Manual testing complete: API health only; admin CRUD smoke testing still recommended.
+- Ready to commit: Yes, with route/service extraction and live ordering smoke testing documented as follow-ups.

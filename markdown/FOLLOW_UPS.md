@@ -27,13 +27,12 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Avoid the redundant `/api/auth/me` fetch immediately after login/register.
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Either query `app_health_check` from the health check or document the table as a migration-pipeline placeholder.
-- Validate conditional rule references belong to the same survey when rule-management endpoints are added.
-- Require at least one question before publishing a survey once admin-builder publish flows exist.
-- Add explicit length bounds for survey titles/descriptions and future question/option text writes.
 - Decide whether completed survey attempts should prevent later repeat attempts through the start endpoint.
 - Hoist pure survey navigation helpers into `packages/shared` if frontend and backend conditional navigation logic grows.
 - Extract survey attempt/response lifecycle helpers from `apps/api/src/routes/surveys.ts` before admin reporting adds more table readers.
 - Define whether changed branching answers should prune now-unreachable saved responses or keep them as historical response data before reporting.
+- Add a live insert-at-position/reorder smoke test for Phase 4 ordering paths.
+- Extract Phase 4 survey-builder routes/services from `apps/api/src/routes/surveys.ts` before admin reporting adds more table readers.
 
 ### Frontend Validation
 
@@ -45,3 +44,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 - Phase 2: Added a safe local admin seed in `database/seeds/0001_phase_2_seed.sql`.
 - Phase 3: Migrated from local-storage bearer JWTs to httpOnly, SameSite cookie auth before persisted survey response data was implemented.
+- Phase 4: Added same-survey conditional rule validation, publish-time question requirements, and explicit length bounds for survey builder writes.
+- Phase 4: Blocked destructive question/answer-option deletes once response data exists, and blocked returning attempted surveys to draft.
+- Phase 4: Hardened insert-at-position display-order shifting to use a two-statement park-then-set pattern.
+- Phase 4: Enforced forward-only `JUMP_TO_QUESTION` rule targets.

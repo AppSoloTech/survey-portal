@@ -1,0 +1,156 @@
+# Claude Review Handoff — Phase 4 Fixes
+
+Claude Code instructions:
+
+- Read this handoff and the listed reference documents before reviewing.
+- Review only the Phase 4 post-review fixes, not the entire Phase 4 implementation from scratch.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_4_fixes.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please verify whether the post-review fixes fully address Phase 4 review findings:
+
+- C1: destructive question/option deletes outside draft can cascade into collected response data
+- S1: insert-at-position display-order shifting used a fragile data-modifying CTE pattern
+- S2: jump rules allowed backward/self targets that could make surveys uncompletable
+
+Also check that the matching admin UI and project-memory updates are consistent with those fixes.
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `notes/claude_review_phase_4.txt`
+- `notes/claude_handoff_phase_4.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/prompt_4.txt`
+
+## Fix Scope
+
+Backend changes to review:
+
+- `apps/api/src/routes/surveys.ts`
+  - `DELETE /api/surveys/:id/questions/:questionId`
+    - now fetches the survey first
+    - returns 404 when the survey does not exist
+    - returns 409 when the survey status is not `draft`
+    - only deletes questions for draft surveys
+  - `DELETE /api/surveys/:id/questions/:questionId/options/:optionId`
+    - now fetches the survey first
+    - returns 404 when the survey does not exist
+    - returns 409 when the survey status is not `draft`
+    - only deletes answer options for draft surveys
+  - `shiftQuestionDisplayOrdersForInsert`
+    - now uses two statements:
+      - park existing rows with a positive offset
+      - set final display orders
+    - no longer updates the same rows through a data-modifying CTE plus outer update in one statement
+  - `shiftOptionDisplayOrdersForInsert`
+    - same two-statement park-then-set change as question shifting
+  - `validateConditionalRuleReferences`
+    - now rejects target questions whose `display_order` is less than or equal to the source question
+  - `validateSurveyCanPublish`
+    - now treats rules as invalid when the target question is not after the source question
+
+Frontend changes to review:
+
+- `apps/web/src/pages/AdminDashboard.tsx`
+  - disables question delete buttons when the survey is not draft
+  - disables answer option delete buttons when the survey is not draft
+  - add-rule target dropdown only lists questions after the selected source question
+  - add-rule button is disabled when no forward target exists
+  - existing rule editor target dropdown only lists questions after the selected source question
+  - tag dropdown fixes from manual UI testing:
+    - add-tag fields start empty
+    - saved tag rows keep their persisted key/value after unrelated saves
+    - add-rule fields start empty
+
+Documentation changes to review:
+
+- `markdown/FOLLOW_UPS.md`
+  - C1 moved to completed
+  - S1 code hardening moved to completed
+  - S2 moved to completed
+  - live insert-at-position/reorder smoke test remains active
+- `markdown/PHASE_LOG.md`
+  - Phase 4 status updated after Claude review fixes
+  - fix summary added
+  - remaining follow-up narrowed to live ordering smoke test and route/service extraction
+
+## Non-Goals For This Fix Review
+
+Do not re-review unrelated Phase 4 scope unless one of these fixes introduced a regression.
+
+Do not require:
+
+- broad route extraction
+- automated backend tests
+- browser automation
+- reporting features
+- schema versioning
+- soft-delete/versioned survey definitions
+
+Those are either deferred or outside Phase 4.
+
+## Validation Already Run After Fixes
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Not run: live insert-at-position API smoke test.
+- Not run: automated backend route tests.
+- Not run: browser re-test after the final C1/S1/S2 fixes.
+
+## Specific Questions
+
+Did the non-draft delete guards fully address C1 for question and answer option deletes?
+
+Are there remaining destructive builder actions that can still cascade into collected response data and should be guarded now?
+
+Is the new two-statement insert-shift approach safe with the existing unique constraints on `(survey_id, display_order)` and `(question_id, display_order)`?
+
+Does forward-only validation cover both rule write paths and publish-time validation?
+
+Does the admin UI correctly mirror the backend policy for disabled deletes and forward-only rule targets?
+
+Are `FOLLOW_UPS.md` and `PHASE_LOG.md` accurate about what was fixed versus what remains deferred?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_4_fixes.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

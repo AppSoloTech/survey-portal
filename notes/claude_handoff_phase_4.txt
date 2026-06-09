@@ -1,0 +1,242 @@
+# Claude Review Handoff — Phase 4
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current Phase 4 diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_4.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- architectural consistency
+- product UX alignment
+- maintainability
+- unnecessary complexity
+- security concerns
+- auth and data exchange security concerns
+- database integrity and extensibility
+- admin authorization coverage
+- survey publishing correctness
+- hidden tag exposure risks
+- conditional rule validation correctness
+- app environment safety
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/prompt_4.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Added admin-only survey builder APIs under `/api/surveys`.
+- Added `PATCH /api/surveys/:id/status` for draft, published, and retired transitions.
+- Tightened legacy survey metadata update behavior so publishing validates survey readiness.
+- Prevented creating a survey directly as `published`.
+- Added admin-only question management:
+  - create questions
+  - edit question text
+  - edit help text
+  - edit required flag
+  - edit question type while the survey is still draft
+  - delete questions
+  - reorder questions without tripping display-order unique constraints
+- Added admin-only answer option management for selection questions:
+  - create options
+  - edit option text
+  - delete options
+  - reorder options without tripping display-order unique constraints
+- Added admin-only hidden answer tag management:
+  - create tags
+  - edit tags
+  - delete tags
+  - handle duplicate tag key/value conflicts
+- Added admin-only conditional rule management for MVP jump rules:
+  - create `JUMP_TO_QUESTION` rules
+  - edit rules
+  - delete rules
+  - force `conditionOperator = equals`
+  - force `actionType = JUMP_TO_QUESTION`
+- Added server-side validation for:
+  - survey title required and length-bounded
+  - survey description length-bounded
+  - survey status values
+  - question text required and length-bounded
+  - question help text length-bounded
+  - question type values
+  - answer option text required and length-bounded
+  - answer tag key/value required and length-bounded
+  - positive display order and resource ids
+  - nested parent ownership for surveys, questions, options, tags, and rules
+  - conditional rule references all belonging to the same survey
+  - source answer option belonging to the source question
+  - source question being `single_select` or `multi_select`
+- Added publish validation requiring:
+  - at least one question
+  - every selection question has at least one answer option
+  - conditional rule references are valid and limited to `equals`/`JUMP_TO_QUESTION`
+- Preserved Phase 3 standard user behavior:
+  - users can only start published surveys
+  - already-started retired survey attempts remain resumable/completable
+  - draft surveys remain inaccessible to standard users
+  - standard user survey APIs still call survey structure loading with hidden tags disabled
+- Added admin frontend API helpers for survey builder writes.
+- Replaced the placeholder admin dashboard with a form-based builder UI.
+- Admin UI now supports:
+  - survey creation
+  - survey metadata editing
+  - publish/retire controls
+  - question creation/editing/deletion/reordering
+  - answer option creation/editing/deletion/reordering
+  - hidden tag creation/editing/removal
+  - conditional jump rule creation/editing/deletion
+- Added responsive CSS for a dense operational admin builder.
+
+Non-goals:
+
+- Drag-and-drop builder.
+- Analytics.
+- Reporting.
+- CSV export.
+- Advanced visual builder.
+- Scoring engine.
+- Additional conditional action types:
+  - `SHOW_QUESTION`
+  - `HIDE_QUESTION`
+  - `JUMP_TO_PAGE`
+  - `END_SURVEY`
+- Rule evaluation changes beyond preserving existing Phase 3 `JUMP_TO_QUESTION` behavior.
+- Database schema changes.
+- Automated route tests.
+- Browser automation or screenshot review.
+
+Known tradeoffs:
+
+- `apps/api/src/routes/surveys.ts` is now very large. This kept Phase 4 close to the existing survey structure mapping and Phase 3 attempt logic, but the route should likely be split into focused service/router modules before reporting or tests add more behavior.
+- The admin UI is intentionally form-based and operational, but it is a large single component. It may deserve extraction into smaller builder components after review.
+- Delete operations rely on the existing explicit foreign keys and cascade behavior. This is aligned with the schema, but review should confirm there are no response-history implications that should block deletion for published surveys.
+- The UI lets admins edit metadata/status through the metadata form and through publish/retire buttons. The backend is the source of truth and applies publish validation on both paths.
+- Reordering uses temporary positive display-order offsets before assigning final contiguous order values to avoid unique constraint conflicts.
+- Existing Phase 3 user route code remains in the same file as the new builder routes, so review should be careful to distinguish intended admin behavior from user survey-taking behavior.
+
+Deferred work:
+
+- Add automated backend tests for admin authorization, publish validation, nested ownership validation, and hidden tag exposure.
+- Add route-level tests for invalid cross-survey conditional rules.
+- Add browser-based layout inspection for `/admin`.
+- Extract survey builder route/service helpers from `apps/api/src/routes/surveys.ts` after the Phase 4 behavior is reviewed.
+- Consider published-survey editing policy before production use, especially whether deleting questions/options from published surveys should be blocked or versioned.
+- Update `markdown/PHASE_LOG.md` after Claude review and any review fixes are complete.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Expected new files:
+
+```txt
+notes/claude_handoff_phase_4.txt
+```
+
+Expected modified files include:
+
+```txt
+apps/api/src/routes/surveys.ts
+apps/web/src/api/surveys.ts
+apps/web/src/pages/AdminDashboard.tsx
+apps/web/src/styles.css
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+curl -sS http://127.0.0.1:3000/api/health
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Passed: API health check returned `status: ok` and `database: connected`.
+- Not run: automated backend route tests.
+- Not run: browser visual inspection.
+- Not run: live admin builder CRUD smoke test through the UI.
+- Not run: live cross-survey conditional-rule rejection smoke test.
+
+Manual testing:
+
+- Started the local dev server after implementation.
+- Confirmed web dev server was available at `http://127.0.0.1:5173/`.
+- Confirmed API dev server was available at `http://127.0.0.1:3000/`.
+- Confirmed `/api/health` returned a connected database status.
+
+## Specific Questions
+
+Does every new builder write route enforce both authentication and admin role authorization?
+
+Does the implementation preserve Phase 3 standard user behavior for published, draft, and retired surveys?
+
+Are hidden tags still absent from standard user survey-taking APIs and UI?
+
+Is the publish validation sufficient for Phase 4, especially for selection options and conditional rule references?
+
+Are cross-survey conditional rules fully rejected?
+
+Is the temporary-offset reorder approach safe with the existing unique constraints?
+
+Should editing or deleting questions/options be restricted once a survey has been published, beyond the current restriction on changing question type?
+
+Is it acceptable for Phase 4 to keep the builder APIs in `apps/api/src/routes/surveys.ts`, or should extraction happen before commit?
+
+Does the admin builder UI satisfy the requested form-based business-tool experience without drifting into unnecessary complexity?
+
+Are there accessibility or usability issues in the dense admin builder layout that should be fixed before commit?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_4.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

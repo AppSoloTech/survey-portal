@@ -3,7 +3,11 @@ import type {
   CompleteSurveyResponse,
   MySurveyResponse,
   MySurveysResponse,
-  StartSurveyResponse
+  StartSurveyResponse,
+  SurveyListResponse,
+  SurveyQuestionType,
+  SurveyResponse,
+  SurveyStatus
 } from "@survey-portal/shared";
 
 export async function fetchMySurveys(): Promise<MySurveysResponse> {
@@ -49,6 +53,256 @@ export async function completeSurvey(input: {
       attemptId: input.attemptId
     }),
     method: "POST"
+  });
+}
+
+export async function fetchAdminSurveys(): Promise<SurveyListResponse> {
+  return apiRequest<SurveyListResponse>("/api/surveys");
+}
+
+export async function createSurvey(input: {
+  title: string;
+  description: string | null;
+  status?: SurveyStatus;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>("/api/surveys", {
+    body: JSON.stringify({
+      title: input.title,
+      description: input.description,
+      status: input.status ?? "draft"
+    }),
+    method: "POST"
+  });
+}
+
+export async function updateSurveyMetadata(input: {
+  surveyId: number;
+  title: string;
+  description: string | null;
+  status: SurveyStatus;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}`, {
+    body: JSON.stringify({
+      title: input.title,
+      description: input.description,
+      status: input.status
+    }),
+    method: "PUT"
+  });
+}
+
+export async function updateSurveyStatus(input: {
+  surveyId: number;
+  status: SurveyStatus;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/status`, {
+    body: JSON.stringify({ status: input.status }),
+    method: "PATCH"
+  });
+}
+
+export async function createQuestion(input: {
+  surveyId: number;
+  questionText: string;
+  questionType: SurveyQuestionType;
+  isRequired: boolean;
+  helpText: string | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/questions`, {
+    body: JSON.stringify({
+      questionText: input.questionText,
+      questionType: input.questionType,
+      isRequired: input.isRequired,
+      helpText: input.helpText
+    }),
+    method: "POST"
+  });
+}
+
+export async function updateQuestion(input: {
+  surveyId: number;
+  questionId: number;
+  questionText: string;
+  questionType: SurveyQuestionType;
+  isRequired: boolean;
+  helpText: string | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}`,
+    {
+      body: JSON.stringify({
+        questionText: input.questionText,
+        questionType: input.questionType,
+        isRequired: input.isRequired,
+        helpText: input.helpText
+      }),
+      method: "PUT"
+    }
+  );
+}
+
+export async function deleteQuestion(input: {
+  surveyId: number;
+  questionId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function reorderQuestions(input: {
+  surveyId: number;
+  questionIds: number[];
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/questions/reorder`, {
+    body: JSON.stringify({ questionIds: input.questionIds }),
+    method: "PATCH"
+  });
+}
+
+export async function createAnswerOption(input: {
+  surveyId: number;
+  questionId: number;
+  optionText: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options`,
+    {
+      body: JSON.stringify({ optionText: input.optionText }),
+      method: "POST"
+    }
+  );
+}
+
+export async function updateAnswerOption(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+  optionText: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}`,
+    {
+      body: JSON.stringify({ optionText: input.optionText }),
+      method: "PUT"
+    }
+  );
+}
+
+export async function deleteAnswerOption(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function reorderAnswerOptions(input: {
+  surveyId: number;
+  questionId: number;
+  optionIds: number[];
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/reorder`,
+    {
+      body: JSON.stringify({ optionIds: input.optionIds }),
+      method: "PATCH"
+    }
+  );
+}
+
+export async function createAnswerTag(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+  tagKey: string;
+  tagValue: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}/tags`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey, tagValue: input.tagValue }),
+      method: "POST"
+    }
+  );
+}
+
+export async function updateAnswerTag(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+  tagId: number;
+  tagKey: string;
+  tagValue: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}/tags/${input.tagId}`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey, tagValue: input.tagValue }),
+      method: "PUT"
+    }
+  );
+}
+
+export async function deleteAnswerTag(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+  tagId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}/tags/${input.tagId}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function createConditionalRule(input: {
+  surveyId: number;
+  sourceQuestionId: number;
+  sourceAnswerOptionId: number;
+  targetQuestionId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules`, {
+    body: JSON.stringify({
+      sourceQuestionId: input.sourceQuestionId,
+      sourceAnswerOptionId: input.sourceAnswerOptionId,
+      targetQuestionId: input.targetQuestionId,
+      conditionOperator: "equals",
+      actionType: "JUMP_TO_QUESTION"
+    }),
+    method: "POST"
+  });
+}
+
+export async function updateConditionalRule(input: {
+  surveyId: number;
+  ruleId: number;
+  sourceQuestionId: number;
+  sourceAnswerOptionId: number;
+  targetQuestionId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
+    body: JSON.stringify({
+      sourceQuestionId: input.sourceQuestionId,
+      sourceAnswerOptionId: input.sourceAnswerOptionId,
+      targetQuestionId: input.targetQuestionId,
+      conditionOperator: "equals",
+      actionType: "JUMP_TO_QUESTION"
+    }),
+    method: "PUT"
+  });
+}
+
+export async function deleteConditionalRule(input: {
+  surveyId: number;
+  ruleId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
+    method: "DELETE"
   });
 }
 
