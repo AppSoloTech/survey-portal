@@ -82,5 +82,6 @@ Use this checklist before committing a phase and when preparing Claude review ha
 - `notes/claude_handoff_phase_X.txt` was created after phase implementation.
 - `notes/claude_review_phase_X.txt` was created after Claude review, or `markdown/PHASE_LOG.md` explicitly marks the review as pending.
 - Accepted and deferred findings are summarized in `markdown/PHASE_LOG.md`.
+- Deferred findings and loose ends are added to `markdown/FOLLOW_UPS.md` when they should remain visible to future phases.
 - Follow-up tasks have owners or clear future phase placement.
 - Commit readiness is explicitly documented.

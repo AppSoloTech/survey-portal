@@ -1,0 +1,226 @@
+# Claude Review — Phase 1 (Authentication and Role System)
+
+Reviewer: Claude Code
+Date: 2026-06-09
+Branch: phase-1-auth
+Scope reviewed: current phase diff (git diff + untracked auth files)
+Prompt: prompts/prompt_1.txt
+Handoff: notes/claude_handoff_phase_1.txt
+
+Reference documents read: ARCHITECTURE_PRINCIPLES.md, DATA_MODEL_VISION.md,
+FLOW.md, REVIEW_CHECKLIST.md, PHASE_LOG.md, MASTER_PRODUCT_CONTEXT.txt,
+GLOBAL_DEVELOPMENT_ENVIRONMENT.txt, prompt_1.txt.
+
+Overall: Strong, well-scoped phase. The implementation respects the phase
+non-goals, follows the architecture principles, and gets the security
+fundamentals right. No blocking issues found. The notes below are
+improvements and tradeoffs, not commit blockers.
+
+================================================================
+1. CRITICAL ISSUES
+================================================================
+
+None blocking the Phase 1 commit.
+
+The security fundamentals required by ARCHITECTURE_PRINCIPLES.md and
+MASTER_PRODUCT_CONTEXT.txt are correctly implemented:
+
+- Passwords hashed with bcrypt (cost 12); plaintext never stored or logged.
+- All SQL is parameterized (apps/api/src/routes/auth.ts,
+  apps/api/src/middleware/auth.ts) — no injection surface.
+- password_hash is selected into UserRecord but always stripped by
+  mapUserRecord() before any response — it never reaches the client.
+- Authorization is server-side and DB-sourced: requireAuth re-loads the user
+  row on every request and requireRole checks the role from that row, NOT
+  from the JWT claim. This means a demoted/removed admin cannot keep admin
+  access with an old token. This is the correct, secure design — call it out
+  and keep it.
+- /api/admin/me is correctly chained requireAuth -> requireRole("admin").
+- Login returns a single generic 401 ("Invalid email or password") for both
+  unknown email and wrong password — no message-based user enumeration.
+- express.json({ limit: "100kb" }) caps request body size (DoS hardening).
+- JWT_SECRET is required at startup via readRequiredEnv; the app fails fast
+  if it is missing.
+
+================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================
+
+(Priority order. None are required for Phase 1 commit; several are good
+candidates for a small follow-up before more auth-sensitive surface lands.)
+
+S1. Login timing side-channel enables user enumeration (low severity).
+    In apps/api/src/routes/auth.ts the bcrypt compare only runs when a row
+    is found; for unknown emails the function returns immediately. The
+    response-time difference lets an attacker distinguish registered from
+    unregistered emails even though the error message is identical.
+    Fix: when no row is found, run a dummy bcrypt.compare against a fixed
+    decoy hash so both paths take comparable time. Cheap and standard.
+
+S2. No brute-force / rate limiting on /login and /register.
+    Not required by prompt_1 (and not listed as a non-goal), but worth
+    recording as deferred. A simple per-IP limiter (e.g. express-rate-limit)
+    on the auth routes is the natural place before public exposure. Keep it
+    out of Phase 1 if you want to stay strictly scoped, but track it.
+
+S3. JWT_SECRET has no strength guard.
+    readRequiredEnv only checks non-empty, and .env.example ships the
+    placeholder "replace_with_a_local_development_secret". A weak/guessable
+    secret silently undermines the entire auth model. Consider a minimum
+    length check (e.g. reject < 32 chars) in config.ts, at least when
+    RUN_ENV=prod, mirroring the existing "NODE_ENV must be production" guard.
+
+S4. Drop password_hash from the requireAuth user lookup.
+    apps/api/src/middleware/auth.ts selects password_hash on every
+    authenticated request just to discard it in mapUserRecord. Selecting it
+    only where verifyPassword needs it (login) reduces the exposure surface
+    and is marginally cheaper. Low priority but easy.
+
+S5. Centralize the user SELECT column list.
+    The same "select id, first_name, ... updated_at from users" projection
+    is duplicated in middleware/auth.ts and routes/auth.ts. As the table
+    grows this drifts. Consider a shared constant or a small
+    findUserById/findUserByEmail helper colocated with auth.ts.
+
+S6. bcrypt 72-byte truncation not handled.
+    bcrypt silently truncates input beyond 72 bytes, so two long passwords
+    sharing a 72-byte prefix verify as equal. With only a min-length check
+    and no max, this is a latent surprise. Add a reasonable max password
+    length (e.g. <= 72 or <= 128 with documented truncation) in
+    validateRegistrationBody. Minor.
+
+S7. Redundant /me fetch and possible loading flicker after login.
+    In AuthContext, login()/register() call storeSession (sets token+user),
+    which changes `token` and re-triggers the useEffect that calls
+    fetchCurrentUser and flips isLoading back to true. The user is already
+    populated so it's not a bug, but it fires an extra /me request and can
+    briefly re-show "Checking session..." on the destination route. Consider
+    skipping the rehydrate effect when user is already set for this token.
+
+================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================
+
+T1. JWT in localStorage + bearer header.
+    Acceptable for Phase 1. localStorage is XSS-exfiltratable, so this should
+    be revisited (httpOnly, SameSite cookies) before survey data containing
+    hidden compliance tags and business metadata is stored. Recommend
+    flagging the switch decision for the phase that introduces real survey
+    data, not deferring it indefinitely. Documented in PHASE_LOG — fine.
+
+T2. Stateless logout (client token removal + validating endpoint).
+    Acceptable. The 1h token expiry bounds the exposure window. Server-side
+    revocation (denylist/session table) is correctly deferred per non-goals.
+
+T3. Admin creation via direct DB promotion; /api/admin/me as a probe.
+    Acceptable and explicitly in line with the prompt (admin management
+    screens are a non-goal). The probe route is minimal and correctly
+    protected.
+
+T4. shared package `types` -> src/index.ts while runtime import -> dist.
+    Acceptable for an internal workspace package. Types stay current without
+    rebuilding dist declarations, which removes the stale-.d.ts problem. The
+    cost is a hard build-order coupling: packages/shared MUST be built before
+    the API runs (runtime still imports dist/index.js). That coupling already
+    exists and is documented; just ensure the root build/dev scripts always
+    build shared first so a fresh checkout doesn't hit a missing dist.
+
+T5. Manual migration application (psql) with no runner.
+    Consistent with Phase 0. Fine for now; a migration runner is a later
+    concern.
+
+================================================================
+4. QUESTIONS OR ASSUMPTIONS (answers to handoff questions)
+================================================================
+
+Q: Did this violate DATA_MODEL_VISION.md by adding only the User schema?
+A: No. prompt_1 explicitly says "Do not create survey tables yet," and FLOW's
+   source-of-truth order puts the current phase prompt above the data-model
+   vision for scope. The users table fields (id, first_name, last_name,
+   email, password_hash, role, created_at, updated_at), the unique email,
+   and the role enum all match DATA_MODEL_VISION's User entity exactly.
+   No violation.
+
+Q: Is localStorage bearer JWT acceptable for the MVP at this phase?
+A: Acceptable now (see T1). Recommend committing to a cookie-based migration
+   decision before the phase that stores real survey responses/hidden tags,
+   since that data is sensitive. Not a Phase 1 blocker.
+
+Q: Are the current validation rules sufficient (password length, normalized
+   email, name presence)?
+A: Sufficient for Phase 1. Email is trimmed+lowercased (normalizeEmail) and
+   validated with a basic but adequate regex; first/last/email/password
+   presence is enforced server-side; password >= 8. Minor gaps: no max
+   password length (see S6) and no max name length (bounded only by the
+   100kb body limit). Frontend minLength=8 matches the backend — good
+   consistency. No changes required this phase.
+
+Q: Is GET /api/admin/me an acceptable minimal admin-only route?
+A: Yes. It proves server-side role enforcement with requireAuth +
+   requireRole("admin") and exposes no admin functionality. Good fit for the
+   non-goals.
+
+Q: Should /api/auth/logout remain a validating no-content endpoint, or should
+   revocation be introduced earlier?
+A: Keep it as-is for Phase 1 (see T2). With a 1h expiry and stateless tokens,
+   client-side removal is a reasonable MVP posture. Introduce revocation only
+   when a concrete requirement appears (e.g. forced logout / compromised
+   token handling).
+
+Q: Is exposing shared `types` from src while runtime uses dist acceptable?
+A: Yes for this internal workspace (see T4) — just guarantee shared builds
+   before the API in all build/dev scripts.
+
+Assumptions made during review:
+- Handoff's validation results (typecheck/lint/build/audit pass, endpoint
+  behaviors verified) are accurate; I did not re-run them.
+- No real secrets are committed (.env.example carries placeholders only;
+  JWT_SECRET placeholder confirmed as a placeholder).
+
+================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================
+
+- User and admin areas are cleanly separated; the Admin nav link only renders
+  for admin role, and AdminRoute redirects non-admins to /dashboard.
+- Auth states are handled: ProtectedRoute/AdminRoute show a "Checking
+  session..." loading state, and isLoading is initialized from token presence
+  to avoid an unauthenticated flash on reload.
+- Login preserves the intended destination via location.state.from and
+  redirects back after auth — good touch. The redirect target is an internal
+  pathname used with client-side <Navigate>, so no open-redirect risk.
+- Forms give inline error feedback and disable the submit button while
+  submitting; copy does not leak internal terms (roles shown are just
+  user/admin). Good per REVIEW_CHECKLIST Frontend UX.
+- Minor: logout exists in two places (header + UserDashboard button). The
+  header logout navigates to /login; the dashboard button relies on
+  ProtectedRoute to bounce after isAuthenticated flips. Both work; consider
+  consolidating for consistency, but not required.
+- Minor: AdminDashboard has no logout button (header covers it) — fine.
+
+================================================================
+6. COMMIT READINESS
+================================================================
+
+Recommendation: READY TO COMMIT for Phase 1.
+
+- Phase requirements implemented: Yes (register, login, /me, logout, bcrypt,
+  JWT, roles, protected API + frontend routes, persistence).
+- Non-goals respected: Yes (no password reset, email verification, OAuth,
+  survey functionality, admin screens, or revocation list).
+- Architecture alignment: Yes (modular monolith, REST under /api,
+  parameterized SQL, server-side authz, env-var config).
+- Data-model alignment: Yes (users table matches the vision; survey tables
+  correctly deferred).
+- Security: Fundamentals correct; no blocking issues. S1 (login timing) and
+  S3 (JWT secret strength) are the most worthwhile quick follow-ups but are
+  not blockers.
+- No critical issues outstanding.
+
+Suggested handling of findings:
+- Optional quick fixes before commit: S1, S3 (both small, both security).
+- Defer with tracking: S2 (rate limiting), T1 cookie-migration decision.
+- Backlog/cleanup: S4, S5, S6, S7, UX logout consolidation.
+
+Update PHASE_LOG.md Phase 1 "Claude Review Notes" with the accepted vs
+deferred decisions once the human developer triages the above.

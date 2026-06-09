@@ -7,6 +7,8 @@ import express from "express";
 import { config } from "./config.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
+import { adminRouter } from "./routes/admin.js";
+import { authRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,7 +18,7 @@ export function createApp() {
   const app = express();
 
   app.use(requestLogger);
-  app.use(express.json());
+  app.use(express.json({ limit: "100kb" }));
 
   if (!config.isProduction) {
     app.use(
@@ -27,6 +29,8 @@ export function createApp() {
   }
 
   app.use("/api/health", healthRouter);
+  app.use("/api/auth", authRouter);
+  app.use("/api/admin", adminRouter);
 
   const staticPath = path.resolve(__dirname, "../../web/dist");
   app.use(express.static(staticPath));

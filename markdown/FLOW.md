@@ -18,6 +18,7 @@ The goal is to keep implementation phases small, reviewable, secure, and aligned
 | `markdown/REVIEW_CHECKLIST.md` | Quality gate for implementation and review |
 | `markdown/PHASE_TEMPLATE.md` | Reusable phase log entry template |
 | `markdown/PHASE_LOG.md` | Durable project memory and phase decisions |
+| `markdown/FOLLOW_UPS.md` | Active deferred work and loose ends to revisit before future phases |
 | `markdown/CLAUDE_REVIEW_TEMPLATE.md` | Per-phase review handoff template |
 | `prompts/prompt_X.txt` | Phase-specific implementation prompt |
 | `notes/claude_handoff_phase_X.txt` | Per-phase review handoff artifact |
@@ -39,7 +40,8 @@ When documents conflict, resolve them in this order:
 6. Current `prompts/prompt_X.txt`
 7. `markdown/FLOW.md`
 8. `markdown/REVIEW_CHECKLIST.md`
-9. Older entries in `markdown/PHASE_LOG.md`
+9. `markdown/FOLLOW_UPS.md`
+10. Older entries in `markdown/PHASE_LOG.md`
 
 If a conflict changes product direction, architecture, security posture, or deployment assumptions, update the durable reference document and record the decision in `markdown/PHASE_LOG.md`.
 
@@ -126,6 +128,7 @@ Before implementation, read:
 - `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
 - `markdown/FLOW.md`
 - `markdown/REVIEW_CHECKLIST.md`
+- `markdown/FOLLOW_UPS.md`
 - current `prompts/prompt_X.txt`
 - recent entries in `markdown/PHASE_LOG.md`
 
@@ -138,6 +141,7 @@ Confirm:
 - database ownership boundaries
 - data-model boundaries and deferred future entities
 - expected validation commands
+- active follow-ups that should be fixed, deferred again, or folded into the phase scope
 
 ### Step 2 - Revalidate Roadmap Alignment
 
@@ -150,6 +154,8 @@ Before continuing to an older prompt, confirm whether it should be:
 - discarded because it no longer matches product direction
 
 Record the decision in `markdown/PHASE_LOG.md` when it affects future work.
+
+Review `markdown/FOLLOW_UPS.md` before implementation and decide whether any active follow-up should be included in the current phase. If a phase introduces new deferred work, add it to `markdown/FOLLOW_UPS.md` before commit readiness.
 
 ### Step 3 - Create Or Checkout A Phase Branch
 

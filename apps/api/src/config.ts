@@ -12,6 +12,7 @@ dotenv.config({ path: rootEnvPath });
 dotenv.config({ path: workspaceEnvPath });
 
 type RunEnvironment = "dev" | "prod";
+const localJwtSecretPlaceholder = "replace_with_a_local_development_secret";
 
 function readRunEnv(): RunEnvironment {
   const value = process.env.RUN_ENV ?? "dev";
@@ -71,6 +72,22 @@ function readOptionalDatabaseSslCa(): string | undefined {
   return fs.readFileSync(caPath, "utf8");
 }
 
+function readJwtSecret(runEnv: RunEnvironment): string {
+  const value = readRequiredEnv("JWT_SECRET");
+
+  if (runEnv === "prod") {
+    if (value === localJwtSecretPlaceholder) {
+      throw new Error("JWT_SECRET must not use the local placeholder when RUN_ENV is prod");
+    }
+
+    if (value.length < 32) {
+      throw new Error("JWT_SECRET must be at least 32 characters when RUN_ENV is prod");
+    }
+  }
+
+  return value;
+}
+
 const runEnv = readRunEnv();
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const isProduction = runEnv === "prod";
@@ -87,5 +104,7 @@ export const config = {
   host: process.env.API_HOST ?? "127.0.0.1",
   webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
   databaseUrl: readDatabaseUrl(runEnv),
-  databaseSslCa: readOptionalDatabaseSslCa()
+  databaseSslCa: readOptionalDatabaseSslCa(),
+  jwtSecret: readJwtSecret(runEnv),
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "1h"
 } as const;

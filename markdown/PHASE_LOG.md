@@ -231,3 +231,220 @@ Deferred findings:
 - Review findings addressed or deferred: Yes; C1/C2 were fixed after review, and the Azure health-readiness item remains deferred and tracked.
 - Manual testing complete: Basic server and route checks complete.
 - Ready to commit: Yes
+
+---
+
+## Phase 1 — Authentication and Role System
+
+Date:
+2026-06-09
+
+Status:
+Completed
+
+Prompt:
+`prompts/prompt_1.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_1.txt`
+- Claude review: `notes/claude_review_phase_1.txt`
+
+## Goals
+
+- Implement registration and login.
+- Hash passwords with bcrypt.
+- Issue and verify JWT bearer tokens.
+- Store and enforce `user` and `admin` roles.
+- Protect API and frontend routes.
+- Persist frontend authentication state across reloads.
+
+## Built
+
+- Added `users` migration with unique email, bcrypt hash storage, role check constraint, and timestamps.
+- Added shared auth response/user types.
+- Added API auth helpers, auth middleware, and role middleware.
+- Added `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout`.
+- Added `GET /api/admin/me` as a minimal admin-only authorization probe.
+- Added React auth API client, auth provider, protected route guard, admin route guard, login form, registration form, session persistence, and logout action.
+- Updated user/admin dashboards to consume authenticated user state.
+- Added bcrypt/jsonwebtoken dependencies and TypeScript types.
+- Added post-review hardening for missing-email login timing and production JWT secret strength.
+
+## Important Decisions
+
+### Bearer JWT Persistence
+
+Decision:
+Store the JWT in browser local storage and send it as an `Authorization: Bearer` header.
+
+Reason:
+Matches the phase requirement for JWT auth and keeps the Phase 1 implementation simple without adding cookie/session infrastructure before the app needs it.
+
+Tradeoff:
+Logout is client-side token removal plus a validating logout endpoint; true server-side token revocation is deferred unless future requirements call for it.
+
+### Admin Authorization Probe
+
+Decision:
+Add `GET /api/admin/me` as the first admin-only API route.
+
+Reason:
+Prompt 1 requires server-side admin route protection, but admin management screens are explicitly out of scope.
+
+Tradeoff:
+The route exists only to validate authorization and return the current admin identity; real admin features remain deferred.
+
+### Shared Package Types
+
+Decision:
+Expose `packages/shared/src/index.ts` as the package `types` entry while keeping runtime imports pointed at `dist/index.js`.
+
+Reason:
+App package typechecks need current shared TypeScript types without relying on stale ignored `dist` declarations.
+
+Tradeoff:
+The shared package still must be built before runtime execution because runtime imports use compiled JavaScript.
+
+## Architecture Notes
+
+- Database/schema impact: added only the `users` auth table; no survey tables were created.
+- API contract impact: added `/api/auth/*` endpoints and a minimal `/api/admin/me` protected endpoint.
+- Auth or authorization impact: JWT auth, bcrypt hashing, user lookup, and role checks are now server-enforced.
+- Data privacy or visibility impact: passwords are never returned by API responses; request logging still logs paths only.
+- Frontend UX impact: login/register are working forms; dashboard/admin routes are guarded.
+- Environment or deployment impact: `JWT_SECRET` is required at API startup; `.env.example` already documents placeholder values.
+- Environment or deployment impact: `RUN_ENV=prod` rejects the local JWT placeholder and secrets shorter than 32 characters.
+
+## Validation
+
+Commands run:
+
+```bash
+npm install -w apps/api bcrypt jsonwebtoken
+npm install -D -w apps/api @types/bcrypt @types/jsonwebtoken
+npm run typecheck
+npm run lint
+npm run build
+psql "$DATABASE_URL" -f database/migrations/0002_users.sql
+node apps/api/dist/server.js
+node auth endpoint validation scripts
+env RUN_ENV=prod NODE_ENV=production DATABASE_URL=postgresql://user:pass@example.com:5432/db JWT_SECRET=short node -e "import('./apps/api/dist/config.js')"
+env RUN_ENV=prod NODE_ENV=production DATABASE_URL=postgresql://user:pass@example.com:5432/db JWT_SECRET=replace_with_a_local_development_secret node -e "import('./apps/api/dist/config.js')"
+```
+
+Results:
+
+- Passed: dependency install and npm audit reported zero vulnerabilities.
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: users migration applied locally.
+- Passed: unauthenticated `/api/auth/me` returned 401.
+- Passed: registration returned 201 with user and token.
+- Passed: duplicate email registration returned 409.
+- Passed: login returned a token.
+- Passed: authenticated `/api/auth/me` returned current user.
+- Passed: standard user received 403 from `/api/admin/me`.
+- Passed: stored password hash was not plaintext and used bcrypt format.
+- Passed: direct DB promotion to admin allowed `/api/admin/me`.
+- Passed after review: production startup rejects `JWT_SECRET` shorter than 32 characters.
+- Passed after review: production startup rejects the local placeholder `JWT_SECRET`.
+- Passed after review: missing-email login still returns a generic 401 while running a dummy bcrypt comparison.
+- Failed: sandboxed local DB/server/network commands were blocked until rerun with approved local access.
+- Not run: browser visual inspection.
+
+Manual tests:
+
+- Exercised registration, duplicate email rejection, login, current-user lookup, logout, user-role authorization rejection, bcrypt storage, and admin-role authorization through local API calls.
+- Confirmed no production secrets were added to tracked files.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_1.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None blocking Phase 1 commit.
+
+Suggested improvements:
+
+- S1: Login timing side-channel on missing-email path.
+- S2: Add rate limiting on `/api/auth/login` and `/api/auth/register` before public exposure.
+- S3: Add production JWT secret strength guard.
+- S4: Drop `password_hash` from authenticated user lookups that do not need it.
+- S5: Centralize user SELECT projections.
+- S6: Add a max password length to avoid bcrypt 72-byte truncation surprises.
+- S7: Avoid redundant `/api/auth/me` fetch immediately after login/register.
+
+Accepted fixes:
+
+- Fixed S1: missing-email login now performs a dummy bcrypt comparison using a decoy hash before returning generic 401.
+- Fixed S3: `RUN_ENV=prod` rejects the local JWT placeholder and secrets shorter than 32 characters.
+- Fixed S4: authenticated current-user lookup no longer selects `password_hash`.
+
+Deferred findings:
+
+- Server-side token revocation is deferred because it is not required by Prompt 1.
+- S2: rate limiting is deferred until public exposure or a security hardening phase.
+- S5: central user SELECT helpers are deferred until there is more query reuse.
+- S6: max password length is deferred as a validation-hardening follow-up.
+- S7: redundant `/api/auth/me` fetch after login/register is deferred as a UX/performance polish item.
+- T1: revisit local-storage JWT versus httpOnly cookie auth before real survey response or hidden-tag data lands.
+- Password reset, email verification, OAuth, survey functionality, and admin management screens remain deferred by prompt scope.
+- Active follow-ups are copied to `markdown/FOLLOW_UPS.md` so future phases review them before implementation.
+
+## Problems Encountered
+
+- Problem:
+  Sandboxed npm install hung behind network isolation.
+  Resolution:
+  Stopped the stuck process and reran dependency installation with approved network access.
+
+- Problem:
+  TypeScript initially read stale ignored shared declaration output after adding new shared auth types.
+  Resolution:
+  Updated shared package type metadata to expose source types while preserving compiled runtime imports.
+
+- Problem:
+  Sandboxed local PostgreSQL and localhost API connections were blocked.
+  Resolution:
+  Reran migration, temporary server startup, and endpoint validation with approved local access.
+
+- Problem:
+  Claude review found a low-severity login timing side-channel on the missing-email path.
+  Resolution:
+  Added a fixed bcrypt decoy hash comparison for missing-user login attempts.
+
+- Problem:
+  Claude review found no production strength guard for `JWT_SECRET`.
+  Resolution:
+  Added production startup checks for placeholder and short JWT secrets.
+
+## Follow-Up Tasks
+
+- Consider adding an automated backend test harness before additional auth-sensitive behavior grows.
+- Add rate limiting to auth routes before public exposure.
+- Revisit local-storage JWT versus httpOnly cookie auth before real survey response or hidden-tag data lands.
+- Add max password length validation in a future auth-hardening pass.
+- Update `/api/health` readiness semantics before Azure health checks rely on it.
+- Add a real admin creation/seed workflow in a later admin or deployment phase.
+- Keep any future loose ends in `markdown/FOLLOW_UPS.md` before committing a phase.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude review found no blocking issues.
+- Review findings addressed or deferred: Yes; S1/S3/S4 fixed, remaining findings deferred.
+- Manual testing complete: API-level auth testing complete; browser visual inspection not run
+- Ready to commit: Yes

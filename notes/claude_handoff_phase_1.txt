@@ -1,0 +1,156 @@
+# Claude Review Handoff — Phase 1
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_1.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- architectural consistency
+- product UX alignment
+- maintainability
+- unnecessary complexity
+- security concerns
+- auth and data exchange security concerns
+- app environment safety
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_1.txt`
+
+## Phase Scope
+
+Implemented:
+
+- User registration with server validation, unique normalized email, bcrypt password hashing, and default `user` role.
+- User login with bcrypt verification and JWT issuance.
+- `GET /api/auth/me` protected by JWT authentication.
+- `POST /api/auth/logout` protected by JWT authentication.
+- Server-side role middleware and `GET /api/admin/me` as a minimal admin-only authorization probe.
+- Initial `users` migration with role constraint and unique email.
+- React login/register forms with validation feedback.
+- React auth provider with local-storage token persistence and `/api/auth/me` rehydration.
+- `ProtectedRoute` and `AdminRoute` frontend guards.
+- User/admin dashboard auth state integration and logout action.
+- Shared auth response/user types.
+
+Non-goals:
+
+- Password reset.
+- Email verification.
+- OAuth.
+- Survey functionality.
+- Admin management screens.
+- Server-side JWT revocation list or session table.
+
+Known tradeoffs:
+
+- JWT is stored in local storage for Phase 1 simplicity; bearer-token logout is local token removal plus a validating API endpoint.
+- `GET /api/admin/me` is intentionally tiny and exists to verify server-side admin authorization without implementing admin management.
+- Admin creation is not exposed through the app; local validation promoted a test user directly in the database.
+- Shared package TypeScript metadata now points `types` to source while runtime imports still use `dist`.
+
+Deferred work:
+
+- Real admin seed/provisioning workflow belongs in a later admin/deployment phase.
+- Automated auth tests should be added before auth-sensitive behavior grows further.
+- `/api/health` readiness status still needs adjustment before Azure health checks rely on it.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm install -w apps/api bcrypt jsonwebtoken
+npm install -D -w apps/api @types/bcrypt @types/jsonwebtoken
+npm run typecheck
+npm run lint
+npm run build
+psql "$DATABASE_URL" -f database/migrations/0002_users.sql
+PORT=3001 API_HOST=127.0.0.1 node apps/api/dist/server.js
+node auth endpoint validation scripts
+```
+
+Results:
+
+- Passed: dependency install and npm audit reported zero vulnerabilities.
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: users migration applied locally.
+- Passed: unauthenticated `/api/auth/me` returned 401.
+- Passed: registration returned 201 with user and token.
+- Passed: duplicate email registration returned 409.
+- Passed: login returned a token.
+- Passed: authenticated `/api/auth/me` returned current user.
+- Passed: standard user received 403 from `/api/admin/me`.
+- Passed: `POST /api/auth/logout` returned 204 for an authenticated token.
+- Passed: stored password hash was not plaintext and used bcrypt format.
+- Passed: direct DB promotion to admin allowed `/api/admin/me`.
+- Failed: initial sandboxed npm install, local DB, local server, and local API connection commands were blocked until rerun with approved access.
+- Not run: browser visual inspection.
+
+Manual testing:
+
+- Exercised the auth API workflows listed above against a local PostgreSQL database.
+- Confirmed no production secrets were added to tracked files.
+
+## Specific Questions
+
+Did this violate DATA_MODEL_VISION.md by adding only the User schema and no survey tables?
+
+Is the local-storage bearer JWT approach acceptable for the MVP at this phase, or should we switch to cookie-based auth before more features land?
+
+Are the current validation rules sufficient for Phase 1, especially password length, normalized email, and first/last name presence?
+
+Is `GET /api/admin/me` an acceptable minimal admin-only route for proving server-side authorization without implementing admin management screens?
+
+Should `/api/auth/logout` remain a validating no-content endpoint with client-side token removal, or should token revocation be introduced earlier?
+
+Does exposing shared package `types` from `src/index.ts` while runtime imports use `dist/index.js` look acceptable for this workspace?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_1.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness
