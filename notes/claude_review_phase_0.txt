@@ -1,0 +1,269 @@
+# Claude Code Review — Phase 0 (Foundation & Scaffolding)
+
+Branch: phase-0-foundation
+Reviewer: Claude Code (review/architecture validation role per FLOW.md)
+Scope reviewed: current Phase 0 diff + untracked source files only.
+Source files were not modified during this review.
+
+Reference docs read: ARCHITECTURE_PRINCIPLES.md, DATA_MODEL_VISION.md, FLOW.md,
+REVIEW_CHECKLIST.md, MASTER_PRODUCT_CONTEXT.txt, prompt_0.txt, plus all created
+source.
+
+Independent validation performed during review (read-only):
+- `npm run typecheck` -> PASS (shared, web, api)
+- `npm run lint`      -> PASS (shared, web, api)
+- `git check-ignore`  -> node_modules/, **/dist, *.tsbuildinfo, .env all ignored;
+                          .env.example tracked. No real secrets in tracked files.
+(build / dev / curl results taken as reported in the handoff; not re-run here.)
+
+Overall verdict: Phase 0 is well-scoped, clean, and faithful to the architecture
+and product documents. It implements exactly the foundation requested and nothing
+from the non-goals list. It is committable as scaffolding. Two security/config
+items are flagged as must-fix-before-Azure (not blockers for this commit because
+production deployment is an explicit non-goal this phase) and should be recorded
+as deferred items in PHASE_LOG.md.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+None of these block committing Phase 0 as scaffolding (no hosted/prod deploy is
+in scope). They are "critical before any hosted or Azure use" and must be tracked.
+
+C1. TLS certificate verification is disabled for the production database.
+    File: apps/api/src/db.ts:9
+        ssl: config.runEnv === "prod" ? { rejectUnauthorized: false } : undefined
+    `rejectUnauthorized: false` tells pg to encrypt but NOT verify the server
+    certificate. Against Azure PostgreSQL Flexible Server this leaves the
+    connection open to man-in-the-middle interception of database traffic
+    (including, in later phases, password hashes and survey response data).
+    ARCHITECTURE_PRINCIPLES "Security Principles" and the FLOW "Development
+    Priority Order" both rank data protection first.
+    Recommendation (later phase, before deploy): verify against the Azure CA,
+    e.g. ssl: { rejectUnauthorized: true, ca: <DigiCert/MS RSA root> } or rely on
+    `sslmode=verify-full` in the connection string. Do not ship verify-disabled
+    TLS to production. Acceptable to leave as-is for Phase 0 local scaffolding,
+    but it should not silently survive into the deployment phase.
+
+C2. Two independent environment flags (NODE_ENV and RUN_ENV) gate
+    security-sensitive behavior and can drift out of sync.
+    Files: apps/api/src/config.ts:51-62, db.ts:9, app.ts:21-27,
+           middleware/error-handler.ts:5-11
+    - DB SSL is keyed on `runEnv === "prod"`.
+    - CORS-enabled and error-detail exposure are keyed on `isProduction`
+      (`nodeEnv === "production"`).
+    Because they are separate, a deployment with RUN_ENV=prod but NODE_ENV
+    unset/development would connect to the hosted DB while ALSO enabling dev CORS
+    and leaking raw error messages (error-handler.ts:10) to clients. That is a
+    real privilege/information-exposure footgun.
+    Recommendation: derive one from the other, or validate coherence at startup
+    (e.g. throw if RUN_ENV=prod and NODE_ENV !== production), and centralize all
+    "are we in production" decisions on a single derived boolean. Cheap to do now;
+    expensive to discover after a deploy.
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+S1. /api/health should return a non-200 (503) when the database is unavailable
+    — at least for a readiness check — before Azure relies on it.
+    File: apps/api/src/routes/health.ts:9-19 (always 200).
+    Azure App Service health check treats any 2xx as "healthy", so the current
+    endpoint would report the instance healthy even with the DB down, masking a
+    real outage and defeating the purpose of the probe. Acceptable for Phase 0
+    local scaffolding; change before deployment. A common pattern: keep a 200
+    liveness signal but return 503 when `database === "unavailable"` (or split
+    into /api/health/live and /api/health/ready). See answer to specific question
+    below.
+
+S2. The `app_health_check` migration table is created but never used.
+    Files: database/migrations/0001_app_health_check.sql, db.ts:14 (`select 1`).
+    The connectivity check uses `select 1`, so the table proves nothing at
+    runtime. Either query the table in the health check (to also prove
+    read/grant permissions and that migrations ran), or keep `select 1` and treat
+    the migration purely as a "migrations pipeline works" placeholder — and say so
+    in the migration file comment. Minor.
+
+S3. Centralize the health response shape in the shared package.
+    Files: packages/shared/src/index.ts:9-14, routes/health.ts:11,
+           apps/web/src/api/health.ts:3-5.
+    The `database: "connected" | "unavailable"` field is bolted onto
+    `HealthResponse` via intersection in two separate places. Putting the full
+    response type (or a `DatabaseStatus` field) in shared removes the duplication
+    and keeps client/server in lockstep. Low priority; fits the "minimal shared
+    types" rule without overbuilding.
+
+S4. dotenv loading is process.cwd()-dependent and silently fragile.
+    File: apps/api/src/config.ts:4-5.
+    `dotenv.config({ path: path.resolve(process.cwd(), "../../.env") })` assumes
+    cwd is apps/api. It works for the current scripts (start/dev run with that
+    cwd) but breaks if the compiled server is launched from another directory —
+    which is plausible on Azure. Recommendation: resolve relative to the module
+    location (import.meta.url) rather than cwd, and/or document that production
+    must supply config via App Service environment variables (where dotenv simply
+    finds nothing and that is fine). Note also: the workspace `.env` loads first
+    and wins over root `.env` (dotenv does not override already-set keys); worth a
+    one-line comment so the precedence is intentional, not accidental.
+
+S5. No automated test harness exists yet.
+    There is no test runner scaffolded (no vitest / node:test / jest), so the only
+    gates are typecheck, build, and lint. REVIEW_CHECKLIST has a "Validation"
+    section and future phases (auth, survey engine, conditional logic) will need
+    server-side behavior tests. Consider adding a minimal test runner skeleton in
+    an early phase so a test gate exists before security-critical logic lands.
+    Not required by prompt_0; flagged as a forward test gap.
+
+S6. Forward security-hardening notes for when real endpoints land (not Phase 0):
+    - Add `helmet` (or equivalent security headers) once the app serves real
+      content/auth.
+    - Set a body size limit on `express.json()` (app.ts:19) before accepting
+      user-submitted survey data.
+    - request-logger.ts:8 logs `req.originalUrl`; ensure tokens/secrets are never
+      placed in query strings later, or they will land in logs.
+    These are explicitly future work, listed so they are not forgotten.
+
+S7. Workflow-artifact enforcement is documentation-only.
+    FLOW.md Step 7/8 and the Definition of Done require both
+    notes/claude_handoff_phase_X.txt and notes/claude_review_phase_X.txt, which is
+    clear and sufficient as process. If you want hard enforcement, a small CI or
+    pre-commit check that the two artifacts exist for the current phase would make
+    it mechanical rather than relying on discipline. Optional.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+A1. API dev script builds then runs `node dist/server.js` instead of a watch
+    runtime (apps/api/package.json:8). Documented as a tsx IPC workaround. Fine
+    for Phase 0; revisit DX later if iteration speed becomes a pain point.
+
+A2. Vite as the frontend build tool (apps/web/vite.config.ts). Conventional,
+    lightweight, well-aligned with React + TS. Accepted.
+
+A3. Intentionally tiny initial migration that does not start the real survey
+    schema. Correct — DATA_MODEL_VISION schema work is deferred by design.
+
+A4. No migration runner; ordered SQL files only (database/README.md). Reasonable
+    for Phase 0. The README could name the eventual apply command/tool when
+    chosen, but choosing it now would be premature.
+
+A5. JWT_SECRET / JWT_EXPIRES_IN documented in .env.example (lines 14-15) although
+    config.ts does not read them. This is forward documentation of required vars,
+    not an implementation of auth, so it does NOT violate the JWT/auth non-goals.
+    Accepted. (Keep placeholders only — current values are placeholders. Good.)
+
+A6. Error handler returns raw `error.message` only when not production
+    (error-handler.ts:10). Acceptable, provided C2 is resolved so "not production"
+    cannot be true while talking to a production database.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS  (answers to the handoff's specific questions)
+================================================================================
+
+Q. Did this violate DATA_MODEL_VISION.md?
+A. No. No survey/question/answer/tag/attempt schema was implemented. The only
+   migration is the health-check table. Shared types are minimal and aligned:
+   `SurveyAttemptStatus` uses exactly the documented statuses
+   (not_started/in_progress/completed/abandoned) and `UserRole` is user/admin.
+   Nothing contradicts the data-model vision.
+
+Q. Did Phase 0 accidentally implement anything outside its non-goals?
+A. No. No real registration, login, JWT issuing, bcrypt, protected routes, survey
+   builder/taking, reporting, conditional logic, or CSV export. Frontend pages are
+   pure placeholders that explicitly defer features to "later phases"
+   (Login.tsx:7, AdminDashboard.tsx:7, Register/UserDashboard similar). The
+   JWT_SECRET env entry is documentation, not implementation.
+
+Q. Is the RUN_ENV database configuration safe and maintainable for local and
+   hosted PostgreSQL usage?
+A. The toggle itself is clean and maintainable: prod prefers
+   HOSTED_DATABASE_URL (config.ts:30-32); dev prefers LOCAL_DATABASE_URL ->
+   DATABASE_URL -> split DB_* vars (config.ts:34-49), with proper
+   encodeURIComponent on credentials. Three caveats keep it from being fully
+   "safe" for hosted use: C1 (TLS verification disabled in prod), C2 (RUN_ENV vs
+   NODE_ENV can drift), and S4 (cwd-dependent dotenv). Address those before
+   hosted/Azure use; the structure does not need to change.
+
+Q. Should /api/health return non-200 when PostgreSQL is unavailable?
+A. For Phase 0, the current always-200 behavior is acceptable and convenient for
+   local scaffolding. Before Azure, it should change: return 503 when the DB is
+   unavailable (or expose a separate readiness endpoint that does), because Azure
+   App Service health monitoring keys on HTTP status and a 200 will hide DB
+   outages. Recommended now: leave as 200 but record the decision; implement 503
+   in the phase that wires the real DB/deploy.
+
+Q. Does the Express static serving path look correct for the workspace build
+   output?
+A. Yes. Compiled server lives at apps/api/dist/app.js, so __dirname is
+   apps/api/dist; `path.resolve(__dirname, "../../web/dist")` (app.ts:31) resolves
+   to apps/web/dist, which is exactly where `vite build` emits (web
+   package.json:8, vite.config build.outDir "dist"). The SPA fallback correctly
+   404s /api/* and otherwise serves index.html (app.ts:34-45). Correct.
+
+Q. Are the placeholder frontend pages clear enough without implying completed
+   auth or survey features?
+A. Yes. Each page states the feature arrives in a later phase. Nav is a simple
+   placeholder. No page implies working auth or surveys. See UX note U2 for a
+   forward-looking nit about the Admin link.
+
+Q. Are the workflow documentation changes sufficient to force future handoff and
+   review artifacts into notes/?
+A. Sufficient as process/documentation: FLOW.md Steps 7-8 and the Definition of
+   Done both require the two artifacts, and PHASE_LOG must mark review status.
+   Enforcement is by discipline, not mechanism — see S7 if you want a hard gate.
+
+Assumptions made by this review:
+- build/dev/curl results are as reported in the handoff (typecheck and lint were
+  independently re-run and pass).
+- Production config on Azure will be supplied via App Service env vars, not a
+  committed .env.
+
+================================================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+================================================================================
+
+U1. User and admin areas are cleanly separated by route (App.tsx:42-47), nav is
+    clear and uses accessible markup (aria-labels, NavLink active state). Aligns
+    with MASTER_PRODUCT_CONTEXT's two-portal model.
+
+U2. (Forward note, not a Phase 0 defect.) The primary nav exposes the Admin
+    Dashboard link flatly to everyone (App.tsx:15). That is fine for an unauthed
+    scaffold, but once auth exists: nav visibility is cosmetic only — the real
+    control must be server-side authorization on admin APIs
+    (ARCHITECTURE_PRINCIPLES "Authorization Principle"). Hiding the link for
+    non-admins is a UX nicety, never the security boundary.
+
+U3. Hidden-tag concern is N/A this phase; no survey content is rendered, so no
+    risk of leaking tags to participants yet. Carry the "tags never reach
+    user-facing survey APIs" rule into the survey-taking phase.
+
+U4. HealthCheck component handles loading / error / ready states
+    (HealthCheck.tsx) — good early modeling of the loading/empty/error UX habit
+    the checklist asks for.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+Recommendation: COMMIT Phase 0 as scaffolding. No source changes are required to
+commit.
+
+Evidence:
+- typecheck PASS, lint PASS (re-run during review); build/dev/health reported PASS
+  in handoff.
+- Secrets hygiene verified: .env and .env.* ignored, .env.example tracked with
+  placeholders only, node_modules/dist/*.tsbuildinfo all gitignored. No real
+  secrets in tracked files.
+- Scope matches prompt_0 exactly; no non-goals implemented; no data-model
+  violations.
+
+Before committing, update markdown/PHASE_LOG.md to record:
+- This review's path (notes/claude_review_phase_0.txt) and that review is DONE.
+- Deferred must-fix-before-Azure items: C1 (TLS verify) and C2 (NODE_ENV/RUN_ENV
+  coherence), each pointed at the auth/deployment phase.
+- The accepted decision that /api/health stays 200 for Phase 0 (S1) and will move
+  to 503-on-DB-failure before deploy.
+
+Nothing here requires reopening Phase 0 scope. The flagged items are correctly
+deferrable to the phases that introduce hosted DB, auth, and deployment — as long
+as they are tracked rather than forgotten.

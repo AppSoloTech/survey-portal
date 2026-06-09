@@ -1,0 +1,208 @@
+# Claude Review Handoff — Phase 0
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current Phase 0 diff only.
+- Write the full review to `notes/claude_review_phase_0.txt`.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_0.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- architectural consistency
+- product alignment
+- maintainability
+- unnecessary complexity
+- security concerns
+- auth and data exchange security concerns
+- app environment safety
+- Azure-readiness concerns
+- test or validation gaps
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_0.txt`
+
+## Phase Scope
+
+Implemented:
+
+- npm workspace foundation with `apps/web`, `apps/api`, and `packages/shared`.
+- React + Vite frontend shell.
+- Placeholder routes:
+  - Home
+  - Login
+  - Register
+  - User Dashboard
+  - Admin Dashboard
+  - Not Found
+- Express + TypeScript backend.
+- `/api/health` route.
+- PostgreSQL connection module using `pg`.
+- Environment loading from root `.env` and workspace `.env`.
+- `RUN_ENV=dev|prod` database selection.
+- Support for local split PostgreSQL variables and database URL variables.
+- Basic request logging.
+- Basic error handling middleware.
+- Development CORS constrained to `WEB_ORIGIN`.
+- Express static serving for the built React app.
+- Minimal shared types.
+- Minimal database scaffolding with an `app_health_check` migration.
+- Root scripts for dev, build, typecheck, lint, and start.
+- `.env.example`, `.nvmrc`, root TypeScript config, ESLint config, and README updates.
+- Workflow documentation updates requiring Claude handoff and review artifacts after each phase implementation.
+
+Non-goals:
+
+- Real registration.
+- Real login.
+- JWT issuing.
+- bcrypt hashing.
+- Protected routes.
+- Survey builder.
+- Survey taking.
+- Admin reporting.
+- Conditional logic implementation.
+- CSV export.
+- Azure deployment.
+- Full survey schema.
+
+Known tradeoffs:
+
+- API `dev` script builds TypeScript then runs `node dist/server.js` instead of using a watch/dev runtime. This avoids `tsx` IPC failures in the current environment.
+- The health endpoint reports database availability but still returns HTTP 200 if the database is unavailable. This keeps the endpoint usable during local scaffolding, but Claude should flag if this should change before deployment.
+- Vite is used for the frontend build tool. This is conventional and lightweight, but it is an added tool.
+- The initial migration is intentionally tiny and does not start the real survey schema.
+
+Deferred work:
+
+- Browser-based visual inspection.
+- Claude review fixes after this review.
+- Real auth and authorization.
+- Survey data model implementation.
+- Migration runner choice beyond ordered SQL files.
+- Production Azure deployment configuration.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Current branch:
+
+```txt
+phase-0-foundation
+```
+
+Useful current diff summary:
+
+```txt
+.env.example
+README.md
+markdown/CLAUDE_REVIEW_TEMPLATE.md
+markdown/FLOW.md
+markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt
+markdown/PHASE_LOG.md
+markdown/PHASE_TEMPLATE.md
+.nvmrc
+apps/api/
+apps/web/
+database/
+eslint.config.js
+package-lock.json
+package.json
+packages/shared/
+tsconfig.json
+notes/claude_handoff_phase_0.txt
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm install
+npm run typecheck
+npm run build
+npm run lint
+npm run dev
+curl -sS http://127.0.0.1:3000/api/health
+curl -sS http://127.0.0.1:5173/
+curl -sS http://127.0.0.1:5173/admin
+curl -sS http://127.0.0.1:5173/not-a-route
+git check-ignore -v .env .env.example
+```
+
+Results:
+
+- Passed: `npm install`.
+- Passed: `npm run typecheck`.
+- Passed: `npm run build`.
+- Passed: `npm run lint`.
+- Passed: `npm run dev` after running with local server permission for ports 3000 and 5173.
+- Passed: `/api/health` returned HTTP 200 with `status: ok`, `runEnv: dev`, and `database: connected`.
+- Passed: Vite served the React app shell and SPA fallback routes.
+- Passed: `.env` is ignored and `.env.example` remains trackable.
+- Failed: initial sandboxed `npm run dev` attempts could not bind localhost ports.
+- Not run: browser-based visual inspection.
+
+Manual testing:
+
+- Confirmed API server starts on `127.0.0.1:3000`.
+- Confirmed Vite server starts on `127.0.0.1:5173`.
+- Confirmed frontend route URLs return the app shell.
+- Confirmed no real secrets were added to tracked environment files.
+
+## Specific Questions
+
+Did this violate `markdown/DATA_MODEL_VISION.md`?
+
+Did Phase 0 accidentally implement anything outside its non-goals?
+
+Is the `RUN_ENV` database configuration safe and maintainable for local and hosted PostgreSQL usage?
+
+Should `/api/health` return a non-200 status when PostgreSQL is unavailable, or is the current Phase 0 behavior acceptable?
+
+Does the Express static serving path look correct for the workspace build output?
+
+Are the placeholder frontend pages clear enough without implying completed auth or survey features?
+
+Are the workflow documentation changes sufficient to force future handoff and review artifacts into `notes/`?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_0.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

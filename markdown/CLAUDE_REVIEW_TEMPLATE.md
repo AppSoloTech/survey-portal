@@ -16,6 +16,15 @@ Do not save phase-specific handoffs in `markdown/`. The `markdown/` directory ho
 
 # Claude Review Handoff — Phase X
 
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
 ## Review Output Requirement
 
 Write the full review to:
@@ -75,7 +84,7 @@ Deferred work:
 
 ## Diff To Review
 
-Include:
+Run or inspect:
 
 ```bash
 git diff
@@ -124,7 +133,7 @@ Are reporting requirements still achievable from the current schema?
 
 ## Requested Output Format
 
-Please return:
+Write `notes/claude_review_phase_X.txt` using this format:
 
 1. Critical issues
 2. Suggested improvements

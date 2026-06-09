@@ -1,0 +1,172 @@
+:root {
+  color: #172026;
+  background: #f4f7f4;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+a {
+  color: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-header {
+  align-items: end;
+  background: #ffffff;
+  border-bottom: 1px solid #dce4df;
+  display: flex;
+  gap: 2rem;
+  justify-content: space-between;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem);
+}
+
+.app-header h1,
+.page-header h2 {
+  margin: 0;
+}
+
+.app-header h1 {
+  font-size: 1.8rem;
+}
+
+.eyebrow {
+  color: #5d6f65;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.nav-link,
+.button-link {
+  border: 1px solid #bdcbc2;
+  border-radius: 6px;
+  font-size: 0.92rem;
+  font-weight: 650;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.8rem;
+  text-decoration: none;
+}
+
+.nav-link.active,
+.button-link {
+  background: #1f4d3a;
+  border-color: #1f4d3a;
+  color: #ffffff;
+}
+
+main {
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.page {
+  max-width: 900px;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+}
+
+.page-header h2 {
+  font-size: 1.55rem;
+}
+
+.page-header p:not(.eyebrow) {
+  color: #52635a;
+  margin: 0.5rem 0 0;
+  max-width: 680px;
+}
+
+.status {
+  border: 1px solid #d0ddd4;
+  border-radius: 6px;
+  display: inline-flex;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+}
+
+.muted {
+  color: #5d6f65;
+}
+
+.error {
+  background: #fff4f2;
+  border-color: #e2b0a8;
+  color: #8b2f25;
+}
+
+.health-grid {
+  border: 1px solid #dce4df;
+  border-radius: 8px;
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 680px;
+  overflow: hidden;
+}
+
+.health-grid div {
+  background: #ffffff;
+  padding: 1rem;
+}
+
+.health-grid div + div {
+  border-left: 1px solid #dce4df;
+}
+
+.health-grid dt {
+  color: #5d6f65;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.health-grid dd {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  nav {
+    justify-content: flex-start;
+  }
+
+  .health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-grid div + div {
+    border-left: 0;
+    border-top: 1px solid #dce4df;
+  }
+}

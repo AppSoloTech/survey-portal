@@ -242,6 +242,8 @@ If a command is unavailable, record why and add the expected future command if k
 
 ### Step 7 - Prepare Claude Handoff
 
+After every prompt implementation, Codex must prepare a phase-specific Claude handoff before the phase is considered ready for review or commit.
+
 Prepare:
 
 ```txt
@@ -260,6 +262,14 @@ The handoff must include:
 - diff instructions, including untracked files
 - specific questions for review
 - required review output path
+
+The handoff must explicitly instruct Claude Code to write the full review to:
+
+```txt
+notes/claude_review_phase_X.txt
+```
+
+Do not rely on chat-only review output. The durable review file is required project memory.
 
 ### Step 8 - Claude Review
 
@@ -281,6 +291,14 @@ Claude should review:
 - data exposure risks
 - environment safety
 - test coverage and validation gaps
+
+Claude must write the full review to the phase-specific path named in the handoff:
+
+```txt
+notes/claude_review_phase_X.txt
+```
+
+Claude may summarize in chat after writing the file, but the file is the source of record.
 
 ### Step 9 - Human Decision
 
@@ -335,6 +353,8 @@ Update `markdown/PHASE_LOG.md` with:
 - validation commands and results
 - paths to handoff and review artifacts
 - commit readiness
+
+If Claude review has not been run yet, record the handoff path and mark the review as pending. Do not leave the review artifact status ambiguous.
 
 Use `markdown/PHASE_TEMPLATE.md` for new entries.
 
@@ -422,6 +442,8 @@ A phase is complete when:
 - non-goals were respected
 - validation commands were run or explicitly documented as unavailable
 - relevant manual tests were performed
+- `notes/claude_handoff_phase_X.txt` exists
+- `notes/claude_review_phase_X.txt` exists, or the phase log explicitly says Claude review is pending
 - review findings are addressed or intentionally deferred
 - `markdown/PHASE_LOG.md` is updated
 - no real secrets are committed

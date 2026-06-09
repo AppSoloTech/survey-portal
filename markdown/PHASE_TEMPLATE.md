@@ -13,7 +13,7 @@ Status:
 Completed / Deferred / Partially completed
 
 Prompt:
-`/prompts/prompt_X.txt`
+`prompts/prompt_X.txt`
 
 Git Commit:
 Pending / commit SHA
@@ -77,6 +77,10 @@ Manual tests:
 Source:
 
 - `notes/claude_review_phase_X.txt`
+
+Status:
+
+- Pending / Completed / Not run with reason
 
 Critical issues:
 

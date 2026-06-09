@@ -18,7 +18,16 @@ Full-stack TypeScript web application:
 
 ---
 
-## Package Manager
+## Runtime And Package Manager
+
+Use:
+
+```txt
+Node.js 24.15.0
+npm 11.12.1
+```
+
+The Node.js version is recorded in `.nvmrc` and `package.json`.
 
 Use npm unless the repository later commits a different lockfile and updates this document.
 
@@ -46,8 +55,15 @@ Expected variables may include:
 
 ```txt
 NODE_ENV=
+RUN_ENV=
 PORT=
+API_HOST=
+WEB_ORIGIN=
 DATABASE_URL=
+LOCAL_DATABASE_URL=
+HOSTED_DATABASE_URL=
+DATABASE_SSL_CA_PATH=
+DATABASE_SSL_CA=
 JWT_SECRET=
 JWT_EXPIRES_IN=
 ```
@@ -119,12 +135,14 @@ Record unavailable or failing checks in `markdown/PHASE_LOG.md`.
 
 ## Open Environment Decisions
 
-These should be resolved during Phase 0:
+Resolved during Phase 0:
 
-- exact Node.js version
-- exact npm version
-- frontend build tool
-- database migration tool
-- backend query approach
-- local development port assignments
-- whether local dev uses one combined process or separate web/api processes
+- Node.js version: 24.15.0
+- npm version: 11.12.1
+- frontend build tool: Vite
+- database migration format: ordered SQL files under `database/migrations`
+- backend query approach: `pg` connection pool with parameterized SQL
+- local API port: 3000
+- local web port: 5173
+- local API host: 127.0.0.1
+- local development process: root `npm run dev` starts both API and web workspaces
