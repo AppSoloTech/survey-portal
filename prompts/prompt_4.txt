@@ -14,6 +14,9 @@ Read before implementation:
 
 * markdown/ARCHITECTURE_PRINCIPLES.md
 * markdown/DATA_MODEL_VISION.md
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/REVIEW_CHECKLIST.md
 * prompts/MASTER_PRODUCT_CONTEXT.txt
 
 ---
@@ -45,6 +48,39 @@ Do not implement drag-and-drop.
 
 Survey editing should be clear and maintainable.
 
+The admin experience should be a working business tool, not a marketing page.
+Keep the interface dense enough for repeated operational use.
+
+All admin builder functionality must require:
+
+```txt
+authentication
+admin role
+```
+
+Frontend admin route protection is not sufficient. Enforce admin authorization on
+every builder API route.
+
+Existing Phase 2 survey metadata endpoints may be extended or reused, but do not
+break standard user survey-taking routes from Phase 3.
+
+---
+
+# Backend Requirements
+
+Implement REST APIs for managing:
+
+* survey metadata
+* survey questions
+* answer options
+* answer tags
+* conditional rules
+* survey status transitions
+
+All writes must use parameterized SQL and server-side validation.
+
+Avoid JSON blobs for core survey builder data.
+
 ---
 
 # Question Management
@@ -65,6 +101,30 @@ Administrators should be able to:
 * reorder questions
 * mark required questions
 * edit question text
+* edit help text
+* edit question type before publishing
+
+Reordering should update `display_order` safely. Avoid unique constraint conflicts
+while swapping or moving questions.
+
+Deleting questions should rely on explicit database relationships and must not
+leave broken conditional rules or answer options.
+
+---
+
+# Answer Option Management
+
+For selection-based questions, administrators should be able to:
+
+* add answer options
+* edit answer option text
+* reorder answer options
+* delete answer options
+
+Text and integer questions should not require answer options.
+
+Selection-based questions should have at least one answer option before a survey
+can be published.
 
 ---
 
@@ -77,6 +137,9 @@ Administrators should be able to:
 * remove tags
 
 Tags must remain hidden from survey participants.
+
+Hidden tags may be visible in the admin builder because admins configure them.
+They must not be exposed through standard user survey-taking APIs or UI.
 
 ---
 
@@ -100,6 +163,24 @@ target question
 
 Do not build additional rule types.
 
+Validate that:
+
+* source question belongs to the survey
+* source answer option belongs to the source question
+* target question belongs to the same survey
+* source question is `single_select` or `multi_select`
+* action type is exactly `JUMP_TO_QUESTION`
+* condition operator is exactly `equals`
+
+Do not expose or evaluate behavior for:
+
+```txt
+SHOW_QUESTION
+HIDE_QUESTION
+JUMP_TO_PAGE
+END_SURVEY
+```
+
 ---
 
 # Survey Publishing
@@ -113,6 +194,38 @@ retired
 ```
 
 Only published surveys should be visible to users.
+
+Publishing should require:
+
+* at least one question
+* all selection-based questions have answer options
+* all conditional rule references are valid and belong to the same survey
+
+Retiring a survey should prevent new starts but must preserve Phase 3 behavior:
+already-started attempts remain resumable and completable.
+
+Do not allow standard users to start draft or retired surveys.
+
+---
+
+# Required Validation
+
+Implement server-side validation for builder writes.
+
+At minimum validate:
+
+* survey title is required and length-bounded
+* survey description is length-bounded when provided
+* question text is required and length-bounded
+* help text is length-bounded when provided
+* answer option text is required and length-bounded
+* tag key and tag value are required and length-bounded
+* question type is one of the MVP types
+* survey status is one of the MVP statuses
+* display order values are positive integers
+* IDs in nested resources belong to the expected parent survey/question/option
+
+Never rely on frontend validation for correctness.
 
 ---
 
@@ -138,6 +251,10 @@ Verify:
 * answer options can be managed
 * tags can be managed
 * conditional rules can be created
+* invalid cross-survey conditional rules are rejected
+* surveys without questions cannot be published
 * published surveys appear to users
+* draft and retired surveys do not appear to standard users
+* hidden tags remain absent from standard user survey APIs
 
 Stop after admin builder functionality is complete.

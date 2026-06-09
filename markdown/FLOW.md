@@ -173,7 +173,8 @@ Examples:
 phase-0-foundation
 phase-1-auth
 phase-2-survey-schema
-phase-3-survey-builder
+phase-3-user-survey-experience
+phase-4-admin-survey-builder
 ```
 
 Typical command flow:
@@ -201,6 +202,14 @@ If unrelated uncommitted changes exist, do not include them without confirming t
 ### Step 5 - Implement With Codex
 
 Keep implementation scoped to the phase prompt.
+
+Codex closeout rule:
+
+- After implementing any `prompts/prompt_X.txt`, Codex must generate
+  `notes/claude_handoff_phase_X.txt` before claiming the phase implementation is
+  complete.
+- The final implementation summary must mention the handoff path.
+- This requirement applies even when Claude review will happen later.
 
 Prefer:
 
@@ -449,6 +458,7 @@ A phase is complete when:
 - validation commands were run or explicitly documented as unavailable
 - relevant manual tests were performed
 - `notes/claude_handoff_phase_X.txt` exists
+- Codex has mentioned `notes/claude_handoff_phase_X.txt` in the implementation closeout
 - `notes/claude_review_phase_X.txt` exists, or the phase log explicitly says Claude review is pending
 - review findings are addressed or intentionally deferred
 - `markdown/PHASE_LOG.md` is updated
