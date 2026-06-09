@@ -12,7 +12,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 - Add rate limiting to `/api/auth/login` and `/api/auth/register` before public exposure or hosted deployment.
 - Add maximum password length validation to avoid bcrypt's 72-byte truncation edge case.
-- Decide whether to migrate from local-storage bearer JWTs to httpOnly, SameSite cookie auth before real survey response data or hidden-tag metadata exists.
+- Phase 3: migrate from local-storage bearer JWTs to httpOnly, SameSite cookie auth before persisted survey response data is implemented.
 - Add an automated backend auth test harness before auth-sensitive behavior grows further.
 
 ### Environment And Deployment

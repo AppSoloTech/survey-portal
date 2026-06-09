@@ -4,7 +4,9 @@
 
 Implement the survey-taking experience for authenticated users.
 
-This phase introduces survey rendering, progress tracking, response persistence, and survey completion.
+This phase introduces secure cookie-based authentication, survey rendering,
+progress tracking, response persistence, conditional question navigation, and
+survey completion.
 
 ---
 
@@ -14,7 +16,27 @@ Read before implementation:
 
 * markdown/ARCHITECTURE_PRINCIPLES.md
 * markdown/DATA_MODEL_VISION.md
+* markdown/FOLLOW_UPS.md
 * prompts/MASTER_PRODUCT_CONTEXT.txt
+
+---
+
+# Required Security Decision
+
+Before implementing persisted survey responses, migrate authentication from
+local-storage bearer JWTs to server-set httpOnly, SameSite cookies.
+
+Requirements:
+
+* JWTs must no longer be stored in local storage.
+* Login and registration should set an httpOnly auth cookie.
+* Logout should clear the auth cookie.
+* Authenticated API routes should read authentication from the cookie.
+* Cookie settings must be safe for local development and ready for production hardening.
+* Frontend API calls should use credentialed requests where needed.
+* Preserve server-side authorization checks.
+
+Document any cookie behavior tradeoffs in `markdown/PHASE_LOG.md`.
 
 ---
 
@@ -80,7 +102,104 @@ GET /api/my-surveys
 GET /api/my-surveys/:attemptId
 ```
 
+All Phase 3 routes must require authentication.
+
 Responses must persist between sessions.
+
+---
+
+# Survey Availability
+
+Users may only start published surveys.
+
+Draft and retired surveys must not be startable by standard users.
+
+If a user already has an active attempt:
+
+* `POST /api/surveys/:id/start` should return the existing active attempt instead of creating a duplicate.
+* active attempts should be resumable.
+
+For MVP, allow users to resume and complete an already-started attempt even if
+the survey is later retired.
+
+Completed and abandoned attempts should remain historical records.
+
+---
+
+# Attempt Behavior
+
+On start:
+
+* create an `in_progress` attempt if no active attempt exists
+* set `started_at`
+* set `last_activity_at`
+* return the attempt and first question to answer
+
+On answer:
+
+* persist or update the response for the question
+* update selected options for selection-based questions
+* update `last_activity_at`
+* return the next question decision
+
+On complete:
+
+* validate required questions that were reached in the attempt
+* set status to `completed`
+* set `completed_at`
+* update `last_activity_at`
+
+Do not create duplicate active attempts for the same user and survey.
+
+---
+
+# Answer Request Shape
+
+Use this request shape for:
+
+```txt
+POST /api/surveys/:id/answer
+```
+
+```json
+{
+  "attemptId": 123,
+  "questionId": 456,
+  "answerText": "text response",
+  "answerInteger": 5,
+  "selectedAnswerOptionIds": [1, 2]
+}
+```
+
+Validate by question type:
+
+* `text`: use `answerText`
+* `integer`: use `answerInteger`
+* `single_select`: require exactly one selected answer option
+* `multi_select`: allow one or more selected answer options
+
+Selected answer options must belong to the question.
+
+Question must belong to the survey.
+
+Attempt must belong to the authenticated user and the survey.
+
+---
+
+# Required Validation
+
+Implement server-side validation for:
+
+* required text answers must be non-empty
+* required integer answers must be valid integers
+* required single-select answers must include exactly one option
+* required multi-select answers must include at least one option
+* selected answer option IDs must belong to the answered question
+* answered question must belong to the survey
+* attempt must belong to the authenticated user
+* completed attempts must not accept new answers
+
+Never rely on frontend validation for correctness.
 
 ---
 
@@ -108,6 +227,25 @@ Otherwise:
 advance by display_order
 ```
 
+Only evaluate rules where:
+
+```txt
+action_type = JUMP_TO_QUESTION
+condition_operator = equals
+```
+
+For single-select questions:
+
+```txt
+selected answer option equals source_answer_option_id
+```
+
+For multi-select questions:
+
+```txt
+selected answer options contain source_answer_option_id
+```
+
 Do not implement:
 
 ```txt
@@ -116,6 +254,17 @@ HIDE_QUESTION
 JUMP_TO_PAGE
 END_SURVEY
 ```
+
+Do not expose or evaluate behavior for future action types.
+
+---
+
+# Hidden Tag Privacy
+
+Survey-taking APIs must never return `answerTags` to standard users.
+
+Responses should persist selected answer option IDs. Hidden tags can be resolved
+later by admin reporting phases.
 
 ---
 
@@ -127,6 +276,9 @@ Do not implement:
 * reporting
 * analytics
 * CSV export
+* admin response review
+* hidden tag reporting
+* future conditional action behavior beyond `JUMP_TO_QUESTION`
 
 ---
 
@@ -134,11 +286,21 @@ Do not implement:
 
 Verify:
 
+* JWT local-storage auth is removed
+* auth works through httpOnly, SameSite cookies
 * survey starts
 * survey resumes
 * required validation works
 * conditional jumps work
 * survey completes
 * status updates correctly
+* anonymous users cannot access survey-taking APIs
+* users cannot access another user's attempt
+* standard user survey responses never include hidden tags
+
+Create `notes/claude_handoff_phase_3.txt` before calling implementation complete.
+
+Record validation, Claude review status, accepted fixes, and deferred findings
+in `markdown/PHASE_LOG.md`.
 
 Stop after user survey functionality is complete.
