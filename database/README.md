@@ -6,8 +6,8 @@ Current migrations include:
 
 - a small health-check table
 - the initial authentication `users` table
-
-The full survey schema belongs in a later phase that implements the data model intentionally.
+- the Phase 2 survey data model tables for surveys, questions, options, tags, rules,
+  attempts, responses, and selected response options
 
 ## Folders
 
@@ -30,4 +30,14 @@ Apply migrations in filename order:
 ```bash
 psql "$DATABASE_URL" -f database/migrations/0001_app_health_check.sql
 psql "$DATABASE_URL" -f database/migrations/0002_users.sql
+psql "$DATABASE_URL" -f database/migrations/0003_surveys.sql
+```
+
+## Applying Local Seeds
+
+Phase 2 local seed data includes one admin account and one published survey with
+representative MVP question types, answer tags, and a `JUMP_TO_QUESTION` rule.
+
+```bash
+psql "$DATABASE_URL" -f database/seeds/0001_phase_2_seed.sql
 ```

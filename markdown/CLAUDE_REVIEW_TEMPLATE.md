@@ -2,6 +2,12 @@
 
 Use this template after Codex implementation and before applying review fixes.
 
+Codex phase-closeout requirement:
+
+- Create the phase handoff before marking a phase implementation complete.
+- Mention the handoff path in the final implementation summary.
+- If Claude review is not run immediately, mark it as pending in the phase log or final summary.
+
 Save the completed handoff at:
 
 ```txt

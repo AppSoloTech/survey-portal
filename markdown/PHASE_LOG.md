@@ -448,3 +448,209 @@ Deferred findings:
 - Review findings addressed or deferred: Yes; S1/S3/S4 fixed, remaining findings deferred.
 - Manual testing complete: API-level auth testing complete; browser visual inspection not run
 - Ready to commit: Yes
+
+---
+
+## Phase 2 — Survey Database Model, Seeds, and API Foundation
+
+Date:
+2026-06-09
+
+Status:
+Completed after Claude review fixes
+
+Prompt:
+`prompts/prompt_2.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_2.txt`
+- Claude review: `notes/claude_review_phase_2.txt`
+
+## Goals
+
+- Implement the survey data model described in `markdown/DATA_MODEL_VISION.md`.
+- Add migrations and local seed data for realistic future survey testing.
+- Add foundational survey CRUD APIs without building survey-taking UI or admin-builder UI.
+
+## Built
+
+- Added `database/migrations/0003_surveys.sql` with normalized tables for surveys, questions, answer options, hidden answer tags, conditional rules, attempts, response answers, and selected response options.
+- Added `database/seeds/0001_phase_2_seed.sql` with one local admin, one published test survey, all MVP question types, hidden answer tags, and one sample `JUMP_TO_QUESTION` rule.
+- Added shared survey/question/option/tag/rule API types.
+- Added `/api/surveys` routes for `GET /`, `GET /:id`, `POST /`, and `PUT /:id`.
+- Updated database setup docs and seed safety notes.
+- Created the required Phase 2 Claude handoff and updated process templates/checklists so future handoffs are a phase-closeout gate.
+
+## Important Decisions
+
+### Survey Read Authentication
+
+Decision:
+Require authentication for `GET /api/surveys` and `GET /api/surveys/:id`.
+
+Reason:
+Claude review C1 correctly identified that anonymous reads conflicted with the Authorization Principle and product rule that users must register/login before using surveys.
+
+Tradeoff:
+Logged-in standard users can still read only published surveys and never receive hidden tags; admins can read all statuses and receive hidden tags. There is no public anonymous survey catalog.
+
+### Metadata-Only Survey Mutations
+
+Decision:
+Keep `POST /api/surveys` and `PUT /api/surveys/:id` scoped to survey metadata.
+
+Reason:
+Prompt 2 asks for foundational CRUD APIs and explicitly excludes the admin builder UI. Nested question, option, tag, and rule management belongs in later admin-builder phases.
+
+Tradeoff:
+Seeded data exercises the full schema, but real authoring of child entities waits for dedicated endpoints.
+
+### Local Seed Scope
+
+Decision:
+Treat the Phase 2 admin seed as local development data only.
+
+Reason:
+The seed intentionally creates a known local admin account and resets that password on reapply.
+
+Tradeoff:
+Local testing is easy, but hosted admin provisioning remains a separate active follow-up and local seeds must not run against hosted, shared, staging, or production databases.
+
+## Architecture Notes
+
+- Database/schema impact: survey definition, conditional logic, attempt, response, selected-option, and hidden-tag tables now exist with explicit foreign keys and check constraints.
+- API contract impact: `/api/surveys` is available to authenticated callers; admin callers receive all statuses and hidden tags, standard users receive published surveys without hidden tags.
+- Auth or authorization impact: all survey endpoints now verify authentication; `POST`/`PUT` also require admin role.
+- Data privacy or visibility impact: hidden answer tags are only selected and returned for admin callers.
+- Frontend UX impact: no UI changes in this phase.
+- Environment or deployment impact: local seeds are documented as unsafe for hosted/prod use.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+pg_isready -h 127.0.0.1 -p 5432 -d survey_portal
+curl -sS http://127.0.0.1:3000/api/health
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0001_app_health_check.sql -f database/migrations/0002_users.sql -f database/migrations/0003_surveys.sql -f database/seeds/0001_phase_2_seed.sql
+curl -sS http://127.0.0.1:3000/api/surveys
+env PORT=3002 API_HOST=127.0.0.1 node apps/api/dist/server.js
+curl -sS -i http://127.0.0.1:3002/api/surveys
+# node -e script checked seeded admin login and authenticated survey GET against port 3002
+kill 34831
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Passed: local PostgreSQL readiness check outside Codex's restricted network sandbox.
+- Passed: `/api/health` returned database connected.
+- Passed: ordered migrations and Phase 2 seed applied locally.
+- Passed after C1 fix: unauthenticated `GET /api/surveys` returned 401.
+- Passed after C1 fix: seeded admin login returned 200.
+- Passed after C1 fix: authenticated admin `GET /api/surveys` returned the seeded survey and included hidden `answerTags`.
+- Passed during manual testing: standard-user survey read returned published surveys without hidden `answerTags`.
+- Passed during manual testing: admin `POST /api/surveys` smoke test created a draft survey.
+- Passed during manual testing: admin `PUT /api/surveys/:id` smoke test updated survey metadata.
+- Failed: initial sandboxed `psql`/`pg_isready` attempts could not reach `localhost:5432` because of Codex network sandboxing.
+- Not run: browser visual inspection.
+
+Manual tests:
+
+- Confirmed the local database had only `users` before applying Phase 2 migration/seed.
+- Confirmed migration/seed application created the expected Phase 2 tables and seed records.
+- Confirmed pre-review public response omitted hidden `answerTags`.
+- Confirmed post-review authenticated user/admin survey visibility behaved as expected.
+- Confirmed admin survey create/update smoke tests passed.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: initially missed, then corrected before review.
+- Handoff path: `notes/claude_handoff_phase_2.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_2.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- C1: unauthenticated survey reads conflicted with product and authorization principles.
+
+Suggested improvements:
+
+- S1: local seed creates a known-credential admin and must be guarded/documented against hosted/prod use.
+- S2: retiring a survey should preserve `published_at`.
+- S3: future rule-management writes must validate same-survey references.
+- S4: optional-auth logic duplicated `requireAuth`.
+- S5: optional-auth row typing concern.
+- S6: future publish flow should require at least one question.
+- S7: add explicit write length bounds.
+
+Accepted fixes:
+
+- Fixed C1: `GET /api/surveys` and `GET /api/surveys/:id` now require `requireAuth`.
+- Fixed S2: retiring a survey preserves existing `published_at`.
+- Fixed S4/S5 path: removed optional-auth logic from survey routes and reused `requireAuth`.
+- Addressed S1 documentation: seed docs and README now state local seeds must not run against hosted/shared/staging/production databases.
+
+Deferred findings:
+
+- S1 guard/provisioning: add hosted-safe admin provisioning and automated `RUN_ENV=prod` seed guard before deployment automation.
+- S3: validate conditional rule references in later rule-management endpoints.
+- S6: enforce at least one question before publishing in later admin-builder flows.
+- S7: add explicit write length bounds when authoring endpoints mature.
+
+## Problems Encountered
+
+- Problem:
+  Initial local PostgreSQL checks appeared to fail.
+  Resolution:
+  Investigation showed PostgreSQL was running; the failure was Codex's restricted network sandbox. Re-ran DB checks outside the sandbox and applied migrations/seeds.
+
+- Problem:
+  Phase 2 handoff was not created before the first implementation summary.
+  Resolution:
+  Added `notes/claude_handoff_phase_2.txt` and tightened `markdown/CLAUDE_REVIEW_TEMPLATE.md`, `markdown/PHASE_TEMPLATE.md`, and `markdown/REVIEW_CHECKLIST.md`.
+
+- Problem:
+  Claude review found survey reads were anonymous.
+  Resolution:
+  Changed survey GET routes to require authentication and documented the decision above.
+
+## Follow-Up Tasks
+
+- Add hosted-safe admin provisioning before any hosted deployment.
+- Add a `RUN_ENV=prod` guard before local seed execution is automated.
+- Choose a database migration runner before deployment workflow becomes repetitive.
+- Validate same-survey conditional rule references when rule-management endpoints are added.
+- Require at least one question before publishing once admin-builder publish flows exist.
+- Add explicit length bounds for survey metadata and future question/option text writes.
+- Add route-level tests for survey auth, standard-user visibility, and admin hidden-tag visibility.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; C1 fixed after Claude review.
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes; API/database checks, user/admin survey visibility, and admin create/update smoke tests passed.
+- Ready to commit: Yes

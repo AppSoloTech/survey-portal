@@ -72,6 +72,12 @@ Manual tests:
 - Test 1
 - Test 2
 
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes / No
+- Handoff path: `notes/claude_handoff_phase_X.txt`
+- Claude review status before commit: Pending / Completed / Not run with reason
+
 ## Claude Review Notes
 
 Source:
@@ -111,6 +117,7 @@ Deferred findings:
 ## Commit Readiness
 
 - Requirements implemented:
+- Codex handoff created:
 - Product context still aligned:
 - Architecture principles still aligned:
 - Security review complete:

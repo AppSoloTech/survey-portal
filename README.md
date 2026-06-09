@@ -29,10 +29,15 @@ npm install
 cp .env.example .env
 psql "$DATABASE_URL" -f database/migrations/0001_app_health_check.sql
 psql "$DATABASE_URL" -f database/migrations/0002_users.sql
+psql "$DATABASE_URL" -f database/migrations/0003_surveys.sql
+psql "$DATABASE_URL" -f database/seeds/0001_phase_2_seed.sql
 npm run dev
 ```
 
-The API serves `/api/health` and `/api/auth/*`. In development, Vite proxies API calls to the Express server.
+The seed command is for local development only. Do not apply local seed files
+to hosted, shared, staging, or production databases.
+
+The API serves `/api/health`, `/api/auth/*`, and `/api/surveys/*`. In development, Vite proxies API calls to the Express server.
 
 ## Environment
 

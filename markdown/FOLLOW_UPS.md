@@ -18,8 +18,9 @@ Review this file before starting each implementation phase. When a follow-up is 
 ### Environment And Deployment
 
 - Update `/api/health` readiness semantics before Azure health checks rely on it. Either return non-2xx when PostgreSQL is unavailable or split liveness/readiness endpoints.
-- Add a real admin seed or provisioning workflow before hosted use.
 - Choose a database migration runner before deployment workflow becomes repetitive.
+- Add a hosted-safe admin provisioning workflow before any hosted deployment; do not run local seed files against hosted, shared, staging, or production databases.
+- Add a `RUN_ENV=prod` guard before seed execution is automated.
 
 ### API And Code Quality
 
@@ -27,6 +28,9 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Avoid the redundant `/api/auth/me` fetch immediately after login/register.
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Either query `app_health_check` from the health check or document the table as a migration-pipeline placeholder.
+- Validate conditional rule references belong to the same survey when rule-management endpoints are added.
+- Require at least one question before publishing a survey once admin-builder publish flows exist.
+- Add explicit length bounds for survey titles/descriptions and future question/option text writes.
 
 ### Frontend Validation
 
@@ -36,4 +40,4 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
-- None yet.
+- Phase 2: Added a safe local admin seed in `database/seeds/0001_phase_2_seed.sql`.

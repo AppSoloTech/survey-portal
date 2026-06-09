@@ -10,6 +10,7 @@ import { requestLogger } from "./middleware/request-logger.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
+import { surveysRouter } from "./routes/surveys.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +32,7 @@ export function createApp() {
   app.use("/api/health", healthRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/surveys", surveysRouter);
 
   const staticPath = path.resolve(__dirname, "../../web/dist");
   app.use(express.static(staticPath));

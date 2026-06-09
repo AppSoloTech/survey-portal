@@ -1,0 +1,277 @@
+# Claude Review — Phase 2 (Survey Data Model, Seeds, and API Foundation)
+
+Reviewer: Claude Code
+Date: 2026-06-09
+Branch: phase-1-auth (Phase 2 work in progress on this branch)
+Scope reviewed: current Phase 2 diff + new untracked files
+Prompt: prompts/prompt_2.txt
+Handoff: notes/claude_handoff_phase_2.txt
+
+Reference documents read: ARCHITECTURE_PRINCIPLES.md, DATA_MODEL_VISION.md,
+FLOW.md, REVIEW_CHECKLIST.md, PHASE_LOG.md, MASTER_PRODUCT_CONTEXT.txt,
+GLOBAL_DEVELOPMENT_ENVIRONMENT.txt, FOLLOW_UPS.md, prompt_2.txt.
+
+Overall: Excellent schema work. The migration is well-normalized, faithful to
+DATA_MODEL_VISION, and uses explicit FKs, sensible delete behavior, and good
+integrity constraints. The survey API batches its reads cleanly (no N+1) and
+the hidden-tag privacy gate is implemented correctly. One finding deserves an
+explicit decision before commit (public unauthenticated survey reads); the
+rest are improvements and tradeoffs.
+
+================================================================
+1. CRITICAL ISSUES
+================================================================
+
+C1. GET /api/surveys and GET /api/surveys/:id are unauthenticated.
+    apps/api/src/routes/surveys.ts mounts both reads with no requireAuth;
+    readOptionalAuthenticatedUser() returns null for requests with no
+    Authorization header and the handler proceeds, returning all PUBLISHED
+    surveys — full question text, answer options, and conditional rules — to
+    any anonymous caller on the internet.
+
+    This conflicts with two durable principles:
+      - ARCHITECTURE_PRINCIPLES "Authorization Principle": "Every API endpoint
+        should verify authentication and authorization."
+      - MASTER_PRODUCT_CONTEXT and DATA_MODEL_VISION Q8: users must register
+        and login; anonymous survey participation is not supported.
+
+    Severity is moderate, not catastrophic: no PII, no survey responses, and
+    no hidden tags are exposed (tags are correctly gated — see below). What
+    leaks is published survey *definitions* plus createdByUserId. But it is a
+    deliberate design choice (documented as a tradeoff in the handoff) that
+    contradicts the stated architecture/product rules, so it should be
+    ratified or fixed, not left implicit.
+
+    Recommended fix (small): add requireAuth to both GET routes and keep the
+    existing admin branch (includeAllStatuses/includeHiddenTags) by reading
+    role from req.user. Logged-in users still see only published surveys;
+    admins still see all statuses + tags. This keeps the optional-auth logic
+    but removes the anonymous path.
+
+    If the team genuinely wants a public survey catalog, record that as an
+    explicit decision in PHASE_LOG and update the Authorization Principle so
+    the docs and code agree. Right now they disagree.
+
+    (If you prefer, this can be treated as a high-priority Suggested
+    Improvement rather than a blocker — flagging it as critical only because
+    it is a server-side authorization decision and those deserve a conscious
+    sign-off.)
+
+================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================
+
+S1. Seed creates a known-credential admin — guard it against prod.
+    database/seeds/0001_phase_2_seed.sql inserts admin@example.test with a
+    fixed bcrypt hash for "AdminPass123!" and uses ON CONFLICT DO UPDATE to
+    reset that password on every run. This is fine and intentional for local
+    dev (fake .test domain, documented), but if this seed is ever applied to
+    a hosted/Azure database it creates a working admin backdoor and silently
+    resets the admin password. Recommend:
+      - Document explicitly (seeds/README + PHASE_LOG) that seeds must NEVER
+        run against hosted/prod databases.
+      - Consider a runtime guard before seeds become automated (e.g. refuse
+        to seed when RUN_ENV=prod), to be added with the migration-runner
+        follow-up.
+    Not a Phase 2 blocker, but it is the highest-value environment-safety
+    note here.
+
+S2. Retiring a survey discards published_at.
+    In the PUT handler the published_at CASE sets the column to null for any
+    status other than 'published' — including 'retired'. A retired survey was
+    previously published, so nulling published_at loses real history. Suggest
+    preserving published_at when transitioning published -> retired (only
+    clear it when going back to draft, if at all). Low severity, but it is
+    lost audit data.
+
+S3. No cross-survey integrity for conditional rules / options.
+    FKs guarantee that source_question_id, source_answer_option_id,
+    target_question_id, and survey_id all reference existing rows, but not
+    that they belong to the SAME survey, nor that source_answer_option_id
+    belongs to source_question_id. The seed is correct, but once the
+    admin-builder endpoints write rules, malformed cross-survey references
+    become possible. Plan to validate these relationships at the application
+    layer (or via a trigger) in the rule-management phase. Note for later, not
+    Phase 2.
+
+S4. Duplicate request-to-user resolution logic.
+    readOptionalAuthenticatedUser() in surveys.ts re-implements the Bearer
+    parse + verifyAuthToken + user lookup that requireAuth already does in
+    middleware/auth.ts. Consider extracting a shared
+    resolveUserFromRequest()/optionalAuth middleware so token handling lives
+    in one place. Improves maintainability and avoids drift (e.g. the two
+    queries already differ — see S5).
+
+S5. Minor type unsoundness in the optional-auth query.
+    readOptionalAuthenticatedUser types its query as pool.query<UserRecord>
+    but does not select password_hash, so record.password_hash is undefined
+    at runtime while the type claims string. mapUserRecord happens not to read
+    it, so it's harmless today, but the type lies. Either select a narrower
+    row type or reuse a shared user-projection. (Side note: omitting
+    password_hash here is actually the safer choice — consider making the
+    requireAuth middleware do the same and only select the hash where login
+    needs it.)
+
+S6. POST allows publishing an empty survey.
+    POST /api/surveys accepts status: 'published' with zero questions, so an
+    admin can publish a survey that has nothing to answer. Question management
+    is deferred, so this is acceptable now, but the eventual publish path
+    should require at least one question. Note for the builder phase.
+
+S7. No length bounds on title/description (and question/option text in
+    future writes). The 100kb JSON body limit caps abuse, but explicit max
+    lengths would give clearer 400s. Low priority.
+
+================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================
+
+T1. POST/PUT are survey-metadata-only.
+    Acceptable and correct for a "foundational CRUD" phase. prompt_2 asks for
+    GET/GET/POST/PUT on surveys; nested question/option/tag/rule management is
+    explicitly a non-goal and belongs to the admin-builder phase. Good call
+    not to overbuild.
+
+T2. Exposing conditional_logic_rules on public/published reads.
+    Acceptable. Rules reference question/option IDs, not tags, so this does
+    NOT breach the Hidden Tag Principle. The survey runner will need the rule
+    set to navigate, so shipping it on reads is reasonable. Caveat: it does
+    reveal the survey's branching map (which option jumps where) up front; if
+    branching is ever considered sensitive, scope rule exposure to
+    authenticated runner needs later. Fine for now. (Note this exposure rides
+    on top of C1 — once reads require auth, only logged-in users see it.)
+
+T3. Raw ordered SQL migration, no runner.
+    Consistent with Phase 0/1 and tracked as an active follow-up. Acceptable.
+
+T4. All five action_type enum values allowed in the DB while only
+    JUMP_TO_QUESTION is seeded/used.
+    Exactly what prompt_2 asks for: schema may carry future action values as
+    enum/constraint members without implementing their behavior. The
+    jump_to_question_target_check (target_question_id NOT NULL for
+    JUMP_TO_QUESTION) is a nice integrity touch.
+
+T5. Local seed as the "completed" admin-seed follow-up.
+    Acceptable to close the local-admin follow-up, BUT hosted/production admin
+    provisioning is a genuinely different problem and should remain a separate
+    tracked follow-up (see S1). Don't let "local seed done" imply "admin
+    provisioning solved."
+
+================================================================
+4. QUESTIONS OR ASSUMPTIONS (answers to handoff questions)
+================================================================
+
+Q: Does 0003_surveys.sql stay aligned with DATA_MODEL_VISION.md?
+A: Yes, closely. All nine... (eight) entities are present with the suggested
+   fields, status/type/action enums match, and the relationship summary holds
+   (User->attempts, Survey->questions/rules/attempts, etc.). The text-xor-
+   integer-or-both-null check on survey_response_answers and the join table
+   for selected options match the vision's "no JSON blobs" guidance. Aligned.
+
+Q: Are the foreign keys and delete behaviors appropriate?
+A: Mostly yes, and thoughtfully chosen:
+   - surveys.created_by_user_id -> users ON DELETE SET NULL: good (survey
+     survives admin removal).
+   - questions/options/tags/rules/attempts/responses cascade from their
+     parents: correct for definition + response trees.
+   - conditional_logic_rules.target_question_id ON DELETE CASCADE: reasonable
+     (deleting a target removes the now-dangling rule).
+   One gap: FKs don't enforce same-survey membership across a rule's
+   references (see S3). Not a Phase 2 blocker.
+
+Q: Is the one-active-attempt partial unique index acceptable for MVP?
+A: Yes. The partial unique on (survey_id, user_id) WHERE status IN
+   ('not_started','in_progress') is exactly the recommended MVP constraint and
+   is the right tool (allows historical completed/abandoned rows while
+   guaranteeing a single active attempt). Note it intentionally permits a NEW
+   attempt after a prior one is completed/abandoned; if the product later
+   wants "one completed attempt per user per survey" (vision Q1), that's a
+   separate rule to add then. Acceptable as-is.
+
+Q: Should public survey reads expose conditional rule records now?
+A: See T2 — exposing rules is acceptable and doesn't break hidden-tag privacy.
+   But pair this with C1: gate the reads behind authentication so only
+   logged-in users (per product) receive them.
+
+Q: Is hiding answerTags from public reads sufficient for the Hidden Tag
+   Principle?
+A: Yes. answer_tags are only queried when includeHiddenTags is true, which is
+   only for admin requests, and mapAnswerOptionRecord only attaches answerTags
+   in that case (otherwise the field is absent from the JSON). Verified the
+   non-admin/public path never selects or returns tags. This satisfies "Tags
+   must never be exposed to survey participants." Good. Add a route-level test
+   asserting this before the runner lands (already in your deferred list).
+
+Q: Are POST/PUT being metadata-only acceptable for this phase?
+A: Yes — see T1. Nested question creation should not be forced into Phase 2.
+
+Q: Is the local admin seed acceptable as the completed admin-seed follow-up?
+A: Acceptable to close the LOCAL portion. Keep hosted admin provisioning as a
+   separate active follow-up, and add the prod-safety guard/documentation in
+   S1. Don't mark hosted provisioning as solved.
+
+Q: Are the workflow doc changes sufficient to ensure future handoffs?
+A: The CLAUDE_REVIEW_TEMPLATE / FLOW expectation that a handoff is required
+   before a phase is "complete" is reasonable process reinforcement. It's a
+   convention, not an enforced gate — there's no automation preventing a
+   phase from closing without a handoff. If you want a hard guarantee, that
+   would need a checklist gate or script later; as documentation it's
+   sufficient for the current AI-assisted flow.
+
+Assumptions made during review:
+- Handoff validation results (typecheck/lint/build, migration+seed apply,
+  public GET hides answerTags) are accurate; I did not re-run the DB.
+- The not-run items (admin GET tag inspection, live POST/PUT with admin token,
+  automated tests) remain genuinely untested — see UX/commit notes.
+
+================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================
+
+- This is a backend/data phase with no UI changes, so there is little direct
+  UX surface. The API response shape (nested survey -> questions ->
+  answerOptions, plus conditionalLogicRules) is a clean contract for the
+  future survey-runner and admin-builder UIs.
+- Status visibility matches product intent: non-admins receive only published
+  surveys; draft/retired return 404 to them; admins see all statuses. This
+  lines up with "Users should only see published surveys."
+- Naming is consistent with the product vocabulary (survey, question, answer
+  option, hidden tag, conditional logic rule, attempt, response) per the
+  Review Checklist — good for cross-document coherence.
+- Watch item for the UI phases: createdByUserId is returned on every survey
+  read (including, today, to anonymous callers via C1). Once reads require
+  auth this is minor, but the survey-taking UI should never surface internal
+  user ids or rule internals to participants.
+
+================================================================
+6. COMMIT READINESS
+================================================================
+
+Recommendation: Address C1 (decide auth posture on the GET routes), then
+READY TO COMMIT. The schema and seed are solid and well within scope.
+
+- Phase requirements implemented: Yes (all 7 schemas, migration, seed with
+  admin + multi-type survey + tags + sample JUMP_TO_QUESTION rule, and
+  GET/GET/POST/PUT survey APIs).
+- Non-goals respected: Yes (no runner, no builder UI, no runtime logic
+  evaluation, no analytics/reporting/export; only JUMP_TO_QUESTION used).
+- Schema alignment with DATA_MODEL_VISION: Yes.
+- Hidden-tag privacy: Correctly enforced.
+- Security/authorization: One decision needed (C1). Admin mutations are
+  correctly gated with requireAuth + requireRole("admin"); SQL is fully
+  parameterized; no N+1.
+- Environment safety: No production secrets committed; seed is local fake
+  data, but add the prod-seed guard/doc note (S1) before any automated
+  seeding.
+
+Suggested handling of findings:
+- Decide before commit: C1 (recommend adding requireAuth to the GET routes).
+- Quick, worthwhile now: S1 (seed prod-safety doc/guard), S2 (preserve
+  published_at on retire).
+- Defer to builder phase: S3, S6; general cleanup: S4, S5, S7.
+- Add the deferred route-level tests (auth visibility + tag privacy) before
+  the survey runner consumes this data.
+
+Update PHASE_LOG.md Phase 2 "Claude Review Notes" with accepted vs deferred
+decisions once triaged, and record the C1 auth decision explicitly so code and
+the Authorization Principle stay in agreement.

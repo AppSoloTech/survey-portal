@@ -1,0 +1,206 @@
+# Claude Review Handoff — Phase 2
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current Phase 2 diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_2.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- architectural consistency
+- product UX alignment
+- maintainability
+- unnecessary complexity
+- security concerns
+- auth and data exchange security concerns
+- database integrity and extensibility
+- hidden tag privacy
+- conditional logic schema alignment
+- app environment safety
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_2.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Added `database/migrations/0003_surveys.sql` with tables for:
+  - `surveys`
+  - `survey_questions`
+  - `answer_options`
+  - `answer_tags`
+  - `conditional_logic_rules`
+  - `survey_attempts`
+  - `survey_response_answers`
+  - `survey_response_selected_options`
+- Added explicit foreign keys, indexes, status/type/action constraints, and one-active-attempt partial unique index.
+- Added local seed file `database/seeds/0001_phase_2_seed.sql`.
+- Seed creates one local admin account:
+  - email: `admin@example.test`
+  - password: `AdminPass123!`
+- Seed creates one published test survey with text, integer, single-select, and multi-select questions.
+- Seed creates sample hidden answer tags attached to answer options.
+- Seed creates one sample `JUMP_TO_QUESTION` conditional logic rule.
+- Added shared survey, question, answer option, answer tag, conditional rule, and survey response types.
+- Added foundational survey API routes:
+  - `GET /api/surveys`
+  - `GET /api/surveys/:id`
+  - `POST /api/surveys`
+  - `PUT /api/surveys/:id`
+- Mounted the survey router at `/api/surveys`.
+- Updated README and database seed/migration docs.
+- Moved the local admin seed follow-up to completed in `markdown/FOLLOW_UPS.md`.
+- Updated the Claude handoff template so future phase implementations explicitly require a handoff before completion.
+
+Non-goals:
+
+- Survey runner UI.
+- Admin survey builder UI.
+- Runtime conditional logic evaluation.
+- Analytics.
+- Reporting.
+- CSV export.
+- Question/answer option/rule editing endpoints beyond foundational survey create/update.
+- Implementation of `SHOW_QUESTION`, `HIDE_QUESTION`, `JUMP_TO_PAGE`, or `END_SURVEY` behavior.
+
+Known tradeoffs:
+
+- `POST /api/surveys` and `PUT /api/surveys/:id` currently create/update survey metadata only. The normalized child tables are read and seeded, but question/option/rule management endpoints are left for later admin-builder phases.
+- Public `GET /api/surveys` and `GET /api/surveys/:id` expose conditional rule records for published surveys, but do not expose hidden answer tags. This supports future survey flow setup while preserving hidden tag privacy.
+- Admin callers can see all survey statuses and hidden tags when they provide a valid admin bearer token.
+- The SQL migration remains ordered/raw SQL because the migration runner follow-up is still active.
+- Seed data is local fake data only and includes a documented local password.
+
+Deferred work:
+
+- Choose a database migration runner before deployment workflow becomes repetitive.
+- Add route-level tests for survey APIs and auth visibility rules.
+- Add dedicated admin endpoints for question, option, tag, and rule management in a later admin-builder phase.
+- Revisit local-storage JWT versus httpOnly cookie auth before real survey response data or hidden-tag metadata exists.
+- Add auth route rate limiting before public exposure.
+- Update `/api/health` readiness semantics before Azure health checks rely on it.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Expected new files:
+
+```txt
+apps/api/src/routes/surveys.ts
+database/migrations/0003_surveys.sql
+database/seeds/0001_phase_2_seed.sql
+notes/claude_handoff_phase_2.txt
+```
+
+Expected modified files include:
+
+```txt
+README.md
+apps/api/src/app.ts
+database/README.md
+database/seeds/README.md
+markdown/CLAUDE_REVIEW_TEMPLATE.md
+markdown/FOLLOW_UPS.md
+packages/shared/src/index.ts
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+pg_isready -h 127.0.0.1 -p 5432 -d survey_portal
+curl -sS http://127.0.0.1:3000/api/health
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0001_app_health_check.sql -f database/migrations/0002_users.sql -f database/migrations/0003_surveys.sql -f database/seeds/0001_phase_2_seed.sql
+curl -sS http://127.0.0.1:3000/api/surveys
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Passed: local PostgreSQL readiness check outside Codex's restricted network sandbox.
+- Passed: `/api/health` returned `database: connected`.
+- Passed: ordered migrations and Phase 2 seed applied locally.
+- Passed: local database contains the expected Phase 2 tables.
+- Passed: public `GET /api/surveys` returned the seeded published survey with questions, answer options, and the sample rule.
+- Passed: public `GET /api/surveys` response did not include hidden `answerTags`.
+- Failed: initial sandboxed `psql`/`pg_isready` attempts reported no response because Codex's restricted network sandbox could not reach `localhost:5432`.
+- Not run: authenticated admin `GET /api/surveys` response inspection for hidden tags.
+- Not run: `POST /api/surveys` and `PUT /api/surveys/:id` live endpoint tests with an admin token.
+- Not run: automated backend tests.
+
+Manual testing:
+
+- Confirmed the API process had idle PostgreSQL connections while `npm run dev` was running.
+- Confirmed the local database initially only had `users`, then applied Phase 2 migration/seed successfully.
+- Confirmed the public API response shape is suitable for future survey-taking phases and hides hidden tags.
+- Confirmed no production secrets or client-owned survey content were added.
+
+## Specific Questions
+
+Does `0003_surveys.sql` stay aligned with `markdown/DATA_MODEL_VISION.md`?
+
+Are the foreign keys and delete behaviors appropriate for survey definitions, attempts, and responses?
+
+Is the one-active-attempt partial unique index acceptable for MVP, given the data model says to consider limiting each user to one active attempt per survey?
+
+Should public survey reads expose conditional rule records now, or should those be admin-only until the survey runner consumes them?
+
+Is hiding `answerTags` from public survey reads sufficient for the Hidden Tag Principle?
+
+Are `POST /api/surveys` and `PUT /api/surveys/:id` being metadata-only acceptable for this foundational CRUD phase, or should create/update include nested questions in Phase 2?
+
+Is the local admin seed acceptable as the completed version of the admin seed/provisioning follow-up, or should hosted provisioning remain separately tracked?
+
+Are the workflow documentation changes sufficient to ensure Codex creates `notes/claude_handoff_phase_X.txt` before declaring future phase implementations complete?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_2.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness
