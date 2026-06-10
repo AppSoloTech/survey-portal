@@ -105,6 +105,8 @@ export async function createQuestion(input: {
   surveyId: number;
   questionText: string;
   questionType: SurveyQuestionType;
+  scaleMin?: number | null;
+  scaleMax?: number | null;
   isRequired: boolean;
   helpText: string | null;
 }): Promise<SurveyResponse> {
@@ -112,6 +114,8 @@ export async function createQuestion(input: {
     body: JSON.stringify({
       questionText: input.questionText,
       questionType: input.questionType,
+      scaleMin: input.scaleMin ?? null,
+      scaleMax: input.scaleMax ?? null,
       isRequired: input.isRequired,
       helpText: input.helpText
     }),
@@ -124,6 +128,8 @@ export async function updateQuestion(input: {
   questionId: number;
   questionText: string;
   questionType: SurveyQuestionType;
+  scaleMin?: number | null;
+  scaleMax?: number | null;
   isRequired: boolean;
   helpText: string | null;
 }): Promise<SurveyResponse> {
@@ -133,6 +139,8 @@ export async function updateQuestion(input: {
       body: JSON.stringify({
         questionText: input.questionText,
         questionType: input.questionType,
+        scaleMin: input.scaleMin ?? null,
+        scaleMax: input.scaleMax ?? null,
         isRequired: input.isRequired,
         helpText: input.helpText
       }),

@@ -1,0 +1,210 @@
+# Claude Review — SCALE Question Type
+
+Date: 2026-06-10
+Reviewer: Claude Code
+Scope: SCALE question type diff only (git diff + untracked migration/doc)
+
+Files reviewed:
+- packages/shared/src/index.ts
+- database/migrations/0005_scale_question_type.sql
+- apps/api/src/routes/surveys.ts
+- apps/web/src/api/surveys.ts
+- apps/web/src/components/admin/SurveyBuilderComponents.tsx
+- apps/web/src/pages/AdminDashboard.tsx
+- apps/web/src/pages/UserDashboard.tsx
+- apps/web/src/styles.css
+- markdown/SCALE_QUESTION_DATA_MODEL.md
+
+Overall: The implementation is well-aligned with the normalized survey model and
+correctly reuses answer_options / answer_tags / survey_response_selected_options
+rather than introducing scale-specific tables or JSON blobs. Hidden-tag privacy is
+preserved. Server-side validation is strong. There is one correctness bug worth
+fixing before commit (orphaned generated options on draft type-change), plus a few
+smaller improvements.
+
+
+====================================================================
+1. CRITICAL ISSUES
+====================================================================
+
+[C1] Changing a DRAFT question's type away from `scale` leaves orphaned
+     generated numeric options behind.
+
+     Location: apps/api/src/routes/surveys.ts, PUT /:id/questions/:questionId
+     (the scale sync block).
+
+       if (survey.status === "draft" && validation.value.questionType === "scale") {
+         await syncScaleAnswerOptions(client, questionId, { ... });
+       }
+
+     syncScaleAnswerOptions only runs when the NEW type is `scale`. It never runs
+     when the new type is something else. So on a draft survey, converting a
+     `scale` question to `single_select` / `multi_select` / `text` / `integer`
+     updates survey_questions.question_type but leaves the generated "0".."N"
+     rows (and their tags) in answer_options.
+
+     Consequences:
+     - scale -> single_select / multi_select: the leftover numeric values
+       resurface as real, participant-visible answer options the admin never
+       authored. They are also now manually editable/deletable again, so the
+       data is "live" and wrong.
+     - scale -> text / integer: dead answer_options rows persist and are still
+       returned in the question's answerOptions payload, though the runner
+       ignores them.
+
+     This is reachable through normal admin flow on draft surveys (type changes
+     are only permitted while draft, which is exactly where this fires).
+
+     Suggested fix: when a draft question is NOT (or no longer) `scale`, delete
+     its scale-generated options, e.g. clear generated options on any type change
+     away from scale before/instead of the sync. A simple approach: in the draft
+     branch, if questionType !== "scale" AND the prior question_type === "scale",
+     remove the generated option rows for that question.
+
+     Note: this is draft-only and recoverable, but it produces incorrect
+     participant-facing options, so I'm classifying it as correctness-critical
+     rather than cosmetic.
+
+
+====================================================================
+2. SUGGESTED IMPROVEMENTS
+====================================================================
+
+[S1] POST /:id/questions has no draft-only guard.
+     Location: surveys.ts, POST /:id/questions (~lines 300-372).
+     The create-question handler fetches the survey but does not reject when
+     survey.status is `published` or `retired`. An admin can therefore add a new
+     question — including a `scale` question that generates options — to a
+     published survey that already has response history, reshaping it.
+     This is pre-existing behavior inherited by all question types, not unique to
+     SCALE, but the handoff explicitly asks about publish/edit safety, so it is
+     worth confirming whether structural additions to published surveys are
+     intended. If not, add the same draft guard the PUT path uses for type
+     changes. (See Q4 below.)
+
+[S2] hasScaleRangeChanged returns true for a published scale question that has no
+     parseable options.
+     Location: surveys.ts, hasScaleRangeChanged.
+     When existingRange is null, `existingRange?.min !== nextQuestion.scaleMin`
+     compares undefined to a number and is always true, so a 409 would block even
+     a pure help-text edit. In practice the disabled scale inputs re-submit the
+     derived min/max as hidden fields, so this only bites a published scale
+     question whose options were somehow lost. Low likelihood, but consider
+     treating "no existing options" as "unchanged" (or short-circuiting when the
+     submitted range equals the derived range) to avoid a confusing lockout.
+
+[S3] Wrap migration 0005 in a transaction.
+     Location: database/migrations/0005_scale_question_type.sql.
+     It drops `survey_questions_type_check` then adds the new constraint as two
+     separate statements. If the ADD fails, the table is left with no type
+     constraint. Wrap the drop+add in begin/commit so it is atomic. The
+     constraint content itself is correct and matches the shared enum.
+
+[S4] syncScaleAnswerOptions issues per-row UPDATE/INSERT in a loop (plus the
+     offset-bump UPDATE). It is bounded by the 21-value cap so this is fine in
+     practice; flagging only as a future batching opportunity, not a blocker.
+
+[S5] Minor: the display_order "offset bump then renumber" trick in
+     syncScaleAnswerOptions is correct (it avoids unique-index collisions), but it
+     is subtle. A one-line comment explaining why the temporary +offset shift is
+     needed would help future maintainers.
+
+
+====================================================================
+3. ACCEPTABLE TRADEOFFS
+====================================================================
+
+[A1] Deriving scaleMin / scaleMax from generated options instead of dedicated
+     columns. This keeps the schema normalized and avoids redundant state that
+     could drift from the option rows. Publish-time contiguity validation
+     (hasContiguousScaleValues) backstops the derivation. Acceptable.
+
+[A2] Mirroring the selected numeric value into survey_response_answers.answer_integer.
+     It is computed server-side from the selected option's text at write time
+     (validateAnswerForQuestion), and post-publish options are immutable, so the
+     divergence risk is low. It is a genuine reporting/export convenience
+     (numeric aggregation without resolving through the join + parsing text).
+     Acceptable as documented.
+
+[A3] Scale excluded from conditional-rule sources. Verified this is enforced
+     server-side: isSelectionQuestionType (single_select/multi_select only) gates
+     both rule creation (validateRule) and publish validation, so scale option ids
+     cannot become rule sources. Consistent and intentional; answers handoff Q7.
+
+[A4] No new automated tests. Consistent with the repo's current typecheck / lint /
+     build / manual-validation posture. Noting as a known gap, not a blocker.
+
+[A5] Changing a draft scale range deletes out-of-range generated options and their
+     tags. Expected for drafts; surfaced to the admin via the builder copy.
+
+
+====================================================================
+4. QUESTIONS / ASSUMPTIONS
+====================================================================
+
+Q1 (Hidden Tag Principle): Confirmed preserved. Participant-facing fetches
+   (buildMySurveyResponse and the attempt path) pass includeHiddenTags: false,
+   and scale reuses the same option/tag mapping, so scale tags are stripped for
+   participants exactly like selection options. Admin paths use
+   includeHiddenTags: isAdmin / true. No exposure found.
+
+Q2 (Response storage): Confirmed. Scale writes the selected option id to
+   survey_response_selected_options and mirrors the numeric value into
+   answer_integer. Required scale enforces exactly one selection; optional scale
+   allows zero or one; selected option membership is validated against the
+   question. hasMeaningfulResponse correctly requires one selection AND an
+   integer for scale.
+
+Q3 (Validation strength): Confirmed server-side and sufficient — whole-number
+   min/max (readOptionalIntegerField rejects strings/non-safe integers),
+   max > min, <= 21 values, contiguity at publish, and per-answer option
+   membership + numeric-parse checks.
+
+Q4: Is adding new questions (including scale) to a published survey intended?
+   See [S1]. If not, this path needs a draft guard.
+
+Q5: After [C1] is addressed, should converting away from scale also be blocked
+   entirely (vs. cleaning up options)? Cleanup is the lower-friction option and
+   matches the draft-editing model.
+
+
+====================================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+====================================================================
+
+- Naming is consistent with the product vocabulary: "Scale values" vs "Answer
+  options", "Hidden tags for this value", and the generated-vs-edited distinction
+  is made explicit in the builder copy. Good alignment with REVIEW_CHECKLIST
+  "consistent names" and "user-facing copy avoids leaking internal tags".
+- The builder correctly hides manual add/reorder/delete/edit controls for scale
+  values and shows a read-only "Value shown to users" summary plus a per-value
+  hidden-tag editor. Matches the data-model intent.
+- Customer rendering uses a radiogroup of numeric radio buttons, flex-wrapped with
+  a max width, which reads reasonably on narrow and desktop widths (handoff Q9).
+  Minor: native `required` is applied to every radio in the group; it works
+  alongside the server check, but the per-input required toggling is slightly
+  unusual. Not a blocker.
+- In-form nuance: ScaleRangeFields visibility is driven by the dropdown
+  (selectedQuestionType) while the generated-values list is driven by the saved
+  question type (isOptionBacked). So when converting an existing question to
+  scale, the range inputs appear immediately but values only generate after save +
+  reload. Acceptable, but worth a tooltip/help line so admins know to save first.
+
+
+====================================================================
+6. COMMIT READINESS
+====================================================================
+
+Status: NOT READY as-is — recommend fixing [C1] (orphaned generated options on
+draft type-change away from scale) before committing, since it can produce
+incorrect participant-visible options.
+
+After [C1] is fixed, the change is in good shape to commit. [S1] (published-survey
+add-question guard) should be explicitly accepted or addressed because the handoff
+raised publish/edit safety; [S2]/[S3] are low-risk hardening; the remaining items
+are optional polish.
+
+Validation already run by implementer (typecheck / lint / build / git diff --check)
+all passed; no automated UI tests. Recommend the manual scale checks from the
+handoff plus one extra: on a DRAFT survey, change a scale question to single_select
+and confirm no stray numeric options remain (this is the [C1] repro).

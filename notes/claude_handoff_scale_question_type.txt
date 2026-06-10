@@ -1,0 +1,185 @@
+# Claude Review Handoff — SCALE Question Type
+
+Date:
+2026-06-10
+
+Prompt:
+User requested a new configurable numeric `SCALE` survey question type with optional hidden tags per scale value.
+
+Status:
+Implementation ready for review
+
+## Claude Code Instructions
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current SCALE question type diff only.
+- Write the full review to `notes/claude_review_scale_question_type.txt`.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+
+Also read the new model note:
+
+- `markdown/SCALE_QUESTION_DATA_MODEL.md`
+
+## Review Goal
+
+Please review the SCALE implementation for:
+
+- architectural consistency with the existing normalized survey model
+- hidden-tag privacy
+- response storage correctness
+- admin builder UX clarity
+- customer survey rendering
+- server-side validation strength
+- schema migration safety
+- maintainability and unnecessary complexity
+- publish/edit safety for surveys with response history
+
+## Scope Implemented
+
+- Added `scale` to shared `SurveyQuestionType`.
+- Added `scaleMin` and `scaleMax` to the shared `SurveyQuestion` contract.
+- Added database migration `database/migrations/0005_scale_question_type.sql`.
+- Implemented server-side validation for scale min/max:
+  - whole numbers only
+  - max greater than min
+  - at most 21 rendered values
+- Represented scale values as generated `answer_options` rows.
+- Reused existing `answer_tags` for hidden tags per scale value.
+- Reused existing selected-option response storage for scale answers.
+- Also stores the selected numeric value in `survey_response_answers.answer_integer`.
+- Restricted scale range changes on published surveys.
+- Blocked manual option text/order/delete operations for scale-generated values.
+- Updated admin builder:
+  - add/edit SCALE questions
+  - min/max inputs
+  - generated value display
+  - per-value hidden tag add/edit/delete
+  - read-only preview of scale values
+- Updated customer survey runner:
+  - renders SCALE as a radio-style numeric scale
+  - submits selected generated option id
+- Added a short developer model note.
+
+## Files To Review
+
+- `packages/shared/src/index.ts`
+- `database/migrations/0005_scale_question_type.sql`
+- `apps/api/src/routes/surveys.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+- `apps/web/src/pages/AdminDashboard.tsx`
+- `apps/web/src/pages/UserDashboard.tsx`
+- `apps/web/src/styles.css`
+- `markdown/SCALE_QUESTION_DATA_MODEL.md`
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Generated `dist/` files are ignored in this repo. The production build was run successfully, but generated artifacts are not part of the tracked diff.
+
+## Data Model Notes
+
+SCALE intentionally reuses existing answer-option/tag infrastructure:
+
+- `survey_questions.question_type = 'scale'`
+- generated numeric values live in `answer_options`
+- hidden tags live in `answer_tags`
+- selected value tags resolve through `survey_response_selected_options`
+- selected numeric value is mirrored into `answer_integer`
+
+Please evaluate whether mirroring the numeric value into `answer_integer` is an acceptable reporting convenience or whether it risks redundant state issues.
+
+## Specific Review Questions
+
+1. Does using generated `answer_options` for numeric scale values preserve the Hidden Tag Principle?
+2. Does the implementation avoid exposing hidden tags to participants?
+3. Are the scale range validation rules sufficient and located on the server?
+4. Is the draft-only range-change restriction enough to protect published response history?
+5. Are scale responses stored in a way that supports future reporting and export?
+6. Does deriving `scaleMin` and `scaleMax` from generated options create any API consistency risk?
+7. Are conditional rules intentionally limited to `single_select` and `multi_select`, or should `scale` also be eligible?
+8. Does the admin UI make clear that scale values are generated and only tags are edited per value?
+9. Is the customer scale rendering usable across narrow and desktop widths?
+10. Does migration `0005` safely update the existing check constraint?
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above
+- Failed: none
+- Not run: automated browser/UI tests
+
+Dev server was also started successfully:
+
+- Web: `http://127.0.0.1:5173/`
+- API: `http://127.0.0.1:3000`
+
+## Manual Testing Suggested
+
+1. Apply `database/migrations/0005_scale_question_type.sql` to the local database.
+2. Log in as admin.
+3. Create a draft survey.
+4. Add a SCALE question with min `0` and max `10`.
+5. Confirm values `0` through `10` are generated.
+6. Add hidden tags to values `0`, `5`, and `10`.
+7. Save/reload the survey and confirm scale values and tags persist.
+8. Try invalid ranges:
+   - non-number input
+   - max equal to min
+   - max less than min
+   - more than 21 values
+9. Publish the survey.
+10. Complete the survey as a standard user and select one scale value.
+11. Confirm participant APIs/UI do not expose hidden tags.
+12. Inspect the saved response to confirm:
+   - selected option id is stored
+   - `answer_integer` matches the selected numeric value
+13. Confirm range changes are blocked after publishing.
+
+## Known Tradeoffs
+
+- Scale min/max are not stored as dedicated columns. They are derived from generated numeric `answer_options`.
+- Scale values are not eligible as conditional-rule sources in this implementation because existing conditional logic is restricted to `single_select` and `multi_select`.
+- Changing a draft scale range may delete generated option rows outside the new range, which also deletes their tags. This is expected for draft surveys but should be reviewed for admin UX clarity.
+- There are no new dedicated automated tests because this repo currently relies on typecheck, lint, build, and manual validation patterns.
+
+## Requested Output Format
+
+Write `notes/claude_review_scale_question_type.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

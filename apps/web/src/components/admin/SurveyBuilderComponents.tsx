@@ -12,7 +12,8 @@ export const questionTypes: SurveyQuestionType[] = [
   "text",
   "integer",
   "single_select",
-  "multi_select"
+  "multi_select",
+  "scale"
 ];
 
 const customTagOptionValue = "__custom_tag_value__";
@@ -206,6 +207,14 @@ export function QuestionEditor({
   question: SurveyQuestion;
   tagPresets: TagPreset[];
 }) {
+  const [selectedQuestionType, setSelectedQuestionType] = useState(question.questionType);
+  const isScale = selectedQuestionType === "scale";
+  const isOptionBacked = isSelectionQuestion(question) || question.questionType === "scale";
+
+  useEffect(() => {
+    setSelectedQuestionType(question.questionType);
+  }, [question.id, question.questionType]);
+
   return (
     <section className="question-editor">
       <form onSubmit={(event) => void onSaveQuestion(event, question)}>
@@ -246,6 +255,9 @@ export function QuestionEditor({
               defaultValue={question.questionType}
               disabled={isPublished}
               name={isPublished ? undefined : "questionType"}
+              onChange={(event) =>
+                setSelectedQuestionType(event.target.value as SurveyQuestionType)
+              }
             >
               {questionTypes.map((type) => (
                 <option key={type} value={type}>
@@ -258,6 +270,13 @@ export function QuestionEditor({
             ) : null}
           </label>
         </div>
+        {isScale ? (
+          <ScaleRangeFields
+            disabled={isPublished}
+            scaleMax={question.scaleMax ?? 10}
+            scaleMin={question.scaleMin ?? 0}
+          />
+        ) : null}
         <label>
           Help text
           <input defaultValue={question.helpText ?? ""} name="helpText" />
@@ -285,20 +304,25 @@ export function QuestionEditor({
         </div>
       </form>
 
-      {isSelectionQuestion(question) ? (
+      {isOptionBacked ? (
         <div className="option-editor">
           <div>
-            <h4>Answer options</h4>
+            <h4>{question.questionType === "scale" ? "Scale values" : "Answer options"}</h4>
             <p className="builder-heading-note">
-              Option text, order, and hidden tags are saved with separate actions.
+              {question.questionType === "scale"
+                ? "Scale values are generated from the range. Hidden tags are saved per value."
+                : "Option text, order, and hidden tags are saved with separate actions."}
             </p>
           </div>
           {question.answerOptions.length === 0 ? (
             <div className="builder-empty-state compact">
-              <strong>No answer options yet</strong>
+              <strong>
+                {question.questionType === "scale" ? "No scale values yet" : "No answer options yet"}
+              </strong>
               <span>
-                Add at least one option below so users have choices and this question can
-                drive hidden tags or jump rules.
+                {question.questionType === "scale"
+                  ? "Save a valid range on this question to generate selectable values."
+                  : "Add at least one option below so users have choices and this question can drive hidden tags or jump rules."}
               </span>
             </div>
           ) : null}
@@ -306,62 +330,77 @@ export function QuestionEditor({
             <div className="option-editor-row" key={option.id}>
               <div className="option-row-header">
                 <div>
-                  <p className="option-subheading">Option {index + 1}</p>
+                  <p className="option-subheading">
+                    {question.questionType === "scale" ? "Scale value" : `Option ${index + 1}`}
+                  </p>
                   <h5>{option.optionText}</h5>
                 </div>
-                <div className="inline-actions">
-                  <button
-                    className="button-link compact-button ghost-button"
-                    disabled={isSubmitting || index === 0}
-                    onClick={() => void onMoveOption(question, option.id, -1)}
-                    type="button"
-                  >
-                    Move up
-                  </button>
-                  <button
-                    className="button-link compact-button ghost-button"
-                    disabled={isSubmitting || index === question.answerOptions.length - 1}
-                    onClick={() => void onMoveOption(question, option.id, 1)}
-                    type="button"
-                  >
-                    Move down
-                  </button>
-                </div>
+                {question.questionType !== "scale" ? (
+                  <div className="inline-actions">
+                    <button
+                      className="button-link compact-button ghost-button"
+                      disabled={isSubmitting || index === 0}
+                      onClick={() => void onMoveOption(question, option.id, -1)}
+                      type="button"
+                    >
+                      Move up
+                    </button>
+                    <button
+                      className="button-link compact-button ghost-button"
+                      disabled={isSubmitting || index === question.answerOptions.length - 1}
+                      onClick={() => void onMoveOption(question, option.id, 1)}
+                      type="button"
+                    >
+                      Move down
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <div className="option-row-body">
-                <form
-                  className="option-row-form"
-                  onSubmit={(event) => void onSaveOption(event, question, option)}
-                >
-                  <label>
-                    Option text
-                    <input defaultValue={option.optionText} name="optionText" required />
-                  </label>
-                  <div className="inline-actions">
-                    <button
-                      className="button-link compact-button primary-button"
-                      disabled={isSubmitting}
-                      type="submit"
-                    >
-                      Save option text
-                    </button>
-                    <button
-                      className="button-link compact-button danger-button"
-                      disabled={isSubmitting || isPublished}
-                      onClick={() => void onDeleteOption(question, option.id)}
-                      type="button"
-                    >
-                      Delete option
-                    </button>
+                {question.questionType === "scale" ? (
+                  <div className="scale-value-summary">
+                    <span>Value shown to users</span>
+                    <strong>{option.optionText}</strong>
                   </div>
-                </form>
+                ) : (
+                  <form
+                    className="option-row-form"
+                    onSubmit={(event) => void onSaveOption(event, question, option)}
+                  >
+                    <label>
+                      Option text
+                      <input defaultValue={option.optionText} name="optionText" required />
+                    </label>
+                    <div className="inline-actions">
+                      <button
+                        className="button-link compact-button primary-button"
+                        disabled={isSubmitting}
+                        type="submit"
+                      >
+                        Save option text
+                      </button>
+                      <button
+                        className="button-link compact-button danger-button"
+                        disabled={isSubmitting || isPublished}
+                        onClick={() => void onDeleteOption(question, option.id)}
+                        type="button"
+                      >
+                        Delete option
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 <div className="tag-editor">
                   <div>
-                    <p className="option-subheading">Hidden tags for this option</p>
+                    <p className="option-subheading">
+                      Hidden tags for this {question.questionType === "scale" ? "value" : "option"}
+                    </p>
                     <p className="tag-helper-text">
-                      Use Add hidden tag for new tags. Save option text does not save tag fields.
+                      {question.questionType === "scale"
+                        ? "Tags attach when this value is selected."
+                        : "Use Add hidden tag for new tags. Save option text does not save tag fields."}
                     </p>
                   </div>
                   {(option.answerTags ?? []).map((tag) => (
@@ -411,19 +450,21 @@ export function QuestionEditor({
             </div>
           ))}
 
-          <form className="add-option-form" onSubmit={(event) => void onAddOption(event, question)}>
-            <label>
-              New option text
-              <input name="optionText" required />
-            </label>
-            <button
-              className="button-link compact-button primary-button"
-              disabled={isSubmitting}
-              type="submit"
-            >
-              Add option
-            </button>
-          </form>
+          {question.questionType !== "scale" ? (
+            <form className="add-option-form" onSubmit={(event) => void onAddOption(event, question)}>
+              <label>
+                New option text
+                <input name="optionText" required />
+              </label>
+              <button
+                className="button-link compact-button primary-button"
+                disabled={isSubmitting}
+                type="submit"
+              >
+                Add option
+              </button>
+            </form>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -444,7 +485,49 @@ function QuestionMetaStrip({
       {isSelectionQuestion(question) ? (
         <span>{formatCount(question.answerOptions.length, "option")}</span>
       ) : null}
+      {question.questionType === "scale" ? (
+        <span>{formatCount(question.answerOptions.length, "value")}</span>
+      ) : null}
       {isPublished ? <span>Structure locked</span> : <span>Editable draft</span>}
+    </div>
+  );
+}
+
+export function ScaleRangeFields({
+  disabled = false,
+  scaleMax = 10,
+  scaleMin = 0
+}: {
+  disabled?: boolean;
+  scaleMax?: number;
+  scaleMin?: number;
+}) {
+  return (
+    <div className="builder-grid two-columns scale-range-fields">
+      <label>
+        Minimum scale value
+        <input
+          defaultValue={scaleMin}
+          disabled={disabled}
+          name={disabled ? undefined : "scaleMin"}
+          required
+          step={1}
+          type="number"
+        />
+        {disabled ? <input name="scaleMin" type="hidden" value={scaleMin} /> : null}
+      </label>
+      <label>
+        Maximum scale value
+        <input
+          defaultValue={scaleMax}
+          disabled={disabled}
+          name={disabled ? undefined : "scaleMax"}
+          required
+          step={1}
+          type="number"
+        />
+        {disabled ? <input name="scaleMax" type="hidden" value={scaleMax} /> : null}
+      </label>
     </div>
   );
 }
@@ -602,6 +685,27 @@ function PreviewQuestionControl({ question }: { question: SurveyQuestion }) {
     return <div className="preview-input">Whole number response</div>;
   }
 
+  if (question.questionType === "scale") {
+    if (question.answerOptions.length === 0) {
+      return (
+        <div className="builder-empty-state compact">
+          <strong>No scale values</strong>
+          <span>Save a valid range before publishing this scale question.</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="preview-scale-list">
+        {sortAnswerOptions(question.answerOptions).map((option) => (
+          <span className="preview-scale-value" key={option.id}>
+            {option.optionText}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   if (question.answerOptions.length === 0) {
     return (
       <div className="builder-empty-state compact">
@@ -613,10 +717,7 @@ function PreviewQuestionControl({ question }: { question: SurveyQuestion }) {
 
   return (
     <div className="preview-option-list">
-      {question.answerOptions
-        .slice()
-        .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)
-        .map((option) => (
+      {sortAnswerOptions(question.answerOptions).map((option) => (
           <div className="preview-option-row" key={option.id}>
             <span aria-hidden="true">
               {question.questionType === "single_select" ? "( )" : "[ ]"}
@@ -848,6 +949,12 @@ export function isSelectionQuestion(question: SurveyQuestion): boolean {
 
 export function formatQuestionType(type: SurveyQuestionType): string {
   return type.replace("_", " ");
+}
+
+function sortAnswerOptions(options: AnswerOption[]): AnswerOption[] {
+  return [...options].sort(
+    (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
+  );
 }
 
 function formatCount(count: number, singularLabel: string): string {

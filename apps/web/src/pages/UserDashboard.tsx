@@ -151,7 +151,9 @@ export function UserDashboard() {
         answerText: question.questionType === "text" ? answerText : null,
         answerInteger: question.questionType === "integer" ? integerValue : null,
         selectedAnswerOptionIds:
-          question.questionType === "single_select" || question.questionType === "multi_select"
+          question.questionType === "single_select" ||
+          question.questionType === "multi_select" ||
+          question.questionType === "scale"
             ? selectedAnswerOptionIds
             : []
       });
@@ -222,7 +224,7 @@ export function UserDashboard() {
       return;
     }
 
-    if (question.questionType === "single_select") {
+    if (question.questionType === "single_select" || question.questionType === "scale") {
       setSelectedAnswerOptionIdsByQuestionId((current) => ({
         ...current,
         [question.id]: [optionId]
@@ -534,6 +536,25 @@ function renderQuestionControl({
           value={answerInteger}
         />
         <p className="input-helper-text">Use digits only. Decimals are not accepted.</p>
+      </div>
+    );
+  }
+
+  if (currentQuestion.questionType === "scale") {
+    return (
+      <div className="scale-answer-control" role="radiogroup">
+        {currentQuestion.answerOptions.map((option) => (
+          <label className="scale-answer-option" key={option.id}>
+            <input
+              checked={selectedAnswerOptionIds.includes(option.id)}
+              name={`question-${currentQuestion.id}`}
+              onChange={(event) => onSelectionChange(option.id, event.target.checked)}
+              required={currentQuestion.isRequired && selectedAnswerOptionIds.length === 0}
+              type="radio"
+            />
+            <span>{option.optionText}</span>
+          </label>
+        ))}
       </div>
     );
   }

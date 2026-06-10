@@ -33,6 +33,7 @@ import {
   AdminSectionNav,
   QuestionEditor,
   RuleEditor,
+  ScaleRangeFields,
   StatusActionPanel,
   SurveyEditStateBanner,
   SurveyPreviewPanel,
@@ -63,6 +64,7 @@ export function AdminDashboard() {
   const [notice, setNotice] = useState<string | null>(null);
   const [ruleSourceQuestionId, setRuleSourceQuestionId] = useState<number | null>(null);
   const [customTagPresets, setCustomTagPresets] = useState<TagPreset[]>([]);
+  const [newQuestionType, setNewQuestionType] = useState<SurveyQuestionType>("text");
 
   useEffect(() => {
     let isActive = true;
@@ -226,15 +228,24 @@ export function AdminDashboard() {
       return;
     }
 
+    if (selectedSurvey.status !== "draft") {
+      setError("Questions can only be added to draft surveys");
+      setNotice(null);
+      return;
+    }
+
     const form = event.currentTarget;
     const data = new FormData(form);
+    const questionType = readQuestionType(data, "questionType");
 
     const didSave = await runSurveyMutation(
       () =>
         createQuestion({
           surveyId: selectedSurvey.id,
           questionText: readFormText(data, "questionText"),
-          questionType: readQuestionType(data, "questionType"),
+          questionType,
+          scaleMin: questionType === "scale" ? readFormInteger(data, "scaleMin") : null,
+          scaleMax: questionType === "scale" ? readFormInteger(data, "scaleMax") : null,
           isRequired: data.get("isRequired") === "on",
           helpText: readNullableFormText(data, "helpText")
         }),
@@ -243,6 +254,7 @@ export function AdminDashboard() {
 
     if (didSave) {
       form.reset();
+      setNewQuestionType("text");
     }
   }
 
@@ -257,6 +269,7 @@ export function AdminDashboard() {
     }
 
     const data = new FormData(event.currentTarget);
+    const questionType = readQuestionType(data, "questionType");
 
     await runSurveyMutation(
       () =>
@@ -264,7 +277,9 @@ export function AdminDashboard() {
           surveyId: selectedSurvey.id,
           questionId: question.id,
           questionText: readFormText(data, "questionText"),
-          questionType: readQuestionType(data, "questionType"),
+          questionType,
+          scaleMin: questionType === "scale" ? readFormInteger(data, "scaleMin") : null,
+          scaleMax: questionType === "scale" ? readFormInteger(data, "scaleMax") : null,
           isRequired: data.get("isRequired") === "on",
           helpText: readNullableFormText(data, "helpText")
         }),
@@ -752,16 +767,28 @@ export function AdminDashboard() {
                 <div>
                   <p className="eyebrow">Questions</p>
                   <h3>Add question</h3>
+                  {selectedSurvey.status !== "draft" ? (
+                    <p className="builder-heading-note">
+                      New questions can only be added while the survey is a draft.
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="builder-grid two-columns">
                 <label>
                   Question text
-                  <input name="questionText" required />
+                  <input disabled={selectedSurvey.status !== "draft"} name="questionText" required />
                 </label>
                 <label>
                   Type
-                  <select name="questionType">
+                  <select
+                    disabled={selectedSurvey.status !== "draft"}
+                    name="questionType"
+                    onChange={(event) =>
+                      setNewQuestionType(event.target.value as SurveyQuestionType)
+                    }
+                    value={newQuestionType}
+                  >
                     {questionTypes.map((type) => (
                       <option key={type} value={type}>
                         {formatQuestionType(type)}
@@ -770,17 +797,25 @@ export function AdminDashboard() {
                   </select>
                 </label>
               </div>
+              {newQuestionType === "scale" ? (
+                <ScaleRangeFields disabled={selectedSurvey.status !== "draft"} />
+              ) : null}
               <label>
                 Help text
-                <input name="helpText" />
+                <input disabled={selectedSurvey.status !== "draft"} name="helpText" />
               </label>
               <label className="checkbox-label">
-                <input defaultChecked name="isRequired" type="checkbox" />
+                <input
+                  defaultChecked
+                  disabled={selectedSurvey.status !== "draft"}
+                  name="isRequired"
+                  type="checkbox"
+                />
                 Required
               </label>
               <button
                 className="button-link compact-button primary-button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || selectedSurvey.status !== "draft"}
                 type="submit"
               >
                 Add question
@@ -1061,6 +1096,11 @@ function readNullableFormText(data: FormData, field: string): string | null {
 function readFormNumber(data: FormData, field: string): number {
   const value = Number(data.get(field));
   return Number.isSafeInteger(value) ? value : 0;
+}
+
+function readFormInteger(data: FormData, field: string): number | null {
+  const value = Number(data.get(field));
+  return Number.isSafeInteger(value) ? value : null;
 }
 
 function readQuestionType(data: FormData, field: string): SurveyQuestionType {

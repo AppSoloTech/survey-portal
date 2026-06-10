@@ -326,12 +326,18 @@ surveysRouter.post("/:id/questions", requireAuth, requireRole("admin"), async (r
       return;
     }
 
+    if (survey.status !== "draft") {
+      await client.query("rollback");
+      res.status(409).json({ error: "Questions can only be added to draft surveys" });
+      return;
+    }
+
     const displayOrder =
       validation.value.displayOrder ??
       (await fetchNextQuestionDisplayOrder(client, surveyId));
 
     await shiftQuestionDisplayOrdersForInsert(client, surveyId, displayOrder);
-    await client.query(
+    const questionResult = await client.query<{ id: number }>(
       `insert into survey_questions (
          survey_id,
          question_text,
@@ -340,7 +346,8 @@ surveysRouter.post("/:id/questions", requireAuth, requireRole("admin"), async (r
          is_required,
          help_text
        )
-       values ($1, $2, $3, $4, $5, $6)`,
+       values ($1, $2, $3, $4, $5, $6)
+       returning id`,
       [
         surveyId,
         validation.value.questionText,
@@ -350,6 +357,13 @@ surveysRouter.post("/:id/questions", requireAuth, requireRole("admin"), async (r
         validation.value.helpText
       ]
     );
+
+    if (validation.value.questionType === "scale") {
+      await syncScaleAnswerOptions(client, questionResult.rows[0].id, {
+        min: validation.value.scaleMin,
+        max: validation.value.scaleMax
+      });
+    }
 
     await client.query("commit");
 
@@ -451,11 +465,16 @@ surveysRouter.put(
       return;
     }
 
+    const client = await pool.connect();
+
     try {
-      const survey = await fetchSurveyRecord(pool, surveyId);
-      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+      await client.query("begin");
+
+      const survey = await fetchSurveyRecord(client, surveyId);
+      const question = await fetchQuestionForSurvey(client, questionId, surveyId);
 
       if (!survey || !question) {
+        await client.query("rollback");
         res.status(404).json({ error: "Question not found" });
         return;
       }
@@ -464,11 +483,22 @@ surveysRouter.put(
         survey.status !== "draft" &&
         question.question_type !== validation.value.questionType
       ) {
+        await client.query("rollback");
         res.status(400).json({ error: "Question type can only be changed before publishing" });
         return;
       }
 
-      await pool.query(
+      if (
+        survey.status !== "draft" &&
+        question.question_type === "scale" &&
+        (await hasScaleRangeChanged(client, question.id, validation.value))
+      ) {
+        await client.query("rollback");
+        res.status(409).json({ error: "Scale ranges can only be changed before publishing" });
+        return;
+      }
+
+      await client.query(
         `update survey_questions
          set question_text = $3,
              question_type = $4,
@@ -487,6 +517,23 @@ surveysRouter.put(
         ]
       );
 
+      if (survey.status === "draft" && validation.value.questionType === "scale") {
+        await syncScaleAnswerOptions(client, questionId, {
+          min: validation.value.scaleMin,
+          max: validation.value.scaleMax
+        });
+      }
+
+      if (
+        survey.status === "draft" &&
+        question.question_type === "scale" &&
+        validation.value.questionType !== "scale"
+      ) {
+        await deleteAnswerOptionsForQuestion(client, questionId);
+      }
+
+      await client.query("commit");
+
       const [updatedSurvey] = await fetchSurveyStructures({
         surveyId,
         includeAllStatuses: true,
@@ -495,7 +542,10 @@ surveysRouter.put(
 
       res.json({ survey: updatedSurvey });
     } catch (error) {
+      await client.query("rollback");
       next(error);
+    } finally {
+      client.release();
     }
   }
 );
@@ -598,7 +648,7 @@ surveysRouter.post(
 
       if (!isSelectionQuestionType(question.question_type)) {
         await client.query("rollback");
-        res.status(400).json({ error: "Only selection questions can have answer options" });
+        res.status(400).json({ error: "Only single-select and multi-select questions can have manually managed answer options" });
         return;
       }
 
@@ -664,6 +714,12 @@ surveysRouter.patch(
         return;
       }
 
+      if (question.question_type === "scale") {
+        await client.query("rollback");
+        res.status(400).json({ error: "Scale value order is managed through the scale range" });
+        return;
+      }
+
       const orderValidation = await validateOptionReorderIds(
         client,
         questionId,
@@ -718,9 +774,15 @@ surveysRouter.put(
 
     try {
       const option = await fetchOptionForQuestion(pool, optionId, questionId, surveyId);
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
 
-      if (!option) {
+      if (!option || !question) {
         res.status(404).json({ error: "Answer option not found" });
+        return;
+      }
+
+      if (question.question_type === "scale") {
+        res.status(400).json({ error: "Scale values are managed through the scale range" });
         return;
       }
 
@@ -780,9 +842,15 @@ surveysRouter.delete(
       }
 
       const option = await fetchOptionForQuestion(pool, optionId, questionId, surveyId);
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
 
-      if (!option) {
+      if (!option || !question) {
         res.status(404).json({ error: "Answer option not found" });
+        return;
+      }
+
+      if (question.question_type === "scale") {
+        res.status(400).json({ error: "Scale values are managed through the scale range" });
         return;
       }
 
@@ -1500,6 +1568,7 @@ const questionHelpTextMaxLength = 500;
 const answerOptionTextMaxLength = 240;
 const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
+const scaleRangeMaxValueCount = 21;
 
 async function fetchSurveyStructures(options: FetchSurveyStructuresOptions): Promise<Survey[]> {
   const conditions: string[] = [];
@@ -1695,11 +1764,15 @@ function mapSurveyQuestionRecord(
   record: SurveyQuestionRecord,
   answerOptions: AnswerOption[]
 ): SurveyQuestion {
+  const scaleRange = deriveScaleRange(record.question_type, answerOptions);
+
   return {
     id: record.id,
     surveyId: record.survey_id,
     questionText: record.question_text,
     questionType: record.question_type,
+    scaleMin: scaleRange?.min ?? null,
+    scaleMax: scaleRange?.max ?? null,
     displayOrder: record.display_order,
     isRequired: record.is_required,
     helpText: record.help_text,
@@ -1717,6 +1790,28 @@ function mapAnswerOptionRecord(record: AnswerOptionRecord): AnswerOption {
     displayOrder: record.display_order,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
+  };
+}
+
+function deriveScaleRange(
+  questionType: SurveyQuestionType,
+  answerOptions: AnswerOption[]
+): { min: number; max: number } | null {
+  if (questionType !== "scale" || answerOptions.length === 0) {
+    return null;
+  }
+
+  const values = answerOptions
+    .map((option) => parseScaleOptionValue(option.optionText))
+    .filter((value): value is number => value !== null);
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values)
   };
 }
 
@@ -1793,6 +1888,38 @@ async function fetchOptionForQuestion(
   );
 
   return result.rows[0] ?? null;
+}
+
+async function fetchAnswerOptionsForQuestion(
+  queryable: Queryable,
+  questionId: number
+): Promise<AnswerOptionRecord[]> {
+  const result = await queryable.query<AnswerOptionRecord>(
+    `select
+       id,
+       question_id,
+       option_text,
+       display_order,
+       created_at,
+       updated_at
+     from answer_options
+     where question_id = $1
+     order by display_order, id`,
+    [questionId]
+  );
+
+  return result.rows;
+}
+
+async function deleteAnswerOptionsForQuestion(
+  queryable: Queryable,
+  questionId: number
+): Promise<void> {
+  await queryable.query(
+    `delete from answer_options
+     where question_id = $1`,
+    [questionId]
+  );
 }
 
 async function fetchTagForOption(
@@ -2099,6 +2226,134 @@ async function reorderOptions(
   });
 }
 
+async function syncScaleAnswerOptions(
+  queryable: Queryable,
+  questionId: number,
+  range: { min: number | null; max: number | null }
+): Promise<void> {
+  if (range.min === null || range.max === null) {
+    return;
+  }
+
+  const desiredValues = buildScaleValues(range.min, range.max);
+  const desiredValueSet = new Set(desiredValues);
+  const existingOptions = await fetchAnswerOptionsForQuestion(queryable, questionId);
+  const keepOptionIdByValue = new Map<number, number>();
+  const deleteIds: number[] = [];
+
+  for (const option of existingOptions) {
+    const value = parseScaleOptionValue(option.option_text);
+
+    if (
+      value !== null &&
+      desiredValueSet.has(value) &&
+      !keepOptionIdByValue.has(value)
+    ) {
+      keepOptionIdByValue.set(value, option.id);
+    } else {
+      deleteIds.push(option.id);
+    }
+  }
+
+  if (deleteIds.length > 0) {
+    await queryable.query(
+      `delete from answer_options
+       where question_id = $1
+         and id = any($2::int[])`,
+      [questionId, deleteIds]
+    );
+  }
+
+  const offsetResult = await queryable.query<{ offset: number }>(
+    `select coalesce(max(display_order), 0) + 1000 as offset
+     from answer_options
+     where question_id = $1`,
+    [questionId]
+  );
+  const offset = offsetResult.rows[0]?.offset ?? 1000;
+
+  await queryable.query(
+    `update answer_options
+     set display_order = display_order + $2
+     where question_id = $1`,
+    [questionId, offset]
+  );
+
+  for (const [index, value] of desiredValues.entries()) {
+    const optionId = keepOptionIdByValue.get(value);
+    const displayOrder = index + 1;
+
+    if (optionId) {
+      await queryable.query(
+        `update answer_options
+         set option_text = $3,
+             display_order = $4,
+             updated_at = now()
+         where question_id = $1
+           and id = $2`,
+        [questionId, optionId, String(value), displayOrder]
+      );
+    } else {
+      await queryable.query(
+        `insert into answer_options (question_id, option_text, display_order)
+         values ($1, $2, $3)`,
+        [questionId, String(value), displayOrder]
+      );
+    }
+  }
+}
+
+async function hasScaleRangeChanged(
+  queryable: Queryable,
+  questionId: number,
+  nextQuestion: QuestionBodyValue
+): Promise<boolean> {
+  const existingOptions = await fetchAnswerOptionsForQuestion(queryable, questionId);
+  const existingRange = deriveScaleRange("scale", existingOptions.map(mapAnswerOptionRecord));
+
+  if (!existingRange) {
+    return false;
+  }
+
+  return (
+    existingRange.min !== nextQuestion.scaleMin ||
+    existingRange.max !== nextQuestion.scaleMax
+  );
+}
+
+function buildScaleValues(min: number, max: number): number[] {
+  return Array.from({ length: max - min + 1 }, (_, index) => min + index);
+}
+
+function parseScaleOptionValue(value: string): number | null {
+  if (!/^-?\d+$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function hasContiguousScaleValues(optionTexts: string[]): boolean {
+  const values = optionTexts.map(parseScaleOptionValue);
+
+  if (values.some((value) => value === null)) {
+    return false;
+  }
+
+  const numericValues = values as number[];
+  const uniqueValues = new Set(numericValues);
+
+  if (uniqueValues.size !== numericValues.length) {
+    return false;
+  }
+
+  const min = Math.min(...numericValues);
+  const max = Math.max(...numericValues);
+
+  return numericValues.length === max - min + 1;
+}
+
 async function applyDisplayOrderValues(
   queryable: Queryable,
   options: {
@@ -2149,10 +2404,10 @@ async function validateSurveyCanPublish(
 
   const selectionWithoutOptionsResult = await queryable.query<{ id: number }>(
     `select survey_questions.id
-     from survey_questions
-     left join answer_options on answer_options.question_id = survey_questions.id
-     where survey_questions.survey_id = $1
-       and survey_questions.question_type in ('single_select', 'multi_select')
+       from survey_questions
+       left join answer_options on answer_options.question_id = survey_questions.id
+       where survey_questions.survey_id = $1
+       and survey_questions.question_type in ('single_select', 'multi_select', 'scale')
      group by survey_questions.id
      having count(answer_options.id) = 0
      limit 1`,
@@ -2160,7 +2415,23 @@ async function validateSurveyCanPublish(
   );
 
   if (selectionWithoutOptionsResult.rows[0]) {
-    return { ok: false, error: "Selection questions need at least one answer option before publishing" };
+    return { ok: false, error: "Selection and scale questions need answer options before publishing" };
+  }
+
+  const scaleQuestionsResult = await queryable.query<{ id: number }>(
+    `select id
+     from survey_questions
+     where survey_id = $1
+       and question_type = 'scale'`,
+    [surveyId]
+  );
+
+  for (const question of scaleQuestionsResult.rows) {
+    const options = await fetchAnswerOptionsForQuestion(queryable, question.id);
+
+    if (!hasContiguousScaleValues(options.map((option) => option.option_text))) {
+      return { ok: false, error: "Scale questions need a contiguous numeric range before publishing" };
+    }
   }
 
   const invalidRuleResult = await queryable.query<{ id: number }>(
@@ -2694,6 +2965,8 @@ function validateSurveyStatusBody(body: unknown): ValidationResult<{ status: Sur
 interface QuestionBodyValue {
   questionText: string;
   questionType: SurveyQuestionType;
+  scaleMin: number | null;
+  scaleMax: number | null;
   displayOrder: number | null;
   isRequired: boolean;
   helpText: string | null;
@@ -2708,6 +2981,8 @@ function validateQuestionBody(body: unknown): ValidationResult<QuestionBodyValue
   const questionType = readTextField(body, "questionType");
   const helpText = readOptionalTextField(body, "helpText");
   const displayOrder = readOptionalPositiveIntegerField(body, "displayOrder");
+  const scaleMin = readOptionalIntegerField(body, "scaleMin");
+  const scaleMax = readOptionalIntegerField(body, "scaleMax");
   const isRequired = body.isRequired === undefined ? true : body.isRequired;
 
   if (!questionText) {
@@ -2723,11 +2998,29 @@ function validateQuestionBody(body: unknown): ValidationResult<QuestionBodyValue
   }
 
   if (!isSurveyQuestionType(questionType)) {
-    return { ok: false, error: "Question type must be text, integer, single_select, or multi_select" };
+    return { ok: false, error: "Question type must be text, integer, single_select, multi_select, or scale" };
   }
 
   if (displayOrder === false) {
     return { ok: false, error: "Display order must be a positive integer" };
+  }
+
+  if (scaleMin === false || scaleMax === false) {
+    return { ok: false, error: "Scale minimum and maximum must be whole numbers" };
+  }
+
+  if (questionType === "scale") {
+    if (scaleMin === null || scaleMax === null) {
+      return { ok: false, error: "Scale minimum and maximum are required" };
+    }
+
+    if (scaleMax <= scaleMin) {
+      return { ok: false, error: "Scale maximum must be greater than scale minimum" };
+    }
+
+    if (scaleMax - scaleMin + 1 > scaleRangeMaxValueCount) {
+      return { ok: false, error: `Scale range can include at most ${scaleRangeMaxValueCount} values` };
+    }
   }
 
   if (typeof isRequired !== "boolean") {
@@ -2739,6 +3032,8 @@ function validateQuestionBody(body: unknown): ValidationResult<QuestionBodyValue
     value: {
       questionText,
       questionType,
+      scaleMin: questionType === "scale" ? scaleMin : null,
+      scaleMax: questionType === "scale" ? scaleMax : null,
       displayOrder,
       isRequired,
       helpText
@@ -3024,18 +3319,46 @@ async function validateAnswerForQuestion(
     }
   }
 
+  if (question.question_type === "scale") {
+    if (question.is_required && value.selectedAnswerOptionIds.length !== 1) {
+      return { ok: false, error: "Select exactly one scale value" };
+    }
+
+    if (!question.is_required && value.selectedAnswerOptionIds.length > 1) {
+      return { ok: false, error: "Select no more than one scale value" };
+    }
+  }
+
   if (value.selectedAnswerOptionIds.length > 0) {
-    const optionsResult = await queryable.query<{ count: string }>(
-      `select count(*)::text as count
+    const optionsResult = await queryable.query<{ id: number; option_text: string }>(
+      `select id, option_text
        from answer_options
        where question_id = $1
-         and id = any($2::int[])`,
+         and id = any($2::int[])
+       order by id`,
       [question.id, value.selectedAnswerOptionIds]
     );
-    const matchingOptionCount = Number(optionsResult.rows[0]?.count ?? 0);
 
-    if (matchingOptionCount !== value.selectedAnswerOptionIds.length) {
+    if (optionsResult.rowCount !== value.selectedAnswerOptionIds.length) {
       return { ok: false, error: "Selected answer options must belong to the question" };
+    }
+
+    if (question.question_type === "scale") {
+      const selectedOption = optionsResult.rows[0];
+      const scaleValue = selectedOption ? parseScaleOptionValue(selectedOption.option_text) : null;
+
+      if (scaleValue === null) {
+        return { ok: false, error: "Selected scale value is not valid" };
+      }
+
+      return {
+        ok: true,
+        value: {
+          answerText: null,
+          answerInteger: scaleValue,
+          selectedAnswerOptionIds: value.selectedAnswerOptionIds
+        }
+      };
     }
   }
 
@@ -3181,6 +3504,10 @@ function hasMeaningfulResponse(
     return response.selectedAnswerOptionIds.length === 1;
   }
 
+  if (question.questionType === "scale") {
+    return response.selectedAnswerOptionIds.length === 1 && Number.isInteger(response.answerInteger);
+  }
+
   return response.selectedAnswerOptionIds.length > 0;
 }
 
@@ -3213,6 +3540,19 @@ function readOptionalPositiveIntegerField(
   return Number.isSafeInteger(value) && typeof value === "number" && value > 0
     ? value
     : false;
+}
+
+function readOptionalIntegerField(
+  body: Record<string, unknown>,
+  field: string
+): number | null | false {
+  const value = body[field];
+
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  return Number.isSafeInteger(value) && typeof value === "number" ? value : false;
 }
 
 function readPositiveIntegerArray(
@@ -3270,7 +3610,8 @@ function isSurveyQuestionType(value: string): value is SurveyQuestionType {
     value === "text" ||
     value === "integer" ||
     value === "single_select" ||
-    value === "multi_select"
+    value === "multi_select" ||
+    value === "scale"
   );
 }
 

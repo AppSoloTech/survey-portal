@@ -26,7 +26,7 @@ export type SurveyAttemptStatus =
 
 export type SurveyStatus = "draft" | "published" | "retired";
 
-export type SurveyQuestionType = "text" | "integer" | "single_select" | "multi_select";
+export type SurveyQuestionType = "text" | "integer" | "single_select" | "multi_select" | "scale";
 
 export type ConditionalLogicConditionOperator = "equals";
 
@@ -61,6 +61,8 @@ export interface SurveyQuestion {
   surveyId: number;
   questionText: string;
   questionType: SurveyQuestionType;
+  scaleMin: number | null;
+  scaleMax: number | null;
   displayOrder: number;
   isRequired: boolean;
   helpText: string | null;
