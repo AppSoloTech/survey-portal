@@ -14,17 +14,27 @@
 
 Addressed in the Phase 5 test-fix pass:
 
-1) Hidden tag fields now use dropdowns with `Custom key...` and `Custom value...` escape hatches. Existing saved tags render their saved key/value directly, and new tags are saved only through `Add hidden tag`.
+1) Hidden tag fields now use typed inputs with suggestions instead of select-only controls. Existing saved tags render their saved key/value directly, and new tags are saved only through `Add hidden tag`.
 2) Answer option editing was refactored so option text has its own `Save option text` action, while hidden tags have separate `Add hidden tag`, `Save tag`, and `Remove tag` actions.
 3) Added `Back to top` in the bottom survey status area.
 4) Integer questions now show a numeric placeholder and helper text explaining that only whole numbers are accepted.
 5) The Hidden Tags section is now a tag suggestion library with source labels for built-in, saved, and custom suggestions.
 6) Custom tag suggestions are the only removable suggestions; built-in and saved suggestions are labeled but not removable.
 7) Conditional jump target questions are now treated as conditional-only in survey navigation. They are skipped by ordinary linear flow unless reached by a matching jump rule. This logic was updated in both the frontend runner and backend completion/current-question helpers.
-8) Added a jump-rule target-flow toggle. Admins can leave `Skip target in normal flow` checked for conditional-only target questions, or uncheck it to keep the target question in the normal question flow.
 
-Final test status:
+Needs focused review:
 
-- Manual testing completed after the target-flow toggle.
-- Current state accepted for commit.
-- Fresh Claude review for the target-flow toggle was not run; the tested behavior was accepted.
+- Item 7 changes navigation semantics and should receive a Claude review before commit.
+
+
+##### Phase 5: User Test Notes Cont.
+1) Right now the Jump rules are this: A target question is shown only when a jump rule reaches it; normal forward flow skips jump targets. An admin should be given another lever/toggle to keep the target question within the normal question flow or skip the target question in the normal flow as described currently. 
+
+Skip Test:
+Answer: Q1 "Yes"        -> goes to Q3
+Answer: Q1 "No"         -> goes to Q2 -->> Q3
+Answer: Q3 "A Lot"      -> goes to Q5 = un-toggle target Q5 as Skip target in normal flow 
+Answer: Q3 (any other)  -> goes to Q4 
+
+Base User Answers: Q1:Yes, Q2:skip, Q3:A Lot, Q4:skip, Q5:Any 
+Admin User Answers: Q1:No, Q2:Any, Q3:Skip, Q4:Any, Q5:Any 
