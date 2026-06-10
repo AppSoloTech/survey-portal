@@ -37,6 +37,16 @@ npm run dev
 The seed command is for local development only. Do not apply local seed files
 to hosted, shared, staging, or production databases.
 
+To wipe and rebuild a messy local database:
+
+```bash
+npm run db:reset
+```
+
+This drops and recreates the local `public` schema, then applies all SQL files
+under `database/migrations/` and `database/seeds/` in filename order. It refuses
+to run unless `RUN_ENV=dev` and the target database host is local.
+
 The API serves `/api/health`, `/api/auth/*`, and `/api/surveys/*`. In development, Vite proxies API calls to the Express server.
 
 ## Environment
@@ -53,6 +63,7 @@ Production secrets should live in Azure App Service configuration, not in source
 
 ```bash
 npm run dev
+npm run db:reset
 npm run typecheck
 npm run build
 npm run lint

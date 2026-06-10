@@ -1,0 +1,120 @@
+# Claude Handoff — Phase 5 Admin Builder UX Polish
+
+Date:
+2026-06-10
+
+Prompt:
+`prompts/prompt_5.txt`
+
+Status:
+Reviewed; Phase 5 fixes applied
+
+## Summary
+
+Phase 5 fixes the base-user survey-taking text state isolation bug and polishes the admin survey builder UX without adding backend routes, tables, or new dependencies.
+
+## Files Changed
+
+- `apps/web/src/pages/UserDashboard.tsx`
+- `apps/web/src/pages/AdminDashboard.tsx`
+- `apps/web/src/styles.css`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_5.txt`
+
+Note:
+`.gitignore` was already modified in the worktree before this phase work and was not touched for Phase 5.
+
+## Implementation Details
+
+### Base-User Text State Isolation
+
+- Replaced single shared `answerText`, `answerInteger`, and `selectedAnswerOptionIds` state with question-id keyed maps.
+- Hydrates those maps from saved attempt responses while preserving unrelated draft answers.
+- Uses the active question id to read and write the current input value.
+- Keys the active question form and text/integer controls by question id to prevent React input reuse from carrying one text question's value into another.
+
+Review focus:
+
+- Confirm a conditional path from text Q1 -> selection Q2 -> text Q5 shows Q5 empty unless Q5 has its own saved answer.
+- Confirm going backward and choosing a non-skip path does not clear unrelated saved responses.
+- Confirm resume/back/complete behavior from Phase 3 is preserved.
+
+### Admin Builder UX
+
+- Metadata save no longer edits survey status. It preserves the current status and reports `Survey metadata saved`.
+- Added a top status action panel and a bottom `Finish construction` panel showing current status plus `Publish survey` and `Retire survey` actions.
+- Publish/retire still call the existing backend status endpoint, preserving backend validation and validation messages.
+- All builder mutations now set scoped success feedback:
+  - survey create
+  - metadata save
+  - question add/save/delete/reorder
+  - option add/save/delete/reorder
+  - hidden tag add/save/delete
+  - jump rule add/save/delete
+- Add-rule form clears `sourceQuestionId`, resets the form, and leaves saved rules intact after a successful create.
+- Source answer and target question selects are keyed by source question to avoid stale dependent choices.
+- Option and tag rows now have clearer labels and scoped buttons such as `Save option`, `Delete option`, and `Remove tag`.
+- CSS improves section separation, status panel hierarchy, option/tag row grouping, button wrapping, and mobile stacking.
+
+Review focus:
+
+- Confirm the builder remains a dense operational tool, not a marketing/visual-designer UI.
+- Confirm no decorative nested-card pattern was introduced beyond compact repeated item rows.
+- Confirm labels make save/add/delete scope clear.
+- Confirm mobile width does not overflow with long labels/buttons.
+- Confirm backend publish validation messages still display when publishing is blocked.
+
+## Validation Run
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+All passed.
+
+## Manual Testing Status
+
+Not run in this session:
+
+- Live admin builder CRUD browser smoke test.
+- Mobile browser visual inspection.
+- Live base-user conditional text-question reproduction.
+
+Reason:
+Browser automation is not installed in this repo (`npm ls playwright` and `npm ls @playwright/test` returned empty), and no local app server was running on the expected ports during implementation.
+
+## Suggested Manual Test Path
+
+1. Log in as admin.
+2. Create or select a draft survey.
+3. Save metadata and confirm the success message does not imply publishing.
+4. Add a text question.
+5. Add a single-select question with at least two answer options.
+6. Save one option row and confirm the feedback says the option saved.
+7. Add a hidden tag and confirm saved tag values are not reset.
+8. Add a jump rule and confirm the add-rule form resets to empty while the saved rule remains.
+9. Try publishing an invalid survey and confirm backend validation appears.
+10. Publish from the bottom status panel after validation passes.
+11. Inspect narrow/mobile width for wrapping and collisions.
+12. As a base user, reproduce text Q1 -> skip from Q2 -> text Q5 and confirm Q5 does not inherit Q1's value.
+
+## Known Follow-Ups
+
+No new durable follow-ups were added. Existing browser/manual validation follow-ups in `markdown/FOLLOW_UPS.md` still apply.
+
+## Post-Review Fix Addendum
+
+Claude review was recorded in `notes/claude_review_phase_5.txt`.
+
+After review:
+
+- Added a `Republish survey` UI action for retired surveys, using the existing validated publish transition.
+- Changed runner hydration so question navigation with the same attempt does not rehydrate over unsaved edits.
+- Removed redundant post-submit draft hydration.
+- Collapsed draft hydration/update helpers.
+- Copied selected option id arrays during hydration.
+
+The metadata-save/publish-validation behavior noted by Claude is documented in the review and phase log but intentionally left unchanged in Phase 5.

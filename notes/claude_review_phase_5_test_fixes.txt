@@ -1,0 +1,142 @@
+# Claude Review — Phase 5 Test Fixes
+
+Date:
+2026-06-10
+
+Source:
+Pasted Claude review from `/home/AppSolo/.codex/attachments/b30d63c7-694e-4312-93a6-23f91b8e466b/pasted-text.txt`
+
+Status:
+Completed; findings addressed or documented
+
+## Verdict
+
+No blocking issues found.
+
+Claude verified that the highest-risk conditional-target navigation change is internally consistent:
+
+- frontend and backend traversal agree
+- backend current-question and completion validation use the same traversal
+- frontend back navigation reconstructs the same path
+- required conditional-only targets do not block completion when their jump is not triggered
+
+## Findings
+
+### F1 — Medium Design — Conditional-target exclusion is global and unconditional
+
+Finding:
+Any question targeted by any `JUMP_TO_QUESTION` rule is excluded from ordinary linear flow. This is the intended interpretation for the manual test, but it is an authoring constraint that should be visible to admins.
+
+Disposition:
+Documented in the builder UI and phase notes.
+
+Resolution:
+Added a note beside the jump-rule builder: target questions are shown only when a jump rule reaches them; normal forward flow skips jump targets.
+
+Deferred:
+A more scoped per-branch reachability model is a larger branching-design change and is not part of this Phase 5 test-fix pass.
+
+### F2 — Medium Maintainability — `resolveNextQuestion` duplicated across frontend/backend
+
+Finding:
+The navigation resolver existed in both the user dashboard and API route file, creating drift risk between the UI path and backend completion validation.
+
+Disposition:
+Fixed.
+
+Resolution:
+Hoisted `resolveNextQuestion` into `@survey-portal/shared` and updated both frontend and backend to import the shared implementation.
+
+### F3 — Low — Custom tag suggestion duplicate becomes non-removable
+
+Finding:
+Custom suggestions that duplicate built-in or saved suggestions were merged under the first source and therefore lost the remove button.
+
+Disposition:
+Fixed.
+
+Resolution:
+Suggestion removability is now based on membership in `customTagPresets`, not the merged source label. Duplicated custom suggestions can be removed, revealing any underlying built-in or saved suggestion.
+
+### F4 — Low Cosmetic — Stale preset wording after suggestion rename
+
+Finding:
+Buttons and labels now say suggestion, but toasts still said `Tag preset added` / `Tag preset removed`.
+
+Disposition:
+Fixed.
+
+Resolution:
+Updated notices to `Tag suggestion added` and `Tag suggestion removed`.
+
+### F5 — Low Info — Saved suggestions aggregate tags across loaded surveys
+
+Finding:
+The tag suggestion library includes hidden tag vocabulary from all loaded admin surveys, not only the selected survey. The previous `Saved` label could imply current-survey-only scope.
+
+Disposition:
+Fixed.
+
+Resolution:
+Relabeled source text to `Saved in surveys`.
+
+## Validation After Fixes
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+
+## Remaining Manual Test Gap
+
+Browser/manual testing is still needed for:
+
+- conditional target behavior in normal and jump paths
+- option/tag row ergonomics
+- tag suggestion duplicate removal
+- mobile wrapping of the updated builder controls
+
+## Re-Review After Final Fixes
+
+Source:
+User-provided Claude re-review results after the tag dropdown restoration and focused review fixes.
+
+Verdict:
+Ship-ready pending the manual smoke tests already listed as outstanding.
+
+Verified:
+
+- Prior F1 documented: builder now states that target questions are shown only when a jump rule reaches them and normal forward flow skips jump targets.
+- Prior F2 fixed: `resolveNextQuestion` has a single shared implementation in `@survey-portal/shared`, imported by the API and web runner.
+- Prior F3 fixed: custom suggestion removability is based on `customTagPresets` membership rather than merged source label.
+- Prior F4 fixed: toast wording now says `Tag suggestion added` / `Tag suggestion removed`.
+- Prior F5 fixed: saved suggestion source label now says `Saved in surveys`.
+- Tag dropdown rework reviewed clean: sentinel values are not submitted, add-tag form reset is handled by form keys, disabled required value fields cannot submit, edit-tag forms resync from saved props, and no nested forms were introduced.
+- Navigation behavior remains unchanged after the shared resolver hoist and stays consistent across frontend previous/next behavior and backend current-question/completion validation.
+
+Residual non-blocking notes:
+
+- A built-in or saved suggestion that also has a custom duplicate can show its original source label with a `Remove custom` button. This is logically correct but mildly subtle.
+- The accepted authoring constraint remains: a jump target cannot also appear in a non-jump branch. A more scoped per-branch reachability model is a larger future enhancement if needed.
+
+## Post Re-Review Change
+
+After the clean re-review, additional manual feedback requested an explicit admin lever for whether a jump target stays in normal flow.
+
+Change made:
+
+- Added a persisted `skipTargetInNormalFlow` setting on jump rules.
+- Default is `true`, preserving the reviewed conditional-only behavior for existing rules.
+- Admins can uncheck `Skip target in normal flow` to keep the target question in normal forward flow.
+
+Status:
+Fresh focused review recommended because this changes the behavior Claude previously reviewed as an accepted constraint.

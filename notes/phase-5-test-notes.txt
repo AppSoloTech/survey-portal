@@ -1,0 +1,30 @@
+##### Phase 5: User Test Notes
+1) Upon adding an Answer option and associated Hidden Tag: moving to an old survey (even having saved via the "Save option") the "Option text" persists; however, the Tag key and Tag value state does not. 
+2) Save option does not seem to work as intended and it is unclear what or how save option works and how it differs from the Save question button. Need to refactor for ergonomics and aesthetics. 
+- The tag does save when user clicks "Add tag"
+- Need to clean up this process from a UI/UX
+3) Add a "Back To Top" to the bottom section of the survey construction form/page.
+4) Improve integer input UI/UX. Unclear how to use - not intuitive for a noval user.
+5) Clean up the "Hidden Tags" section. Current aesthetic is messy. Need to refactor with the consideration of growing options and clean tag management.
+6) Upon adding a new set of tags, all 3 originaly had the "Remove" option. Only one has the "Remove" option. This goes back to cleanup item number 5. 
+7) Add a secondary condition to the skip rule. Example: if the answer to question 1 results in a skip to question 5 then it is likely, but not necessarily always the case, that question 5 was only asked because of the result of question 1 and a different answer to question 1 would not necessitate the need to answer question 5 at all in a normal flow.
+8)
+
+##### Resolution Notes
+
+Addressed in the Phase 5 test-fix pass:
+
+1) Hidden tag fields now use dropdowns with `Custom key...` and `Custom value...` escape hatches. Existing saved tags render their saved key/value directly, and new tags are saved only through `Add hidden tag`.
+2) Answer option editing was refactored so option text has its own `Save option text` action, while hidden tags have separate `Add hidden tag`, `Save tag`, and `Remove tag` actions.
+3) Added `Back to top` in the bottom survey status area.
+4) Integer questions now show a numeric placeholder and helper text explaining that only whole numbers are accepted.
+5) The Hidden Tags section is now a tag suggestion library with source labels for built-in, saved, and custom suggestions.
+6) Custom tag suggestions are the only removable suggestions; built-in and saved suggestions are labeled but not removable.
+7) Conditional jump target questions are now treated as conditional-only in survey navigation. They are skipped by ordinary linear flow unless reached by a matching jump rule. This logic was updated in both the frontend runner and backend completion/current-question helpers.
+8) Added a jump-rule target-flow toggle. Admins can leave `Skip target in normal flow` checked for conditional-only target questions, or uncheck it to keep the target question in the normal question flow.
+
+Final test status:
+
+- Manual testing completed after the target-flow toggle.
+- Current state accepted for commit.
+- Fresh Claude review for the target-flow toggle was not run; the tested behavior was accepted.

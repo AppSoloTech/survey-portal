@@ -1,0 +1,152 @@
+# Claude Handoff — Phase 5 Test Fixes
+
+Date:
+2026-06-10
+
+Source:
+`notes/phase-5-test-notes.txt`
+
+Status:
+Updated after re-review; fresh focused review recommended for target-flow toggle
+
+## Summary
+
+This pass addresses manual Phase 5 test notes for admin builder option/tag ergonomics, integer answer UX, bottom-page navigation, hidden tag suggestion cleanup, and conditional jump target behavior.
+
+## Files Changed In This Pass
+
+- `apps/api/src/routes/surveys.ts`
+- `apps/web/src/pages/AdminDashboard.tsx`
+- `apps/web/src/pages/UserDashboard.tsx`
+- `apps/web/src/styles.css`
+- `notes/phase-5-test-notes.txt`
+- `notes/claude_handoff_phase_5_test_fixes.txt`
+
+Earlier uncommitted Phase 5 and utility changes are also present in the worktree.
+
+## Fixes
+
+### Option And Hidden Tag UX
+
+- Refactored answer option rows to separate:
+  - option text save
+  - option ordering
+  - option deletion
+  - hidden tag creation/editing/removal
+- Renamed `Save option` to `Save option text`.
+- Added helper copy explaining that `Save option text` does not save tag fields.
+- Renamed add-tag action to `Add hidden tag`.
+
+Review focus:
+
+- Confirm scoped actions are now clear and not visually cramped.
+- Confirm hidden tag values persist after saving and switching surveys.
+- Confirm no saved tag values are confused with session-only suggestions.
+
+### Tag Suggestion Library
+
+- Changed the Hidden Tags section into a suggestion library.
+- Shows built-in, saved, and custom suggestion sources.
+- Only custom suggestions show a remove action.
+- Restored tag key/value dropdowns with `Custom key...` and `Custom value...` escape hatches.
+
+Review focus:
+
+- Confirm this resolves the previous confusion where only one suggestion had `Remove`.
+- Confirm admins can choose suggested tags from dropdowns or use the custom key/value options without first creating a suggestion.
+- Confirm hidden tags remain admin-only and are not exposed to participant APIs.
+
+### Back To Top
+
+- Added a bottom `Back to top` link in the status action area.
+
+Review focus:
+
+- Confirm mobile and desktop wrapping remains clean.
+
+### Integer Input UX
+
+- Added placeholder and helper text for integer survey answers:
+  - placeholder: `Enter a whole number`
+  - helper: `Use digits only. Decimals are not accepted.`
+
+Review focus:
+
+- Confirm this does not conflict with backend validation, which still rejects non-integers.
+
+### Conditional Target Navigation
+
+- Updated frontend and backend `resolveNextQuestion` behavior.
+- A question targeted by any `JUMP_TO_QUESTION` rule is now skipped by ordinary linear flow.
+- The target question is still shown when a matching rule jumps to it.
+
+Example:
+
+- Q1 answer A jumps to Q5.
+- If Q1 answer A is selected, Q5 is shown.
+- If Q1 answer B is selected, normal flow skips Q5.
+
+Review focus:
+
+- This is the highest-risk change in the pass.
+- Confirm backend `determineCurrentQuestion`, completion validation, and frontend `findPreviousQuestion` now agree.
+- Confirm required target questions do not block completion when their jump rule was not triggered.
+- Confirm saved answers to target questions are not incorrectly cleared; they are simply unreachable unless the path reaches them again.
+- Confirm this interpretation does not break surveys where a jump target was intentionally also meant to appear in normal flow.
+
+## Validation Run
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+
+## Manual Testing Still Needed
+
+- Browser smoke test for option/tag saving across survey switches.
+- Mobile pass for the refactored option/tag rows.
+- Base-user pass for normal path skipping conditional-only target questions.
+- Base-user pass for jump path still showing the target question.
+- Completion validation pass for required conditional-only target questions.
+
+## Post-Review Addendum
+
+Claude review was recorded in `notes/claude_review_phase_5_test_fixes.txt`.
+
+After review:
+
+- Hoisted `resolveNextQuestion` into `@survey-portal/shared` and updated frontend/backend to use the shared implementation.
+- Added a builder note that jump targets are skipped by ordinary forward flow unless the jump reaches them.
+- Made custom duplicate tag suggestions removable even when they overlap a built-in or saved suggestion.
+- Updated stale toast wording from preset to suggestion.
+- Relabeled saved suggestion source text to `Saved in surveys`.
+
+## Target-Flow Toggle Addendum
+
+After additional manual feedback, jump rules now include an admin-controlled target-flow setting:
+
+- `Skip target in normal flow` checked: current conditional-only behavior; normal forward flow skips the target unless this rule jumps there.
+- `Skip target in normal flow` unchecked: the target question remains available in normal forward flow and can also be reached by the jump.
+
+Implementation notes:
+
+- Added `skip_target_in_normal_flow boolean not null default true` in `database/migrations/0004_conditional_rule_normal_flow.sql`.
+- Added `skipTargetInNormalFlow` to `ConditionalLogicRule`.
+- Updated rule create/update API payloads and persistence.
+- Updated `resolveNextQuestion` so only rules with `skipTargetInNormalFlow` contribute conditional-only targets.
+
+Fresh review focus:
+
+- Confirm existing rules preserve prior behavior through the default `true` value.
+- Confirm admins can uncheck the toggle to keep the target in normal flow.
+- Confirm frontend and backend traversal still agree through the shared resolver.
+- Confirm publish validation and rule validation still reject invalid/backward/self jumps.

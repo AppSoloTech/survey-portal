@@ -78,6 +78,7 @@ export interface ConditionalLogicRule {
   actionType: ConditionalLogicActionType;
   targetQuestionId: number | null;
   targetPageId: number | null;
+  skipTargetInNormalFlow: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -170,4 +171,40 @@ export interface HealthResponse {
   app: "survey-portal";
   runEnv: "dev" | "prod";
   timestamp: string;
+}
+
+export function resolveNextQuestion(
+  survey: Survey,
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer | undefined
+): SurveyQuestion | null {
+  const conditionalTargetQuestionIds = new Set(
+    survey.conditionalLogicRules
+      .filter((rule) => rule.skipTargetInNormalFlow)
+      .map((rule) => rule.targetQuestionId)
+      .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null)
+  );
+  const matchingRule = survey.conditionalLogicRules.find(
+    (rule) =>
+      rule.sourceQuestionId === question.id &&
+      rule.conditionOperator === "equals" &&
+      rule.actionType === "JUMP_TO_QUESTION" &&
+      rule.targetQuestionId !== null &&
+      response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId)
+  );
+
+  if (matchingRule?.targetQuestionId) {
+    return survey.questions.find((candidate) => candidate.id === matchingRule.targetQuestionId) ?? null;
+  }
+
+  return (
+    survey.questions
+      .filter(
+        (candidate) =>
+          candidate.displayOrder > question.displayOrder &&
+          !conditionalTargetQuestionIds.has(candidate.id)
+      )
+      .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)[0] ??
+    null
+  );
 }

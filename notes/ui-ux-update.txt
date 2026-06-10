@@ -1,0 +1,61 @@
+I want to pause deeper feature work and do a UI/UX improvement pass.
+
+Please review the current React frontend from the perspective of a real user and an admin user.
+
+Goal:
+Improve the app’s clarity, ease of use, visual consistency, and separation of responsibilities between pages/views.
+
+Focus areas:
+- repeated or redundant buttons/actions
+- button groups that feel cluttered
+- pages with too many responsibilities
+- functionality that should be moved into a more appropriate view
+- unclear navigation paths
+- inconsistent spacing, layout, labels, or visual hierarchy
+- admin vs user experience separation
+- places where the UI feels technically correct but not intuitive
+- opportunities to make the app feel more modern and professional
+
+Important constraints:
+- Do not change backend functionality.
+- Do not change database schema.
+- Do not remove existing capabilities.
+- Do not implement new business logic.
+- Do not introduce a major UI framework unless already present.
+- Prefer small, maintainable React/TypeScript changes.
+- Preserve existing routes unless there is a strong reason to propose a change.
+- Keep the MVP survey portal scope intact.
+
+Before making changes:
+1. Inspect the current frontend structure.
+2. Identify the main UI/UX issues.
+3. Propose a concise improvement plan.
+4. Group recommendations into:
+   - Quick wins
+   - Structural cleanup
+   - Defer for later
+5. Wait for approval before implementing.
+
+When reviewing, consider:
+- Should this action live on this page?
+- Is this button/action redundant?
+- Is this page trying to do too much?
+- Would a user understand what to do next?
+- Would an admin understand what is safe to edit?
+- Are destructive/admin actions visually distinct?
+- Are primary and secondary actions clear?
+- Are empty states helpful?
+- Are loading/error states handled cleanly?
+- Does this feel like a modern business portal?
+
+Output:
+Please provide:
+1. Summary of current UI/UX problems
+2. Recommended page/view responsibility changes
+3. Button/action cleanup recommendations
+4. Suggested navigation improvements
+5. Specific files/components likely needing changes
+6. Proposed implementation phases
+7. Risks or tradeoffs
+
+Do not edit files yet.

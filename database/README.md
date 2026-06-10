@@ -31,6 +31,7 @@ Apply migrations in filename order:
 psql "$DATABASE_URL" -f database/migrations/0001_app_health_check.sql
 psql "$DATABASE_URL" -f database/migrations/0002_users.sql
 psql "$DATABASE_URL" -f database/migrations/0003_surveys.sql
+psql "$DATABASE_URL" -f database/migrations/0004_conditional_rule_normal_flow.sql
 ```
 
 ## Applying Local Seeds
@@ -41,3 +42,20 @@ representative MVP question types, answer tags, and a `JUMP_TO_QUESTION` rule.
 ```bash
 psql "$DATABASE_URL" -f database/seeds/0001_phase_2_seed.sql
 ```
+
+## Resetting A Local Database
+
+Use this only against a disposable local development database:
+
+```bash
+npm run db:reset
+```
+
+The reset job:
+
+- loads `.env` from the repository root when present
+- requires `RUN_ENV=dev`
+- refuses hosted database URLs
+- refuses non-local database hosts unless `DB_RESET_ALLOW_NONLOCAL=1` is set
+- drops and recreates the `public` schema
+- applies every SQL file in `database/migrations/` and `database/seeds/` in filename order

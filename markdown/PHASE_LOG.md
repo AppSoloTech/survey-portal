@@ -953,3 +953,196 @@ Residual C1 fix:
 - Review findings addressed or deferred: Yes; C1/S1 code hardening/S2 are fixed, and the remaining live ordering smoke test is documented in `markdown/FOLLOW_UPS.md`.
 - Manual testing complete: API health only; admin CRUD smoke testing still recommended.
 - Ready to commit: Yes, with route/service extraction and live ordering smoke testing documented as follow-ups.
+
+---
+
+## Phase 5 — Admin Builder UX Polish
+
+Date:
+2026-06-10
+
+Status:
+Implemented after Claude review fixes
+
+Prompt:
+`prompts/prompt_5.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_5.txt`
+- Claude review: `notes/claude_review_phase_5.txt`
+
+## Goals
+
+- Fix the base-user text-answer state isolation regression in conditional survey-taking paths.
+- Improve admin builder scanability, section hierarchy, action labels, save feedback, and mobile stacking.
+- Make draft saves feel persisted without implying publish is required to preserve work.
+- Add clear publish/retire status actions near the bottom of the builder while preserving backend validation.
+- Reset the add-rule form after a successful jump-rule create.
+
+## Built
+
+- Replaced shared survey-runner answer state with question-id keyed draft maps for text, integer, and selection inputs.
+- Hydrated draft answer maps from saved attempt responses without clearing unrelated question drafts.
+- Keyed the active question form and text/integer controls by question id so text inputs do not visually carry values across conditional jumps.
+- Added scoped admin mutation feedback such as `Survey metadata saved`, `Question added`, `Option saved`, `Hidden tag saved`, and `Jump rule added`.
+- Removed status editing from the metadata form; metadata saves now preserve the current status.
+- Added top and bottom survey status action panels with current status, publish, and retire controls.
+- Added an explicit `Republish survey` action for retired surveys, preserving backend publish validation.
+- Added add-rule reset behavior by clearing the controlled source question state and resetting the form after successful rule creation.
+- Refined runner hydration so current-question-only navigation does not overwrite unsaved edits for already-answered questions.
+- Removed redundant post-submit draft hydration and collapsed draft hydration/update helpers.
+- Improved builder section hierarchy, option/tag row labels, scoped destructive action labels, section notes, and mobile action stacking.
+
+## Important Decisions
+
+### Question-Keyed Runner Drafts
+
+Decision:
+Store in-progress survey-taking input values by question id instead of by reusable input type.
+
+Reason:
+Conditional navigation can move between two text questions without visiting intervening questions. A single shared text state can briefly or persistently show the prior text question's value in the next text question.
+
+Tradeoff:
+The runner keeps small per-question draft maps in component state. This is still local-only UI state and remains hydrated from saved attempt responses.
+
+### Explicit Status Actions
+
+Decision:
+Keep status transitions out of the metadata save form and expose publish/retire as explicit action panels.
+
+Reason:
+Admins should understand that draft construction progress is saved independently of publishing, and publish should continue to rely on backend validation.
+
+Tradeoff:
+The builder shows status actions in two places to satisfy the prompt and reduce scrolling friction.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Not run: live admin builder browser CRUD smoke test.
+- Not run: mobile browser visual inspection.
+- Not run: live base-user conditional text-question reproduction.
+- Not run: retired survey republish browser smoke test.
+
+Manual browser note:
+
+Browser automation is not installed in this repo (`npm ls playwright` and `npm ls @playwright/test` returned empty), and no local app server was running on the expected ports during implementation. A live browser pass should still be run before commit if a browser-capable environment is available.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_5.txt`
+
+Status:
+
+- Completed
+
+Verdict:
+
+- No blocking bug found. Claude verified that the core text-answer isolation fix is sound and that the admin UX rewiring is structurally clean.
+
+Findings addressed:
+
+- F1: Added a retired-survey `Republish survey` UI path that calls the existing validated publish transition.
+- F2: Changed runner hydration to depend on the attempt object instead of every active survey/current-question change.
+- F3: Removed redundant explicit hydration after answer submit.
+- F5: Collapsed duplicated draft hydration/update helper code.
+- F6: Copied selected option id arrays during hydration instead of storing response arrays by reference.
+
+Documented:
+
+- F4: Metadata save can still trigger publish validation on already-published surveys because the current API expects status in metadata updates. This was pre-existing and is left unchanged for Phase 5 to avoid a backend contract change.
+
+## Phase 5 Manual Test Fixes
+
+Source:
+
+- `notes/phase-5-test-notes.txt`
+
+Review artifact:
+
+- `notes/claude_handoff_phase_5_test_fixes.txt`
+- `notes/claude_review_phase_5_test_fixes.txt`
+
+Status:
+
+- Implemented after focused Claude review fixes.
+
+Changes:
+
+- Refactored answer option rows so `Save option text`, option ordering, option deletion, and hidden tag actions are visually and functionally separate.
+- Restored hidden tag dropdowns with `Custom key...` and `Custom value...` options for ad hoc tags.
+- Reworked the Hidden Tags section into a tag suggestion library with built-in, saved, and custom source labels.
+- Clarified that only custom tag suggestions are removable.
+- Added `Back to top` to the bottom survey status action area.
+- Added participant integer input placeholder and helper text.
+- Updated frontend and backend navigation so questions targeted by `JUMP_TO_QUESTION` rules are skipped by ordinary linear flow unless a matching rule jumps to them.
+- Hoisted `resolveNextQuestion` into `@survey-portal/shared` so frontend and backend use one navigation implementation.
+- Added builder copy documenting that jump targets are conditional-only in normal forward flow.
+- Made custom duplicate tag suggestions removable, updated suggestion toast wording, and relabeled cross-survey saved suggestions as `Saved in surveys`.
+- Added a persisted `skipTargetInNormalFlow` jump-rule setting so admins can choose whether the target question stays in normal forward flow.
+
+Validation after manual test fixes:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+
+Manual testing completed:
+
+- User completed the manual browser pass after the target-flow toggle.
+- Current option/tag saving, restored tag dropdown flow, and conditional target normal-flow toggle behavior were accepted for commit.
+
+Focused Claude review:
+
+- Completed in `notes/claude_review_phase_5_test_fixes.txt`.
+- No blocking issues found.
+- Addressed F1 with builder documentation for conditional-only jump targets.
+- Addressed F2 by sharing `resolveNextQuestion` from `@survey-portal/shared`.
+- Addressed F3 by basing custom suggestion removability on `customTagPresets`.
+- Addressed F4 by updating preset/suggestion toast wording.
+- Addressed F5 by clarifying the cross-survey saved suggestion label.
+- Re-review completed after final fixes: ship-ready pending the manual smoke tests already listed above.
+- Re-review confirmed the restored tag dropdown flow, shared navigation resolver, custom suggestion removal behavior, and conditional-target navigation consistency.
+- Post re-review update: added the target-flow toggle after additional manual feedback. Fresh focused review was not run for that final toggle; user completed manual testing and accepted the current behavior.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Claude review created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: No backend/auth changes were made; hidden-tag exposure and publish validation paths were not weakened.
+- Review findings addressed or deferred: Yes for first Claude review and focused test-fix review; final target-flow toggle manually accepted without a fresh Claude review.
+- Manual testing complete: Yes; completed by user after the target-flow toggle.
+- Ready to commit: Yes.

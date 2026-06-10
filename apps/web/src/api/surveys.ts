@@ -265,12 +265,14 @@ export async function createConditionalRule(input: {
   sourceQuestionId: number;
   sourceAnswerOptionId: number;
   targetQuestionId: number;
+  skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules`, {
     body: JSON.stringify({
       sourceQuestionId: input.sourceQuestionId,
       sourceAnswerOptionId: input.sourceAnswerOptionId,
       targetQuestionId: input.targetQuestionId,
+      skipTargetInNormalFlow: input.skipTargetInNormalFlow,
       conditionOperator: "equals",
       actionType: "JUMP_TO_QUESTION"
     }),
@@ -284,12 +286,14 @@ export async function updateConditionalRule(input: {
   sourceQuestionId: number;
   sourceAnswerOptionId: number;
   targetQuestionId: number;
+  skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
     body: JSON.stringify({
       sourceQuestionId: input.sourceQuestionId,
       sourceAnswerOptionId: input.sourceAnswerOptionId,
       targetQuestionId: input.targetQuestionId,
+      skipTargetInNormalFlow: input.skipTargetInNormalFlow,
       conditionOperator: "equals",
       actionType: "JUMP_TO_QUESTION"
     }),

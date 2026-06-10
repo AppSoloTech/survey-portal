@@ -18,6 +18,7 @@
     "build": "npm run build -w packages/shared && npm run build -w apps/web && npm run build -w apps/api",
     "build:api": "npm run build -w apps/api",
     "build:web": "npm run build -w apps/web",
+    "db:reset": "node scripts/reset-local-db.mjs",
     "start": "npm run start -w apps/api",
     "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w apps/web && npm run typecheck -w apps/api",
     "lint": "npm run lint -w packages/shared && npm run lint -w apps/web && npm run lint -w apps/api"

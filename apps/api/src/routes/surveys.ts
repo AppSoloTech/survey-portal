@@ -1,24 +1,25 @@
 import express from "express";
 import pg from "pg";
 import type { PoolClient } from "pg";
-import type {
-  AnswerOption,
-  AnswerTag,
-  AnswerSurveyResponse,
-  ConditionalLogicActionType,
-  ConditionalLogicConditionOperator,
-  ConditionalLogicRule,
-  CompleteSurveyResponse,
-  MySurveyResponse,
-  MySurveysResponse,
-  StartSurveyResponse,
-  Survey,
-  SurveyAttempt,
-  SurveyAttemptStatus,
-  SurveyQuestion,
-  SurveyQuestionType,
-  SurveyResponseAnswer,
-  SurveyStatus
+import {
+  resolveNextQuestion,
+  type AnswerOption,
+  type AnswerTag,
+  type AnswerSurveyResponse,
+  type ConditionalLogicActionType,
+  type ConditionalLogicConditionOperator,
+  type ConditionalLogicRule,
+  type CompleteSurveyResponse,
+  type MySurveyResponse,
+  type MySurveysResponse,
+  type StartSurveyResponse,
+  type Survey,
+  type SurveyAttempt,
+  type SurveyAttemptStatus,
+  type SurveyQuestion,
+  type SurveyQuestionType,
+  type SurveyResponseAnswer,
+  type SurveyStatus
 } from "@survey-portal/shared";
 
 import { pool } from "../db.js";
@@ -1016,14 +1017,16 @@ surveysRouter.post("/:id/rules", requireAuth, requireRole("admin"), async (req, 
          source_answer_option_id,
          condition_operator,
          action_type,
-         target_question_id
+         target_question_id,
+         skip_target_in_normal_flow
        )
-       values ($1, $2, $3, 'equals', 'JUMP_TO_QUESTION', $4)`,
+       values ($1, $2, $3, 'equals', 'JUMP_TO_QUESTION', $4, $5)`,
       [
         surveyId,
         validation.value.sourceQuestionId,
         validation.value.sourceAnswerOptionId,
-        validation.value.targetQuestionId
+        validation.value.targetQuestionId,
+        validation.value.skipTargetInNormalFlow
       ]
     );
 
@@ -1085,6 +1088,7 @@ surveysRouter.put(
              condition_operator = 'equals',
              action_type = 'JUMP_TO_QUESTION',
              target_question_id = $5,
+             skip_target_in_normal_flow = $6,
              target_page_id = null,
              updated_at = now()
          where survey_id = $1
@@ -1094,7 +1098,8 @@ surveysRouter.put(
           ruleId,
           validation.value.sourceQuestionId,
           validation.value.sourceAnswerOptionId,
-          validation.value.targetQuestionId
+          validation.value.targetQuestionId,
+          validation.value.skipTargetInNormalFlow
         ]
       );
 
@@ -1445,6 +1450,7 @@ interface ConditionalLogicRuleRecord {
   action_type: ConditionalLogicActionType;
   target_question_id: number | null;
   target_page_id: number | null;
+  skip_target_in_normal_flow: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -1603,6 +1609,7 @@ async function fetchSurveyStructures(options: FetchSurveyStructuresOptions): Pro
        action_type,
        target_question_id,
        target_page_id,
+       skip_target_in_normal_flow,
        created_at,
        updated_at
      from conditional_logic_rules
@@ -1734,6 +1741,7 @@ function mapConditionalLogicRuleRecord(record: ConditionalLogicRuleRecord): Cond
     actionType: record.action_type,
     targetQuestionId: record.target_question_id,
     targetPageId: record.target_page_id,
+    skipTargetInNormalFlow: record.skip_target_in_normal_flow,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -2806,6 +2814,7 @@ interface ConditionalRuleBodyValue {
   sourceQuestionId: number;
   sourceAnswerOptionId: number;
   targetQuestionId: number;
+  skipTargetInNormalFlow: boolean;
 }
 
 function validateConditionalRuleBody(
@@ -2818,6 +2827,7 @@ function validateConditionalRuleBody(
   const sourceQuestionId = readPositiveIntegerField(body, "sourceQuestionId");
   const sourceAnswerOptionId = readPositiveIntegerField(body, "sourceAnswerOptionId");
   const targetQuestionId = readPositiveIntegerField(body, "targetQuestionId");
+  const skipTargetInNormalFlowValue = body.skipTargetInNormalFlow;
   const conditionOperator = readTextField(body, "conditionOperator") || "equals";
   const actionType = readTextField(body, "actionType") || "JUMP_TO_QUESTION";
 
@@ -2836,12 +2846,21 @@ function validateConditionalRuleBody(
     return { ok: false, error: "Action type must be JUMP_TO_QUESTION" };
   }
 
+  if (
+    skipTargetInNormalFlowValue !== undefined &&
+    typeof skipTargetInNormalFlowValue !== "boolean"
+  ) {
+    return { ok: false, error: "skipTargetInNormalFlow must be true or false" };
+  }
+
   return {
     ok: true,
     value: {
       sourceQuestionId,
       sourceAnswerOptionId,
-      targetQuestionId
+      targetQuestionId,
+      skipTargetInNormalFlow:
+        typeof skipTargetInNormalFlowValue === "boolean" ? skipTargetInNormalFlowValue : true
     }
   };
 }
@@ -3128,32 +3147,6 @@ function determineCurrentQuestion(
   }
 
   return null;
-}
-
-function resolveNextQuestion(
-  survey: Survey,
-  question: SurveyQuestion,
-  response: SurveyResponseAnswer | undefined
-): SurveyQuestion | null {
-  const matchingRule = survey.conditionalLogicRules.find(
-    (rule) =>
-      rule.sourceQuestionId === question.id &&
-      rule.conditionOperator === "equals" &&
-      rule.actionType === "JUMP_TO_QUESTION" &&
-      rule.targetQuestionId !== null &&
-      response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId)
-  );
-
-  if (matchingRule?.targetQuestionId) {
-    return survey.questions.find((candidate) => candidate.id === matchingRule.targetQuestionId) ?? null;
-  }
-
-  return (
-    survey.questions
-      .filter((candidate) => candidate.displayOrder > question.displayOrder)
-      .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)[0] ??
-    null
-  );
 }
 
 function findFirstQuestion(survey: Survey): SurveyQuestion | null {

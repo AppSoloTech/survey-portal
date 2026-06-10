@@ -93,6 +93,12 @@ nav {
   opacity: 0.65;
 }
 
+.secondary-button {
+  background: #ffffff;
+  border-color: #1f4d3a;
+  color: #1f4d3a;
+}
+
 main {
   padding: clamp(1rem, 4vw, 3rem);
 }
@@ -381,6 +387,18 @@ main {
   resize: vertical;
 }
 
+.integer-answer-control {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 620px;
+}
+
+.input-helper-text {
+  color: #52635a;
+  font-size: 0.88rem;
+  margin: 0;
+}
+
 .question-form input:focus,
 .question-form textarea:focus {
   border-color: #1f4d3a;
@@ -447,13 +465,19 @@ main {
   padding: 1rem;
 }
 
+.builder-workspace > .builder-form,
+.question-editor {
+  border-top: 4px solid #315f87;
+}
+
 .compact-builder-form {
   gap: 0.75rem;
 }
 
 .builder-form h3,
 .question-editor h3,
-.option-editor h4 {
+.option-editor h4,
+.option-editor h5 {
   margin: 0;
 }
 
@@ -462,6 +486,14 @@ main {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
+}
+
+.builder-heading-note {
+  color: #52635a;
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin: 0.25rem 0 0;
+  max-width: 680px;
 }
 
 .builder-grid {
@@ -531,6 +563,10 @@ main {
   gap: 0.5rem;
 }
 
+.inline-actions .button-link {
+  white-space: normal;
+}
+
 .danger-button {
   background: #8b2f25;
   border-color: #8b2f25;
@@ -583,15 +619,14 @@ main {
 }
 
 .option-editor-row {
-  background: #f8faf8;
-  border: 1px solid #dce4df;
+  background: #fbfcfb;
+  border: 1px solid #d3ded8;
   border-radius: 8px;
   display: grid;
   gap: 0.75rem;
   padding: 0.85rem;
 }
 
-.option-editor-row > form,
 .add-option-form,
 .tag-row,
 .rule-form {
@@ -600,8 +635,35 @@ main {
   gap: 0.65rem;
 }
 
-.option-editor-row > form {
+.option-row-header {
+  align-items: start;
+  border-bottom: 1px solid #dce4df;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+}
+
+.option-editor h5 {
+  color: #172026;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.option-row-body {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.option-row-form {
+  align-items: end;
+  display: grid;
+  gap: 0.65rem;
   grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.option-row-form .inline-actions {
+  justify-content: flex-end;
 }
 
 .add-option-form {
@@ -609,8 +671,24 @@ main {
 }
 
 .tag-editor {
+  border-top: 1px dashed #cbd8d1;
   display: grid;
   gap: 0.55rem;
+  padding-top: 0.75rem;
+}
+
+.tag-helper-text {
+  color: #52635a;
+  font-size: 0.84rem;
+  margin: 0.15rem 0 0;
+}
+
+.option-subheading {
+  color: #52635a;
+  font-size: 0.82rem;
+  font-weight: 750;
+  margin: 0;
+  text-transform: uppercase;
 }
 
 .tag-preset-panel {
@@ -618,27 +696,48 @@ main {
 }
 
 .tag-preset-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  max-height: 18rem;
+  overflow: auto;
+  padding-right: 0.25rem;
 }
 
 .tag-preset-chip {
-  align-items: center;
+  align-items: start;
   background: #f8faf8;
   border: 1px solid #dce4df;
   border-radius: 6px;
-  display: inline-flex;
-  gap: 0.4rem;
+  display: grid;
+  gap: 0.45rem;
   max-width: 100%;
-  padding: 0.35rem 0.45rem;
+  padding: 0.55rem 0.6rem;
 }
 
+.tag-preset-chip.removable {
+  border-color: #9cc5ac;
+}
+
+.tag-preset-text {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.tag-preset-text,
 .tag-preset-chip span {
   overflow-wrap: anywhere;
 }
 
+.tag-source-label {
+  color: #5d6f65;
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
 .tag-preset-chip button {
+  justify-self: start;
   background: transparent;
   border: 0;
   color: #8b2f25;
@@ -661,7 +760,7 @@ main {
 }
 
 .rule-form {
-  grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(180px, 0.75fr) auto;
 }
 
 .rule-row {
@@ -669,6 +768,32 @@ main {
   border: 1px solid #dce4df;
   border-radius: 8px;
   padding: 0.85rem;
+}
+
+.status-action-panel.top {
+  border-top-color: #9a6b24;
+}
+
+.status-action-panel.bottom {
+  border-color: #b7c0e8;
+  border-top-color: #5664a0;
+}
+
+.status-action-row {
+  align-items: center;
+  background: #f8faf8;
+  border: 1px solid #dce4df;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  justify-content: space-between;
+  padding: 0.85rem;
+}
+
+.status-summary {
+  color: #34443b;
+  font-size: 0.92rem;
 }
 
 .health-grid {
@@ -729,7 +854,7 @@ main {
 
   .admin-builder-layout,
   .two-columns,
-  .option-editor-row > form,
+  .option-row-form,
   .add-option-form,
   .tag-row,
   .tag-preset-form,
@@ -740,14 +865,26 @@ main {
   .survey-card-footer,
   .survey-actions,
   .question-progress,
-  .builder-section-heading {
+  .builder-section-heading,
+  .option-row-header {
     align-items: stretch;
     flex-direction: column;
   }
 
   .survey-card-footer .button-link,
-  .survey-actions .button-link {
+  .survey-actions .button-link,
+  .inline-actions .button-link,
+  .status-action-row .button-link {
     width: 100%;
+  }
+
+  .inline-actions {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .option-row-form .inline-actions {
+    justify-content: stretch;
   }
 
   .question-progress progress {

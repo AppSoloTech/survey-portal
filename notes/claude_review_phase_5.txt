@@ -1,0 +1,114 @@
+# Claude Review — Phase 5 Admin Builder UX Polish
+
+Date:
+2026-06-10
+
+Source:
+Pasted Claude review from `/home/AppSolo/.codex/attachments/b5117ff5-332e-460f-9a88-e9b0e5bbbe8b/pasted-text.txt`
+
+Status:
+Completed; findings addressed or documented
+
+## Verdict
+
+No blocking bug found.
+
+Claude verified that the core text-answer state isolation fix is sound: per-question keyed maps plus question-keyed form/input rendering prevent Q1 text from leaking into Q5 during conditional navigation.
+
+Claude also verified that the admin UX rewiring is structurally clean: the two-argument mutation helper is updated at call sites, `StatusActionPanel` props match, removed symbols have no dangling references, rule select remount keys are correct, and CSS changes are additive.
+
+## Findings
+
+### F1 — Medium — No UI path to reactivate a retired survey
+
+Finding:
+The Phase 5 status panel made retired surveys a UI dead end even though the backend status endpoint permits retired-to-published transitions with publish validation.
+
+Disposition:
+Fixed.
+
+Resolution:
+Added a `Republish survey` action for retired surveys. The action calls the existing admin status endpoint with `published`, preserving backend publish validation. Did not add a blanket return-to-draft action because the backend intentionally blocks returning surveys with attempts to draft.
+
+### F2 — Low-Medium — Rehydration wipes unsaved edits on answered questions during navigation
+
+Finding:
+The hydration effect depended on the entire `activeSurvey` object, so current-question-only navigation could rehydrate saved responses and overwrite unsaved edits to already-answered questions.
+
+Disposition:
+Fixed.
+
+Resolution:
+Changed the hydration effect dependency to the attempt object rather than the full active survey object. Navigating backward with the same attempt no longer rehydrates drafts.
+
+### F3 — Low — Redundant double hydration after submit
+
+Finding:
+`handleSubmitAnswer` explicitly hydrated response drafts immediately after `setActiveSurvey`, while the hydration effect also handled the same attempt update.
+
+Disposition:
+Fixed.
+
+Resolution:
+Removed the explicit `hydrateResponseDrafts` call and deleted the helper. The effect is now the authoritative hydration path.
+
+### F4 — Low — Metadata save can still trigger publish validation on published surveys
+
+Finding:
+Metadata save continues to submit the current survey status. If a published survey structure has drifted invalid, the backend can return a publish validation error during a title/description save.
+
+Disposition:
+Documented, not changed in Phase 5.
+
+Reason:
+This behavior was largely pre-existing because the old metadata form also defaulted the status select to the current status. Avoiding it cleanly would require an API contract change for metadata-only updates or backend validation branching. Phase 5 preferred frontend UX changes and avoiding backend behavior changes unless required.
+
+### F5 — Cleanup — Duplicated runner draft helpers and handlers
+
+Finding:
+Separate text, integer, and selection hydration helpers duplicated the same loop, and text/integer change handlers duplicated the same state update pattern.
+
+Disposition:
+Fixed.
+
+Resolution:
+Collapsed hydration to a generic `hydrateDrafts` helper and collapsed draft state updates to `setDraftAnswer`.
+
+### F6 — Latent — Selection draft hydration stored response arrays by reference
+
+Finding:
+Selection draft hydration assigned `response.selectedAnswerOptionIds` directly, aliasing arrays from the attempt snapshot.
+
+Disposition:
+Fixed.
+
+Resolution:
+Selection hydration now copies arrays with `[...response.selectedAnswerOptionIds]`.
+
+## Validation After Fixes
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+
+## Remaining Manual Test Gap
+
+Live browser/manual testing still has not been run in this environment:
+
+- admin builder CRUD smoke test
+- mobile visual inspection
+- base-user conditional text-question reproduction
+- retired survey republish path
+
+Reason:
+Browser automation is not installed in this repo, and a browser-capable local test environment was not available during the implementation pass.

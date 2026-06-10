@@ -36,8 +36,7 @@ const questionTypes: SurveyQuestionType[] = [
   "single_select",
   "multi_select"
 ];
-
-const surveyStatuses: SurveyStatus[] = ["draft", "published", "retired"];
+const customTagOptionValue = "__custom_tag_value__";
 
 interface TagPreset {
   tagKey: string;
@@ -128,10 +127,12 @@ export function AdminDashboard() {
       return next.sort((left, right) => left.id - right.id);
     });
     setSelectedSurveyId(survey.id);
-    setNotice("Saved");
   }
 
-  async function runSurveyMutation(action: () => Promise<{ survey: Survey }>): Promise<boolean> {
+  async function runSurveyMutation(
+    action: () => Promise<{ survey: Survey }>,
+    successMessage: string
+  ): Promise<boolean> {
     setError(null);
     setNotice(null);
     setIsSubmitting(true);
@@ -139,6 +140,7 @@ export function AdminDashboard() {
     try {
       const response = await action();
       applyUpdatedSurvey(response.survey);
+      setNotice(successMessage);
       return true;
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : "Request failed");
@@ -153,11 +155,13 @@ export function AdminDashboard() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    const didSave = await runSurveyMutation(() =>
-      createSurvey({
-        title: readFormText(data, "title"),
-        description: readNullableFormText(data, "description")
-      })
+    const didSave = await runSurveyMutation(
+      () =>
+        createSurvey({
+          title: readFormText(data, "title"),
+          description: readNullableFormText(data, "description")
+        }),
+      "Draft survey created and saved"
     );
 
     if (didSave) {
@@ -175,13 +179,15 @@ export function AdminDashboard() {
 
     const data = new FormData(event.currentTarget);
 
-    await runSurveyMutation(() =>
-      updateSurveyMetadata({
-        surveyId: selectedSurvey.id,
-        title: readFormText(data, "title"),
-        description: readNullableFormText(data, "description"),
-        status: readSurveyStatus(data, "status")
-      })
+    await runSurveyMutation(
+      () =>
+        updateSurveyMetadata({
+          surveyId: selectedSurvey.id,
+          title: readFormText(data, "title"),
+          description: readNullableFormText(data, "description"),
+          status: selectedSurvey.status
+        }),
+      "Survey metadata saved"
     );
   }
 
@@ -190,11 +196,17 @@ export function AdminDashboard() {
       return;
     }
 
-    await runSurveyMutation(() =>
-      updateSurveyStatus({
-        surveyId: selectedSurvey.id,
-        status
-      })
+    await runSurveyMutation(
+      () =>
+        updateSurveyStatus({
+          surveyId: selectedSurvey.id,
+          status
+        }),
+      status === "published"
+        ? selectedSurvey.status === "retired"
+          ? "Survey republished"
+          : "Survey published"
+        : "Survey retired"
     );
   }
 
@@ -208,14 +220,16 @@ export function AdminDashboard() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    const didSave = await runSurveyMutation(() =>
-      createQuestion({
-        surveyId: selectedSurvey.id,
-        questionText: readFormText(data, "questionText"),
-        questionType: readQuestionType(data, "questionType"),
-        isRequired: data.get("isRequired") === "on",
-        helpText: readNullableFormText(data, "helpText")
-      })
+    const didSave = await runSurveyMutation(
+      () =>
+        createQuestion({
+          surveyId: selectedSurvey.id,
+          questionText: readFormText(data, "questionText"),
+          questionType: readQuestionType(data, "questionType"),
+          isRequired: data.get("isRequired") === "on",
+          helpText: readNullableFormText(data, "helpText")
+        }),
+      "Question added"
     );
 
     if (didSave) {
@@ -235,15 +249,17 @@ export function AdminDashboard() {
 
     const data = new FormData(event.currentTarget);
 
-    await runSurveyMutation(() =>
-      updateQuestion({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        questionText: readFormText(data, "questionText"),
-        questionType: readQuestionType(data, "questionType"),
-        isRequired: data.get("isRequired") === "on",
-        helpText: readNullableFormText(data, "helpText")
-      })
+    await runSurveyMutation(
+      () =>
+        updateQuestion({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          questionText: readFormText(data, "questionText"),
+          questionType: readQuestionType(data, "questionType"),
+          isRequired: data.get("isRequired") === "on",
+          helpText: readNullableFormText(data, "helpText")
+        }),
+      `Question ${question.displayOrder} saved`
     );
   }
 
@@ -263,11 +279,13 @@ export function AdminDashboard() {
     const reordered = [...ids];
     [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
 
-    await runSurveyMutation(() =>
-      reorderQuestions({
-        surveyId: selectedSurvey.id,
-        questionIds: reordered
-      })
+    await runSurveyMutation(
+      () =>
+        reorderQuestions({
+          surveyId: selectedSurvey.id,
+          questionIds: reordered
+        }),
+      "Question order saved"
     );
   }
 
@@ -276,11 +294,13 @@ export function AdminDashboard() {
       return;
     }
 
-    await runSurveyMutation(() =>
-      deleteQuestion({
-        surveyId: selectedSurvey.id,
-        questionId
-      })
+    await runSurveyMutation(
+      () =>
+        deleteQuestion({
+          surveyId: selectedSurvey.id,
+          questionId
+        }),
+      "Question deleted"
     );
   }
 
@@ -297,12 +317,14 @@ export function AdminDashboard() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    const didSave = await runSurveyMutation(() =>
-      createAnswerOption({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionText: readFormText(data, "optionText")
-      })
+    const didSave = await runSurveyMutation(
+      () =>
+        createAnswerOption({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionText: readFormText(data, "optionText")
+        }),
+      `Option added to question ${question.displayOrder}`
     );
 
     if (didSave) {
@@ -323,13 +345,15 @@ export function AdminDashboard() {
 
     const data = new FormData(event.currentTarget);
 
-    await runSurveyMutation(() =>
-      updateAnswerOption({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionId: option.id,
-        optionText: readFormText(data, "optionText")
-      })
+    await runSurveyMutation(
+      () =>
+        updateAnswerOption({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionId: option.id,
+          optionText: readFormText(data, "optionText")
+        }),
+      "Option text saved"
     );
   }
 
@@ -353,12 +377,14 @@ export function AdminDashboard() {
     const reordered = [...ids];
     [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
 
-    await runSurveyMutation(() =>
-      reorderAnswerOptions({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionIds: reordered
-      })
+    await runSurveyMutation(
+      () =>
+        reorderAnswerOptions({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionIds: reordered
+        }),
+      "Option order saved"
     );
   }
 
@@ -367,12 +393,14 @@ export function AdminDashboard() {
       return;
     }
 
-    await runSurveyMutation(() =>
-      deleteAnswerOption({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionId
-      })
+    await runSurveyMutation(
+      () =>
+        deleteAnswerOption({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionId
+        }),
+      "Option deleted"
     );
   }
 
@@ -390,14 +418,16 @@ export function AdminDashboard() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    const didSave = await runSurveyMutation(() =>
-      createAnswerTag({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionId: option.id,
-        tagKey: readFormText(data, "tagKey"),
-        tagValue: readFormText(data, "tagValue")
-      })
+    const didSave = await runSurveyMutation(
+      () =>
+        createAnswerTag({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionId: option.id,
+          tagKey: readFormText(data, "tagKey"),
+          tagValue: readFormText(data, "tagValue")
+        }),
+      "Hidden tag added"
     );
 
     if (didSave) {
@@ -419,15 +449,17 @@ export function AdminDashboard() {
 
     const data = new FormData(event.currentTarget);
 
-    await runSurveyMutation(() =>
-      updateAnswerTag({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionId: option.id,
-        tagId,
-        tagKey: readFormText(data, "tagKey"),
-        tagValue: readFormText(data, "tagValue")
-      })
+    await runSurveyMutation(
+      () =>
+        updateAnswerTag({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionId: option.id,
+          tagId,
+          tagKey: readFormText(data, "tagKey"),
+          tagValue: readFormText(data, "tagValue")
+        }),
+      "Hidden tag saved"
     );
   }
 
@@ -440,13 +472,15 @@ export function AdminDashboard() {
       return;
     }
 
-    await runSurveyMutation(() =>
-      deleteAnswerTag({
-        surveyId: selectedSurvey.id,
-        questionId: question.id,
-        optionId: option.id,
-        tagId
-      })
+    await runSurveyMutation(
+      () =>
+        deleteAnswerTag({
+          surveyId: selectedSurvey.id,
+          questionId: question.id,
+          optionId: option.id,
+          tagId
+        }),
+      "Hidden tag removed"
     );
   }
 
@@ -460,16 +494,20 @@ export function AdminDashboard() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    const didSave = await runSurveyMutation(() =>
-      createConditionalRule({
-        surveyId: selectedSurvey.id,
-        sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
-        sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
-        targetQuestionId: readFormNumber(data, "targetQuestionId")
-      })
+    const didSave = await runSurveyMutation(
+      () =>
+        createConditionalRule({
+          surveyId: selectedSurvey.id,
+          sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
+          sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
+          targetQuestionId: readFormNumber(data, "targetQuestionId"),
+          skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
+        }),
+      "Jump rule added"
     );
 
     if (didSave) {
+      setRuleSourceQuestionId(null);
       form.reset();
     }
   }
@@ -486,14 +524,17 @@ export function AdminDashboard() {
 
     const data = new FormData(event.currentTarget);
 
-    await runSurveyMutation(() =>
-      updateConditionalRule({
-        surveyId: selectedSurvey.id,
-        ruleId: rule.id,
-        sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
-        sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
-        targetQuestionId: readFormNumber(data, "targetQuestionId")
-      })
+    await runSurveyMutation(
+      () =>
+        updateConditionalRule({
+          surveyId: selectedSurvey.id,
+          ruleId: rule.id,
+          sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
+          sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
+          targetQuestionId: readFormNumber(data, "targetQuestionId"),
+          skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
+        }),
+      "Jump rule saved"
     );
   }
 
@@ -502,11 +543,13 @@ export function AdminDashboard() {
       return;
     }
 
-    await runSurveyMutation(() =>
-      deleteConditionalRule({
-        surveyId: selectedSurvey.id,
-        ruleId
-      })
+    await runSurveyMutation(
+      () =>
+        deleteConditionalRule({
+          surveyId: selectedSurvey.id,
+          ruleId
+        }),
+      "Jump rule deleted"
     );
   }
 
@@ -528,7 +571,7 @@ export function AdminDashboard() {
       mergeTagPresets([...current, preset]).filter((item) => item.source === "custom")
     );
     setError(null);
-    setNotice("Tag preset added");
+    setNotice("Tag suggestion added");
     form.reset();
   }
 
@@ -538,7 +581,7 @@ export function AdminDashboard() {
         (item) => item.tagKey !== preset.tagKey || item.tagValue !== preset.tagValue
       )
     );
-    setNotice("Tag preset removed");
+    setNotice("Tag suggestion removed");
   }
 
   return (
@@ -550,7 +593,7 @@ export function AdminDashboard() {
       </div>
 
       {user ? (
-        <p className="status muted">
+        <p className="status muted" id="admin-builder-top">
           Signed in as {user.firstName} {user.lastName}
         </p>
       ) : null}
@@ -570,7 +613,7 @@ export function AdminDashboard() {
               <textarea name="description" rows={3} />
             </label>
             <button className="button-link compact-button" disabled={isSubmitting} type="submit">
-              Create
+              Create draft survey
             </button>
           </form>
 
@@ -608,28 +651,19 @@ export function AdminDashboard() {
                 <div>
                   <p className="eyebrow">Survey metadata</p>
                   <h3>{selectedSurvey.title}</h3>
+                  <p className="builder-heading-note">
+                    Draft changes are saved here without publishing the survey.
+                  </p>
                 </div>
                 <span className={`status-pill ${selectedSurvey.status}`}>
                   {selectedSurvey.status}
                 </span>
               </div>
 
-              <div className="builder-grid two-columns">
-                <label>
-                  Title
-                  <input defaultValue={selectedSurvey.title} name="title" required />
-                </label>
-                <label>
-                  Status
-                  <select defaultValue={selectedSurvey.status} name="status">
-                    {surveyStatuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <label>
+                Title
+                <input defaultValue={selectedSurvey.title} name="title" required />
+              </label>
               <label>
                 Description
                 <textarea
@@ -642,24 +676,15 @@ export function AdminDashboard() {
                 <button className="button-link compact-button" disabled={isSubmitting} type="submit">
                   Save metadata
                 </button>
-                <button
-                  className="button-link compact-button"
-                  disabled={isSubmitting || selectedSurvey.status === "published"}
-                  onClick={() => void handleStatus("published")}
-                  type="button"
-                >
-                  Publish
-                </button>
-                <button
-                  className="button-link compact-button"
-                  disabled={isSubmitting || selectedSurvey.status === "retired"}
-                  onClick={() => void handleStatus("retired")}
-                  type="button"
-                >
-                  Retire
-                </button>
               </div>
             </form>
+
+            <StatusActionPanel
+              isSubmitting={isSubmitting}
+              onStatusChange={handleStatus}
+              placement="top"
+              survey={selectedSurvey}
+            />
 
             <form
               className="builder-form"
@@ -730,6 +755,12 @@ export function AdminDashboard() {
                 <div>
                   <p className="eyebrow">Conditional logic</p>
                   <h3>Jump rules</h3>
+                  <p className="builder-heading-note">
+                    Add-rule fields reset after each saved rule. Existing rules stay below.
+                  </p>
+                  <p className="builder-heading-note">
+                    Use the target-flow setting to either keep the target in normal question order or show it only when the jump reaches it.
+                  </p>
                 </div>
               </div>
 
@@ -744,6 +775,7 @@ export function AdminDashboard() {
                       )
                     }
                     value={activeRuleSourceQuestion?.id ?? ""}
+                    required
                   >
                     <option value="">Choose source question</option>
                     {selectableQuestions.map((question) => (
@@ -755,7 +787,12 @@ export function AdminDashboard() {
                 </label>
                 <label>
                   Source answer
-                  <select disabled={!activeRuleSourceQuestion} name="sourceAnswerOptionId">
+                  <select
+                    disabled={!activeRuleSourceQuestion}
+                    key={`rule-source-answer-${activeRuleSourceQuestion?.id ?? "empty"}`}
+                    name="sourceAnswerOptionId"
+                    required
+                  >
                     <option value="">Choose source answer</option>
                     {activeRuleSourceQuestion?.answerOptions.map((option) => (
                       <option key={option.id} value={option.id}>
@@ -766,7 +803,12 @@ export function AdminDashboard() {
                 </label>
                 <label>
                   Target question
-                  <select disabled={!activeRuleSourceQuestion} name="targetQuestionId">
+                  <select
+                    disabled={!activeRuleSourceQuestion}
+                    key={`rule-target-question-${activeRuleSourceQuestion?.id ?? "empty"}`}
+                    name="targetQuestionId"
+                    required
+                  >
                     <option value="">Choose target question</option>
                     {activeRuleTargetQuestions.map((question) => (
                       <option key={question.id} value={question.id}>
@@ -774,6 +816,10 @@ export function AdminDashboard() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="checkbox-label rule-flow-toggle">
+                  <input defaultChecked name="skipTargetInNormalFlow" type="checkbox" />
+                  Skip target in normal flow
                 </label>
                 <button
                   className="button-link compact-button"
@@ -811,10 +857,81 @@ export function AdminDashboard() {
               onDeletePreset={handleDeleteTagPreset}
               tagPresets={tagPresets}
             />
+
+            <StatusActionPanel
+              isSubmitting={isSubmitting}
+              onStatusChange={handleStatus}
+              placement="bottom"
+              survey={selectedSurvey}
+            />
           </div>
         ) : (
           <p className="status muted">Create or select a survey to start building.</p>
         )}
+      </div>
+    </section>
+  );
+}
+
+function StatusActionPanel({
+  isSubmitting,
+  onStatusChange,
+  placement,
+  survey
+}: {
+  isSubmitting: boolean;
+  onStatusChange: (status: SurveyStatus) => Promise<void>;
+  placement: "top" | "bottom";
+  survey: Survey;
+}) {
+  const isDraft = survey.status === "draft";
+  const isPublished = survey.status === "published";
+  const isRetired = survey.status === "retired";
+
+  return (
+    <section className={`builder-form status-action-panel ${placement}`}>
+      <div className="builder-section-heading">
+        <div>
+          <p className="eyebrow">Survey status</p>
+          <h3>{placement === "bottom" ? "Finish construction" : "Availability"}</h3>
+          <p className="builder-heading-note">
+            {isDraft
+              ? "This survey is saved as a draft. Publish when required questions, options, and rules are ready."
+              : isPublished
+                ? "This survey is live for users. Retire it to stop new starts while preserving existing attempts."
+                : "This survey is retired and unavailable for new starts. Republish it when it passes validation."}
+          </p>
+        </div>
+        <span className={`status-pill ${survey.status}`}>{survey.status}</span>
+      </div>
+
+      <div className="status-action-row">
+        <span className="status-summary">
+          Current status: <strong>{survey.status}</strong>
+        </span>
+        <div className="inline-actions">
+          <button
+            className="button-link compact-button"
+            disabled={isSubmitting || (!isDraft && !isRetired)}
+            onClick={() => void onStatusChange("published")}
+            type="button"
+          >
+            {isRetired ? "Republish survey" : "Publish survey"}
+          </button>
+          <button
+            className="button-link compact-button"
+            disabled={isSubmitting || !isPublished}
+            onClick={() => void onStatusChange("retired")}
+            type="button"
+          >
+            Retire survey
+          </button>
+          {placement === "bottom" ? (
+            <a className="button-link compact-button secondary-button" href="#admin-builder-top">
+              Back to top
+            </a>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -886,6 +1003,9 @@ function QuestionEditor({
           <div>
             <p className="eyebrow">Question {question.displayOrder}</p>
             <h3>{question.questionText}</h3>
+            <p className="builder-heading-note">
+              Save question updates this prompt, type, help text, and required setting only.
+            </p>
           </div>
           <div className="inline-actions">
             <button
@@ -948,23 +1068,26 @@ function QuestionEditor({
             onClick={() => void onDeleteQuestion(question.id)}
             type="button"
           >
-            Delete
+            Delete question
           </button>
         </div>
       </form>
 
       {isSelectionQuestion(question) ? (
         <div className="option-editor">
-          <h4>Answer options</h4>
+          <div>
+            <h4>Answer options</h4>
+            <p className="builder-heading-note">
+              Option text, order, and hidden tags are saved with separate actions.
+            </p>
+          </div>
           {question.answerOptions.map((option, index) => (
             <div className="option-editor-row" key={option.id}>
-              <form onSubmit={(event) => void onSaveOption(event, question, option)}>
-                <input
-                  aria-label="Answer option text"
-                  defaultValue={option.optionText}
-                  name="optionText"
-                  required
-                />
+              <div className="option-row-header">
+                <div>
+                  <p className="option-subheading">Option {index + 1}</p>
+                  <h5>{option.optionText}</h5>
+                </div>
                 <div className="inline-actions">
                   <button
                     className="button-link compact-button"
@@ -972,7 +1095,7 @@ function QuestionEditor({
                     onClick={() => void onMoveOption(question, option.id, -1)}
                     type="button"
                   >
-                    Up
+                    Move up
                   </button>
                   <button
                     className="button-link compact-button"
@@ -980,23 +1103,40 @@ function QuestionEditor({
                     onClick={() => void onMoveOption(question, option.id, 1)}
                     type="button"
                   >
-                    Down
-                  </button>
-                  <button className="button-link compact-button" disabled={isSubmitting} type="submit">
-                    Save
-                  </button>
-                  <button
-                    className="button-link compact-button danger-button"
-                    disabled={isSubmitting || isPublished}
-                    onClick={() => void onDeleteOption(question, option.id)}
-                    type="button"
-                  >
-                    Delete
+                    Move down
                   </button>
                 </div>
-              </form>
+              </div>
 
-              <div className="tag-editor">
+              <div className="option-row-body">
+                <form
+                  className="option-row-form"
+                  onSubmit={(event) => void onSaveOption(event, question, option)}
+                >
+                  <label>
+                    Option text
+                    <input defaultValue={option.optionText} name="optionText" required />
+                  </label>
+                  <div className="inline-actions">
+                    <button className="button-link compact-button" disabled={isSubmitting} type="submit">
+                      Save option text
+                    </button>
+                    <button
+                      className="button-link compact-button danger-button"
+                      disabled={isSubmitting || isPublished}
+                      onClick={() => void onDeleteOption(question, option.id)}
+                      type="button"
+                    >
+                      Delete option
+                    </button>
+                  </div>
+                </form>
+
+                <div className="tag-editor">
+                <div>
+                  <p className="option-subheading">Hidden tags for this option</p>
+                  <p className="tag-helper-text">Use Add hidden tag for new tags. Save option text does not save tag fields.</p>
+                </div>
                 {(option.answerTags ?? []).map((tag) => (
                   <form
                     className="tag-row"
@@ -1017,31 +1157,30 @@ function QuestionEditor({
                       onClick={() => void onDeleteTag(question, option, tag.id)}
                       type="button"
                     >
-                      Remove
+                      Remove tag
                     </button>
                   </form>
                 ))}
                 <form
-                  className="tag-row"
+                  className="tag-row add-tag-row"
                   key={`add-tag-${option.id}-${option.answerTags?.length ?? 0}`}
                   onSubmit={(event) => void onAddTag(event, question, option)}
                 >
                   <TagFields tagPresets={tagPresets} />
                   <button className="button-link compact-button" disabled={isSubmitting} type="submit">
-                    Add tag
+                    Add hidden tag
                   </button>
                 </form>
+                </div>
               </div>
             </div>
           ))}
 
           <form className="add-option-form" onSubmit={(event) => void onAddOption(event, question)}>
-            <input
-              aria-label="New answer option text"
-              name="optionText"
-              placeholder="New answer option"
-              required
-            />
+            <label>
+              New option text
+              <input name="optionText" required />
+            </label>
             <button className="button-link compact-button" disabled={isSubmitting} type="submit">
               Add option
             </button>
@@ -1068,45 +1207,57 @@ function TagPresetManager({
       <div className="builder-section-heading">
         <div>
           <p className="eyebrow">Hidden tags</p>
-          <h3>Available tag pairs</h3>
+          <h3>Tag suggestions</h3>
+          <p className="builder-heading-note">
+            Suggestions speed up tag entry. Saved option tags remain managed on each answer option.
+          </p>
         </div>
       </div>
 
       <div className="tag-preset-list">
-        {tagPresets.map((preset) => (
-          <span className="tag-preset-chip" key={`${preset.tagKey}:${preset.tagValue}`}>
-            <span>
-              {preset.tagKey}: {preset.tagValue}
+        {tagPresets.map((preset) => {
+          const canRemove = hasCustomTagSuggestion(customTagPresets, preset);
+
+          return (
+            <span
+              className={`tag-preset-chip ${preset.source}${canRemove ? " removable" : ""}`}
+              key={`${preset.tagKey}:${preset.tagValue}`}
+            >
+              <span className="tag-preset-text">
+                <strong>{preset.tagKey}</strong>
+                <span>{preset.tagValue}</span>
+              </span>
+              <span className="tag-source-label">{formatTagPresetSource(preset.source)}</span>
+              {canRemove ? (
+                <button
+                  aria-label={`Remove ${preset.tagKey}: ${preset.tagValue}`}
+                  onClick={() => onDeletePreset(preset)}
+                  type="button"
+                >
+                  Remove custom
+                </button>
+              ) : null}
             </span>
-            {preset.source === "custom" ? (
-              <button
-                aria-label={`Remove ${preset.tagKey}: ${preset.tagValue}`}
-                onClick={() => onDeletePreset(preset)}
-                type="button"
-              >
-                Remove
-              </button>
-            ) : null}
-          </span>
-        ))}
+          );
+        })}
       </div>
 
       <form className="tag-preset-form" onSubmit={onAddPreset}>
         <label>
-          Tag key
+          Custom suggestion key
           <input name="tagKey" required />
         </label>
         <label>
-          Tag value
+          Custom suggestion value
           <input name="tagValue" required />
         </label>
         <button className="button-link compact-button" type="submit">
-          Add preset
+          Add suggestion
         </button>
       </form>
 
       {customTagPresets.length === 0 ? (
-        <p className="muted">Custom presets stay in this builder session.</p>
+        <p className="muted">Custom suggestions stay in this builder session.</p>
       ) : null}
     </section>
   );
@@ -1127,31 +1278,34 @@ function TagFields({
   );
   const initialKey = initialTagKey ?? "";
   const [selectedKey, setSelectedKey] = useState(initialKey);
+  const [customKey, setCustomKey] = useState("");
   const [selectedValue, setSelectedValue] = useState(initialTagValue ?? "");
+  const [customValue, setCustomValue] = useState("");
 
   useEffect(() => {
     if (initialTagKey !== undefined || initialTagValue !== undefined) {
       setSelectedKey(initialTagKey ?? "");
+      setCustomKey("");
       setSelectedValue(initialTagValue ?? "");
+      setCustomValue("");
     }
   }, [initialTagKey, initialTagValue]);
 
+  const isCustomKey = selectedKey === customTagOptionValue;
+  const activeKey = isCustomKey ? customKey : selectedKey;
   const valueOptions = uniqueValues([
     ...tagPresets
-      .filter((preset) => preset.tagKey === selectedKey)
+      .filter((preset) => preset.tagKey === activeKey)
       .map((preset) => preset.tagValue),
-    initialTagKey === selectedKey ? initialTagValue : undefined
+    initialTagKey === activeKey ? initialTagValue : undefined
   ]);
+  const isCustomValue = selectedValue === customTagOptionValue;
 
   function handleKeyChange(nextKey: string) {
-    const nextValues = uniqueValues(
-      tagPresets
-        .filter((preset) => preset.tagKey === nextKey)
-        .map((preset) => preset.tagValue)
-    );
-
     setSelectedKey(nextKey);
-    setSelectedValue(nextValues[0] ?? "");
+    setCustomKey("");
+    setSelectedValue("");
+    setCustomValue("");
   }
 
   return (
@@ -1159,7 +1313,7 @@ function TagFields({
       <label>
         Tag key
         <select
-          name="tagKey"
+          name={isCustomKey ? undefined : "tagKey"}
           onChange={(event) => handleKeyChange(event.target.value)}
           required
           value={selectedKey}
@@ -1170,24 +1324,48 @@ function TagFields({
               {tagKey}
             </option>
           ))}
+          <option value={customTagOptionValue}>Custom key...</option>
         </select>
+        {isCustomKey ? (
+          <input
+            autoComplete="off"
+            name="tagKey"
+            onChange={(event) => setCustomKey(event.target.value)}
+            placeholder="Enter tag key"
+            required
+            value={customKey}
+          />
+        ) : null}
       </label>
       <label>
         Tag value
-        <select
-          disabled={!selectedKey}
-          name="tagValue"
-          onChange={(event) => setSelectedValue(event.target.value)}
-          required
-          value={selectedValue}
-        >
-          <option value="">Choose tag value</option>
-          {valueOptions.map((tagValue) => (
-            <option key={tagValue} value={tagValue}>
-              {tagValue}
-            </option>
-          ))}
-        </select>
+        {isCustomKey || isCustomValue || valueOptions.length === 0 ? (
+          <input
+            autoComplete="off"
+            disabled={!activeKey.trim()}
+            name="tagValue"
+            onChange={(event) => setCustomValue(event.target.value)}
+            placeholder="Enter tag value"
+            required
+            value={customValue}
+          />
+        ) : (
+          <select
+            disabled={!activeKey.trim()}
+            name="tagValue"
+            onChange={(event) => setSelectedValue(event.target.value)}
+            required
+            value={selectedValue}
+          >
+            <option value="">Choose tag value</option>
+            {valueOptions.map((tagValue) => (
+              <option key={tagValue} value={tagValue}>
+                {tagValue}
+              </option>
+            ))}
+            <option value={customTagOptionValue}>Custom value...</option>
+          </select>
+        )}
       </label>
     </>
   );
@@ -1270,6 +1448,14 @@ function RuleEditor({
           ))}
         </select>
       </label>
+      <label className="checkbox-label rule-flow-toggle">
+        <input
+          defaultChecked={rule.skipTargetInNormalFlow}
+          name="skipTargetInNormalFlow"
+          type="checkbox"
+        />
+        Skip target in normal flow
+      </label>
       <div className="inline-actions">
         <button className="button-link compact-button" disabled={isSubmitting} type="submit">
           Save rule
@@ -1280,7 +1466,7 @@ function RuleEditor({
           onClick={() => void onDeleteRule(rule.id)}
           type="button"
         >
-          Delete
+          Delete rule
         </button>
       </div>
     </form>
@@ -1339,6 +1525,24 @@ function uniqueValues(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 }
 
+function formatTagPresetSource(source: TagPreset["source"]): string {
+  if (source === "default") {
+    return "Built-in";
+  }
+
+  if (source === "survey") {
+    return "Saved in surveys";
+  }
+
+  return "Custom";
+}
+
+function hasCustomTagSuggestion(customTagPresets: TagPreset[], preset: TagPreset): boolean {
+  return customTagPresets.some(
+    (item) => item.tagKey === preset.tagKey && item.tagValue === preset.tagValue
+  );
+}
+
 function readFormText(data: FormData, field: string): string {
   const value = data.get(field);
   return typeof value === "string" ? value.trim() : "";
@@ -1359,11 +1563,6 @@ function readQuestionType(data: FormData, field: string): SurveyQuestionType {
   return questionTypes.includes(value as SurveyQuestionType)
     ? (value as SurveyQuestionType)
     : "text";
-}
-
-function readSurveyStatus(data: FormData, field: string): SurveyStatus {
-  const value = readFormText(data, field);
-  return surveyStatuses.includes(value as SurveyStatus) ? (value as SurveyStatus) : "draft";
 }
 
 function formatQuestionType(type: SurveyQuestionType): string {

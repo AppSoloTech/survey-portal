@@ -1,12 +1,13 @@
-import type {
-  Survey,
-  SurveyAttempt,
-  SurveyAttemptStatus,
-  SurveyAttemptSummary,
-  SurveyQuestion,
-  SurveyResponseAnswer
+import {
+  resolveNextQuestion,
+  type Survey,
+  type SurveyAttempt,
+  type SurveyAttemptStatus,
+  type SurveyAttemptSummary,
+  type SurveyQuestion,
+  type SurveyResponseAnswer
 } from "@survey-portal/shared";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 
 import {
   answerSurvey,
@@ -23,24 +24,30 @@ interface ActiveSurveyState {
   currentQuestion: SurveyQuestion | null;
 }
 
+type DraftAnswerMap<T> = Record<number, T>;
+type DraftAnswerSetter<T> = Dispatch<SetStateAction<DraftAnswerMap<T>>>;
+
 export function UserDashboard() {
   const { logout, user } = useAuth();
   const [summaries, setSummaries] = useState<SurveyAttemptSummary[]>([]);
   const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
-  const [answerText, setAnswerText] = useState("");
-  const [answerInteger, setAnswerInteger] = useState("");
-  const [selectedAnswerOptionIds, setSelectedAnswerOptionIds] = useState<number[]>([]);
+  const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
+  const [answerIntegerByQuestionId, setAnswerIntegerByQuestionId] = useState<
+    DraftAnswerMap<string>
+  >({});
+  const [selectedAnswerOptionIdsByQuestionId, setSelectedAnswerOptionIdsByQuestionId] = useState<
+    DraftAnswerMap<number[]>
+  >({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activeResponse = useMemo(() => {
-    if (!activeSurvey?.currentQuestion) {
-      return undefined;
-    }
-
-    return findResponse(activeSurvey.attempt, activeSurvey.currentQuestion.id);
-  }, [activeSurvey]);
+  const currentQuestionId = activeSurvey?.currentQuestion?.id ?? null;
+  const answerText = currentQuestionId ? answerTextByQuestionId[currentQuestionId] ?? "" : "";
+  const answerInteger = currentQuestionId ? answerIntegerByQuestionId[currentQuestionId] ?? "" : "";
+  const selectedAnswerOptionIds = currentQuestionId
+    ? selectedAnswerOptionIdsByQuestionId[currentQuestionId] ?? []
+    : [];
 
   useEffect(() => {
     let isActive = true;
@@ -68,14 +75,29 @@ export function UserDashboard() {
   }, []);
 
   useEffect(() => {
-    setAnswerText(activeResponse?.answerText ?? "");
-    setAnswerInteger(
-      activeResponse?.answerInteger === null || activeResponse?.answerInteger === undefined
-        ? ""
-        : String(activeResponse.answerInteger)
+    if (!activeSurvey) {
+      setAnswerTextByQuestionId({});
+      setAnswerIntegerByQuestionId({});
+      setSelectedAnswerOptionIdsByQuestionId({});
+      return;
+    }
+
+    setAnswerTextByQuestionId((current) =>
+      hydrateDrafts(current, activeSurvey.attempt, (response) => response.answerText ?? "")
     );
-    setSelectedAnswerOptionIds(activeResponse?.selectedAnswerOptionIds ?? []);
-  }, [activeResponse]);
+    setAnswerIntegerByQuestionId((current) =>
+      hydrateDrafts(current, activeSurvey.attempt, (response) =>
+        response.answerInteger === null || response.answerInteger === undefined
+          ? ""
+          : String(response.answerInteger)
+      )
+    );
+    setSelectedAnswerOptionIdsByQuestionId((current) =>
+      hydrateDrafts(current, activeSurvey.attempt, (response) => [
+        ...response.selectedAnswerOptionIds
+      ])
+    );
+  }, [activeSurvey?.attempt]);
 
   async function reloadSummaries() {
     const response = await fetchMySurveys();
@@ -194,16 +216,57 @@ export function UserDashboard() {
   }
 
   function handleSelection(optionId: number, checked: boolean) {
-    const questionType = activeSurvey?.currentQuestion?.questionType;
+    const question = activeSurvey?.currentQuestion;
 
-    if (questionType === "single_select") {
-      setSelectedAnswerOptionIds([optionId]);
+    if (!question) {
       return;
     }
 
-    setSelectedAnswerOptionIds((current) =>
-      checked ? [...current, optionId] : current.filter((id) => id !== optionId)
-    );
+    if (question.questionType === "single_select") {
+      setSelectedAnswerOptionIdsByQuestionId((current) => ({
+        ...current,
+        [question.id]: [optionId]
+      }));
+      return;
+    }
+
+    setSelectedAnswerOptionIdsByQuestionId((current) => {
+      const selectedIds = current[question.id] ?? [];
+
+      return {
+        ...current,
+        [question.id]: checked
+          ? [...selectedIds, optionId]
+          : selectedIds.filter((id) => id !== optionId)
+      };
+    });
+  }
+
+  function handleTextChange(value: string) {
+    if (!activeSurvey?.currentQuestion) {
+      return;
+    }
+
+    const questionId = activeSurvey.currentQuestion.id;
+
+    setDraftAnswer(setAnswerTextByQuestionId, questionId, value);
+  }
+
+  function handleIntegerChange(value: string) {
+    if (!activeSurvey?.currentQuestion) {
+      return;
+    }
+
+    const questionId = activeSurvey.currentQuestion.id;
+
+    setDraftAnswer(setAnswerIntegerByQuestionId, questionId, value);
+  }
+
+  function handleCloseSurvey() {
+    setActiveSurvey(null);
+    setAnswerTextByQuestionId({});
+    setAnswerIntegerByQuestionId({});
+    setSelectedAnswerOptionIdsByQuestionId({});
   }
 
   return (
@@ -267,12 +330,13 @@ export function UserDashboard() {
               answerInteger={answerInteger}
               answerText={answerText}
               isSubmitting={isSubmitting}
+              onClose={handleCloseSurvey}
               onComplete={() => void handleComplete()}
-              onIntegerChange={setAnswerInteger}
+              onIntegerChange={handleIntegerChange}
               onPrevious={handlePrevious}
               onSelectionChange={handleSelection}
               onSubmit={handleSubmitAnswer}
-              onTextChange={setAnswerText}
+              onTextChange={handleTextChange}
               selectedAnswerOptionIds={selectedAnswerOptionIds}
             />
           ) : (
@@ -289,6 +353,7 @@ function SurveyRunner({
   answerInteger,
   answerText,
   isSubmitting,
+  onClose,
   onComplete,
   onIntegerChange,
   onPrevious,
@@ -301,6 +366,7 @@ function SurveyRunner({
   answerInteger: string;
   answerText: string;
   isSubmitting: boolean;
+  onClose: () => void;
   onComplete: () => void;
   onIntegerChange: (value: string) => void;
   onPrevious: () => void;
@@ -339,6 +405,9 @@ function SurveyRunner({
           >
             {isSubmitting ? "Submitting..." : "Submit survey"}
           </button>
+          <button className="button-link" disabled={isSubmitting} onClick={onClose} type="button">
+            Back to surveys
+          </button>
         </div>
       </div>
     );
@@ -348,7 +417,7 @@ function SurveyRunner({
   const progressValue = questionIndex >= 0 ? questionIndex + 1 : 1;
 
   return (
-    <form className="question-form" onSubmit={onSubmit}>
+    <form className="question-form" key={currentQuestion.id} onSubmit={onSubmit}>
       <div className="question-progress">
         <div>
           <p className="eyebrow">{survey.title}</p>
@@ -410,6 +479,7 @@ function renderQuestionControl({
   if (currentQuestion.questionType === "text") {
     return (
       <textarea
+        key={currentQuestion.id}
         onChange={(event) => onTextChange(event.target.value)}
         required={currentQuestion.isRequired}
         value={answerText}
@@ -419,13 +489,19 @@ function renderQuestionControl({
 
   if (currentQuestion.questionType === "integer") {
     return (
-      <input
-        onChange={(event) => onIntegerChange(event.target.value)}
-        required={currentQuestion.isRequired}
-        step={1}
-        type="number"
-        value={answerInteger}
-      />
+      <div className="integer-answer-control">
+        <input
+          inputMode="numeric"
+          key={currentQuestion.id}
+          onChange={(event) => onIntegerChange(event.target.value)}
+          placeholder="Enter a whole number"
+          required={currentQuestion.isRequired}
+          step={1}
+          type="number"
+          value={answerInteger}
+        />
+        <p className="input-helper-text">Use digits only. Decimals are not accepted.</p>
+      </div>
     );
   }
 
@@ -449,13 +525,6 @@ function renderQuestionControl({
       ))}
     </div>
   );
-}
-
-function findResponse(
-  attempt: SurveyAttempt,
-  questionId: number
-): SurveyResponseAnswer | undefined {
-  return attempt.responses.find((response) => response.questionId === questionId);
 }
 
 function findPreviousQuestion(
@@ -488,38 +557,37 @@ function findPreviousQuestion(
   return currentQuestion === null ? path[path.length - 1] ?? null : null;
 }
 
-function resolveNextQuestion(
-  survey: Survey,
-  question: SurveyQuestion,
-  response: SurveyResponseAnswer | undefined
-): SurveyQuestion | null {
-  const matchingRule = survey.conditionalLogicRules.find(
-    (rule) =>
-      rule.sourceQuestionId === question.id &&
-      rule.conditionOperator === "equals" &&
-      rule.actionType === "JUMP_TO_QUESTION" &&
-      rule.targetQuestionId !== null &&
-      response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId)
-  );
-
-  if (matchingRule?.targetQuestionId) {
-    return survey.questions.find((candidate) => candidate.id === matchingRule.targetQuestionId) ?? null;
-  }
-
-  return (
-    survey.questions
-      .filter((candidate) => candidate.displayOrder > question.displayOrder)
-      .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)[0] ??
-    null
-  );
-}
-
 function findFirstQuestion(survey: Survey): SurveyQuestion | null {
   return (
     [...survey.questions].sort(
       (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
     )[0] ?? null
   );
+}
+
+function hydrateDrafts<T>(
+  current: DraftAnswerMap<T>,
+  attempt: SurveyAttempt,
+  mapResponse: (response: SurveyResponseAnswer) => T
+): DraftAnswerMap<T> {
+  const next = { ...current };
+
+  for (const response of attempt.responses) {
+    next[response.questionId] = mapResponse(response);
+  }
+
+  return next;
+}
+
+function setDraftAnswer<T>(
+  setter: DraftAnswerSetter<T>,
+  questionId: number,
+  value: T
+) {
+  setter((current) => ({
+    ...current,
+    [questionId]: value
+  }));
 }
 
 function getSurveyActionLabel(status: SurveyAttemptStatus | undefined): string {

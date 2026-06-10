@@ -173,7 +173,8 @@ insert into conditional_logic_rules (
   source_answer_option_id,
   condition_operator,
   action_type,
-  target_question_id
+  target_question_id,
+  skip_target_in_normal_flow
 )
 select
   seed_survey.id,
@@ -181,7 +182,8 @@ select
   source_option.id,
   'equals',
   'JUMP_TO_QUESTION',
-  target_question.id
+  target_question.id,
+  true
 from seed_survey
 cross join source_question
 cross join source_option
