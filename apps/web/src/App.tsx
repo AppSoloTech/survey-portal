@@ -1,4 +1,11 @@
-import { NavLink, Route, BrowserRouter as Router, Routes, useNavigate } from "react-router-dom";
+import {
+  Link,
+  NavLink,
+  Route,
+  BrowserRouter as Router,
+  Routes,
+  useNavigate
+} from "react-router-dom";
 
 import { AdminRoute } from "./auth/AdminRoute.js";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
@@ -43,14 +50,13 @@ function Header() {
 
   const links = isAuthenticated
     ? [
-        { to: "/", label: "Home" },
         { to: "/dashboard", label: "Dashboard" },
-        ...(user?.role === "admin" ? [{ to: "/admin", label: "Admin" }] : [])
+        ...(user?.role === "admin" ? [{ to: "/admin", label: "Admin workspace" }] : [])
       ]
     : [
         { to: "/", label: "Home" },
         { to: "/login", label: "Login" },
-        { to: "/register", label: "Register" }
+        { to: "/register", label: "Create account" }
       ];
 
   async function handleLogout() {
@@ -60,10 +66,10 @@ function Header() {
 
   return (
     <header className="app-header">
-      <div>
+      <Link className="brand-link" to="/">
         <p className="eyebrow">Survey Portal</p>
-        <h1>Secure survey workspace</h1>
-      </div>
+        <h1>Survey workspace</h1>
+      </Link>
       <nav aria-label="Primary navigation">
         {links.map((link) => (
           <NavLink
@@ -75,7 +81,7 @@ function Header() {
           </NavLink>
         ))}
         {isAuthenticated ? (
-          <button className="nav-link nav-button" onClick={handleLogout} type="button">
+          <button className="nav-link nav-button nav-logout" onClick={handleLogout} type="button">
             Logout
           </button>
         ) : null}

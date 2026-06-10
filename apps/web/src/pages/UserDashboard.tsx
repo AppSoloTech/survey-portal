@@ -28,7 +28,7 @@ type DraftAnswerMap<T> = Record<number, T>;
 type DraftAnswerSetter<T> = Dispatch<SetStateAction<DraftAnswerMap<T>>>;
 
 export function UserDashboard() {
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
   const [summaries, setSummaries] = useState<SurveyAttemptSummary[]>([]);
   const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
   const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
@@ -283,9 +283,6 @@ export function UserDashboard() {
             {user.firstName} {user.lastName}
           </span>
           <span>{user.email}</span>
-          <button className="button-link compact-button" onClick={logout} type="button">
-            Logout
-          </button>
         </div>
       ) : null}
 
@@ -310,7 +307,9 @@ export function UserDashboard() {
                     {formatAttemptStatus(summary.attempt?.status ?? "not_started")}
                   </span>
                   <button
-                    className="button-link compact-button"
+                    className={`button-link compact-button ${getSurveyActionButtonClass(
+                      summary.attempt?.status
+                    )}`}
                     disabled={isSubmitting}
                     onClick={() => void handleStart(summary)}
                     type="button"
@@ -340,7 +339,13 @@ export function UserDashboard() {
               selectedAnswerOptionIds={selectedAnswerOptionIds}
             />
           ) : (
-            <p className="status muted">Select a survey to begin or resume.</p>
+            <div className="empty-panel">
+              <h3>Choose a survey</h3>
+              <p className="muted">
+                Select an available survey to start, resume saved progress, or review a
+                completed attempt.
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -379,18 +384,41 @@ function SurveyRunner({
   const previousQuestion = findPreviousQuestion(survey, attempt, currentQuestion);
 
   if (!currentQuestion) {
+    const savedAnswerCount = countSavedAnswers(attempt);
+    const isCompleted = attempt.status === "completed";
+
     return (
       <div className="completion-panel">
-        <p className="eyebrow">{survey.title}</p>
-        <h3>{attempt.status === "completed" ? "Survey submitted" : "Ready to submit"}</h3>
-        <p className="muted">
-          {attempt.status === "completed"
-            ? "Your responses are saved as a completed attempt."
-            : "All reached questions have saved responses."}
-        </p>
+        <div className="completion-heading">
+          <div>
+            <p className="eyebrow">{survey.title}</p>
+            <h3>{isCompleted ? "Survey submitted" : "Ready to submit"}</h3>
+          </div>
+          <span className={`status-pill ${attempt.status}`}>{formatAttemptStatus(attempt.status)}</span>
+        </div>
+
+        <dl className="completion-summary" aria-label="Survey attempt summary">
+          <div>
+            <dt>Saved answers</dt>
+            <dd>{savedAnswerCount}</dd>
+          </div>
+          <div>
+            <dt>Total questions</dt>
+            <dd>{survey.questions.length}</dd>
+          </div>
+        </dl>
+
+        <div className="completion-note">
+          <strong>{isCompleted ? "Your attempt is complete." : "Review before submitting."}</strong>
+          <span>
+            {isCompleted
+              ? "Your responses are saved as a completed attempt."
+              : "You can go back to review saved answers before submitting the survey."}
+          </span>
+        </div>
         <div className="survey-actions">
           <button
-            className="button-link"
+            className="button-link secondary-button"
             disabled={!previousQuestion || isSubmitting || attempt.status === "completed"}
             onClick={onPrevious}
             type="button"
@@ -398,14 +426,19 @@ function SurveyRunner({
             Previous
           </button>
           <button
-            className="button-link"
+            className="button-link primary-button"
             disabled={isSubmitting || attempt.status === "completed"}
             onClick={onComplete}
             type="button"
           >
             {isSubmitting ? "Submitting..." : "Submit survey"}
           </button>
-          <button className="button-link" disabled={isSubmitting} onClick={onClose} type="button">
+          <button
+            className="button-link ghost-button"
+            disabled={isSubmitting}
+            onClick={onClose}
+            type="button"
+          >
             Back to surveys
           </button>
         </div>
@@ -444,14 +477,14 @@ function SurveyRunner({
 
       <div className="survey-actions">
         <button
-          className="button-link"
+          className="button-link secondary-button"
           disabled={!previousQuestion || isSubmitting}
           onClick={onPrevious}
           type="button"
         >
           Previous
         </button>
-        <button className="button-link" disabled={isSubmitting} type="submit">
+        <button className="button-link primary-button" disabled={isSubmitting} type="submit">
           {isSubmitting ? "Saving..." : "Next"}
         </button>
       </div>
@@ -590,16 +623,24 @@ function setDraftAnswer<T>(
   }));
 }
 
+function countSavedAnswers(attempt: SurveyAttempt): number {
+  return new Set(attempt.responses.map((response) => response.questionId)).size;
+}
+
 function getSurveyActionLabel(status: SurveyAttemptStatus | undefined): string {
   if (status === "completed") {
-    return "View";
+    return "View completed";
   }
 
   if (status === "in_progress" || status === "not_started") {
-    return "Resume";
+    return status === "in_progress" ? "Resume survey" : "Start survey";
   }
 
-  return "Start";
+  return "Start survey";
+}
+
+function getSurveyActionButtonClass(status: SurveyAttemptStatus | undefined): string {
+  return status === "completed" ? "secondary-button" : "primary-button";
 }
 
 function formatAttemptStatus(status: SurveyAttemptStatus): string {
