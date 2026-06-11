@@ -1,5 +1,6 @@
 import {
   Link,
+  Navigate,
   NavLink,
   Route,
   BrowserRouter as Router,
@@ -10,7 +11,12 @@ import {
 import { AdminRoute } from "./auth/AdminRoute.js";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 import { ProtectedRoute } from "./auth/ProtectedRoute.js";
-import { AdminDashboard } from "./pages/AdminDashboard.js";
+import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
+import { SurveyLogicPage } from "./pages/admin/SurveyLogicPage.js";
+import { SurveyPreviewPage } from "./pages/admin/SurveyPreviewPage.js";
+import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
+import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
+import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
 import { Home } from "./pages/Home.js";
 import { Login } from "./pages/Login.js";
 import { NotFound } from "./pages/NotFound.js";
@@ -33,7 +39,14 @@ export function App() {
                 <Route element={<UserDashboard />} path="/dashboard" />
               </Route>
               <Route element={<AdminRoute />}>
-                <Route element={<AdminDashboard />} path="/admin" />
+                <Route element={<AdminSurveysOverview />} path="/admin" />
+                <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
+                  <Route element={<Navigate replace to="setup" />} index />
+                  <Route element={<SurveySetupPage />} path="setup" />
+                  <Route element={<SurveyQuestionsPage />} path="questions" />
+                  <Route element={<SurveyLogicPage />} path="logic" />
+                  <Route element={<SurveyPreviewPage />} path="preview" />
+                </Route>
               </Route>
               <Route element={<NotFound />} path="*" />
             </Routes>

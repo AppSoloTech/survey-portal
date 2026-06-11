@@ -1146,3 +1146,572 @@ Focused Claude review:
 - Review findings addressed or deferred: Yes for first Claude review and focused test-fix review; final target-flow toggle manually accepted without a fresh Claude review.
 - Manual testing complete: Yes; completed by user after the target-flow toggle.
 - Ready to commit: Yes.
+
+---
+
+## Phase 5.1 — Survey Flow Mapping Visualization
+
+Date:
+2026-06-11
+
+Status:
+Implemented after Codex review fixes
+
+Prompt:
+`prompts/prompt_5.1.txt`
+
+Git Commit:
+Pending
+
+Role note:
+For this phase the usual AI roles are reversed by explicit human instruction:
+Claude Code implemented, and Codex performs the review.
+
+Review Artifacts:
+- Codex review handoff (written by Claude): `notes/codex_handoff_phase_5_1.txt`
+- Codex review: `notes/codex_review_phase_5_1.txt`
+
+## Goals
+
+- Add a read-only Survey Flow Map to the existing admin builder.
+- Derive the map entirely from the already-loaded `Survey` payload (questions, answer options, conditional rules, `displayOrder`, `skipTargetInNormalFlow`) with no new fetch, persistence, or backend endpoint.
+- Visualize normal progression, conditional jump paths, and conditional-only questions using the shared runtime semantics.
+- Flag informational validation issues without modifying survey data or weakening backend publish validation.
+
+## Built
+
+- Added `apps/web/src/components/admin/surveyFlowGraph.ts`, a pure non-React helper exporting `buildSurveyFlowGraph(survey)` that returns nodes, conditional edges, and informational issues.
+- Normal-flow edges are computed by calling the shared `resolveNextQuestion(survey, question, undefined)` directly, so the map cannot drift from runtime navigation semantics.
+- Added `apps/web/src/components/admin/SurveyFlowMap.tsx`, rendering the graph as an accessible HTML/CSS vertical flow list with legend, issue summary, per-question nodes, normal/conditional/incoming path lines, and empty states.
+- Wired the section into `AdminDashboard` after the Jump rules section and added a `Flow map` link (`#survey-flow`) to the admin section nav.
+- Added flow map styles to `apps/web/src/styles.css`, including a mobile breakpoint consistent with the existing 760px layout rules.
+- No new dependencies; React Flow was evaluated and rejected for this scope.
+
+## Important Decisions
+
+### Custom HTML/CSS Visualization Instead Of React Flow
+
+Decision:
+Render the flow map as a vertical, ordered list of question node cards with labeled path lines instead of adding a graph-canvas dependency.
+
+Reason:
+The MVP is one-question-per-page with forward-only jumps, so the flow is fundamentally a top-to-bottom sequence with jump annotations. A list stays readable for large surveys, works on mobile without drag/zoom interactions, is screen-reader accessible, and adds zero dependencies.
+
+Tradeoff:
+No 2D spatial edge drawing. Conditional paths are described per node ("If answer is X, jump to question N") rather than drawn as connecting lines, which trades visual flair for density and maintainability.
+
+### Reuse `resolveNextQuestion` For Normal Flow
+
+Decision:
+The graph builder calls the shared runtime resolver with an undefined response to compute each question's normal-flow successor, and mirrors its rule-matching filter for conditional edges.
+
+Reason:
+The prompt requires faithfully mirroring runtime navigation. Calling the shared helper directly means skip-set behavior (including the runtime detail that any rule with `skipTargetInNormalFlow` and a target suppresses that target regardless of action type) is reflected automatically.
+
+Tradeoff:
+The map inherits runtime quirks by design; those quirks are surfaced as informational issues rather than hidden.
+
+### Defensive Validation Is Informational Only
+
+Decision:
+All flow checks (missing references, unsupported operators/action types, backward/self targets, duplicates, unreachable questions, cycles) render as an informational issue list plus node badges. Nothing mutates survey data and publish validation is untouched.
+
+Reason:
+Current admin/API rules prevent most of these states; they can only appear via legacy/imported data. The map's job is to make them visible for troubleshooting.
+
+Tradeoff:
+Admins must still fix issues through the existing builder forms.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none; no new endpoints and no changed responses.
+- Auth or authorization impact: none; the map renders inside the existing admin-guarded dashboard from already-authorized data.
+- Data privacy or visibility impact: none; the map shows question/option text only and never renders hidden tags.
+- Frontend UX impact: new read-only Flow map section in the builder workspace plus one section-nav link.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+node /tmp/flow-graph-check.mjs   # ad hoc unit-like checks for the pure helper
+node apps/api/dist/server.js     # brief boot check
+curl -sS http://127.0.0.1:3000/api/health
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Passed: 9 ad hoc unit-like scenarios against the pure graph helper (empty survey, linear flow, skip-target jump, non-skip jump, missing source option plus unreachable target, missing source/target questions, unsupported operator/action type, backward/self/duplicate rules, circular legacy navigation, text-source rule that can never fire).
+- Passed: API boot check with `database: connected`.
+- Not run: browser-based manual pass. No browser automation is installed in this repo (`npm ls playwright` is empty), so the prompt's interactive checklist (rule toggling, reorder/rename live updates, mobile width inspection) is documented for a user-driven pass before commit.
+
+Manual tests:
+
+- Verified through the helper checks that `skipTargetInNormalFlow = true` targets are labeled `Conditional only`, skipped by normal-flow edges, and remain reachable through their jump rules.
+- Verified duplicate rules for one source answer option are flagged with first-rule-wins messaging that matches the runtime's first-match evaluation.
+- Verified cycle detection only fires for backward/legacy-style data, not for valid forward-only rules.
+
+## Codex Review Notes
+
+Source:
+
+- `notes/codex_review_phase_5_1.txt`
+
+Status:
+
+- Completed
+
+Verdict:
+
+- Changes requested; both findings fixed and re-validated.
+
+Findings addressed:
+
+- Medium: duplicate jump rules for the same source question and answer option were flagged as `duplicate_rule_for_option` but still marked fireable and traversed by reachability/cycle detection, even though the runtime's first-match-wins `find` means a shadowed duplicate can never execute. Fixed by setting `canFireAtRuntime = false` for duplicates after the first id-ordered rule for a source option, which automatically excludes them from adjacency, reachability, and cycle detection while keeping the informational issue and the rendered edge.
+- Low: incoming summaries on target nodes described every referencing rule as a "Jump target", contradicting the source-side copy for unsupported/legacy action types. Fixed by splitting incoming references into "Jump target of rule(s)..." for `JUMP_TO_QUESTION` rules and "Referenced as the target of non-executed rule(s)... (action X)" for other action types.
+
+Re-validation after fixes:
+
+- Passed: `npm run typecheck`, `npm run lint`, `npm run build`, `git diff --check`.
+- Passed: helper checks extended with two regression scenarios — a skip target reachable only through a shadowed duplicate is now reported unreachable, and a cycle that exists only through a shadowed duplicate backward rule is no longer reported.
+
+## Follow-Up Tasks
+
+- Run the Phase 5.1 manual browser checklist from `prompts/prompt_5.1.txt` once a browser-capable environment is available.
+- Consider a lightweight frontend unit test runner so pure helpers like `surveyFlowGraph.ts` get committed tests instead of ad hoc scripts.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Review handoff created: Yes (`notes/codex_handoff_phase_5_1.txt`, addressed to Codex)
+- Codex review created: Yes (`notes/codex_review_phase_5_1.txt`)
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes; visualization only, no schema/API/auth changes.
+- Security review complete: No backend changes; hidden tags are not rendered by the flow map.
+- Review findings addressed or deferred: Yes; both Codex findings fixed and re-validated.
+- Manual testing complete: Yes; helper-level checks during implementation, then a user-run browser pass on 2026-06-11 (post-Phase 6, with the flow map on the Logic page) was accepted.
+- Ready to commit: Yes.
+
+---
+
+## Phase 6 — Admin Builder Information Architecture Split
+
+Date:
+2026-06-11
+
+Status:
+Implemented after Codex review fix
+
+Prompt:
+`prompts/prompt_6.txt`
+
+Git Commit:
+Pending
+
+Role note:
+Roles remain reversed per explicit human instruction: Claude Code implemented,
+Codex reviews.
+
+Review Artifacts:
+- Codex review handoff (written by Claude): `notes/codex_handoff_phase_6.txt`
+- Codex review: `notes/codex_review_phase_6.txt`
+
+## Goals
+
+- Split the single-page admin builder into a surveys overview plus a per-survey
+  workspace with focused pages (setup, questions, logic, preview).
+- Move the selected survey from component state into the URL so deep links and
+  browser back/forward work.
+- Preserve every Phase 4/5/5.1 builder behavior, validation, and server
+  contract. Frontend-only.
+
+## Built
+
+- `apps/web/src/pages/admin/AdminSurveysOverview.tsx`: `/admin` overview with a
+  create-survey form and a scannable list (status pill, question/rule counts,
+  last-updated date). Creating a survey navigates into its workspace.
+- `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx`: layout route for
+  `/admin/surveys/:surveyId`. Loads the survey via the existing
+  `GET /api/surveys/:id`, owns mutation plumbing (`runSurveyMutation`,
+  submit/error/notice state, status transitions with the same confirm and
+  feedback messages), renders the persistent header (title, status pill,
+  edit-state banner, publish/retire/republish actions), tab navigation with
+  question/rule counts, and shares everything with child pages via router
+  outlet context (`useSurveyWorkspace`). Invalid or missing survey ids render
+  a not-found state with a link back to the overview.
+- Workspace pages: `SurveySetupPage` (metadata + availability panel),
+  `SurveyQuestionsPage` (add question, question editors with options and
+  hidden tags, tag suggestion library), `SurveyLogicPage` (jump rules + the
+  Phase 5.1 flow map), `SurveyPreviewPage` (read-only preview).
+- New routes nested under the existing `AdminRoute` guard; the workspace index
+  redirects to `setup`. The old single-page `AdminDashboard.tsx` was deleted.
+- Shared helpers extracted by moving code: `components/admin/builderForm.ts`
+  (form readers + confirm) and `components/admin/tagPresets.ts` (default/
+  merge/build tag preset helpers).
+- `fetchAdminSurvey(surveyId)` added to the frontend API client for the
+  existing backend endpoint (no API change).
+- `SurveyBuilderComponents.tsx`: removed the obsolete anchor-based
+  `AdminSectionNav`; simplified `StatusActionPanel` to a single availability
+  panel (the bottom "Finish construction" variant and back-to-top link are
+  obsolete now that pages are short and header actions are persistent).
+- CSS: removed dead styles (`.section-nav`, `.admin-builder-layout`,
+  `.admin-survey-panel`, `.admin-survey-list`, `.survey-selector`,
+  `.status-action-panel.top/.bottom`), added workspace header/tab and overview
+  list styles, and updated both mobile breakpoints accordingly.
+
+## Important Decisions
+
+### Layout-Owned Survey State Via Outlet Context
+
+Decision:
+The workspace layout fetches and owns the survey object plus mutation
+plumbing; child pages consume it through `useOutletContext`.
+
+Reason:
+Every existing mutation already returns the full updated survey, so one
+`setSurvey` callback keeps all pages (including the flow map) re-deriving from
+fresh state with no state library and no prop drilling.
+
+Tradeoff:
+Feedback messages live in the layout and persist across tab switches until the
+next action, mirroring the old single-page behavior.
+
+### Cross-Survey Tag Suggestions Keep One Extra Fetch
+
+Decision:
+The questions page fetches the survey list once per mount to keep the
+"Saved in surveys" cross-survey tag suggestions, merging the live workspace
+survey over its stale snapshot.
+
+Reason:
+The Phase 5 tag library intentionally suggests tags saved in other surveys;
+the workspace otherwise only loads one survey. A silent fallback keeps the
+page functional if the list fetch fails.
+
+Tradeoff:
+One additional `GET /api/surveys` when opening the questions page.
+
+### Custom Tag Suggestions Live In The Workspace Layout
+
+Decision:
+Session-only custom tag suggestions are stored in layout state rather than
+page state.
+
+Reason:
+They previously survived as long as the admin stayed on the builder page;
+keeping them in the layout preserves that lifetime across tab switches within
+a survey workspace.
+
+Tradeoff:
+They still reset when leaving the workspace, matching the existing
+"stay in this builder session" copy.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none; one new frontend helper for an existing endpoint.
+- Auth or authorization impact: none; all new routes nest under the existing
+  `AdminRoute` guard and server-side authorization is unchanged.
+- Data privacy or visibility impact: none; hidden tags remain admin-only.
+- Frontend UX impact: `/admin` is now an overview; survey editing happens in a
+  four-page workspace with a persistent status header and URL-addressable
+  pages.
+- Environment or deployment impact: none; SPA fallback already serves nested
+  client routes.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+npx vite --port 5179   # brief dev serve; curled /admin, /admin/surveys/3/logic, /admin/surveys/abc
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+- Passed: deep workspace URLs (including an invalid id) return the SPA shell
+  in dev serve; invalid ids render the client-side not-found state.
+- Not run: interactive browser checklist from `prompts/prompt_6.txt`
+  (end-to-end build across pages, publish-blocked messaging, back/forward,
+  standard-user redirect, mobile widths). No browser automation is installed
+  in this repo; recorded as a follow-up consistent with prior phases.
+
+## Codex Review Notes
+
+Source:
+
+- `notes/codex_review_phase_6.txt`
+
+Status:
+
+- Completed
+
+Verdict:
+
+- One Medium finding; fixed and re-validated.
+
+Findings addressed:
+
+- Medium: `runSurveyMutation` could apply a stale mutation result (survey
+  object, feedback, submit state) after the admin navigated to a different
+  survey's workspace while the request was in flight. Fixed by capturing the
+  active survey id in a ref at mutation start and only applying results —
+  and only clearing `isSubmitting` — while the layout still shows that
+  survey; switching surveys also resets `isSubmitting`. This mirrors the
+  fetch effect's existing stale-response guard. Same-survey overlapping
+  mutations keep their previous last-response-wins behavior.
+
+Re-validation after fix:
+
+- Passed: `npm run typecheck`, `npm run lint`, `npm run build`,
+  `git diff --check` from the repo root.
+
+## Follow-Up Tasks
+
+- Run the Phase 6 manual browser checklist from `prompts/prompt_6.txt` once a
+  browser-capable environment is available.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Review handoff created: Yes (`notes/codex_handoff_phase_6.txt`)
+- Codex review created: Yes (`notes/codex_review_phase_6.txt`)
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes; frontend-only restructure.
+- Security review complete: No backend changes; admin guard and server-side
+  authorization untouched.
+- Review findings addressed or deferred: Yes; the Medium stale-mutation guard
+  is fixed and re-validated.
+- Manual testing complete: Yes; user-run browser pass on 2026-06-11 accepted
+  after the Codex review fix.
+- Ready to commit: Yes.
+
+---
+
+## Phase 7 — Mobile-First UI/UX Polish
+
+Date:
+2026-06-11
+
+Status:
+Implemented after Codex review fix
+
+Prompt:
+`prompts/prompt_7.txt`
+
+Git Commit:
+Pending
+
+Role note:
+Roles remain reversed per explicit human instruction: Claude Code implemented,
+Codex reviews.
+
+Review Artifacts:
+- Codex review handoff (written by Claude): `notes/codex_handoff_phase_7.txt`
+- Codex review: `notes/codex_review_phase_7.txt`
+
+## Discovery Audit (code-level; no browser tooling in this environment)
+
+Issues found at 360-760px widths by inspecting markup and `styles.css`:
+
+1. Participant runner placement (Priority 1, confirmed): the stacked mobile
+   layout renders the survey list above the runner panel, so starting a survey
+   put the active question below the fold. The "Choose a survey" placeholder
+   panel also rendered as dead space under the list on mobile.
+2. iOS auto-zoom (confirmed, all forms): form controls use `font: inherit`
+   inside labels styled at 0.86-0.9rem, giving effective input fonts of
+   roughly 13.8-14.4px — under the 16px threshold that triggers mobile Safari
+   zoom-on-focus. Affected: auth forms, all admin builder forms, and the
+   runner's number/textarea controls (those inherited 16px but were not
+   explicit).
+3. Touch targets: option rows were 44px but radio/checkbox glyphs were 16px;
+   scale chips had no minimum height; `.compact-button` was 35px tall; the
+   430px breakpoint shrank all buttons to ~38px.
+4. App header: no wrap on the header row, so brand + nav squeezed at narrow
+   widths with loose link wrapping inside the nav.
+5. Workspace tabs sat inside the header card, so they could not stick during
+   long-page scrolling on mobile.
+6. Focus visibility existed for inputs but not for buttons/links.
+7. The mobile completion summary stacked its two stat boxes vertically,
+   wasting vertical space on a panel that should read in one screen.
+
+No horizontal-overflow sources were found; long-text wrapping was added
+defensively to survey card titles and the question legend.
+
+## Built
+
+Priority 1 — participant runner:
+
+- The dashboard workspace gets a `survey-active` class while a survey is open;
+  at <=760px the survey list panel is hidden so the runner is the first
+  content on screen, and "Back to surveys" (existing) returns to the list.
+  The empty runner placeholder is hidden on mobile.
+- Option rows: 48px min height, 20px radio/checkbox glyphs, pointer cursor;
+  scale chips: 48px min height; Next/Previous/Submit: 44px min height and full
+  width on mobile (existing full-width rules retained).
+- All form controls now declare `font-size: 1rem` explicitly, eliminating the
+  iOS zoom-on-focus trigger app-wide.
+- Completion summary keeps its two stat boxes side by side on mobile so the
+  completion panel reads in one screen.
+
+Priority 2 — global shell:
+
+- New 560px breakpoint: the app header stacks vertically and nav links become
+  a full-width two-column grid with comfortable tap sizes.
+- Global `:focus-visible` outlines for links, buttons, and the status
+  disclosure; subtle `:active` press feedback on buttons.
+- The 430px button shrink no longer reduces minimum heights below 40px.
+- Defensive `overflow-wrap` on survey card titles and the question legend.
+
+Priority 3 — auth and home:
+
+- Covered by the global input font-size fix; existing autocomplete, input
+  types, full-width mobile buttons, and error placement were verified and
+  left unchanged.
+
+Priority 4 — admin workspace:
+
+- Workspace tabs moved out of the header card into a standalone tab bar
+  (markup change in `SurveyWorkspaceLayout.tsx`) so they can be sticky at the
+  top of the viewport at <=760px; styled as the same white pill bar pattern.
+- `.compact-button` minimum height raised to 40px on mobile.
+- Flow map, editor stacking, and header action wrapping from earlier phases
+  verified and retained.
+
+## Important Decisions
+
+### Hide The List, Not A Takeover View
+
+Decision:
+On mobile, an active survey hides the survey list with CSS rather than
+introducing a takeover/modal view.
+
+Reason:
+It is the smallest change that makes the runner the focused content. The
+existing "Back to surveys" action already provides the exit, and desktop
+keeps the side-by-side layout.
+
+Tradeoff:
+The page header and profile strip remain above the runner; the profile strip
+was compacted on mobile to reduce that cost.
+
+### Explicit 1rem Control Fonts
+
+Decision:
+Set `font-size: 1rem` on every form control rather than raising label font
+sizes.
+
+Reason:
+Labels are intentionally small (dense business tool); the controls themselves
+are what trigger mobile zoom and need 16px.
+
+Tradeoff:
+Inputs render slightly larger than their labels, which is the conventional
+pattern.
+
+## Architecture Notes
+
+- Database/schema/API/auth impact: none.
+- Runner state logic untouched: per-question draft maps, hydration, and
+  `resolveNextQuestion` usage are unchanged; the only `UserDashboard` change
+  is a conditional CSS class on the workspace wrapper.
+- Markup changes: the conditional class above, and the workspace tab bar
+  moving from inside the header card to a sibling element.
+- All other changes are CSS-only in `styles.css`.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: all four commands.
+- Not run: the manual browser pass at 360/390/768px (register/login, runner
+  focus, per-type answering, conditional-jump text isolation regression
+  check, admin walkthrough, overflow sweep). No browser tooling is installed;
+  deferred to the user-driven pass consistent with prior phases.
+
+## Codex Review Notes
+
+Source:
+
+- `notes/codex_review_phase_7.txt`
+
+Status:
+
+- Completed
+
+Verdict:
+
+- One High finding; fixed and re-validated.
+
+Findings addressed:
+
+- High: hiding the survey list on mobile while a survey is active removed the
+  only in-progress exit path, since `Back to surveys` rendered only on the
+  completion panel — violating the prompt's requirement to keep a clear way
+  back to the list. Fixed by adding a `Back to surveys` ghost button to the
+  active-question action row using the existing `onClose` callback, disabled
+  while submitting, last in the action order so it reads as an exit rather
+  than the primary action. Close semantics are unchanged from the completion
+  panel: the current question's unsubmitted draft is discarded, saved answers
+  persist, and resume works.
+
+Re-validation after fix:
+
+- Passed: `npm run typecheck`, `npm run lint`, `npm run build`,
+  `git diff --check`.
+
+Post-review user adjustment:
+
+- On mobile, the runner action group no longer stacks vertically: Previous and
+  Next sit side by side left-to-right (each half width, 44px tall), with
+  `Back to surveys` on its own full-width row below. CSS-only; re-validated
+  with the same four commands.
+
+## Follow-Up Tasks
+
+- Run the Phase 7 manual browser checklist from `prompts/prompt_7.txt`,
+  including the Phase 5 text-isolation regression check and the new
+  mid-survey `Back to surveys` exit on mobile, once a browser-capable
+  environment or user pass is available.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Review handoff created: Yes (`notes/codex_handoff_phase_7.txt`)
+- Codex review created: Yes (`notes/codex_review_phase_7.txt`)
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes; CSS-first polish, no new
+  dependencies.
+- Security review complete: No backend changes; no new data exposure.
+- Review findings addressed or deferred: Yes; the High mobile exit-path
+  finding is fixed and re-validated.
+- Manual testing complete: Static validation complete; browser pass pending
+  and tracked in `markdown/FOLLOW_UPS.md`.
+- Ready to commit: Yes, pending the user-driven browser checklist.

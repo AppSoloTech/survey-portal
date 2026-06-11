@@ -1,0 +1,79 @@
+# Codex Review — Phase 5.1 Survey Flow Mapping Visualization
+
+Date:
+2026-06-11
+
+Prompt:
+`prompts/prompt_5.1.txt`
+
+Handoff:
+`notes/codex_handoff_phase_5_1.txt`
+
+Status:
+Changes requested
+
+## Findings
+
+### Medium — Duplicate jump rules are still treated as reachable edges
+
+File:
+`apps/web/src/components/admin/surveyFlowGraph.ts`
+
+Relevant lines:
+- `buildConditionalEdges` marks duplicate rules at lines 205-220.
+- The duplicate rule still receives `canFireAtRuntime` at line 232.
+- `buildAdjacency` traverses every `canFireAtRuntime` conditional edge at lines 277-285.
+
+Problem:
+The runtime uses `survey.conditionalLogicRules.find(...)`, so when two rules have the same source question and source answer option, only the first matching rule can ever execute. The Flow Map correctly reports `duplicate_rule_for_option`, but reachability and cycle detection still traverse the later duplicate edge.
+
+Impact:
+A target reachable only through a later duplicate rule can be incorrectly marked reachable, and a cycle reachable only through a never-executed duplicate rule can be incorrectly reported as possible navigation.
+
+Recommendation:
+Carry an `isFirstRuleForSourceOption` / `isRuntimeExecutable` flag on conditional edges, or make `canFireAtRuntime` false for duplicate rules after the first executable rule. Use that flag in adjacency, reachability, and cycle detection while still rendering the duplicate edge as an informational issue.
+
+### Low — Unsupported actions are described as incoming jump targets
+
+File:
+`apps/web/src/components/admin/SurveyFlowMap.tsx`
+
+Relevant lines:
+- Incoming edge summary renders all rules targeting the node at lines 151-157.
+- `describeIncomingEdge` returns `from question...` without action context at lines 215-227.
+
+Problem:
+For future/legacy actions such as `SHOW_QUESTION`, `HIDE_QUESTION`, `JUMP_TO_PAGE`, or `END_SURVEY`, the outgoing line correctly says the action is not executed by runtime. The incoming node summary still labels the node as a "Jump target of rule", even when the rule is not a `JUMP_TO_QUESTION`.
+
+Impact:
+Admins inspecting imported/legacy data can get a contradictory map: the source says the rule is unsupported, while the target implies it is a jump target.
+
+Recommendation:
+Filter incoming summaries to `JUMP_TO_QUESTION` rules, or change the incoming copy to distinguish "Referenced by unsupported rule..." for non-jump actions.
+
+## Scope And Architecture Notes
+
+- No schema, API, auth, or survey execution changes were introduced.
+- The feature is derived from the existing selected `Survey` object.
+- Hidden tags are not rendered in the Flow Map.
+- The custom HTML/CSS visualization is appropriate for the current one-question-per-page, forward-jump MVP.
+
+## Validation Run During Review
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `git diff --check`.
+
+## Residual Risk
+
+The browser/manual checklist from `prompts/prompt_5.1.txt` remains pending, including visual confirmation of rule toggling, reorder/rename live updates, and mobile layout.

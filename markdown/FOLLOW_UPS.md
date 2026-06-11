@@ -37,6 +37,8 @@ Review this file before starting each implementation phase. When a follow-up is 
 ### Frontend Validation
 
 - Run browser-based route and layout inspection when a browser automation setup is available.
+- Run the Phase 7 manual browser checklist from `prompts/prompt_7.txt` at 360/390/768px widths, including the Phase 5 conditional-jump text-isolation regression check.
+- Add a lightweight frontend unit test runner so pure helpers such as `apps/web/src/components/admin/surveyFlowGraph.ts` get committed tests instead of ad hoc verification scripts.
 
 ---
 
@@ -48,3 +50,4 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Phase 4: Blocked destructive question/answer-option deletes once response data exists, and blocked returning attempted surveys to draft.
 - Phase 4: Hardened insert-at-position display-order shifting to use a two-statement park-then-set pattern.
 - Phase 4: Enforced forward-only `JUMP_TO_QUESTION` rule targets.
+- Phase 5.1/6: User-run manual browser pass on 2026-06-11 covered the flow map and the multi-page admin workspace; results accepted.

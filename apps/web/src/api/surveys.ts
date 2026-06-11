@@ -60,6 +60,10 @@ export async function fetchAdminSurveys(): Promise<SurveyListResponse> {
   return apiRequest<SurveyListResponse>("/api/surveys");
 }
 
+export async function fetchAdminSurvey(surveyId: number): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${surveyId}`);
+}
+
 export async function createSurvey(input: {
   title: string;
   description: string | null;

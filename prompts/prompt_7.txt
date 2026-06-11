@@ -1,0 +1,225 @@
+# Phase 7 — Mobile-First UI/UX Polish
+
+## Purpose
+
+Polish the entire application's user interface with mobile friendliness as the
+primary goal.
+
+Phases 5 and 6 made the admin builder structurally sound. This phase focuses
+on how the app feels to use — especially on phones. Survey participants are
+the most likely mobile users, so the participant experience gets the highest
+priority, followed by the global shell, auth pages, and the admin workspace.
+
+This phase is visual/UX polish only. No behavior, data, or contract changes.
+
+## Role Note
+
+Roles remain reversed per explicit human instruction:
+
+* Claude Code is the implementation assistant.
+* Codex is the review assistant.
+
+Closeout artifacts use the `codex_` naming established in Phases 5.1 and 6.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/REVIEW_CHECKLIST.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* prompts/prompt_5.txt
+* prompts/prompt_6.txt
+* apps/web/index.html
+* apps/web/src/App.tsx
+* apps/web/src/styles.css
+* apps/web/src/pages/Home.tsx
+* apps/web/src/pages/Login.tsx
+* apps/web/src/pages/Register.tsx
+* apps/web/src/pages/UserDashboard.tsx
+* apps/web/src/pages/admin/ (all workspace pages and layout)
+* apps/web/src/components/admin/ (builder components and flow map)
+
+Before implementation:
+
+* Understand the current breakpoints (760px and 430px) and the existing
+  mobile rules in `styles.css`.
+* Understand the Phase 5 survey-runner state model: per-question draft answer
+  maps keyed by question id. The text-state isolation fix from Phase 5 is a
+  locked-in behavior and must not regress.
+* Understand the Phase 6 workspace layout, header, and tabs.
+
+---
+
+# Discovery Phase
+
+Before changing styles, perform and document a screen-by-screen audit at
+roughly 360px, 390px, and 768px widths (plus desktop) covering:
+
+* horizontal overflow or clipped content
+* touch targets smaller than roughly 44x44 px
+* form inputs with an effective font size below 16px (these trigger iOS
+  auto-zoom on focus)
+* content that requires scrolling past unrelated sections to reach the
+  primary action
+* inconsistent spacing, card styling, or heading rhythm between pages
+* focus visibility and obvious contrast problems
+
+Record the audit findings in the phase log entry; they justify the changes.
+
+## Known Starting Points (verify during the audit)
+
+1. Participant runner placement: `UserDashboard` renders the survey list panel
+   above the runner panel when stacked on mobile. After tapping
+   "Start survey", the active question renders below the list and may be off
+   screen. The active survey should become the primary visible content on
+   mobile.
+2. The app header (brand + nav links + logout) consumes significant vertical
+   space on small screens and wraps loosely.
+3. Selection inputs in the runner (radio/checkbox rows, scale chips) are
+   usable but tighter than comfortable thumb targets.
+4. The admin workspace is responsive after Phase 6, but tabs, header actions,
+   and dense editor rows deserve a verification-and-tighten pass rather than
+   redesign.
+
+---
+
+# Goals By Priority
+
+## Priority 1 — Participant Survey Experience (mobile-first)
+
+* When a survey is active on a narrow screen, the runner must be the focused,
+  immediately visible content. Acceptable approaches include hiding or
+  collapsing the survey list while a survey is active, a mobile takeover
+  view, or equivalent. Choose the simplest approach, keep a clear way back to
+  the list ("Back to surveys" already exists), and document the decision.
+* Answer controls must be comfortable thumb targets: option rows, checkboxes/
+  radios, and scale value chips at roughly 44px minimum interactive height.
+* Primary actions (Next, Previous, Submit survey) should be full-width and
+  easy to reach on mobile, with pressed/disabled states that read clearly.
+* Progress (question X of Y) stays visible without crowding the question.
+* Inputs must not trigger mobile browser auto-zoom (effective font size of at
+  least 16px on text, number, and textarea controls).
+* Keep the integer input's numeric keypad behavior (`inputMode="numeric"`).
+* The completion/review panel should read cleanly on one mobile screen.
+
+## Priority 2 — Global Shell And Consistency
+
+* Tighten the app header for small screens: compact brand block, nav links
+  that wrap into clean rows with adequate tap size, no overlap with content.
+  Prefer simple CSS/layout fixes over introducing a hamburger menu; if a
+  disclosure pattern is genuinely needed, keep it dependency-free and
+  accessible.
+* Eliminate any horizontal page overflow at 360px and up across all routes.
+* Establish consistent vertical rhythm: page headers, section spacing, card
+  padding, and border radius should feel uniform across user and admin areas.
+* Visible keyboard focus styles on all interactive elements.
+* Spot-check and fix obvious color-contrast problems on pills, muted text,
+  and buttons without changing the overall palette.
+
+## Priority 3 — Auth Pages And Home
+
+* Login/Register forms full width on mobile with comfortable input heights;
+  keep existing autocomplete and input types.
+* Clear inline error placement that does not shift the form jarringly.
+* Home page hero and action buttons stack cleanly; buttons full width on
+  narrow screens.
+
+## Priority 4 — Admin Workspace Mobile Refinement
+
+* The admin area remains a dense business tool; the goal is mobile-capable,
+  not mobile-marketing.
+* Verify and tighten: workspace header stacking, tab wrap/scroll behavior
+  (consider making tabs sticky on mobile so page switching does not require
+  scrolling to the top), question editor and option/tag row stacking, button
+  widths, and flow map readability.
+* Surveys overview rows should remain scannable as stacked cards on mobile.
+
+---
+
+# Technical Requirements
+
+* CSS-first. Component/markup changes are allowed where structure blocks the
+  mobile experience (notably the Priority 1 runner focus change), but state
+  logic must not change. In particular, do not alter the per-question draft
+  answer maps, hydration behavior, or `resolveNextQuestion` usage.
+* No new dependencies, CSS frameworks, icon libraries, or font downloads.
+* No backend, API, schema, or auth changes.
+* Keep the existing class-naming conventions in `styles.css`; prefer reusing
+  established patterns (cards, pills, button variants) over inventing new
+  ones. Remove any styles made dead by markup changes.
+* Preserve all existing behaviors and feedback messages from Phases 4-6.
+* If a shared layout primitive would remove repeated CSS (for example a
+  common page-section card), extract it only when it clearly reduces code.
+
+---
+
+# Explicit Non-Goals
+
+Do NOT implement:
+
+* visual redesign, rebrand, or palette overhaul
+* dark mode
+* animation/transition systems (subtle individual transitions are fine)
+* PWA features, offline support, or service workers
+* drag-and-drop or new admin features
+* reporting, analytics, or CSV export
+* backend changes of any kind
+
+---
+
+# Required Validation
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Also perform a manual browser pass if possible, at ~360px, ~390px, ~768px,
+and desktop widths:
+
+* register/login flow on mobile width
+* user dashboard: start a survey and confirm the runner is immediately
+  visible and focused on mobile
+* answer each question type (text, integer, single-select, multi-select,
+  scale) on mobile width and confirm comfortable touch targets and no
+  auto-zoom on input focus
+* take a conditional jump path between two text questions and confirm the
+  Phase 5 text-state isolation still holds
+* complete and submit a survey; review the completion panel on mobile
+* admin: walk the overview and all four workspace pages at mobile width,
+  checking tabs, header actions, editors, rules, and the flow map
+* confirm no route shows horizontal scrolling at 360px
+
+Record results (or a documented deferral) in `markdown/PHASE_LOG.md`.
+
+---
+
+# Deliverables
+
+Provide:
+
+1. The discovery audit summary (issues found per screen/width).
+2. Implementation summary grouped by the four priorities, including the
+   chosen approach for the mobile runner focus and why.
+3. Confirmation that runner state logic and Phase 4-6 behaviors are
+   untouched.
+4. Manual test results or a documented deferral.
+5. Future enhancement list (deferred polish that did not make the cut).
+
+Before committing:
+
+* update `markdown/PHASE_LOG.md`
+* update `markdown/FOLLOW_UPS.md` if any follow-ups are completed or added
+* create a handoff note at `notes/codex_handoff_phase_7.txt`
+* request Codex review using `markdown/REVIEW_CHECKLIST.md`, recorded at
+  `notes/codex_review_phase_7.txt`
+* address or document review findings before commit

@@ -1,0 +1,214 @@
+# Codex Review Handoff — Phase 5.1 Survey Flow Mapping Visualization
+
+Date:
+2026-06-11
+
+Prompt:
+`prompts/prompt_5.1.txt`
+
+Status:
+Reviewed by Codex; both findings fixed (see Post-Review Fix Addendum)
+
+Role note:
+For this phase the usual roles are reversed by explicit human instruction.
+Claude Code implemented Phase 5.1, and Codex is the reviewer. Please review
+against `markdown/REVIEW_CHECKLIST.md` and record findings in
+`notes/codex_review_phase_5_1.txt` (mirroring the existing
+`notes/claude_review_phase_X.txt` convention).
+
+## Summary
+
+Phase 5.1 adds a read-only Survey Flow Map section to the existing admin
+builder. The map is derived entirely from the already-loaded `Survey` payload
+(questions, answer options, conditional rules, `displayOrder`,
+`skipTargetInNormalFlow`). There are no new endpoints, tables, dependencies,
+fetches, or persistence. Nothing in the map edits survey data, and backend
+publish validation is untouched.
+
+## Files Changed
+
+- `apps/web/src/components/admin/surveyFlowGraph.ts` (new; pure helper, no React)
+- `apps/web/src/components/admin/SurveyFlowMap.tsx` (new; rendering component)
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx` (one nav link added)
+- `apps/web/src/pages/AdminDashboard.tsx` (import + render after the Jump rules section)
+- `apps/web/src/styles.css` (flow map styles + mobile rules)
+- `markdown/PHASE_LOG.md` (Phase 5.1 entry)
+- `markdown/FOLLOW_UPS.md` (two new frontend-validation follow-ups)
+- `notes/codex_handoff_phase_5_1.txt` (this file)
+
+## Discovered Navigation Architecture (Phase 5.1 Discovery)
+
+- Question order: `display_order` ascending with id tie-break, everywhere
+  (`findFirstQuestion` and `determineCurrentQuestion` in
+  `apps/api/src/routes/surveys.ts`, SQL `order by display_order, id`, and the
+  shared resolver sort).
+- Normal progression: `resolveNextQuestion(survey, question, response)` in
+  `packages/shared/src/index.ts`. It first builds a skip set of all
+  `targetQuestionId`s from rules with `skipTargetInNormalFlow = true` —
+  note this set ignores action type and operator. If a rule matches
+  (`sourceQuestionId === question.id`, operator `equals`, action
+  `JUMP_TO_QUESTION`, non-null target, and the response's
+  `selectedAnswerOptionIds` contains the rule's source option), the runtime
+  jumps to the target; a matching rule whose target id is not in
+  `survey.questions` resolves to null, i.e. ends the survey. Otherwise it
+  advances to the next question by display order, excluding skip-set members.
+- Admin/API rule constraints (create/update + publish validation): source
+  question in survey and `single_select`/`multi_select`; source option belongs
+  to the source question; target in the same survey; target strictly after the
+  source (forward-only); operator exactly `equals`; action exactly
+  `JUMP_TO_QUESTION`.
+- Consequence: invalid/backward/duplicate/legacy rule shapes cannot be created
+  through the API today and can only appear via direct DB writes or imports,
+  which is why all flow-map validation is informational only.
+
+## Graph Model
+
+`buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph` returns:
+
+- `nodes: SurveyFlowNode[]` (sorted by display order): question id/order/
+  text/type, `isRequired`, `isStart`, `isConditionalOnly`, `isReachable`,
+  `normalNextQuestionId`.
+- `conditionalEdges: SurveyFlowConditionalEdge[]` (one per rule, sorted by rule
+  id): source/target ids, resolved source option text, action type, skip flag,
+  `canFireAtRuntime`, and edge-scoped issues.
+- `issues: SurveyFlowIssue[]`: flat list of all informational issues with
+  stable codes.
+
+Key semantics:
+
+- Normal-flow successors come from calling the shared
+  `resolveNextQuestion(survey, question, undefined)` directly (an undefined
+  response can never match a rule), so normal-flow edges and the skip set
+  cannot drift from runtime behavior.
+- `isConditionalOnly` mirrors the runtime skip set exactly: target of at least
+  one rule with `skipTargetInNormalFlow = true` and a non-null target,
+  regardless of that rule's action type. It is not inferred from missing
+  normal edges.
+- `canFireAtRuntime` is true when the source question exists, the source
+  option belongs to it, the source type is option-backed (responses for text/
+  integer questions never carry selected option ids, so such rules can never
+  match), the operator is `equals`, the action is `JUMP_TO_QUESTION`, and a
+  target id is set. A fireable rule with a dangling target still gets a
+  missing-target issue because firing it would end the survey.
+- Reachability: BFS from the first question (lowest display order — matching
+  backend `findFirstQuestion`, which does not consult the skip set) over
+  normal-flow successors plus fireable conditional edges with existing targets.
+- Cycle detection: DFS over the same adjacency; reports the first cycle found
+  as a defensive legacy-data check.
+
+## Validation Rules Implemented (all informational)
+
+1. `missing_source_question` — rule source not in this survey.
+2. `invalid_source_question_type` — source is not single/multi select.
+3. `missing_source_option` — source option does not belong to the source question.
+4. `missing_target_question` — target id missing/dangling; message notes the
+   survey would end if the rule fired.
+5. `unsupported_condition_operator` — anything but `equals`.
+6. `unsupported_action_type` — future/legacy actions shown, never executed;
+   message also notes when such a rule still skips its target from normal flow.
+7. `backward_or_self_target` — self-jump or target at/before the source.
+8. `duplicate_rule_for_option` — same source question + option across multiple
+   jump rules; messaging matches the runtime's first-match-wins evaluation.
+9. `unreachable_question` — not reachable from the first question by normal or
+   fireable conditional paths.
+10. `circular_navigation` — defensive cycle detection for legacy/imported data.
+
+## UI Summary
+
+- New `builder-form` section `#survey-flow` rendered after the Jump rules
+  section; `Flow map` added to the admin section nav.
+- Legend distinguishes normal flow (solid green), conditional jumps (dashed
+  amber), and conditional-only nodes (dashed indigo).
+- Issue summary panel at the top of the section (or a green "no issues" line).
+- One compact node card per question: numbered disc on a vertical spine,
+  badges (type, required/optional, `Start`, `Conditional only`, `Unreachable`),
+  question text, then path lines:
+  - normal flow ("Normal flow continues to question N…" / "ends the survey";
+    conditional-only nodes say "Skipped in normal flow. After a jump lands
+    here…"),
+  - incoming jump summary ("Jump target of rule from question N when 'X' is
+    selected"),
+  - one conditional line per outgoing rule with option text, target, skip
+    flag, and a "needs attention" marker when the rule has issues.
+- Empty states for surveys with no questions and a footnote for surveys with
+  no rules.
+- Mobile: nodes/paths compress under the existing 760px breakpoint; no drag or
+  precise pointer interactions anywhere.
+
+## Suggested Review Focus
+
+1. Faithfulness: confirm the helper's skip set, rule matching, and
+   `resolveNextQuestion(survey, question, undefined)` reuse genuinely mirror
+   `packages/shared/src/index.ts` runtime semantics, including the detail that
+   non-JUMP rules with `skipTargetInNormalFlow` still suppress their targets.
+2. Rule-order assumption: duplicate detection and first-match-wins messaging
+   sort rules by id; the API returns rules `order by survey_id, id`, and the
+   runtime `find` uses payload order. Confirm you agree these stay consistent.
+3. `canFireAtRuntime` intentionally allows scale-source rules (runtime would
+   match them because scale responses store a selected option id) while the
+   type issue still flags them as invalid per admin constraints. Check you
+   agree with that split of "can happen" vs "should not exist".
+4. Reachability/cycle traversal correctness on the adjacency built from normal
+   successors plus fireable edges; recursion depth in cycle detection is
+   bounded by question count.
+5. Component-level lookups are O(questions x rules) per render via `filter`;
+   acceptable for MVP sizes, but flag if you disagree.
+6. Scope: confirm nothing edits survey data, no participant-facing surfaces
+   changed, and hidden tags are never rendered in the map.
+
+## Validation Run
+
+```bash
+npm run typecheck   # passed
+npm run lint        # passed
+npm run build       # passed
+git diff --check    # passed
+```
+
+Helper verification (ad hoc, not committed): 9 unit-like scenarios run with
+`node` against the pure helper covering empty/linear surveys, skip and
+non-skip jump rules, missing source option with unreachable target, missing
+source/target questions, unsupported operator/action, backward/self/duplicate
+rules, circular legacy navigation, and a text-source rule that can never
+fire. All passed. API boot + `/api/health` returned `database: connected`.
+
+## Manual Testing Status
+
+Not run in this session: the interactive browser checklist from
+`prompts/prompt_5.1.txt` (select surveys with/without rules, toggle
+`skipTargetInNormalFlow`, reorder/rename live updates, mobile width
+inspection). Browser automation is not installed in this repo and the flow map
+requires a rendered React app. The checklist is recorded as a follow-up in
+`markdown/FOLLOW_UPS.md` and in the phase log. Because the map is a pure
+derivation of `selectedSurvey` state (every builder mutation already replaces
+the survey object via `applyUpdatedSurvey`), automatic updates follow from
+React re-rendering; the browser pass should confirm it visually.
+
+## Known Follow-Ups
+
+- Phase 5.1 manual browser checklist (above).
+- Lightweight frontend unit test runner so `surveyFlowGraph.ts` checks can be
+  committed as real tests.
+
+## Post-Review Fix Addendum
+
+Codex review was recorded in `notes/codex_review_phase_5_1.txt` with status
+"Changes requested". Both findings were fixed:
+
+- Medium (shadowed duplicate rules traversed as reachable edges): a rule that
+  duplicates an earlier rule for the same source question and answer option is
+  now marked not fireable (`canFireAtRuntime = false`), matching the runtime's
+  first-match-wins `find` over id-ordered rules. Adjacency, reachability, and
+  cycle detection therefore exclude shadowed duplicates while the edge still
+  renders with its `duplicate_rule_for_option` issue.
+- Low (incoming summaries implied non-jump rules execute): incoming references
+  on target nodes are now split into "Jump target of rule(s)..." for
+  `JUMP_TO_QUESTION` rules and "Referenced as the target of non-executed
+  rule(s)... (action X)" for unsupported/legacy actions, so source and target
+  copy no longer contradict each other.
+
+Re-validated after the fixes: `npm run typecheck`, `npm run lint`,
+`npm run build`, and `git diff --check` all passed. The ad hoc helper checks
+were extended with two regression scenarios (a skip target reachable only via
+a shadowed duplicate is now unreachable; a cycle that exists only through a
+shadowed duplicate backward rule is no longer reported) and all passed.

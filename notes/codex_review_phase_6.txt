@@ -1,0 +1,68 @@
+# Codex Review — Phase 6 Admin Builder Information Architecture Split
+
+Date:
+2026-06-11
+
+Reviewed against:
+- `prompts/prompt_6.txt`
+- `markdown/REVIEW_CHECKLIST.md`
+- `notes/codex_handoff_phase_6.txt`
+
+## Findings
+
+1. Medium — Guard workspace mutation results against URL changes.
+
+   `SurveyWorkspaceLayout` correctly guards stale survey fetch responses with
+   `isActive`, but `runSurveyMutation` has no equivalent guard. If an admin
+   starts a save/publish/delete request on `/admin/surveys/1/...` and navigates
+   to `/admin/surveys/2/...` before that request resolves, the old mutation can
+   later call `setSurvey(response.survey)` and `setNotice(successMessage)` under
+   the new URL. In the worst ordering, survey 1 renders inside the survey 2
+   workspace until the next load or mutation corrects it.
+
+   Affected code:
+   - `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx`, lines 81-103
+   - related route-owned survey identity: `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx`, lines 36-44
+
+   Suggested fix:
+   Track the active `surveyId` in a ref or include an expected survey id in
+   `runSurveyMutation`, and only apply `setSurvey`, `setNotice`, `setError`,
+   and `setIsSubmitting(false)` if the layout is still on the same survey. This
+   should mirror the existing stale-response protection in the fetch effect.
+
+## Checks Completed
+
+- Route split matches the target IA: `/admin` overview plus nested
+  `/admin/surveys/:surveyId/{setup,questions,logic,preview}` routes under the
+  existing `AdminRoute`.
+- Invalid or non-positive survey ids short-circuit before calling
+  `fetchAdminSurvey`.
+- Workspace fetch state is owned by the layout and shared through outlet
+  context; child pages assume a loaded survey.
+- Moved question, option, tag, metadata, status, and rule handlers are
+  substantially faithful to the deleted single-page dashboard.
+- Hidden tags remain admin-only; no participant-facing route changes were
+  found.
+- No backend route, schema, auth, or dependency changes were found.
+- Dead admin-builder class references named in the handoff were not found in
+  remaining source, aside from intentionally retained inert section ids.
+
+## Validation Run
+
+Passed locally:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Not run:
+- Manual browser checklist from `prompts/prompt_6.txt`; this remains documented
+  as deferred in the handoff/follow-ups.
+
+## Review Status
+
+Phase 6 is close, but I recommend addressing the stale mutation result guard
+before marking the phase implementation complete.

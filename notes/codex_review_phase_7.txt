@@ -1,0 +1,70 @@
+# Codex Review — Phase 7 Mobile-First UI/UX Polish
+
+Date:
+2026-06-11
+
+Reviewed against:
+- `prompts/prompt_7.txt`
+- `markdown/REVIEW_CHECKLIST.md`
+- `notes/codex_handoff_phase_7.txt`
+
+## Findings
+
+1. High — Mobile active-survey view hides the only in-progress exit path.
+
+   At `<=760px`, the new CSS hides `.survey-list-panel` whenever the
+   dashboard wrapper has `survey-active`. That makes the runner the first
+   visible content, but the active-question runner only renders `Previous` and
+   `Next`; the existing `Back to surveys` control is only rendered on the
+   completion panel. On mobile, a participant who starts or resumes a survey
+   cannot return to the survey list from an in-progress question without
+   completing the survey or reloading/navigating away.
+
+   Affected code:
+   - `apps/web/src/styles.css`, lines 1616-1618
+   - `apps/web/src/pages/UserDashboard.tsx`, lines 454-492
+   - completion-only `Back to surveys`: `apps/web/src/pages/UserDashboard.tsx`, lines 421-445
+
+   This also misses the Phase 7 prompt requirement to keep a clear way back to
+   the list when using a mobile-focused/hidden-list approach.
+
+   Suggested fix:
+   Render a `Back to surveys` button in the active-question `survey-actions`
+   using the existing `onClose` callback. Keep it disabled while submitting,
+   matching the completion panel. The existing mobile full-width action rules
+   will make it usable without new state logic.
+
+## Checks Completed
+
+- Confirmed the `UserDashboard.tsx` runner state model remains unchanged:
+  per-question draft maps, hydration, and `resolveNextQuestion` usage are not
+  altered by Phase 7.
+- Confirmed the `survey-active` rule is scoped to the `<=760px` media block,
+  so the desktop side-by-side dashboard remains visible.
+- Confirmed the workspace tab bar is now a sibling of the workspace header and
+  the tab labels/order are unchanged.
+- Confirmed the Phase 6 stale-mutation guard is already documented in
+  `markdown/PHASE_LOG.md` as a Phase 6 review fix, not a Phase 7 behavior
+  change.
+- No backend, API, schema, auth, or dependency changes were found.
+
+## Validation Run
+
+Passed locally:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Not run:
+- Manual browser checklist from `prompts/prompt_7.txt`; this remains deferred
+  in `markdown/FOLLOW_UPS.md`.
+
+## Review Status
+
+Phase 7 needs the in-progress mobile exit path fixed before commit. After that
+fix, re-run the four validation commands and keep the manual browser checklist
+as the remaining documented follow-up if browser tooling is still unavailable.

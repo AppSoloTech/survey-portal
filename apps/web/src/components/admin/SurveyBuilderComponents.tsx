@@ -24,19 +24,6 @@ export interface TagPreset {
   source: "default" | "survey" | "custom";
 }
 
-export function AdminSectionNav() {
-  return (
-    <nav className="section-nav" aria-label="Admin builder sections">
-      <a href="#survey-setup">Setup</a>
-      <a href="#survey-questions">Questions</a>
-      <a href="#survey-preview">Preview</a>
-      <a href="#survey-logic">Logic</a>
-      <a href="#survey-tags">Hidden tags</a>
-      <a href="#survey-availability">Availability</a>
-    </nav>
-  );
-}
-
 export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
   if (survey.status === "draft") {
     return (
@@ -76,12 +63,10 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
 export function StatusActionPanel({
   isSubmitting,
   onStatusChange,
-  placement,
   survey
 }: {
   isSubmitting: boolean;
   onStatusChange: (status: SurveyStatus) => Promise<void>;
-  placement: "top" | "bottom";
   survey: Survey;
 }) {
   const isDraft = survey.status === "draft";
@@ -89,14 +74,11 @@ export function StatusActionPanel({
   const isRetired = survey.status === "retired";
 
   return (
-    <section
-      className={`builder-form status-action-panel ${placement}`}
-      id={placement === "top" ? "survey-availability" : undefined}
-    >
+    <section className="builder-form status-action-panel">
       <div className="builder-section-heading">
         <div>
           <p className="eyebrow">Survey status</p>
-          <h3>{placement === "bottom" ? "Finish construction" : "Availability"}</h3>
+          <h3>Availability</h3>
           <p className="builder-heading-note">
             {isDraft
               ? "This survey is saved as a draft. Publish when required questions, options, and rules are ready."
@@ -113,35 +95,22 @@ export function StatusActionPanel({
           Current status: <strong>{survey.status}</strong>
         </span>
         <div className="inline-actions">
-          {placement === "top" ? (
-            <>
-              <button
-                className="button-link compact-button primary-button"
-                disabled={isSubmitting || (!isDraft && !isRetired)}
-                onClick={() => void onStatusChange("published")}
-                type="button"
-              >
-                {isRetired ? "Republish survey" : "Publish survey"}
-              </button>
-              <button
-                className="button-link compact-button danger-button"
-                disabled={isSubmitting || !isPublished}
-                onClick={() => void onStatusChange("retired")}
-                type="button"
-              >
-                Retire survey
-              </button>
-            </>
-          ) : (
-            <a className="button-link compact-button secondary-button" href="#survey-availability">
-              Review availability
-            </a>
-          )}
-          {placement === "bottom" ? (
-            <a className="button-link compact-button ghost-button" href="#admin-builder-top">
-              Back to top
-            </a>
-          ) : null}
+          <button
+            className="button-link compact-button primary-button"
+            disabled={isSubmitting || (!isDraft && !isRetired)}
+            onClick={() => void onStatusChange("published")}
+            type="button"
+          >
+            {isRetired ? "Republish survey" : "Publish survey"}
+          </button>
+          <button
+            className="button-link compact-button danger-button"
+            disabled={isSubmitting || !isPublished}
+            onClick={() => void onStatusChange("retired")}
+            type="button"
+          >
+            Retire survey
+          </button>
         </div>
       </div>
     </section>

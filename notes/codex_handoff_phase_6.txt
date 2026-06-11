@@ -1,0 +1,184 @@
+# Codex Review Handoff — Phase 6 Admin Builder Information Architecture Split
+
+Date:
+2026-06-11
+
+Prompt:
+`prompts/prompt_6.txt`
+
+Status:
+Reviewed by Codex; finding fixed (see Post-Review Fix Addendum)
+
+Role note:
+Roles remain reversed per explicit human instruction: Claude Code implemented,
+Codex reviews. Please review against `markdown/REVIEW_CHECKLIST.md` and record
+findings in `notes/codex_review_phase_6.txt`.
+
+## Summary
+
+The single-page admin builder is split into a surveys overview at `/admin` and
+a per-survey workspace at `/admin/surveys/:surveyId` with four routed pages:
+setup, questions, logic, and preview. The selected survey moved from component
+state into the URL. This is a frontend-only restructure: no schema, API, or
+auth changes; one thin frontend fetch helper was added for the existing
+`GET /api/surveys/:id` endpoint. The old `AdminDashboard.tsx` is deleted and
+its handlers were moved (not rewritten) into the new pages.
+
+## Files Changed
+
+New:
+
+- `apps/web/src/pages/admin/AdminSurveysOverview.tsx`
+- `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx` (layout route, outlet
+  context, `useSurveyWorkspace` hook)
+- `apps/web/src/pages/admin/SurveySetupPage.tsx`
+- `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+- `apps/web/src/pages/admin/SurveyLogicPage.tsx`
+- `apps/web/src/pages/admin/SurveyPreviewPage.tsx`
+- `apps/web/src/components/admin/builderForm.ts` (moved form readers +
+  confirm helper)
+- `apps/web/src/components/admin/tagPresets.ts` (moved tag preset helpers)
+
+Modified:
+
+- `apps/web/src/App.tsx` (nested admin routes; workspace index redirects to
+  `setup`)
+- `apps/web/src/api/surveys.ts` (added `fetchAdminSurvey`)
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx` (removed
+  `AdminSectionNav`; `StatusActionPanel` reduced to the single availability
+  variant — placement prop, bottom panel, and back-to-top link removed)
+- `apps/web/src/styles.css` (workspace header/tabs + overview styles added;
+  dead styles removed; both mobile breakpoints updated)
+- `markdown/PHASE_LOG.md`, `markdown/FOLLOW_UPS.md`, this handoff
+
+Deleted:
+
+- `apps/web/src/pages/AdminDashboard.tsx`
+
+## Route And State Design
+
+- Routes nest under the existing `AdminRoute` guard; server-side admin
+  authorization is unchanged.
+- `SurveyWorkspaceLayout` validates `:surveyId` (positive integer), fetches
+  the survey, and renders loading / not-found states. Children receive
+  `{ survey, isSubmitting, runSurveyMutation, changeStatus, setFeedback,
+  customTagPresets, setCustomTagPresets }` via outlet context.
+- `runSurveyMutation` is the same pattern as before: clear feedback, run the
+  API call, replace the survey object from the response, set the scoped
+  success message. Because all pages derive from that one object, the flow
+  map and tab counts update automatically after any mutation.
+- Status actions (publish/retire/republish, retire confirm, identical
+  feedback strings) live in the layout header on every page; the setup page
+  additionally shows the availability detail panel.
+
+## Behavior Preservation Map
+
+All moved verbatim from `AdminDashboard.tsx` (handler bodies unchanged except
+`selectedSurvey` -> context `survey` and feedback via context):
+
+- question add/save/move/delete with the same draft-only guards, confirm
+  dialogs, and messages (questions page)
+- option add/save/move/delete and hidden tag add/save/delete (questions page)
+- jump rule add/save/delete with form reset and dependent-select keying
+  (logic page)
+- metadata save preserving current status (setup page)
+- create survey (overview; now navigates into the new workspace)
+- tag suggestion library incl. custom suggestion add/remove messages
+  (questions page; custom presets stored in layout state so they survive tab
+  switches within a workspace session)
+
+Backend publish validation messages surface exactly as before because
+`changeStatus` uses the same `updateSurveyStatus` call and error path.
+
+## Intentional Behavior Notes (please review)
+
+1. Cross-survey "Saved in surveys" tag suggestions previously came from the
+   sidebar's full survey list. The questions page now fetches
+   `fetchAdminSurveys` once per mount for suggestion derivation, merging the
+   live workspace survey over its stale snapshot; on fetch failure it silently
+   falls back to current survey + defaults + custom. One extra GET per
+   questions-page visit.
+2. Feedback messages persist across tab switches until the next action
+   (matches the old single-page behavior where messages stayed at the top).
+3. The bottom "Finish construction" status panel and back-to-top link were
+   removed rather than relocated: pages are short now and header status
+   actions are persistent. The availability panel remains on setup.
+4. The old auto-select-first-survey behavior is gone by design; `/admin` is a
+   list and the workspace is URL-addressed.
+5. Anchor ids (`survey-preview`, `survey-logic` etc. removed from nav) — the
+   remaining ids on sections are inert and kept only as harmless markup.
+
+## Suggested Review Focus
+
+1. Outlet context typing and the `useSurveyWorkspace` hook — confirm no page
+   can render outside the layout (only the four child routes use it).
+2. `SurveyWorkspaceLayout` effect: fetch keyed on `surveyId`, stale-response
+   guard (`isActive`), and state resets when switching surveys via the
+   overview.
+3. Handler moves: diff `SurveyQuestionsPage`/`SurveyLogicPage`/`SurveySetupPage`
+   against the deleted `AdminDashboard.tsx` to confirm logic moved without
+   behavioral edits.
+4. The not-found path: non-numeric ids short-circuit before fetching; fetch
+   404s render the same state. Confirm no fetch is attempted for invalid ids.
+5. CSS removals: `.section-nav`, `.admin-builder-layout`,
+   `.admin-survey-panel`, `.admin-survey-list`, `.survey-selector`, and
+   `.status-action-panel.top/.bottom` are gone — check no remaining markup
+   references them (a grep during implementation found none). Note the
+   specificity fix: the availability panel override is
+   `.builder-form.status-action-panel` so it still beats
+   `.builder-workspace > .builder-form`.
+6. Scope: no backend diffs, no new dependencies, participant survey-taking
+   untouched, hidden tags still admin-only.
+
+## Validation Run
+
+```bash
+npm run typecheck   # passed
+npm run lint        # passed
+npm run build       # passed
+git diff --check    # passed
+```
+
+Smoke checks: a brief Vite dev serve returned the SPA shell for `/admin`,
+`/admin/surveys/3/logic`, and `/admin/surveys/abc` (the last renders the
+client-side not-found state).
+
+## Manual Testing Status
+
+Not run in this session: the interactive browser checklist from
+`prompts/prompt_6.txt` (cross-page build flow, publish-blocked messaging,
+back/forward, standard-user redirect, mobile widths). Browser automation is
+not installed in this repo. Recorded in `markdown/FOLLOW_UPS.md` and the phase
+log, consistent with prior phases.
+
+## Known Follow-Ups
+
+- Phase 6 manual browser checklist (above).
+- Existing follow-ups (frontend test runner, Phase 5.1 flow map checklist —
+  now on the Logic page) remain active in `markdown/FOLLOW_UPS.md`.
+
+## Post-Review Fix Addendum
+
+Codex review was recorded in `notes/codex_review_phase_6.txt` with one Medium
+finding: `runSurveyMutation` lacked the stale-response guard that the fetch
+effect has, so a mutation started on one survey could apply its result
+(`setSurvey`, feedback, submit state) after navigating to a different survey's
+workspace.
+
+Fix applied in `SurveyWorkspaceLayout.tsx`:
+
+- Added `activeSurveyIdRef`, updated at the top of the surveyId effect
+  (including the null/invalid-id path).
+- `runSurveyMutation` captures the survey id at call time and only applies
+  `setSurvey`/`setNotice`/`setError` — and only clears `isSubmitting` — while
+  the layout still shows that survey; stale results are dropped and return
+  false.
+- Switching surveys also resets `isSubmitting` in the fetch effect so an
+  abandoned in-flight mutation cannot leave the new workspace's controls
+  disabled.
+
+Overlapping mutations on the same survey keep their previous last-response-wins
+behavior, unchanged from the single-page builder.
+
+Re-validated after the fix: `npm run typecheck`, `npm run lint`,
+`npm run build`, and `git diff --check` all passed from the repo root.

@@ -1,0 +1,281 @@
+# Phase 6 — Admin Builder Information Architecture Split
+
+## Purpose
+
+Restructure the admin survey builder from one long single-page workspace into a
+small set of focused, separately routed pages.
+
+The Phase 4/5 builder is functionally complete but crowded: survey selection,
+metadata, status actions, question editing, answer options, hidden tags,
+preview, jump rules, the flow map, and the tag suggestion library all stack on
+one page. Administrators must scroll and visually filter to find the section
+they need, and mobile use is harder than it should be.
+
+The goal is to bifurcate this workflow into separate pages so each page has one
+clear job, while preserving every existing capability, validation rule, and
+server contract.
+
+This phase is a frontend information-architecture and UX restructure only.
+
+## Role Note
+
+For this phase the usual AI roles are reversed by explicit human instruction:
+
+* Claude Code is the implementation assistant.
+* Codex is the review assistant.
+
+Closeout artifacts use the `codex_` naming established in Phase 5.1.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/REVIEW_CHECKLIST.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* prompts/prompt_4.txt
+* prompts/prompt_5.txt
+* prompts/prompt_5.1.txt
+* apps/web/src/App.tsx
+* apps/web/src/auth/AdminRoute.tsx
+* apps/web/src/api/surveys.ts
+* apps/web/src/pages/AdminDashboard.tsx
+* apps/web/src/components/admin/SurveyBuilderComponents.tsx
+* apps/web/src/components/admin/SurveyFlowMap.tsx
+* apps/web/src/components/admin/surveyFlowGraph.ts
+
+Before implementation:
+
+* Understand how the current `AdminDashboard` owns survey list state, selected
+  survey state, mutation feedback, and the `applyUpdatedSurvey` pattern where
+  every builder mutation returns the full updated survey.
+* Understand the existing route structure and the `AdminRoute` guard.
+* Understand which behaviors Phase 4, Phase 5, and Phase 5.1 already locked in
+  (scoped save feedback, draft-only guards, publish validation messages,
+  jump-rule form reset, flow map auto-update).
+* Review markdown/FOLLOW_UPS.md and determine whether any active follow-ups
+  belong in this phase.
+
+If implementation appears to require database schema changes, API contract
+changes, or new backend endpoints, stop and explain before proceeding.
+
+---
+
+# Target Information Architecture
+
+Split the builder by job-to-be-done. The target structure is:
+
+```txt
+/admin
+  Surveys overview page:
+  - scannable survey list (title, status, question/rule counts, last updated)
+  - create-survey form
+  - opening a survey navigates to its workspace
+
+/admin/surveys/:surveyId
+  Survey workspace layout (shared shell for the pages below):
+  - persistent header: survey title, status pill, edit-state banner,
+    publish/retire/republish status actions
+  - tab-style navigation between the workspace pages
+  - loads the survey once and shares it with child pages
+
+/admin/surveys/:surveyId/setup
+  - survey metadata form (title, description)
+  - availability explanation and status management detail
+
+/admin/surveys/:surveyId/questions
+  - add-question form
+  - question editors with answer options and hidden tags
+  - tag suggestion library
+
+/admin/surveys/:surveyId/logic
+  - jump rule creation and editing
+  - Survey Flow Map (rules and the map read together)
+
+/admin/surveys/:surveyId/preview
+  - read-only user preview
+```
+
+This structure is the starting recommendation. If discovery reveals a better
+grouping (for example moving the tag suggestion library or merging setup into
+the workspace header), adjust it and document the reasoning in
+`markdown/PHASE_LOG.md`. Do not exceed roughly this page count; the goal is
+fewer, clearer pages, not deeper navigation.
+
+---
+
+# Goals
+
+Administrators should be able to:
+
+* see all surveys at a glance and jump into one survey's workspace
+* always know which survey they are editing and what its status is
+* manage metadata, questions, logic, and preview without scrolling past
+  unrelated sections
+* deep-link to a specific survey page and use browser back/forward naturally
+* publish or retire from the persistent workspace header on any page
+* use each page comfortably on mobile
+
+All current builder capabilities must survive the move with their behavior
+intact.
+
+---
+
+# Functional Requirements
+
+## Routing
+
+* Add nested routes under the existing `AdminRoute` guard. All admin pages
+  must remain inaccessible to non-admin users, enforced by the existing
+  server-side authorization plus the existing frontend guard.
+* `/admin` becomes the surveys overview. The previous single-page builder at
+  `/admin` is replaced, not kept alongside.
+* `/admin/surveys/:surveyId` is a layout route that loads the survey and
+  renders child pages through an outlet.
+* An unknown, deleted, or non-numeric `:surveyId` shows a useful not-found
+  state inside the admin shell with a link back to `/admin`.
+* The workspace index route should redirect or default to a sensible first
+  page (setup for drafts is the recommended default).
+
+## State Ownership
+
+* The workspace layout owns the loaded survey object and exposes it, plus an
+  update callback, to child pages via router outlet context.
+* Builder mutations keep using the existing API helpers, which return the full
+  updated survey; the update callback replaces the layout's survey object so
+  every page (including the flow map) re-derives from fresh state.
+* Loading and error states are handled at the layout level so child pages can
+  assume a loaded survey.
+* The surveys overview may fetch the list with the existing
+  `fetchAdminSurveys`; the workspace should fetch its single survey (the
+  backend `GET /api/surveys/:id` already supports this — adding a thin
+  frontend helper in `apps/web/src/api/surveys.ts` is in scope and is not an
+  API change).
+
+## Behavior Preservation
+
+The following Phase 4/5/5.1 behaviors must work identically after the split:
+
+* scoped success feedback per mutation (question saved, option saved, tag
+  saved, rule added, and so on)
+* draft-only restrictions on adds/deletes/type changes, with the same
+  messaging
+* confirm dialogs before destructive actions
+* backend publish validation messages surfacing when publish is blocked
+* jump-rule add form resetting after a successful create
+* the flow map updating automatically whenever the survey object changes
+* hidden tags remaining admin-only and never appearing on participant-facing
+  pages
+
+## Navigation UX
+
+* Tab-style navigation in the workspace must make the current page obvious and
+  must not look like a marketing site. Keep the dense business-tool feel.
+* The persistent header must show survey title and status on every workspace
+  page, with the existing edit-state banner messaging.
+* The existing explicit-save model is retained: forms save on their buttons,
+  and navigating between pages does not auto-save. If unsaved edits would be
+  silently discarded by navigation, keep the current behavior but make sure
+  page copy never implies otherwise.
+
+## Mobile
+
+* Each page should now be substantially shorter; verify vertical rhythm,
+  tab wrapping, and form stacking at narrow widths.
+* The tab bar should remain usable on mobile (wrap or horizontal scroll, no
+  overflow collisions).
+
+---
+
+# Technical Requirements
+
+* Frontend-only. No new database tables, no new or changed API endpoints, no
+  auth changes.
+* Use the already-installed `react-router-dom` nested routing. Do not add a
+  state-management library, CSS framework, or any new dependency.
+* Reorganize `apps/web/src/components/admin/` as needed: splitting
+  `SurveyBuilderComponents.tsx` into per-page modules is encouraged, but move
+  code rather than rewriting it. Behavior changes beyond the restructure are
+  out of scope.
+* The pure helpers (`surveyFlowGraph.ts`) and the flow map component must be
+  reused as-is, fed by the workspace's survey object.
+* Keep CSS additions consistent with the existing conventions in
+  `apps/web/src/styles.css`; remove styles that become dead with the old
+  single-page layout.
+* Update the in-app header link label if "Admin workspace" no longer matches
+  the new overview page.
+
+---
+
+# Explicit Non-Goals
+
+Do NOT implement:
+
+* backend route/service changes of any kind
+* reporting, analytics, or CSV export
+* drag-and-drop editing or visual logic editing
+* new question types or new conditional actions
+* changes to the participant survey-taking experience
+* autosave or dirty-state tracking beyond what exists today
+* a global state library
+
+---
+
+# Required Validation
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Also perform a manual browser pass if possible:
+
+* visit `/admin`, create a survey, and confirm navigation lands in its
+  workspace
+* build a survey end to end across the pages: metadata on setup, two
+  questions with options and a hidden tag on questions, a jump rule on logic,
+  check the flow map updates, publish from the header
+* confirm publish validation messages still appear when publish is blocked
+* deep-link directly to `/admin/surveys/:id/logic` and confirm it loads
+* use browser back/forward across workspace pages
+* visit a non-existent survey id and confirm the not-found state
+* confirm a standard user still cannot reach any `/admin` route
+* inspect mobile width on each page for overflow or cramped controls
+
+Record results in `markdown/PHASE_LOG.md`. If a browser pass is not possible
+in the implementation environment, document that and leave the checklist as a
+follow-up, consistent with prior phases.
+
+---
+
+# Deliverables
+
+Provide:
+
+1. Summary of the current single-page structure and the discovered coupling
+   points (state, feedback, navigation).
+2. The implemented page/route structure with any deviations from the target
+   IA and why.
+3. Implementation summary, including how survey state is shared across pages.
+4. Confirmation list of preserved Phase 4/5/5.1 behaviors.
+5. Manual test results or a documented deferral.
+6. Future enhancement list (for example workspace-level dirty indicators,
+   breadcrumbs, or survey duplication) without implementing them.
+
+Before committing:
+
+* update `markdown/PHASE_LOG.md`
+* update `markdown/FOLLOW_UPS.md` if any follow-ups are completed or added
+* create a handoff note at `notes/codex_handoff_phase_6.txt`
+* request Codex review using `markdown/REVIEW_CHECKLIST.md`, recorded at
+  `notes/codex_review_phase_6.txt`
+* address or document review findings before commit

@@ -1,0 +1,149 @@
+# Codex Review Handoff — Phase 7 Mobile-First UI/UX Polish
+
+Date:
+2026-06-11
+
+Prompt:
+`prompts/prompt_7.txt`
+
+Status:
+Reviewed by Codex; High finding fixed (see Post-Review Fix Addendum)
+
+Role note:
+Roles remain reversed per explicit human instruction: Claude Code implemented,
+Codex reviews. Please review against `markdown/REVIEW_CHECKLIST.md` and record
+findings in `notes/codex_review_phase_7.txt`.
+
+## Summary
+
+Mobile-first polish across the app. Almost everything is CSS in
+`apps/web/src/styles.css`; there are exactly two markup changes:
+
+1. `UserDashboard.tsx`: the workspace wrapper gets a `survey-active` class
+   while a survey is open (one line; no state or logic changes).
+2. `SurveyWorkspaceLayout.tsx`: the workspace tab bar moved from inside the
+   header card to a sibling element so it can be position:sticky on mobile.
+
+No backend, API, schema, auth, dependency, or state-logic changes.
+
+## Files Changed
+
+- `apps/web/src/pages/UserDashboard.tsx` (conditional class only)
+- `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx` (tab bar relocation)
+- `apps/web/src/styles.css` (all polish)
+- `markdown/PHASE_LOG.md`, `markdown/FOLLOW_UPS.md`, this handoff
+
+## Audit -> Change Map
+
+The phase log records the full audit; the changes by priority:
+
+Priority 1 (participant runner):
+
+- `<=760px`: `.survey-workspace.survey-active .survey-list-panel` is hidden so
+  the active survey is the first visible content; the `.empty-panel`
+  placeholder is also hidden on mobile. Desktop layout unchanged. Exiting via
+  the existing "Back to surveys" restores the list (activeSurvey -> null).
+- Touch targets: `.option-row` min-height 3rem with 1.25rem radio/checkbox
+  glyphs and pointer cursor; `.scale-answer-option` min-height 3rem;
+  `.survey-actions .button-link` min-height 2.75rem on mobile.
+- iOS zoom fix: explicit `font-size: 1rem` added to `.auth-form input`, the
+  builder/question-editor control group, and `.question-form` number/textarea
+  controls. Previously controls inherited 0.86-0.9rem label fonts (~14px),
+  which triggers mobile Safari zoom-on-focus.
+- Completion summary stays two-up on mobile (removed the 1fr override) so the
+  completion panel reads in one screen.
+
+Priority 2 (shell/consistency):
+
+- New `@media (max-width: 560px)` block stacks the app header and lays nav
+  links out as a full-width two-column grid.
+- Global `a/button/summary:focus-visible` outline; `.button-link:active`
+  brightness press feedback.
+- 430px breakpoint no longer shrinks button min-height below 2.5rem.
+- `overflow-wrap: anywhere` on survey card titles and the question legend.
+
+Priority 3 (auth/home): covered by the global font-size fix; existing
+autocomplete attributes, input types, and full-width mobile buttons verified
+and left as-is.
+
+Priority 4 (admin):
+
+- `.workspace-tabs` is now a standalone white pill bar (same visual pattern as
+  the old section nav) and `position: sticky; top: 0` at <=760px so switching
+  pages does not require scrolling back to the top.
+- `.compact-button` min-height 2.5rem on mobile.
+
+## Locked-In Behaviors (please verify untouched)
+
+- Runner state model: per-question draft answer maps, hydration, and
+  `resolveNextQuestion` usage in `UserDashboard.tsx` are byte-identical except
+  for the wrapper className expression. The Phase 5 text-isolation fix cannot
+  regress from a class name, but please confirm the diff scope.
+- Phase 6 workspace context, status actions, and feedback flows: the tab bar
+  move is purely structural; `WorkspaceTab`, labels, and order are unchanged.
+
+## Suggested Review Focus
+
+1. The two TSX diffs — confirm they are as minimal as described.
+2. CSS cascade interactions:
+   - `.survey-active` rules live only in the 760px media block (desktop must
+     keep the side-by-side layout).
+   - Button min-height ordering across base / 760 / 430 blocks: the 430 block
+     comes last, so its `.nav-link, .button-link` rule was raised to 2.5rem to
+     avoid undoing the mobile target bumps; `.survey-actions .button-link`
+     (higher specificity) holds 2.75rem everywhere under 760px.
+   - `.builder-form.status-action-panel` and other two-class overrides still
+     beat `.builder-workspace > .builder-form` after the tab bar move.
+3. Sticky tabs: standalone sibling element, white background, z-index 2 — no
+   sticky ancestor conflicts (the app header is not sticky).
+4. The hidden mobile `.empty-panel`: confirm hiding the placeholder at
+   <=760px does not orphan any accessibility relationship (it is a purely
+   decorative empty state).
+5. Input font-size: confirm 1rem controls do not break any dense admin row
+   layouts (grids size with minmax and should absorb the slightly larger
+   text).
+
+## Validation Run
+
+```bash
+npm run typecheck   # passed
+npm run lint        # passed
+npm run build       # passed
+git diff --check    # passed
+```
+
+## Manual Testing Status
+
+Not run in this session: the browser pass at 360/390/768px from
+`prompts/prompt_7.txt`, including the conditional-jump text-isolation
+regression check and the runner-focus check. No browser tooling is installed
+in this repo. Tracked in `markdown/FOLLOW_UPS.md` and the phase log; a
+user-run pass is expected before commit, consistent with Phases 5.1 and 6.
+
+## Known Follow-Ups
+
+- Phase 7 manual browser checklist (above).
+- Existing follow-ups in `markdown/FOLLOW_UPS.md` remain active.
+
+## Post-Review Fix Addendum
+
+Codex review was recorded in `notes/codex_review_phase_7.txt` with one High
+finding: hiding the survey list on mobile while a survey is active removed the
+only in-progress exit path, because `Back to surveys` rendered only on the
+completion panel. A participant on a question screen could not return to the
+list without finishing the survey or reloading — and the Phase 7 prompt
+explicitly required keeping a clear way back to the list.
+
+Fix applied in `UserDashboard.tsx`:
+
+- The active-question `survey-actions` row now renders a `Back to surveys`
+  ghost button wired to the existing `onClose` callback, disabled while
+  submitting — identical semantics to the completion panel's button. Closing
+  mid-question discards only the current question's unsubmitted draft (the
+  existing close behavior); saved answers persist server-side and resume
+  works as before. The button is last in the action order and ghost-styled so
+  it cannot be mistaken for the primary Next action, and the existing mobile
+  full-width action rules apply to it automatically.
+
+Re-validated after the fix: `npm run typecheck`, `npm run lint`,
+`npm run build`, and `git diff --check` all passed.

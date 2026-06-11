@@ -1,0 +1,332 @@
+# Phase 5.1 — Survey Flow Mapping Visualization
+
+## Purpose
+
+Create a read-only Survey Flow Map inside the existing Survey Builder admin experience.
+
+The goal is to help administrators understand survey navigation, question sequencing, and configured jump rules at a glance, without changing how surveys are authored.
+
+The Flow Map must be derived entirely from the existing `Survey` payload:
+
+* `questions`
+* `answerOptions`
+* `conditionalLogicRules`
+* `displayOrder`
+* `skipTargetInNormalFlow`
+
+It must not become a separate source of truth.
+
+This phase is focused on visualization and validation only.
+
+Do not implement visual editing of survey logic, question order, answer options, or survey structure.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/SCALE_QUESTION_DATA_MODEL.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* prompts/prompt_4.txt
+* prompts/prompt_5.txt
+* packages/shared/src/index.ts
+* apps/api/src/routes/surveys.ts
+* apps/web/src/pages/AdminDashboard.tsx
+* apps/web/src/components/admin/SurveyBuilderComponents.tsx
+
+Before implementation:
+
+* Understand current survey/question storage.
+* Understand current conditional rule creation and validation.
+* Understand how question ordering is resolved.
+* Understand how `resolveNextQuestion` evaluates normal flow and jump rules.
+* Review markdown/FOLLOW_UPS.md and determine whether any active follow-ups belong in this phase.
+
+If implementation requires modifying database schema, API contracts, or survey data structures, stop and explain before proceeding.
+
+---
+
+# Current Project Constraints
+
+The current MVP has one question per page.
+
+Supported question types are:
+
+```txt
+text
+integer
+single_select
+multi_select
+scale
+```
+
+Current implemented conditional navigation supports:
+
+```txt
+condition_operator = equals
+action_type = JUMP_TO_QUESTION
+```
+
+Current admin/API behavior enforces:
+
+* source questions must be `single_select` or `multi_select`
+* source answer options must belong to the source question
+* target questions must belong to the same survey
+* target questions must come after the source question
+* `skipTargetInNormalFlow` controls whether a target remains in normal progression
+
+Future action types may exist in shared types or database checks, but do not implement visualization behavior for:
+
+```txt
+SHOW_QUESTION
+HIDE_QUESTION
+JUMP_TO_PAGE
+END_SURVEY
+```
+
+If any future or legacy rule action appears in data, show it as an informational validation issue rather than attempting to execute it.
+
+---
+
+# Discovery Phase
+
+Before writing code:
+
+1. Identify the existing entities involved in survey navigation.
+2. Document how question ordering is currently resolved from `displayOrder`.
+3. Document how normal progression is calculated when `skipTargetInNormalFlow` targets are present.
+4. Document how `JUMP_TO_QUESTION` rules are evaluated by `resolveNextQuestion`.
+5. Identify existing and defensive edge cases:
+
+   * Multiple rules from the same source question
+   * Multiple rules for the same source answer option
+   * Missing source questions, source options, or target questions
+   * Unsupported condition operators or action types
+   * Backward or self-targeting rules in legacy/imported data
+   * Questions skipped from normal flow by `skipTargetInNormalFlow`
+   * Questions unreachable by either normal flow or conditional flow
+
+Circular navigation should be treated as a defensive validation check only. Under current API rules, valid admin-created `JUMP_TO_QUESTION` rules are forward-only and should not create cycles.
+
+Produce a brief implementation plan before beginning development.
+
+---
+
+# Goals
+
+Create:
+
+* Survey Flow Map section in the existing admin builder
+* Automatic graph generation from the selected survey definition
+* Visual representation of normal question progression
+* Visual representation of conditional jump paths
+* Validation indicators for common logic and reachability issues
+
+The Flow Map must update automatically whenever the selected survey state changes after existing builder actions:
+
+* questions are added, removed, renamed, or reordered
+* question types are changed
+* answer options are added, removed, renamed, or reordered
+* jump rules are added, modified, or removed
+* `skipTargetInNormalFlow` is changed
+
+No separate fetch, persistence layer, or graph-specific backend endpoint is required unless a discovered project constraint makes it necessary.
+
+---
+
+# Functional Requirements
+
+## Placement
+
+Add the Flow Map to the existing Survey Builder workspace.
+
+It should be reachable from the admin section navigation and fit the operational builder UI established in Phase 5.
+
+Do not create a separate marketing-style page or standalone visual designer.
+
+## Question Nodes
+
+Each survey question should appear as a compact node.
+
+Display:
+
+* question number / `displayOrder`
+* question text
+* question type
+* helpful badges such as required, optional, scale, or conditional-only
+
+Node styling should remain readable for large surveys and usable on mobile.
+
+## Standard Navigation Paths
+
+Display normal survey progression based on existing runtime semantics.
+
+Normal progression should account for targets whose rules have:
+
+```txt
+skipTargetInNormalFlow = true
+```
+
+Those targets are skipped during default progression unless reached by a matching jump rule.
+
+Standard paths should be visually distinct from conditional paths.
+
+## Conditional Jump Paths
+
+Display configured `JUMP_TO_QUESTION` rules.
+
+Each conditional path should show:
+
+* source question
+* triggering answer option text when available
+* target question
+* whether the target is skipped from normal flow
+
+Conditional paths should be visually distinct from standard paths.
+
+## Conditional-Only Questions
+
+Identify questions that are skipped from normal progression because they are targets of at least one rule where:
+
+```txt
+skipTargetInNormalFlow = true
+```
+
+Use the label:
+
+```txt
+Conditional only
+```
+
+Do not infer conditional-only status from missing normal edges alone.
+
+## Validation Indicators
+
+Identify and visually flag informational issues:
+
+* missing or invalid source questions
+* missing or invalid source answer options
+* missing or invalid target questions
+* unsupported condition operators
+* unsupported action types
+* backward or self-targeting rules
+* duplicate rules for the same source answer option
+* questions unreachable from the first question by normal or conditional paths
+* defensive circular-path detection for legacy/imported data
+
+Validation is informational only.
+
+Do not automatically modify survey data.
+
+Do not bypass or weaken backend publish validation.
+
+---
+
+# Technical Requirements
+
+Prefer a small, maintainable implementation.
+
+The graph model should be derived from existing frontend survey state and should not duplicate persisted data.
+
+Keep graph construction in a pure helper when practical so it can be typechecked and unit-like tested without rendering.
+
+Reuse or faithfully mirror the shared runtime navigation semantics in `resolveNextQuestion`.
+
+If frontend and backend/shared navigation helper needs grow, consider the active follow-up:
+
+```txt
+Hoist pure survey navigation helpers into packages/shared if frontend and backend conditional navigation logic grows.
+```
+
+If a visualization library is appropriate, evaluate React Flow or a lighter alternative. Adding a dependency is allowed only if it materially improves maintainability; otherwise use a simple custom visualization with accessible HTML/CSS.
+
+Do not add new database tables.
+
+Do not add new question types.
+
+Do not expose hidden tags to survey participants.
+
+---
+
+# User Experience Goals
+
+The Flow Map should:
+
+* help administrators understand survey behavior quickly
+* make skipped normal-flow questions obvious
+* make jump-rule triggers easy to inspect
+* help troubleshoot invalid or surprising logic
+* preserve the dense, business-tool feel of the current builder
+
+Empty and small surveys should have useful states.
+
+Large surveys should remain scannable without requiring precise drag interactions.
+
+---
+
+# Explicit Non-Goals
+
+Do NOT implement:
+
+* drag-and-drop editing
+* visual creation of skip logic
+* visual editing of question order
+* visual editing of survey structure
+* survey execution changes
+* reporting
+* analytics
+* CSV export
+* new conditional action behavior
+* backend route/service extraction unless needed for a very small supporting change
+
+---
+
+# Required Validation
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Also perform a manual browser pass for the admin builder if possible:
+
+* select a survey with no rules and confirm normal flow is clear
+* select or create a survey with at least one `JUMP_TO_QUESTION` rule
+* confirm normal paths and conditional paths are visually distinct
+* confirm the triggering answer option text appears on conditional paths
+* toggle `skipTargetInNormalFlow` on a rule and confirm the map updates
+* reorder questions and confirm the map updates
+* rename a question or answer option and confirm the map updates
+* inspect a narrow mobile width for overflow or unreadable map content
+
+Record manual test results in `markdown/PHASE_LOG.md`.
+
+---
+
+# Deliverables
+
+Provide:
+
+1. Summary of discovered survey navigation architecture.
+2. Proposed graph model.
+3. Implementation summary of the Flow Map UI.
+4. List of validation rules implemented.
+5. Screenshots or a concise manual demonstration summary.
+6. List of future enhancements that could support visual editing in a later phase.
+
+Before committing:
+
+* update `markdown/PHASE_LOG.md`
+* update `markdown/FOLLOW_UPS.md` if any follow-ups are completed or added
+* create a handoff note at `notes/claude_handoff_phase_5_1.txt`
+* request Claude review using `markdown/REVIEW_CHECKLIST.md`
+* address or document review findings before commit

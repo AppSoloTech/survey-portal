@@ -290,7 +290,7 @@ export function UserDashboard() {
 
       {error ? <p className="status error">{error}</p> : null}
 
-      <div className="survey-workspace">
+      <div className={activeSurvey ? "survey-workspace survey-active" : "survey-workspace"}>
         <div className="survey-list-panel">
           <h3>My surveys</h3>
           {isLoading ? <p className="status muted">Loading surveys...</p> : null}
@@ -488,6 +488,14 @@ function SurveyRunner({
         </button>
         <button className="button-link primary-button" disabled={isSubmitting} type="submit">
           {isSubmitting ? "Saving..." : "Next"}
+        </button>
+        <button
+          className="button-link ghost-button"
+          disabled={isSubmitting}
+          onClick={onClose}
+          type="button"
+        >
+          Back to surveys
         </button>
       </div>
     </form>
