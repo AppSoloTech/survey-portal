@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Link,
   Navigate,
@@ -60,6 +61,7 @@ export function App() {
 function Header() {
   const { isAuthenticated, logout, user } = useAuth();
   const navigate = useNavigate();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const links = isAuthenticated
     ? [
@@ -68,26 +70,55 @@ function Header() {
       ]
     : [
         { to: "/", label: "Home" },
-        { to: "/login", label: "Login" },
         { to: "/register", label: "Create account" }
       ];
 
+  function closeMenu() {
+    setIsMenuOpen(false);
+  }
+
   async function handleLogout() {
+    closeMenu();
     await logout();
     navigate("/login");
   }
 
   return (
     <header className="app-header">
-      <Link className="brand-link" to="/">
+      <Link className="brand-link" onClick={closeMenu} to="/">
         <p className="eyebrow">Survey Portal</p>
         <h1>Survey workspace</h1>
       </Link>
-      <nav aria-label="Primary navigation">
+      <button
+        aria-controls="primary-navigation"
+        aria-expanded={isMenuOpen}
+        className="nav-toggle"
+        onClick={() => setIsMenuOpen((open) => !open)}
+        type="button"
+      >
+        <span aria-hidden="true" className="nav-toggle-icon" />
+        Menu
+      </button>
+      <nav
+        aria-label="Primary navigation"
+        className={isMenuOpen ? "primary-nav open" : "primary-nav"}
+        id="primary-navigation"
+      >
+        {isAuthenticated && user ? (
+          <div className="nav-identity" aria-label="Signed in account">
+            <span className="nav-identity-name">
+              {user.firstName} {user.lastName}
+            </span>
+            <span className={`nav-identity-role ${user.role}`}>
+              {user.role === "admin" ? "Admin" : "User"}
+            </span>
+          </div>
+        ) : null}
         {links.map((link) => (
           <NavLink
             className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
             key={link.to}
+            onClick={closeMenu}
             to={link.to}
           >
             {link.label}

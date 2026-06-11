@@ -4,10 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { createSurvey, fetchAdminSurveys } from "../../api/surveys.js";
 import { readFormText, readNullableFormText } from "../../components/admin/builderForm.js";
-import { useAuth } from "../../auth/AuthContext.js";
 
 export function AdminSurveysOverview() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,11 +68,6 @@ export function AdminSurveysOverview() {
         </p>
       </div>
 
-      {user ? (
-        <p className="status muted">
-          Signed in as {user.firstName} {user.lastName}
-        </p>
-      ) : null}
       {error ? <p className="status error">{error}</p> : null}
 
       <div className="admin-overview-layout">

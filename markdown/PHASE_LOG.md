@@ -1715,3 +1715,37 @@ Post-review user adjustment:
 - Manual testing complete: Static validation complete; browser pass pending
   and tracked in `markdown/FOLLOW_UPS.md`.
 - Ready to commit: Yes, pending the user-driven browser checklist.
+
+---
+
+## UI Update — Main Nav Header And Dashboard Identity (separate from Phase 8)
+
+Date:
+2026-06-11 (earlier the same day as Phase 8)
+
+Status:
+Implemented per direct user request; not part of the Phase 8 prompt scope.
+
+Scope:
+
+- Removed the redundant `Login` link from the unauthenticated primary nav
+  (the Home page retains its primary Login action).
+- Added a mobile hamburger menu (`nav-toggle`) that collapses the primary
+  nav at widths <= 760px, replacing the old stacked/grid nav rules.
+- Moved the signed-in identity into the nav: full name plus a role chip
+  ("Admin"/"User").
+- Removed the user dashboard profile strip (name/email) and the admin
+  overview "Signed in as" line, since the navbar now carries identity.
+
+Validation:
+
+- typecheck, lint, build, and `git diff --check` passed at implementation
+  time and again within the Phase 8 validation runs.
+
+Commit note:
+
+- These changes share the working tree with Phase 8 but are an independent
+  UX task. Codex review finding F3 flagged the overlap; recommendation is to
+  commit this UI update separately (or call it out explicitly in the commit
+  message) so the reporting/test-harness diff stays tightly scoped.
+

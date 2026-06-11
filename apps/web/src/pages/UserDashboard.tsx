@@ -16,7 +16,6 @@ import {
   fetchMySurveys,
   startSurvey
 } from "../api/surveys.js";
-import { useAuth } from "../auth/AuthContext.js";
 
 interface ActiveSurveyState {
   survey: Survey;
@@ -28,7 +27,6 @@ type DraftAnswerMap<T> = Record<number, T>;
 type DraftAnswerSetter<T> = Dispatch<SetStateAction<DraftAnswerMap<T>>>;
 
 export function UserDashboard() {
-  const { user } = useAuth();
   const [summaries, setSummaries] = useState<SurveyAttemptSummary[]>([]);
   const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
   const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
@@ -278,15 +276,6 @@ export function UserDashboard() {
         <h2>Survey Dashboard</h2>
         <p>Browse available surveys, resume saved progress, and submit completed attempts.</p>
       </div>
-
-      {user ? (
-        <div className="profile-strip">
-          <span>
-            {user.firstName} {user.lastName}
-          </span>
-          <span>{user.email}</span>
-        </div>
-      ) : null}
 
       {error ? <p className="status error">{error}</p> : null}
 
