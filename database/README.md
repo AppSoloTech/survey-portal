@@ -14,14 +14,17 @@ Current migrations include:
 - `migrations/` contains ordered SQL migration files.
 - `seeds/` contains safe local seed data only.
 
-## Local Connection
+## Connection
 
-The API accepts either:
+The API, migration runner, and admin provisioning accept either:
 
-- `DATABASE_URL` or `LOCAL_DATABASE_URL`
-- split local variables: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- a connection string: `DATABASE_URL` or `LOCAL_DATABASE_URL` (dev), or
+  `HOSTED_DATABASE_URL`/`DATABASE_URL` (prod)
+- split variables: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+  (user and password are URL-encoded automatically)
 
-Use `RUN_ENV=dev` for local database access and `RUN_ENV=prod` for hosted database access.
+Connection strings win when both forms are set. Use `RUN_ENV=dev` for local
+database access and `RUN_ENV=prod` for hosted database access.
 
 ## Applying Migrations
 

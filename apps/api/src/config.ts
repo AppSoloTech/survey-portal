@@ -36,22 +36,36 @@ function readRequiredEnv(name: string): string {
 
 function readDatabaseUrl(runEnv: RunEnvironment): string {
   if (runEnv === "prod") {
-    return process.env.HOSTED_DATABASE_URL ?? readRequiredEnv("DATABASE_URL");
+    return (
+      process.env.HOSTED_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      buildDatabaseUrlFromParts()
+    );
   }
 
   return (
     process.env.LOCAL_DATABASE_URL ??
     process.env.DATABASE_URL ??
-    buildLocalDatabaseUrl()
+    buildDatabaseUrlFromParts()
   );
 }
 
-function buildLocalDatabaseUrl(): string {
-  const host = readRequiredEnv("DB_HOST");
+// Hosted environments may supply discrete DB_* settings instead of a
+// connection string; user and password are URL-encoded here so special
+// characters never need manual escaping.
+function buildDatabaseUrlFromParts(): string {
+  const host = process.env.DB_HOST;
+  const database = process.env.DB_NAME;
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+
+  if (!host || !database || !user || !password) {
+    throw new Error(
+      "Database configuration is required: set DATABASE_URL (or HOSTED_DATABASE_URL), or set DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD"
+    );
+  }
+
   const port = process.env.DB_PORT ?? "5432";
-  const database = readRequiredEnv("DB_NAME");
-  const user = readRequiredEnv("DB_USER");
-  const password = readRequiredEnv("DB_PASSWORD");
 
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
 }

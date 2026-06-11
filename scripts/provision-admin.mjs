@@ -130,11 +130,12 @@ function resolveDatabaseUrl() {
     throw new Error("RUN_ENV must be either dev or prod");
   }
 
-  if (runEnv === "prod") {
-    return process.env.HOSTED_DATABASE_URL ?? readRequiredEnv("DATABASE_URL");
-  }
-
-  const url = process.env.LOCAL_DATABASE_URL ?? process.env.DATABASE_URL;
+  // Both environments accept a connection string or discrete DB_* settings;
+  // hosted platforms often configure the parts individually.
+  const url =
+    runEnv === "prod"
+      ? process.env.HOSTED_DATABASE_URL ?? process.env.DATABASE_URL
+      : process.env.LOCAL_DATABASE_URL ?? process.env.DATABASE_URL;
 
   if (url) {
     return url;

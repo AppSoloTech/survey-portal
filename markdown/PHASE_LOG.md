@@ -2357,3 +2357,24 @@ Date:
   certificate verification succeeded. The check used a read-only query and
   the default `postgres` database; choosing a dedicated application
   database plus migration/provisioning are tracked in FOLLOW_UPS.
+
+## Phase 10 — Hosted DB Configuration via Discrete Variables
+
+Date:
+2026-06-11
+
+The Azure Web App is configured with discrete `DB_HOST`/`DB_PORT`/`DB_NAME`/
+`DB_USER`/`DB_PASSWORD` settings rather than a `DATABASE_URL` connection
+string. Production previously hard-required `HOSTED_DATABASE_URL` or
+`DATABASE_URL`; the prod branch in `apps/api/src/config.ts`,
+`scripts/migrate-db.mjs`, and `scripts/provision-admin.mjs` now falls back to
+building the connection string from the `DB_*` parts (connection strings win
+when both forms are set; user/password are URL-encoded automatically, which
+also sidesteps manual escaping of special characters). Missing configuration
+now produces one clear error naming both options. Documented in
+`.env.example` and `database/README.md`.
+
+Verified by importing the built config in an Azure-like environment (no
+`.env` file, `RUN_ENV=prod`, only `DB_*` + `JWT_SECRET`): the URL resolves
+to the provided host/database with encoded credentials. Full validation
+gate rerun: typecheck, lint, build, 150/150 tests, `git diff --check`.
