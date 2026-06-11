@@ -141,7 +141,9 @@ export const config = {
   runEnv,
   isProduction,
   port: Number(process.env.PORT ?? 3000),
-  host: process.env.API_HOST ?? "127.0.0.1",
+  // Hosted platforms route traffic into the container from outside, so
+  // production must bind all interfaces; dev stays loopback-only.
+  host: process.env.API_HOST ?? (isProduction ? "0.0.0.0" : "127.0.0.1"),
   webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
   databaseUrl: readDatabaseUrl(runEnv),
   databaseSslCa: readOptionalDatabaseSslCa(),
