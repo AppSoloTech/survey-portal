@@ -1,51 +1,20 @@
-import {
-  resolveNextQuestion,
-  type Survey,
-  type SurveyAttempt,
-  type SurveyAttemptStatus,
-  type SurveyAttemptSummary,
-  type SurveyQuestion,
-  type SurveyResponseAnswer
-} from "@survey-portal/shared";
-import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import type { SurveyAttemptStatus, SurveyAttemptSummary } from "@survey-portal/shared";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import {
-  answerSurvey,
-  completeSurvey,
-  fetchMySurvey,
-  fetchMySurveys,
-  startSurvey
-} from "../api/surveys.js";
+import { fetchMySurveys } from "../api/surveys.js";
 
-interface ActiveSurveyState {
-  survey: Survey;
-  attempt: SurveyAttempt;
-  currentQuestion: SurveyQuestion | null;
-}
-
-type DraftAnswerMap<T> = Record<number, T>;
-type DraftAnswerSetter<T> = Dispatch<SetStateAction<DraftAnswerMap<T>>>;
+const surveysPerPage = 9;
+const allCategoriesFilter = "__all__";
+const uncategorizedLabel = "More surveys";
 
 export function UserDashboard() {
+  const navigate = useNavigate();
   const [summaries, setSummaries] = useState<SurveyAttemptSummary[]>([]);
-  const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
-  const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
-  const [answerIntegerByQuestionId, setAnswerIntegerByQuestionId] = useState<
-    DraftAnswerMap<string>
-  >({});
-  const [selectedAnswerOptionIdsByQuestionId, setSelectedAnswerOptionIdsByQuestionId] = useState<
-    DraftAnswerMap<number[]>
-  >({});
   const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const currentQuestionId = activeSurvey?.currentQuestion?.id ?? null;
-  const answerText = currentQuestionId ? answerTextByQuestionId[currentQuestionId] ?? "" : "";
-  const answerInteger = currentQuestionId ? answerIntegerByQuestionId[currentQuestionId] ?? "" : "";
-  const selectedAnswerOptionIds = currentQuestionId
-    ? selectedAnswerOptionIdsByQuestionId[currentQuestionId] ?? []
-    : [];
+  const [categoryFilter, setCategoryFilter] = useState(allCategoriesFilter);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let isActive = true;
@@ -72,201 +41,66 @@ export function UserDashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!activeSurvey) {
-      setAnswerTextByQuestionId({});
-      setAnswerIntegerByQuestionId({});
-      setSelectedAnswerOptionIdsByQuestionId({});
-      return;
+  const categoryNames = useMemo(() => {
+    const names = new Set<string>();
+
+    for (const summary of summaries) {
+      if (summary.survey.categoryName) {
+        names.add(summary.survey.categoryName);
+      }
     }
 
-    setAnswerTextByQuestionId((current) =>
-      hydrateDrafts(current, activeSurvey.attempt, (response) => response.answerText ?? "")
+    return [...names].sort((left, right) => left.localeCompare(right));
+  }, [summaries]);
+
+  const filteredSummaries = useMemo(() => {
+    if (categoryFilter === allCategoriesFilter) {
+      return summaries;
+    }
+
+    return summaries.filter(
+      (summary) => (summary.survey.categoryName ?? uncategorizedLabel) === categoryFilter
     );
-    setAnswerIntegerByQuestionId((current) =>
-      hydrateDrafts(current, activeSurvey.attempt, (response) =>
-        response.answerInteger === null || response.answerInteger === undefined
-          ? ""
-          : String(response.answerInteger)
-      )
-    );
-    setSelectedAnswerOptionIdsByQuestionId((current) =>
-      hydrateDrafts(current, activeSurvey.attempt, (response) => [
-        ...response.selectedAnswerOptionIds
-      ])
-    );
-  }, [activeSurvey?.attempt]);
+  }, [categoryFilter, summaries]);
 
-  async function reloadSummaries() {
-    const response = await fetchMySurveys();
-    setSummaries(response.surveys);
-  }
+  const pageCount = Math.max(1, Math.ceil(filteredSummaries.length / surveysPerPage));
+  const safePage = Math.min(page, pageCount);
+  const pagedSummaries = filteredSummaries.slice(
+    (safePage - 1) * surveysPerPage,
+    safePage * surveysPerPage
+  );
 
-  async function handleStart(summary: SurveyAttemptSummary) {
-    setError(null);
-    setIsSubmitting(true);
+  const groupedSummaries = useMemo(() => {
+    const groups = new Map<string, SurveyAttemptSummary[]>();
 
-    try {
-      const response = summary.attempt
-        ? await fetchMySurvey(summary.attempt.id)
-        : await startSurvey(summary.survey.id);
-      setActiveSurvey(response);
-      await reloadSummaries();
-    } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "Could not open survey");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  async function handleSubmitAnswer(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!activeSurvey?.currentQuestion) {
-      return;
+    for (const summary of pagedSummaries) {
+      const groupName = summary.survey.categoryName ?? uncategorizedLabel;
+      const group = groups.get(groupName) ?? [];
+      group.push(summary);
+      groups.set(groupName, group);
     }
 
-    const question = activeSurvey.currentQuestion;
-    const integerValue = answerInteger.trim() ? Number(answerInteger) : null;
+    // Named categories first (alphabetical), the uncategorized group last.
+    return [...groups.entries()].sort(([left], [right]) => {
+      if (left === uncategorizedLabel) {
+        return 1;
+      }
 
-    if (
-      question.questionType === "integer" &&
-      integerValue !== null &&
-      !Number.isInteger(integerValue)
-    ) {
-      setError("Enter a whole number");
-      return;
-    }
+      if (right === uncategorizedLabel) {
+        return -1;
+      }
 
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const response = await answerSurvey({
-        surveyId: activeSurvey.survey.id,
-        attemptId: activeSurvey.attempt.id,
-        questionId: question.id,
-        answerText: question.questionType === "text" ? answerText : null,
-        answerInteger: question.questionType === "integer" ? integerValue : null,
-        selectedAnswerOptionIds:
-          question.questionType === "single_select" ||
-          question.questionType === "multi_select" ||
-          question.questionType === "scale"
-            ? selectedAnswerOptionIds
-            : []
-      });
-
-      setActiveSurvey({
-        survey: activeSurvey.survey,
-        attempt: response.attempt,
-        currentQuestion: response.currentQuestion
-      });
-      await reloadSummaries();
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Could not save answer");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  async function handleComplete() {
-    if (!activeSurvey) {
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const response = await completeSurvey({
-        surveyId: activeSurvey.survey.id,
-        attemptId: activeSurvey.attempt.id
-      });
-      setActiveSurvey({
-        survey: activeSurvey.survey,
-        attempt: response.attempt,
-        currentQuestion: null
-      });
-      await reloadSummaries();
-    } catch (completeError) {
-      setError(completeError instanceof Error ? completeError.message : "Could not submit survey");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  function handlePrevious() {
-    if (!activeSurvey) {
-      return;
-    }
-
-    const previousQuestion = findPreviousQuestion(
-      activeSurvey.survey,
-      activeSurvey.attempt,
-      activeSurvey.currentQuestion
-    );
-
-    if (previousQuestion) {
-      setActiveSurvey({
-        ...activeSurvey,
-        currentQuestion: previousQuestion
-      });
-      setError(null);
-    }
-  }
-
-  function handleSelection(optionId: number, checked: boolean) {
-    const question = activeSurvey?.currentQuestion;
-
-    if (!question) {
-      return;
-    }
-
-    if (question.questionType === "single_select" || question.questionType === "scale") {
-      setSelectedAnswerOptionIdsByQuestionId((current) => ({
-        ...current,
-        [question.id]: [optionId]
-      }));
-      return;
-    }
-
-    setSelectedAnswerOptionIdsByQuestionId((current) => {
-      const selectedIds = current[question.id] ?? [];
-
-      return {
-        ...current,
-        [question.id]: checked
-          ? [...selectedIds, optionId]
-          : selectedIds.filter((id) => id !== optionId)
-      };
+      return left.localeCompare(right);
     });
+  }, [pagedSummaries]);
+
+  function handleFilterChange(filter: string) {
+    setCategoryFilter(filter);
+    setPage(1);
   }
 
-  function handleTextChange(value: string) {
-    if (!activeSurvey?.currentQuestion) {
-      return;
-    }
-
-    const questionId = activeSurvey.currentQuestion.id;
-
-    setDraftAnswer(setAnswerTextByQuestionId, questionId, value);
-  }
-
-  function handleIntegerChange(value: string) {
-    if (!activeSurvey?.currentQuestion) {
-      return;
-    }
-
-    const questionId = activeSurvey.currentQuestion.id;
-
-    setDraftAnswer(setAnswerIntegerByQuestionId, questionId, value);
-  }
-
-  function handleCloseSurvey() {
-    setActiveSurvey(null);
-    setAnswerTextByQuestionId({});
-    setAnswerIntegerByQuestionId({});
-    setSelectedAnswerOptionIdsByQuestionId({});
+  function openSurvey(summary: SurveyAttemptSummary) {
+    navigate(`/surveys/${summary.survey.id}/attempt`);
   }
 
   return (
@@ -274,20 +108,45 @@ export function UserDashboard() {
       <div className="page-header">
         <p className="eyebrow">User portal</p>
         <h2>Survey Dashboard</h2>
-        <p>Browse available surveys, resume saved progress, and submit completed attempts.</p>
+        <p>Browse available surveys, resume saved progress, and review completed attempts.</p>
       </div>
 
       {error ? <p className="status error">{error}</p> : null}
+      {isLoading ? <p className="status muted">Loading surveys...</p> : null}
+      {!isLoading && summaries.length === 0 ? (
+        <p className="status muted">No published surveys are available.</p>
+      ) : null}
 
-      <div className={activeSurvey ? "survey-workspace survey-active" : "survey-workspace"}>
-        <div className="survey-list-panel">
-          <h3>My surveys</h3>
-          {isLoading ? <p className="status muted">Loading surveys...</p> : null}
-          {!isLoading && summaries.length === 0 ? (
-            <p className="status muted">No published surveys are available.</p>
+      {categoryNames.length > 0 ? (
+        <div aria-label="Filter surveys by category" className="category-filter-row" role="group">
+          <FilterChip
+            isActive={categoryFilter === allCategoriesFilter}
+            label="All surveys"
+            onClick={() => handleFilterChange(allCategoriesFilter)}
+          />
+          {categoryNames.map((name) => (
+            <FilterChip
+              isActive={categoryFilter === name}
+              key={name}
+              label={name}
+              onClick={() => handleFilterChange(name)}
+            />
+          ))}
+          {summaries.some((summary) => !summary.survey.categoryName) ? (
+            <FilterChip
+              isActive={categoryFilter === uncategorizedLabel}
+              label={uncategorizedLabel}
+              onClick={() => handleFilterChange(uncategorizedLabel)}
+            />
           ) : null}
-          <div className="survey-list">
-            {summaries.map((summary) => (
+        </div>
+      ) : null}
+
+      {groupedSummaries.map(([groupName, groupSummaries]) => (
+        <div className="survey-category-group" key={groupName}>
+          {categoryNames.length > 0 ? <h3 className="survey-category-title">{groupName}</h3> : null}
+          <div className="survey-grid">
+            {groupSummaries.map((summary) => (
               <article className="survey-card" key={summary.survey.id}>
                 <div>
                   <h4>{summary.survey.title}</h4>
@@ -301,8 +160,7 @@ export function UserDashboard() {
                     className={`button-link compact-button ${getSurveyActionButtonClass(
                       summary.attempt?.status
                     )}`}
-                    disabled={isSubmitting}
-                    onClick={() => void handleStart(summary)}
+                    onClick={() => openSurvey(summary)}
                     type="button"
                   >
                     {getSurveyActionLabel(summary.attempt?.status)}
@@ -312,337 +170,54 @@ export function UserDashboard() {
             ))}
           </div>
         </div>
+      ))}
 
-        <div className="survey-runner-panel">
-          {activeSurvey ? (
-            <SurveyRunner
-              activeSurvey={activeSurvey}
-              answerInteger={answerInteger}
-              answerText={answerText}
-              isSubmitting={isSubmitting}
-              onClose={handleCloseSurvey}
-              onComplete={() => void handleComplete()}
-              onIntegerChange={handleIntegerChange}
-              onPrevious={handlePrevious}
-              onSelectionChange={handleSelection}
-              onSubmit={handleSubmitAnswer}
-              onTextChange={handleTextChange}
-              selectedAnswerOptionIds={selectedAnswerOptionIds}
-            />
-          ) : (
-            <div className="empty-panel">
-              <h3>Choose a survey</h3>
-              <p className="muted">
-                Select an available survey to start, resume saved progress, or review a
-                completed attempt.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SurveyRunner({
-  activeSurvey,
-  answerInteger,
-  answerText,
-  isSubmitting,
-  onClose,
-  onComplete,
-  onIntegerChange,
-  onPrevious,
-  onSelectionChange,
-  onSubmit,
-  onTextChange,
-  selectedAnswerOptionIds
-}: {
-  activeSurvey: ActiveSurveyState;
-  answerInteger: string;
-  answerText: string;
-  isSubmitting: boolean;
-  onClose: () => void;
-  onComplete: () => void;
-  onIntegerChange: (value: string) => void;
-  onPrevious: () => void;
-  onSelectionChange: (optionId: number, checked: boolean) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onTextChange: (value: string) => void;
-  selectedAnswerOptionIds: number[];
-}) {
-  const { survey, attempt, currentQuestion } = activeSurvey;
-  const previousQuestion = findPreviousQuestion(survey, attempt, currentQuestion);
-
-  if (!currentQuestion) {
-    const savedAnswerCount = countSavedAnswers(attempt);
-    const isCompleted = attempt.status === "completed";
-
-    return (
-      <div className="completion-panel">
-        <div className="completion-heading">
-          <div>
-            <p className="eyebrow">{survey.title}</p>
-            <h3>{isCompleted ? "Survey submitted" : "Ready to submit"}</h3>
-          </div>
-          <span className={`status-pill ${attempt.status}`}>{formatAttemptStatus(attempt.status)}</span>
-        </div>
-
-        <dl className="completion-summary" aria-label="Survey attempt summary">
-          <div>
-            <dt>Saved answers</dt>
-            <dd>{savedAnswerCount}</dd>
-          </div>
-          <div>
-            <dt>Total questions</dt>
-            <dd>{survey.questions.length}</dd>
-          </div>
-        </dl>
-
-        <div className="completion-note">
-          <strong>{isCompleted ? "Your attempt is complete." : "Review before submitting."}</strong>
-          <span>
-            {isCompleted
-              ? "Your responses are saved as a completed attempt."
-              : "You can go back to review saved answers before submitting the survey."}
-          </span>
-        </div>
-        <div className="survey-actions">
+      {pageCount > 1 ? (
+        <div className="pagination-row" aria-label="Survey pages">
           <button
-            className="button-link secondary-button"
-            disabled={!previousQuestion || isSubmitting || attempt.status === "completed"}
-            onClick={onPrevious}
+            className="button-link compact-button secondary-button"
+            disabled={safePage <= 1}
+            onClick={() => setPage(safePage - 1)}
             type="button"
           >
             Previous
           </button>
+          <span className="pagination-status">
+            Page {safePage} of {pageCount}
+          </span>
           <button
-            className="button-link primary-button"
-            disabled={isSubmitting || attempt.status === "completed"}
-            onClick={onComplete}
+            className="button-link compact-button secondary-button"
+            disabled={safePage >= pageCount}
+            onClick={() => setPage(safePage + 1)}
             type="button"
           >
-            {isSubmitting ? "Submitting..." : "Submit survey"}
-          </button>
-          <button
-            className="button-link ghost-button"
-            disabled={isSubmitting}
-            onClick={onClose}
-            type="button"
-          >
-            Back to surveys
+            Next
           </button>
         </div>
-      </div>
-    );
-  }
-
-  const questionIndex = survey.questions.findIndex((question) => question.id === currentQuestion.id);
-  const progressValue = questionIndex >= 0 ? questionIndex + 1 : 1;
-
-  return (
-    <form className="question-form" key={currentQuestion.id} onSubmit={onSubmit}>
-      <div className="question-progress">
-        <div>
-          <p className="eyebrow">{survey.title}</p>
-          <h3>
-            Question {progressValue} of {survey.questions.length}
-          </h3>
-        </div>
-        <progress max={survey.questions.length} value={progressValue} />
-      </div>
-
-      <fieldset>
-        <legend>{currentQuestion.questionText}</legend>
-        {currentQuestion.helpText ? <p className="muted">{currentQuestion.helpText}</p> : null}
-        {renderQuestionControl({
-          answerInteger,
-          answerText,
-          currentQuestion,
-          onIntegerChange,
-          onSelectionChange,
-          onTextChange,
-          selectedAnswerOptionIds
-        })}
-      </fieldset>
-
-      <div className="survey-actions">
-        <button
-          className="button-link secondary-button"
-          disabled={!previousQuestion || isSubmitting}
-          onClick={onPrevious}
-          type="button"
-        >
-          Previous
-        </button>
-        <button className="button-link primary-button" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Saving..." : "Next"}
-        </button>
-        <button
-          className="button-link ghost-button"
-          disabled={isSubmitting}
-          onClick={onClose}
-          type="button"
-        >
-          Back to surveys
-        </button>
-      </div>
-    </form>
+      ) : null}
+    </section>
   );
 }
 
-function renderQuestionControl({
-  answerInteger,
-  answerText,
-  currentQuestion,
-  onIntegerChange,
-  onSelectionChange,
-  onTextChange,
-  selectedAnswerOptionIds
+function FilterChip({
+  isActive,
+  label,
+  onClick
 }: {
-  answerInteger: string;
-  answerText: string;
-  currentQuestion: SurveyQuestion;
-  onIntegerChange: (value: string) => void;
-  onSelectionChange: (optionId: number, checked: boolean) => void;
-  onTextChange: (value: string) => void;
-  selectedAnswerOptionIds: number[];
+  isActive: boolean;
+  label: string;
+  onClick: () => void;
 }) {
-  if (currentQuestion.questionType === "text") {
-    return (
-      <textarea
-        key={currentQuestion.id}
-        onChange={(event) => onTextChange(event.target.value)}
-        required={currentQuestion.isRequired}
-        value={answerText}
-      />
-    );
-  }
-
-  if (currentQuestion.questionType === "integer") {
-    return (
-      <div className="integer-answer-control">
-        <input
-          inputMode="numeric"
-          key={currentQuestion.id}
-          onChange={(event) => onIntegerChange(event.target.value)}
-          placeholder="Enter a whole number"
-          required={currentQuestion.isRequired}
-          step={1}
-          type="number"
-          value={answerInteger}
-        />
-        <p className="input-helper-text">Use digits only. Decimals are not accepted.</p>
-      </div>
-    );
-  }
-
-  if (currentQuestion.questionType === "scale") {
-    return (
-      <div className="scale-answer-control" role="radiogroup">
-        {currentQuestion.answerOptions.map((option) => (
-          <label className="scale-answer-option" key={option.id}>
-            <input
-              checked={selectedAnswerOptionIds.includes(option.id)}
-              name={`question-${currentQuestion.id}`}
-              onChange={(event) => onSelectionChange(option.id, event.target.checked)}
-              required={currentQuestion.isRequired && selectedAnswerOptionIds.length === 0}
-              type="radio"
-            />
-            <span>{option.optionText}</span>
-          </label>
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="option-list">
-      {currentQuestion.answerOptions.map((option) => (
-        <label className="option-row" key={option.id}>
-          <input
-            checked={selectedAnswerOptionIds.includes(option.id)}
-            name={`question-${currentQuestion.id}`}
-            onChange={(event) => onSelectionChange(option.id, event.target.checked)}
-            required={
-              currentQuestion.questionType === "single_select" &&
-              currentQuestion.isRequired &&
-              selectedAnswerOptionIds.length === 0
-            }
-            type={currentQuestion.questionType === "single_select" ? "radio" : "checkbox"}
-          />
-          <span>{option.optionText}</span>
-        </label>
-      ))}
-    </div>
+    <button
+      aria-pressed={isActive}
+      className={isActive ? "category-filter-chip active" : "category-filter-chip"}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   );
-}
-
-function findPreviousQuestion(
-  survey: Survey,
-  attempt: SurveyAttempt,
-  currentQuestion: SurveyQuestion | null
-): SurveyQuestion | null {
-  const responsesByQuestionId = new Map(
-    attempt.responses.map((response) => [response.questionId, response])
-  );
-  const path: SurveyQuestion[] = [];
-  let question = findFirstQuestion(survey);
-  const visitedQuestionIds = new Set<number>();
-
-  while (question) {
-    if (visitedQuestionIds.has(question.id)) {
-      return null;
-    }
-
-    visitedQuestionIds.add(question.id);
-
-    if (currentQuestion && question.id === currentQuestion.id) {
-      return path[path.length - 1] ?? null;
-    }
-
-    path.push(question);
-    question = resolveNextQuestion(survey, question, responsesByQuestionId.get(question.id));
-  }
-
-  return currentQuestion === null ? path[path.length - 1] ?? null : null;
-}
-
-function findFirstQuestion(survey: Survey): SurveyQuestion | null {
-  return (
-    [...survey.questions].sort(
-      (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
-    )[0] ?? null
-  );
-}
-
-function hydrateDrafts<T>(
-  current: DraftAnswerMap<T>,
-  attempt: SurveyAttempt,
-  mapResponse: (response: SurveyResponseAnswer) => T
-): DraftAnswerMap<T> {
-  const next = { ...current };
-
-  for (const response of attempt.responses) {
-    next[response.questionId] = mapResponse(response);
-  }
-
-  return next;
-}
-
-function setDraftAnswer<T>(
-  setter: DraftAnswerSetter<T>,
-  questionId: number,
-  value: T
-) {
-  setter((current) => ({
-    ...current,
-    [questionId]: value
-  }));
-}
-
-function countSavedAnswers(attempt: SurveyAttempt): number {
-  return new Set(attempt.responses.map((response) => response.questionId)).size;
 }
 
 function getSurveyActionLabel(status: SurveyAttemptStatus | undefined): string {

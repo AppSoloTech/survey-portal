@@ -60,6 +60,7 @@ export async function fetchSurveyReportSummary(
   const [survey] = await fetchSurveyStructures({
     surveyId,
     includeAllStatuses: true,
+    includeDeleted: true,
     includeHiddenTags: true
   });
 
@@ -170,6 +171,7 @@ export async function fetchAdminAttemptDetail(
   const [survey] = await fetchSurveyStructures({
     surveyId,
     includeAllStatuses: true,
+    includeDeleted: true,
     includeHiddenTags: true
   });
 
@@ -205,6 +207,7 @@ export async function buildSurveyCsvExport(
   const [survey] = await fetchSurveyStructures({
     surveyId,
     includeAllStatuses: true,
+    includeDeleted: true,
     includeHiddenTags: true
   });
 

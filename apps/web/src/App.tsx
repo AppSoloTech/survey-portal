@@ -12,7 +12,10 @@ import {
 import { AdminRoute } from "./auth/AdminRoute.js";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 import { ProtectedRoute } from "./auth/ProtectedRoute.js";
+import { ToastProvider } from "./components/ToastProvider.js";
 import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
+import { AdminTagsPage } from "./pages/admin/AdminTagsPage.js";
+import { AdminUsersPage } from "./pages/admin/AdminUsersPage.js";
 import { SurveyLogicPage } from "./pages/admin/SurveyLogicPage.js";
 import { SurveyPreviewPage } from "./pages/admin/SurveyPreviewPage.js";
 import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
@@ -23,39 +26,45 @@ import { Home } from "./pages/Home.js";
 import { Login } from "./pages/Login.js";
 import { NotFound } from "./pages/NotFound.js";
 import { Register } from "./pages/Register.js";
+import { SurveyAttemptPage } from "./pages/SurveyAttemptPage.js";
 import { UserDashboard } from "./pages/UserDashboard.js";
 
 export function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div className="app-shell">
-          <Header />
+      <ToastProvider>
+        <Router>
+          <div className="app-shell">
+            <Header />
 
-          <main>
-            <Routes>
-              <Route element={<Home />} path="/" />
-              <Route element={<Login />} path="/login" />
-              <Route element={<Register />} path="/register" />
-              <Route element={<ProtectedRoute />}>
-                <Route element={<UserDashboard />} path="/dashboard" />
-              </Route>
-              <Route element={<AdminRoute />}>
-                <Route element={<AdminSurveysOverview />} path="/admin" />
-                <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
-                  <Route element={<Navigate replace to="setup" />} index />
-                  <Route element={<SurveySetupPage />} path="setup" />
-                  <Route element={<SurveyQuestionsPage />} path="questions" />
-                  <Route element={<SurveyLogicPage />} path="logic" />
-                  <Route element={<SurveyPreviewPage />} path="preview" />
-                  <Route element={<SurveyResultsPage />} path="results" />
+            <main>
+              <Routes>
+                <Route element={<Home />} path="/" />
+                <Route element={<Login />} path="/login" />
+                <Route element={<Register />} path="/register" />
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<UserDashboard />} path="/dashboard" />
+                  <Route element={<SurveyAttemptPage />} path="/surveys/:surveyId/attempt" />
                 </Route>
-              </Route>
-              <Route element={<NotFound />} path="*" />
-            </Routes>
-          </main>
-        </div>
-      </Router>
+                <Route element={<AdminRoute />}>
+                  <Route element={<AdminSurveysOverview />} path="/admin" />
+                  <Route element={<AdminUsersPage />} path="/admin/users" />
+                  <Route element={<AdminTagsPage />} path="/admin/tags" />
+                  <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
+                    <Route element={<Navigate replace to="setup" />} index />
+                    <Route element={<SurveySetupPage />} path="setup" />
+                    <Route element={<SurveyQuestionsPage />} path="questions" />
+                    <Route element={<SurveyLogicPage />} path="logic" />
+                    <Route element={<SurveyPreviewPage />} path="preview" />
+                    <Route element={<SurveyResultsPage />} path="results" />
+                  </Route>
+                </Route>
+                <Route element={<NotFound />} path="*" />
+              </Routes>
+            </main>
+          </div>
+        </Router>
+      </ToastProvider>
     </AuthProvider>
   );
 }
@@ -68,7 +77,13 @@ function Header() {
   const links = isAuthenticated
     ? [
         { to: "/dashboard", label: "Dashboard" },
-        ...(user?.role === "admin" ? [{ to: "/admin", label: "Admin workspace" }] : [])
+        ...(user?.role === "admin"
+          ? [
+              { to: "/admin", label: "Admin workspace" },
+              { to: "/admin/users", label: "Users" },
+              { to: "/admin/tags", label: "Tags" }
+            ]
+          : [])
       ]
     : [
         { to: "/", label: "Home" },
@@ -111,14 +126,15 @@ function Header() {
             <span className="nav-identity-name">
               {user.firstName} {user.lastName}
             </span>
-            <span className={`nav-identity-role ${user.role}`}>
-              {user.role === "admin" ? "Admin" : "User"}
-            </span>
+            {user.role === "admin" ? (
+              <span className="nav-identity-role admin">Admin</span>
+            ) : null}
           </div>
         ) : null}
         {links.map((link) => (
           <NavLink
             className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+            end={link.to === "/admin"}
             key={link.to}
             onClick={closeMenu}
             to={link.to}

@@ -19,11 +19,14 @@ export interface SurveyRecord {
   title: string;
   description: string | null;
   status: SurveyStatus;
+  category_id: number | null;
+  category_name: string | null;
   created_by_user_id: number | null;
   created_at: Date;
   updated_at: Date;
   published_at: Date | null;
   retired_at: Date | null;
+  deleted_at: Date | null;
 }
 
 export interface SurveyQuestionRecord {
@@ -111,11 +114,14 @@ export function mapSurveyRecord(
     title: record.title,
     description: record.description,
     status: record.status,
+    categoryId: record.category_id,
+    categoryName: record.category_name,
     createdByUserId: record.created_by_user_id,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString(),
     publishedAt: record.published_at?.toISOString() ?? null,
     retiredAt: record.retired_at?.toISOString() ?? null,
+    deletedAt: record.deleted_at?.toISOString() ?? null,
     questions,
     conditionalLogicRules
   };
@@ -209,17 +215,21 @@ export async function fetchSurveyRecord(
 ): Promise<SurveyRecord | null> {
   const result = await queryable.query<SurveyRecord>(
     `select
-       id,
-       title,
-       description,
-       status,
-       created_by_user_id,
-       created_at,
-       updated_at,
-       published_at,
-       retired_at
+       surveys.id,
+       surveys.title,
+       surveys.description,
+       surveys.status,
+       surveys.category_id,
+       survey_categories.name as category_name,
+       surveys.created_by_user_id,
+       surveys.created_at,
+       surveys.updated_at,
+       surveys.published_at,
+       surveys.retired_at,
+       surveys.deleted_at
      from surveys
-     where id = $1`,
+     left join survey_categories on survey_categories.id = surveys.category_id
+     where surveys.id = $1`,
     [surveyId]
   );
 

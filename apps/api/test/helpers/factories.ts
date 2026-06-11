@@ -182,6 +182,63 @@ export async function setSurveyStatus(
   );
 }
 
+export async function deleteSurvey(
+  app: Express,
+  admin: TestSession,
+  surveyId: number
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app).delete(`/api/surveys/${surveyId}`).set("Cookie", admin.cookie),
+    200
+  );
+}
+
+export async function duplicateSurvey(
+  app: Express,
+  admin: TestSession,
+  surveyId: number
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app).post(`/api/surveys/${surveyId}/duplicate`).set("Cookie", admin.cookie).send({}),
+    201
+  );
+}
+
+export async function createCategory(
+  app: Express,
+  admin: TestSession,
+  name: string
+): Promise<{ id: number; name: string }> {
+  const response = await request(app)
+    .post("/api/categories")
+    .set("Cookie", admin.cookie)
+    .send({ name });
+
+  if (response.status !== 201) {
+    throw new Error(`Category create failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body.category as { id: number; name: string };
+}
+
+export async function createTagDefinition(
+  app: Express,
+  admin: TestSession,
+  tagKey: string,
+  tagValue: string
+): Promise<{ id: number; tagKey: string; tagValue: string }> {
+  const response = await request(app)
+    .post("/api/tags")
+    .set("Cookie", admin.cookie)
+    .send({ tagKey, tagValue });
+
+  if (response.status !== 201) {
+    throw new Error(`Tag create failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body.tag as { id: number; tagKey: string; tagValue: string };
+}
+
 export function findQuestion(survey: Survey, questionText: string): SurveyQuestion {
   const question = survey.questions.find((item) => item.questionText === questionText);
 

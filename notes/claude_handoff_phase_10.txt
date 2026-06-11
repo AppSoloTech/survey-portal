@@ -1,0 +1,247 @@
+Phase 10 Implementation Handoff — for Codex review
+===================================================
+
+Role note: roles are flipped this phase. Claude Code implemented Phase 10;
+Codex is the reviewer. This handoff maps every reported issue to its
+implementation, lists contract changes, and points at the riskiest spots.
+
+Source of truth:
+- Issue list: notes/phase_9_test_notes.txt (13 items)
+- Phase prompt: prompts/prompt_10.txt
+- Phase log entry: markdown/PHASE_LOG.md ("Phase 10 — Testing Pass and Issue
+  List Fixes") — includes the intake classification and assumptions.
+
+-----------------------------------------------------------------------
+1. Issue-by-issue map
+-----------------------------------------------------------------------
+
+General 1 (admin user management):
+- API: apps/api/src/routes/admin.ts — GET /api/admin/users (paginated,
+  default 20 / cap 100, never selects password_hash) and
+  PATCH /api/admin/users/:id/role (400/404/409; 409 blocks self-change).
+- Web: apps/web/src/pages/admin/AdminUsersPage.tsx (/admin/users), client
+  apps/web/src/api/admin.ts. Promote/demote disabled on the signed-in admin.
+- Tests: apps/api/test/adminUsers.test.ts.
+
+General 2 (categories):
+- Migration: database/migrations/0007_survey_categories.sql
+  (survey_categories, unique lower(name); surveys.category_id FK
+  on delete set null).
+- API: apps/api/src/routes/categories.ts mounted at /api/categories
+  (admin-only CRUD, 409 "Category already exists"); categoryId accepted on
+  survey create/update (validateSurveyBody in
+  apps/api/src/services/validation.ts; existence check via categoryExists).
+- Web: category select + inline create on SurveySetupPage.tsx; management
+  panel (CategoryManagerPanel) on AdminSurveysOverview.tsx; dashboard groups
+  by categoryName with filter chips (UserDashboard.tsx).
+- Tests: apps/api/test/categories.test.ts.
+
+General 3 (integer input):
+- IntegerStepperControl in apps/web/src/pages/SurveyAttemptPage.tsx —
+  −/+ buttons around the numeric input. Manual-only verification.
+
+General 4 (scale slider):
+- ScaleSliderControl in SurveyAttemptPage.tsx — native <input type="range">
+  with step=1, min/max from scaleMin/scaleMax, current-value badge, min/max
+  labels. The slider maps the value to the option whose optionText matches
+  String(value); selection state contract with the answer endpoint is
+  unchanged. Required scale questions get a pre-submit check ("Choose a value
+  on the scale"). Manual-only verification for feel.
+
+Login/Register 5:
+- apps/web/src/pages/Login.tsx, Register.tsx wrapped in .auth-page/.auth-card
+  (styles.css Phase 10 block). Manual-only verification.
+
+User 1/2/3 (dashboard rework, dedicated screen, count delta):
+- New route /surveys/:surveyId/attempt (apps/web/src/pages/SurveyAttemptPage.tsx)
+  with breadcrumbs "Dashboard / <survey title>". On mount it checks
+  /api/my-surveys for an existing attempt (resume; abandoned starts fresh per
+  attempt policy) else POST /:id/start — refresh-safe.
+- UserDashboard.tsx is now a full-width card grid grouped by category,
+  client-paginated (9/page); "Choose a survey" panel removed.
+- Count fix: new shared resolveAttemptPath (packages/shared/src/index.ts)
+  resolves the actual navigation path; the runner shows "Question x of y" and
+  "Answered / Questions on your path" against that path, so skip-logic
+  surveys reconcile. The server walks in
+  apps/api/src/services/surveyAttempts.ts (determineCurrentQuestion,
+  validateReachedRequiredQuestions) were refactored onto the same helper —
+  this is behavior-preserving refactoring; see "Review pointers".
+- Tests: packages/shared/test/resolveAttemptPath.test.ts; existing
+  attemptLifecycle/conditionalNavigation suites still pass unchanged.
+
+User 4 (nav pill):
+- apps/web/src/App.tsx Header — pill renders only for admins.
+
+Admin 1 (workspace pagination):
+- AdminSurveysOverview.tsx — 10/page client pagination; completion reports
+  now fetched only for the visible page.
+
+Admin 2 (survey CRUD):
+- Soft delete: migration 0006_survey_soft_delete.sql (surveys.deleted_at).
+  DELETE /api/surveys/:id (admin) stamps deleted_at; 409 if already deleted.
+  Visibility filters: fetchSurveyStructures gained includeDeleted (default
+  false) in apps/api/src/services/surveyStructure.ts; buildMySurveysResponse
+  CTE filters both branches; start 404; answer/complete 409 ("Survey has been
+  deleted"); rejectDeletedSurvey middleware blocks all builder mutations.
+  Admin GET /:id (includeDeleted: isAdmin) and all reporting endpoints
+  (includeDeleted: true in surveyReporting.ts) keep analytics access.
+- Duplicate (clone-on-edit): POST /api/surveys/:id/duplicate →
+  duplicateSurveyTree in apps/api/src/services/surveyBuilder.ts — transactional
+  copy of survey (+category), questions, options, tags, rules with old→new ID
+  maps; throws if a rule reference fails to remap. Always a draft titled
+  "<title> (copy)"; attempts not copied. Web: "Create editable draft copy"
+  button in SurveyWorkspaceLayout.tsx header for non-draft surveys; per-row
+  Delete on the overview with confirm copy stating responses are kept.
+- Tests: apps/api/test/surveyDeletion.test.ts, surveyDuplicate.test.ts.
+
+Admin 3 (toasts):
+- apps/web/src/components/ToastProvider.tsx (context + fixed stack,
+  auto-dismiss 4s, click to dismiss). SurveyWorkspaceLayout routes mutation
+  success messages to toasts; errors stay inline. The persistent notice
+  paragraph is gone.
+
+Admin 4 (tag catalog):
+- Migration 0008_tag_definitions.sql — tag_definitions with
+  unique (tag_key, tag_value), backfilled from answer_tags.
+- API: apps/api/src/routes/tags.ts at /api/tags (admin-only CRUD, 409 "Tag
+  already exists"). Inline registration: the answer-tag POST/PUT handlers in
+  surveyBuilderRoutes.ts call registerTagDefinition (on conflict do nothing).
+- Web: new /admin/tags page (AdminTagsPage.tsx) with as-you-type duplicate
+  warning; the questions page consumes the catalog as suggestions (replacing
+  the session-only TagPresetManager, which was removed) and TagFields warns
+  on duplicate key/value pairs per option (SurveyBuilderComponents.tsx).
+- Tests: apps/api/test/tagCatalog.test.ts.
+
+-----------------------------------------------------------------------
+2. Contract changes
+-----------------------------------------------------------------------
+
+New endpoints (all admin-only unless noted):
+- GET /api/admin/users?page&pageSize, PATCH /api/admin/users/:id/role
+- DELETE /api/surveys/:id, POST /api/surveys/:id/duplicate
+- GET/POST/PUT/DELETE /api/categories[/:id]
+- GET/POST/PUT/DELETE /api/tags[/:id]
+
+Changed payloads:
+- Survey gained categoryId, categoryName, deletedAt (additive). Survey
+  create/update bodies accept optional categoryId.
+- Shared types added: SurveyCategory(+Responses), TagDefinition(+Responses),
+  AdminUserSummary, AdminUsersListResponse, AdminUserRoleResponse,
+  AttemptPathResult, resolveAttemptPath.
+
+Behavior changes:
+- POST /api/surveys/:id/start now checks the survey row first; deleted
+  surveys 404 on both resume and fresh-start paths (previously a deleted
+  survey could not exist). Non-published handling unchanged.
+- answer/complete return 409 for deleted surveys before attempt checks.
+
+Constraint preservation (verified by tests):
+- Error shape { "error": string } everywhere, including the new routers.
+- Hidden tags: catalog and tag routes are requireRole("admin");
+  participant payloads asserted tag-free via collectObjectKeys in
+  surveyDuplicate/categories tests; existing surveyVisibility suite untouched
+  and passing.
+- Attempt policy untouched: completed blocks restart (409), abandoned starts
+  fresh; clone is intentionally an independent survey (documented).
+- Migrations are add-only; 0001–0005 untouched.
+
+-----------------------------------------------------------------------
+3. Review pointers (highest-value places to look)
+-----------------------------------------------------------------------
+
+1. Soft-delete leak surface — the filter must hold at every participant
+   path: surveyStructure.ts (includeDeleted default false),
+   surveyAttempts.ts buildMySurveysResponse CTE (both branches),
+   surveyAttemptRoutes.ts (start/answer/complete), surveyReadRoutes.ts
+   (list always filtered; GET /:id includeDeleted only for admins).
+   surveyDeletion.test.ts covers each; check for any query site I missed.
+2. resolveAttemptPath refactor equivalence — compare the new loop bodies of
+   determineCurrentQuestion / validateReachedRequiredQuestions against the
+   pre-phase versions (git diff). Subtlety: the loop-error precedence in
+   validateReachedRequiredQuestions (required-unanswered beats loop error,
+   matching the old walk order) and determineCurrentQuestion returning null
+   on loops.
+3. Rule remap in duplicateSurveyTree — a missed remap silently corrupts
+   skip logic. The test asserts all rule FKs resolve inside the clone; check
+   the throw path and transaction rollback.
+4. rejectDeletedSurvey middleware ordering — it is listed after
+   requireAuth/requireRole on each builder route (never router-level, which
+   would intercept the attempt router mounted after the builder router in
+   surveys.ts). Verify no builder route lost the guard (POST "/" needs none).
+5. SurveyAttemptPage extraction — the runner was moved from
+   UserDashboard.tsx mostly verbatim; the new pieces are the mount-time
+   resume logic, path-based Previous, stepper, and slider. The slider keeps
+   "no selection" until interaction so required validation still bites.
+6. Admin users SQL — confirm no password_hash in any projection.
+
+-----------------------------------------------------------------------
+4. Validation results
+-----------------------------------------------------------------------
+
+npm run typecheck   passed
+npm run lint        passed
+npm run build       passed
+npm test            passed — 147/147 (shared 18, web 18, API 111)
+git diff --check    passed
+npm run db:reset    passed (applies 0001–0008 + seeds on local dev DB)
+npm run db:migrate  passed (idempotent no-op rerun)
+
+Manual-only items (not automatable in the current harness; flagged in
+FOLLOW_UPS): centered auth card, stepper/slider feel and snapping, toast
+behavior, breadcrumb/refresh recovery, dashboard grouping + pagination at
+360/768px, admin users/tags pages, delete/duplicate flows in the browser.
+
+Known accepted consequences / assumptions:
+- Clone-on-edit is an explicit button (no auto-clone on edit).
+- Users who completed an original survey can take its published clone.
+- Deleted surveys have no admin browse UI yet (reachable by id; FOLLOW_UPS).
+- Pagination is client-side at current volumes (FOLLOW_UPS for server-side).
+
+-----------------------------------------------------------------------
+5. Review fixes — round 1 (responding to Codex findings)
+-----------------------------------------------------------------------
+
+Finding 1 (published surveys structurally mutable): FIXED.
+- New rejectStructurallyLockedSurvey guard in surveyBuilderRoutes.ts on all
+  14 structural routes (question add/update/delete/reorder, option
+  add/update/delete/reorder, tag add/update/delete, rule add/update/delete).
+  409 for any non-draft (published AND retired) survey:
+  "Survey structure can only be edited while the survey is a draft. Create
+  an editable draft copy to make changes". The guard also performs the
+  deleted check (single lookup); rejectDeletedSurvey remains only on
+  PUT /:id (metadata/category — intentionally still allowed per the review
+  note), PATCH /:id/status, DELETE /:id, and POST /:id/duplicate.
+- Dead inline checks removed: draft-only checks in question add/delete and
+  option delete, plus the published type-change/scale-range checks in PUT
+  question (hasScaleRangeChanged deleted from surveyBuilder.ts — verify no
+  other consumer; grep is clean).
+- Web: QuestionEditor disables save/move/option/tag controls when the
+  survey is not a draft; SurveyLogicPage disables rule add/save/delete;
+  published/retired banners now direct to "Create editable draft copy".
+- Tests: new "published survey structural lock" describe block in
+  surveyBuilder.test.ts sweeps all structural endpoints on a published
+  survey (409 + unchanged structure), checks retired surveys, and confirms
+  metadata/category/status changes still succeed. The old
+  "Questions can only be deleted from draft surveys" assertion was updated
+  to the new guard message.
+
+Finding 2 (test cleanup misses catalog tables): FIXED.
+- survey_categories and tag_definitions added to the truncate list in
+  apps/api/test/helpers/setup.ts (identity sequences reset per test).
+
+Finding 3 (catalog edit rows lack duplicate warning): FIXED.
+- AdminTagsPage edit rows are now controlled (startEditing seeds state);
+  hasTagPair runs against the catalog excluding the edited tag id; the
+  warning renders inline and Save is disabled while the pair duplicates.
+
+Re-review pointers:
+- Confirm no structural builder route is missing the guard: every route in
+  surveyBuilderRoutes.ts should carry exactly one of
+  rejectStructurallyLockedSurvey (structural) or rejectDeletedSurvey
+  (metadata/status/delete/duplicate); POST "/" has neither (no :id).
+- The PUT question handler lost its published-only branches; verify the
+  simplified scale sync (sync on questionType === "scale", delete options on
+  scale -> non-scale change) is draft-safe — the guard guarantees draft.
+
+Validation rerun after fixes: typecheck, lint, build, npm test
+(150/150 — shared 18, web 18, API 114), git diff --check — all passed.

@@ -3,12 +3,14 @@ import express from "express";
 import { pool } from "../db.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import {
+  categoryExists,
+  duplicateSurveyTree,
   fetchNextOptionDisplayOrder,
   fetchNextQuestionDisplayOrder,
-  hasScaleRangeChanged,
   isAnswerTagUniqueViolation,
   optionHasSavedSelections,
   questionHasSavedResponses,
+  registerTagDefinition,
   reorderOptions,
   reorderQuestions,
   shiftOptionDisplayOrdersForInsert,
@@ -43,6 +45,86 @@ import {
 
 export const surveyBuilderRouter = express.Router();
 
+// Soft-deleted surveys are retained for analytics but closed to builder
+// changes. Runs after the role check so it never leaks survey state to
+// non-admin callers.
+async function rejectDeletedSurvey(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): Promise<void> {
+  const surveyId = readPositiveIntegerParam(req.params.id);
+
+  if (!surveyId) {
+    next();
+    return;
+  }
+
+  try {
+    const result = await pool.query<{ deleted_at: Date | null }>(
+      `select deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+
+    if (result.rows[0]?.deleted_at) {
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Structural mutations (questions, options, tags, rules) are draft-only:
+// published surveys are immutable so in-progress participant paths and
+// historical analytics labels cannot change. Editing a published survey
+// means duplicating it into a new draft. Metadata/category updates and
+// status changes stay separately allowed. This guard also covers the
+// deleted check so structural routes need a single lookup.
+async function rejectStructurallyLockedSurvey(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): Promise<void> {
+  const surveyId = readPositiveIntegerParam(req.params.id);
+
+  if (!surveyId) {
+    next();
+    return;
+  }
+
+  try {
+    const result = await pool.query<{ status: string; deleted_at: Date | null }>(
+      `select status, deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+    const survey = result.rows[0];
+
+    if (survey?.deleted_at) {
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
+
+    if (survey && survey.status !== "draft") {
+      res.status(409).json({
+        error:
+          "Survey structure can only be edited while the survey is a draft. Create an editable draft copy to make changes"
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res, next) => {
   try {
     const validation = validateSurveyBody(req.body);
@@ -57,12 +139,21 @@ surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res
       return;
     }
 
+    if (
+      validation.value.categoryId !== null &&
+      !(await categoryExists(pool, validation.value.categoryId))
+    ) {
+      res.status(400).json({ error: "Category not found" });
+      return;
+    }
+
     const user = (req as AuthenticatedRequest).user;
     const result = await pool.query<{ id: number }>(
       `insert into surveys (
          title,
          description,
          status,
+         category_id,
          created_by_user_id,
          published_at,
          retired_at
@@ -72,6 +163,7 @@ surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res
          $2,
          $3,
          $4,
+         $5,
          case when $3 = 'published' then now() else null end,
          case when $3 = 'retired' then now() else null end
        )
@@ -80,6 +172,7 @@ surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res
         validation.value.title,
         validation.value.description,
         validation.value.status,
+        validation.value.categoryId,
         user.id
       ]
     );
@@ -96,7 +189,7 @@ surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res
   }
 });
 
-surveyBuilderRouter.put("/:id", requireAuth, requireRole("admin"), async (req, res, next) => {
+surveyBuilderRouter.put("/:id", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
   try {
     const id = readPositiveIntegerParam(req.params.id);
 
@@ -139,6 +232,14 @@ surveyBuilderRouter.put("/:id", requireAuth, requireRole("admin"), async (req, r
       }
     }
 
+    if (
+      validation.value.categoryId !== null &&
+      !(await categoryExists(pool, validation.value.categoryId))
+    ) {
+      res.status(400).json({ error: "Category not found" });
+      return;
+    }
+
     const result = await pool.query<{ id: number }>(
       `with existing as (
          select id, published_at, retired_at
@@ -150,6 +251,7 @@ surveyBuilderRouter.put("/:id", requireAuth, requireRole("admin"), async (req, r
          title = $2,
          description = $3,
          status = $4,
+         category_id = $5,
          updated_at = now(),
          published_at = case
            when $4 = 'published' then coalesce(existing.published_at, now())
@@ -163,7 +265,13 @@ surveyBuilderRouter.put("/:id", requireAuth, requireRole("admin"), async (req, r
        from existing
        where surveys.id = existing.id
        returning surveys.id`,
-      [id, validation.value.title, validation.value.description, validation.value.status]
+      [
+        id,
+        validation.value.title,
+        validation.value.description,
+        validation.value.status,
+        validation.value.categoryId
+      ]
     );
 
     if (result.rowCount === 0) {
@@ -183,7 +291,7 @@ surveyBuilderRouter.put("/:id", requireAuth, requireRole("admin"), async (req, r
   }
 });
 
-surveyBuilderRouter.patch("/:id/status", requireAuth, requireRole("admin"), async (req, res, next) => {
+surveyBuilderRouter.patch("/:id/status", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
   const id = readPositiveIntegerParam(req.params.id);
 
   if (!id) {
@@ -267,7 +375,86 @@ surveyBuilderRouter.patch("/:id/status", requireAuth, requireRole("admin"), asyn
   }
 });
 
-surveyBuilderRouter.post("/:id/questions", requireAuth, requireRole("admin"), async (req, res, next) => {
+// Soft delete: the survey disappears from every list and participant flow
+// but its rows (attempts, responses, tags) all remain for analytics.
+surveyBuilderRouter.delete("/:id", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
+  try {
+    const id = readPositiveIntegerParam(req.params.id);
+
+    if (!id) {
+      res.status(400).json({ error: "Survey id must be a positive integer" });
+      return;
+    }
+
+    const result = await pool.query(
+      `update surveys
+       set deleted_at = now(),
+           updated_at = now()
+       where id = $1
+         and deleted_at is null`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    const [survey] = await fetchSurveyStructures({
+      surveyId: id,
+      includeAllStatuses: true,
+      includeHiddenTags: true,
+      includeDeleted: true
+    });
+
+    res.json({ survey });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Published surveys are immutable, so "editing" one means duplicating it
+// into an independent draft that can be revised and published on its own.
+surveyBuilderRouter.post("/:id/duplicate", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
+  const id = readPositiveIntegerParam(req.params.id);
+
+  if (!id) {
+    res.status(400).json({ error: "Survey id must be a positive integer" });
+    return;
+  }
+
+  const user = (req as AuthenticatedRequest).user;
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const newSurveyId = await duplicateSurveyTree(client, id, user.id);
+
+    if (!newSurveyId) {
+      await client.query("rollback");
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    await client.query("commit");
+
+    const [survey] = await fetchSurveyStructures({
+      surveyId: newSurveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: true
+    });
+
+    res.status(201).json({ survey });
+  } catch (error) {
+    await client.query("rollback");
+    next(error);
+  } finally {
+    client.release();
+  }
+});
+
+surveyBuilderRouter.post("/:id/questions", requireAuth, requireRole("admin"), rejectStructurallyLockedSurvey, async (req, res, next) => {
   const surveyId = readPositiveIntegerParam(req.params.id);
 
   if (!surveyId) {
@@ -292,12 +479,6 @@ surveyBuilderRouter.post("/:id/questions", requireAuth, requireRole("admin"), as
     if (!survey) {
       await client.query("rollback");
       res.status(404).json({ error: "Survey not found" });
-      return;
-    }
-
-    if (survey.status !== "draft") {
-      await client.query("rollback");
-      res.status(409).json({ error: "Questions can only be added to draft surveys" });
       return;
     }
 
@@ -355,6 +536,7 @@ surveyBuilderRouter.patch(
   "/:id/questions/reorder",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
 
@@ -418,6 +600,7 @@ surveyBuilderRouter.put(
   "/:id/questions/:questionId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -448,25 +631,6 @@ surveyBuilderRouter.put(
         return;
       }
 
-      if (
-        survey.status !== "draft" &&
-        question.question_type !== validation.value.questionType
-      ) {
-        await client.query("rollback");
-        res.status(400).json({ error: "Question type can only be changed before publishing" });
-        return;
-      }
-
-      if (
-        survey.status !== "draft" &&
-        question.question_type === "scale" &&
-        (await hasScaleRangeChanged(client, question.id, validation.value))
-      ) {
-        await client.query("rollback");
-        res.status(409).json({ error: "Scale ranges can only be changed before publishing" });
-        return;
-      }
-
       await client.query(
         `update survey_questions
          set question_text = $3,
@@ -486,18 +650,14 @@ surveyBuilderRouter.put(
         ]
       );
 
-      if (survey.status === "draft" && validation.value.questionType === "scale") {
+      if (validation.value.questionType === "scale") {
         await syncScaleAnswerOptions(client, questionId, {
           min: validation.value.scaleMin,
           max: validation.value.scaleMax
         });
       }
 
-      if (
-        survey.status === "draft" &&
-        question.question_type === "scale" &&
-        validation.value.questionType !== "scale"
-      ) {
+      if (question.question_type === "scale" && validation.value.questionType !== "scale") {
         await deleteAnswerOptionsForQuestion(client, questionId);
       }
 
@@ -523,6 +683,7 @@ surveyBuilderRouter.delete(
   "/:id/questions/:questionId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -537,11 +698,6 @@ surveyBuilderRouter.delete(
 
       if (!survey) {
         res.status(404).json({ error: "Survey not found" });
-        return;
-      }
-
-      if (survey.status !== "draft") {
-        res.status(409).json({ error: "Questions can only be deleted from draft surveys" });
         return;
       }
 
@@ -586,6 +742,7 @@ surveyBuilderRouter.post(
   "/:id/questions/:questionId/options",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -654,6 +811,7 @@ surveyBuilderRouter.patch(
   "/:id/questions/:questionId/options/reorder",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -724,6 +882,7 @@ surveyBuilderRouter.put(
   "/:id/questions/:questionId/options/:optionId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -787,6 +946,7 @@ surveyBuilderRouter.delete(
   "/:id/questions/:questionId/options/:optionId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -802,11 +962,6 @@ surveyBuilderRouter.delete(
 
       if (!survey) {
         res.status(404).json({ error: "Survey not found" });
-        return;
-      }
-
-      if (survey.status !== "draft") {
-        res.status(409).json({ error: "Answer options can only be deleted from draft surveys" });
         return;
       }
 
@@ -863,6 +1018,7 @@ surveyBuilderRouter.post(
   "/:id/questions/:questionId/options/:optionId/tags",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -893,6 +1049,7 @@ surveyBuilderRouter.post(
          values ($1, $2, $3)`,
         [optionId, validation.value.tagKey, validation.value.tagValue]
       );
+      await registerTagDefinition(pool, validation.value.tagKey, validation.value.tagValue);
 
       const [updatedSurvey] = await fetchSurveyStructures({
         surveyId,
@@ -916,6 +1073,7 @@ surveyBuilderRouter.put(
   "/:id/questions/:questionId/options/:optionId/tags/:tagId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -951,6 +1109,7 @@ surveyBuilderRouter.put(
            and answer_option_id = $2`,
         [tagId, optionId, validation.value.tagKey, validation.value.tagValue]
       );
+      await registerTagDefinition(pool, validation.value.tagKey, validation.value.tagValue);
 
       const [updatedSurvey] = await fetchSurveyStructures({
         surveyId,
@@ -974,6 +1133,7 @@ surveyBuilderRouter.delete(
   "/:id/questions/:questionId/options/:optionId/tags/:tagId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -1020,7 +1180,7 @@ surveyBuilderRouter.delete(
   }
 );
 
-surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), async (req, res, next) => {
+surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), rejectStructurallyLockedSurvey, async (req, res, next) => {
   const surveyId = readPositiveIntegerParam(req.params.id);
 
   if (!surveyId) {
@@ -1083,6 +1243,7 @@ surveyBuilderRouter.put(
   "/:id/rules/:ruleId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const ruleId = readPositiveIntegerParam(req.params.ruleId);
@@ -1157,6 +1318,7 @@ surveyBuilderRouter.delete(
   "/:id/rules/:ruleId",
   requireAuth,
   requireRole("admin"),
+  rejectStructurallyLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const ruleId = readPositiveIntegerParam(req.params.ruleId);

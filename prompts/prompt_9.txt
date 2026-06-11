@@ -1,0 +1,327 @@
+# Phase 9 — Deployment Hardening and Continuous Integration
+
+## Purpose
+
+Close the gap between "works locally" and "safe to host." Every item in this
+phase already exists as an accepted follow-up in `markdown/FOLLOW_UPS.md`;
+this phase batches them into the gate that must pass before the first Azure
+deployment.
+
+The phase delivers:
+
+1. Auth rate limiting and a max password length.
+2. Truthful `/api/health` readiness semantics for platform health checks.
+3. A migration runner that replaces hand-applied SQL files.
+4. Hosted-safe admin provisioning and a production seed guard.
+5. A CI workflow that runs the full validation suite on every push.
+
+The actual Azure deployment (App Service setup, DNS, secrets entry) is NOT
+part of this phase. This phase makes the codebase ready for it.
+
+## Role Note
+
+Roles return to the ORIGINAL arrangement for this phase:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+This reverses the reversal that applied during Phases 5.1 through 8. Closeout
+artifacts therefore return to the original `claude_` naming:
+
+* implementation handoff: `notes/claude_handoff_phase_9.txt`
+* Claude review: `notes/claude_review_phase_9.txt`
+
+### Context for Codex (what changed while roles were reversed)
+
+Codex last implemented in Phase 5. Phases 5.1-8 were implemented by Claude
+Code and reviewed by Codex (artifacts under `notes/codex_*`). The codebase
+has changed structurally since then:
+
+* The admin builder is now a multi-page workspace under
+  `apps/web/src/pages/admin/` (overview + setup/questions/logic/preview/
+  results tabs), not a single dashboard page.
+* `apps/api/src/routes/surveys.ts` is no longer a monolith. It composes
+  focused routers (`surveyReadRoutes`, `surveyBuilderRoutes`,
+  `surveyAttemptRoutes`, `surveyReportingRoutes`, `mySurveysRoutes`) over
+  service modules in `apps/api/src/services/`.
+* There is now an automated test harness: Vitest in every workspace,
+  supertest API route tests against a dedicated local PostgreSQL test
+  database (`TEST_DATABASE_URL`, name must contain "test"). 95 tests exist.
+  `npm test` is part of required validation from now on, and NEW BEHAVIOR IN
+  THIS PHASE MUST SHIP WITH TESTS.
+* Attempt policy is enforced: a completed attempt blocks new starts (409);
+  abandoned attempts allow a fresh start.
+* Admin reporting and CSV export exist and expose hidden tags and
+  participant emails to admins only — do not weaken those boundaries.
+
+Read `markdown/PHASE_LOG.md` entries for Phases 5.1 through 8 before
+touching code.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md (especially Phases 5.1-8)
+* markdown/REVIEW_CHECKLIST.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* README.md (setup, environment, and testing sections)
+* .env.example
+* apps/api/src/config.ts
+* apps/api/src/db.ts
+* apps/api/src/app.ts and apps/api/src/server.ts
+* apps/api/src/routes/auth.ts and apps/api/src/routes/health.ts
+* apps/api/test/helpers/ (the test database safety pattern to follow)
+* database/migrations/ and database/seeds/
+* scripts/reset-local-db.mjs (the existing guard pattern for destructive
+  database operations)
+* packages/shared/src/index.ts (HealthResponse shape)
+
+If implementation requires changing survey data structures or participant-
+facing API contracts, stop and explain before proceeding. The `/api/health`
+response shape MAY change (see Workstream 2); that is the only sanctioned
+contract change.
+
+---
+
+# Discovery Phase
+
+Before writing code, document briefly:
+
+1. How `/api/health` currently reports database status and what HTTP code it
+   returns when PostgreSQL is down.
+2. How migrations are applied today (by hand, by `scripts/reset-local-db.mjs`,
+   and by the API test harness `globalSetup`), and what state-tracking, if
+   any, exists.
+3. How the local seed creates the dev admin and why it must never run against
+   a hosted database.
+4. Where login/register handle failures today (timing-equalized 401s) so rate
+   limiting does not regress that work.
+
+Produce a short implementation plan before development.
+
+---
+
+# Workstream 1 — Auth Hardening
+
+## Rate Limiting
+
+* Add rate limiting to `POST /api/auth/login` and `POST /api/auth/register`.
+* `express-rate-limit` is an approved new dependency; prefer it over a
+  hand-rolled limiter unless a clear reason emerges.
+* Choose conservative defaults (for example, a small burst per IP per
+  15-minute window) and document them; exact numbers are an implementation
+  decision to record in the phase log.
+* Rate-limit responses must be 429 with the existing error-shape convention
+  (`{ "error": "..." }`) and must not leak limiter internals.
+* The MVP runs as a single instance behind Azure App Service; an in-memory
+  store is acceptable. Document that a shared store is needed if the app
+  ever scales horizontally.
+* Configure Express proxy trust conservatively for Azure App Service before
+  relying on IP-based rate limiting (for example, trust exactly one proxy hop,
+  not blanket `trust proxy: true`). Document the choice and why spoofed
+  `X-Forwarded-For` headers must not bypass the limiter.
+* Decide and document how the limiter behaves in tests (configurable
+  thresholds or disabled via explicit test configuration — never silently
+  off in production paths). Design the test seam so in-memory limiter state
+  cannot poison unrelated auth tests after the 429 case runs.
+
+## Max Password Length
+
+* Reject passwords longer than a documented maximum of 72 bytes after UTF-8
+  encoding at registration, with a clear 400 message.
+* Reason: bcrypt truncates input beyond 72 bytes; an explicit byte cap avoids
+  silently equivalent passwords. Keep the existing minimum of 8 characters.
+
+Tests required: 429 after exceeding the login limit (and that valid logins
+work under it), 400 for over-length passwords, and no regression to the
+generic-401 behavior.
+
+---
+
+# Workstream 2 — Health Readiness
+
+* `/api/health` must stop reporting HTTP 200 when PostgreSQL is unreachable.
+* Preferred shape: split endpoints —
+  - `GET /api/health/live` — process is up, always 200, no DB touch.
+  - `GET /api/health/ready` — 200 only when the database check passes,
+    503 otherwise.
+  - Keep `GET /api/health` working for existing consumers (the frontend
+    HealthCheck panel); either alias it to readiness or return its current
+    body with a non-2xx status when the DB is down. Choose and document.
+* Update the shared `HealthResponse` type if the body changes, and update
+  `apps/web/src/components/HealthCheck.tsx` so the Home page status panel
+  still renders correctly for both healthy and unhealthy states.
+* Do not let readiness checks hammer the database; a lightweight `select 1`
+  per request is fine at MVP scale.
+
+Tests required: ready returns 200 with DB up; ready returns 503 when the DB
+check fails (simulate via a stubbed/closed pool or a service-level seam —
+choose the simplest reliable approach); live returns 200 regardless.
+
+---
+
+# Workstream 3 — Migration Runner
+
+* Replace hand-applied SQL with a tracked migration runner.
+* Evaluate `node-pg-migrate` versus a minimal custom runner script. Bias per
+  ARCHITECTURE_PRINCIPLES is the simplest thing that:
+  - applies `database/migrations/*.sql` in filename order,
+  - records applied migrations in a `schema_migrations` table,
+  - is idempotent (re-running applies nothing new),
+  - refuses to run pending migrations against a database whose recorded
+    history does not match the files (fail loudly, never skip silently),
+  - works for local dev, the test harness, and (later) Azure.
+* Keep existing migration files unchanged; the runner must support an explicit
+  operator baseline action for an existing already-migrated database (for
+  example, `npm run db:migrate -- --baseline` or `npm run db:migrate:baseline`)
+  and document how 0001-0005 are marked applied. Never infer a baseline just
+  because a database appears populated; fail loudly unless the operator chooses
+  the baseline path.
+* Wire it in as `npm run db:migrate`. Update `scripts/reset-local-db.mjs`
+  and the API test `globalSetup` to use the same runner (or document
+  precisely why the test harness keeps its drop-and-recreate approach).
+* Either query `app_health_check` from the health check or document that
+  table as the migration-pipeline placeholder it was created to be —
+  whichever the runner decision makes natural (this closes a Phase 0
+  follow-up).
+
+Tests required: runner applies pending migrations exactly once; second run
+is a no-op; mismatch detection fails loudly. Runner tests must use isolated
+disposable database/schema state whose database name still contains "test" so
+they cannot contaminate the API route-test schema.
+
+---
+
+# Workstream 4 — Provisioning And Seed Safety
+
+* Add a hosted-safe admin provisioning command (suggested:
+  `npm run admin:provision`) that:
+  - reads admin email/name/password from environment variables or prompts,
+    never from committed files,
+  - creates the user with a bcrypt hash, or promotes an existing user,
+  - is idempotent and safe to run against a hosted database,
+  - never prints the password back and never logs the hash.
+* Verify and extend guarded seed execution. `scripts/reset-local-db.mjs`
+  already refuses `RUN_ENV !== "dev"`, refuses non-local hosts unless
+  explicitly overridden for disposable dev databases, and refuses
+  `HOSTED_DATABASE_URL`. Keep that posture. If adding a separate seed command,
+  use the same guard pattern. Raw `psql -f database/seeds/*.sql` execution is
+  forbidden and must be documented as such; raw SQL seed files cannot reliably
+  inspect `RUN_ENV`. The dev-admin seed remains local-only.
+* Document the provisioning flow in the README's deployment notes.
+
+Tests required: provisioning creates/promotes an admin idempotently
+(route-test-level or script-level — follow the test harness DB safety
+pattern); seed guard refuses under `RUN_ENV=prod`.
+
+---
+
+# Workstream 5 — Continuous Integration
+
+* Add a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs on
+  push and pull request:
+  - checkout, Node setup matching `.nvmrc` / engines (Node 24.15.0),
+  - `npm ci`,
+  - `npm run typecheck`, `npm run lint`, `npm run build`,
+  - `npm test` with a PostgreSQL service container and `TEST_DATABASE_URL`
+    pointing at a database whose name contains `test` (create it in a setup
+    step; the harness's name guard must stay satisfied),
+  - `git diff --check`.
+* Provide `JWT_SECRET` and other required env via workflow env vars with
+  test-only values; no real secrets in the workflow file.
+* The workflow must fail loudly on any step; no `continue-on-error`.
+* Keep it to one job unless there is a measured reason to split.
+
+Validation: the workflow must be syntactically valid; if it cannot be
+executed in the implementation environment, document that the first real run
+happens on push and flag it for the human to verify.
+
+---
+
+# Technical Requirements
+
+* Approved new dependencies: `express-rate-limit`, and `node-pg-migrate`
+  ONLY if the evaluation in Workstream 3 chooses it. Nothing else without a
+  documented reason.
+* All new behavior ships with tests in the existing harness; follow the
+  patterns in `apps/api/test/` (factories, test DB safety, truncation).
+* Server-side enforcement throughout; no frontend-only validation.
+* Keep error responses in the existing `{ "error": string }` shape and free
+  of implementation details.
+* Do not weaken: hidden-tag isolation, admin-only reporting, cookie auth
+  semantics, publish validation, or the attempt policy.
+* Update `.env.example` and the README for every new variable, script, or
+  behavior (rate limits, health endpoints, migration runner, provisioning,
+  CI badge/notes optional).
+
+---
+
+# Explicit Non-Goals
+
+Do NOT implement:
+
+* the actual Azure deployment, DNS, TLS, or App Service configuration
+* server-side JWT revocation or session stores
+* horizontal-scaling infrastructure (shared rate-limit stores, distributed
+  locks) beyond documenting the single-instance assumption
+* monitoring, alerting, or log aggregation beyond the health endpoints
+* any survey, reporting, or UI feature work
+* dependency upgrades unrelated to this phase
+
+---
+
+# Required Validation
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Also perform manual verification:
+
+* start the API with PostgreSQL stopped (or unreachable) and confirm
+  readiness returns 503 while liveness returns 200
+* exceed the login rate limit locally and confirm 429, then confirm a valid
+  login succeeds after the window resets
+* run `npm run db:migrate` twice against a fresh database and confirm the
+  second run is a no-op
+* run the admin provisioning command twice and confirm idempotency
+* attempt to run a seed with `RUN_ENV=prod` and confirm refusal
+
+Record results (or documented deferrals) in `markdown/PHASE_LOG.md`.
+
+---
+
+# Deliverables
+
+Provide:
+
+1. Discovery summary and implementation plan.
+2. Implementation summary per workstream, including the chosen rate-limit
+   numbers, health endpoint shape, migration runner decision (with the
+   node-pg-migrate evaluation), and provisioning flow.
+3. List of new tests by area.
+4. Manual verification results.
+5. A short deployment-readiness note: what Phase 10 (actual Azure
+   deployment) still needs from a human (secrets, database creation, App
+   Service settings).
+
+Before committing:
+
+* update `markdown/PHASE_LOG.md`
+* update `markdown/FOLLOW_UPS.md` (this phase should move at least five
+  active items to completed)
+* create the handoff at `notes/claude_handoff_phase_9.txt`
+* request Claude review using `markdown/REVIEW_CHECKLIST.md`, recorded at
+  `notes/claude_review_phase_9.txt`
+* address or document review findings before commit

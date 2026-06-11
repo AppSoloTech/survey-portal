@@ -90,13 +90,67 @@ export interface Survey {
   title: string;
   description: string | null;
   status: SurveyStatus;
+  categoryId: number | null;
+  categoryName: string | null;
   createdByUserId: number | null;
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
   retiredAt: string | null;
+  deletedAt: string | null;
   questions: SurveyQuestion[];
   conditionalLogicRules: ConditionalLogicRule[];
+}
+
+export interface SurveyCategory {
+  id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SurveyCategoriesResponse {
+  categories: SurveyCategory[];
+}
+
+export interface SurveyCategoryResponse {
+  category: SurveyCategory;
+}
+
+export interface TagDefinition {
+  id: number;
+  tagKey: string;
+  tagValue: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TagDefinitionsResponse {
+  tags: TagDefinition[];
+}
+
+export interface TagDefinitionResponse {
+  tag: TagDefinition;
+}
+
+export interface AdminUserSummary {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface AdminUsersListResponse {
+  users: AdminUserSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminUserRoleResponse {
+  user: AdminUserSummary;
 }
 
 export interface SurveyListResponse {
@@ -169,10 +223,11 @@ export interface CompleteSurveyResponse {
 }
 
 export interface HealthResponse {
-  status: "ok";
+  status: "ok" | "unavailable";
   app: "survey-portal";
   runEnv: "dev" | "prod";
   timestamp: string;
+  database: "connected" | "unavailable" | "not_checked";
 }
 
 export interface ReportParticipant {
@@ -295,4 +350,41 @@ export function resolveNextQuestion(
       .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)[0] ??
     null
   );
+}
+
+export interface AttemptPathResult {
+  path: SurveyQuestion[];
+  hasLoop: boolean;
+}
+
+// Walks the navigation path implied by the saved responses. Questions
+// without a response project forward along the normal flow, so the result
+// is the exact path for completed attempts and a best-known projection for
+// attempts still in progress. Skip-logic targets excluded from the normal
+// flow never appear unless a saved answer jumps to them.
+export function resolveAttemptPath(
+  survey: Survey,
+  responses: SurveyResponseAnswer[]
+): AttemptPathResult {
+  const responsesByQuestionId = new Map(
+    responses.map((response) => [response.questionId, response])
+  );
+  const path: SurveyQuestion[] = [];
+  const visitedQuestionIds = new Set<number>();
+  let question: SurveyQuestion | null =
+    [...survey.questions].sort(
+      (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
+    )[0] ?? null;
+
+  while (question) {
+    if (visitedQuestionIds.has(question.id)) {
+      return { path, hasLoop: true };
+    }
+
+    visitedQuestionIds.add(question.id);
+    path.push(question);
+    question = resolveNextQuestion(survey, question, responsesByQuestionId.get(question.id));
+  }
+
+  return { path, hasLoop: false };
 }

@@ -1,5 +1,6 @@
 import express from "express";
 import pg from "pg";
+import { MemoryStore, rateLimit } from "express-rate-limit";
 
 import {
   hashPassword,
@@ -12,14 +13,41 @@ import {
   type UserRecord,
   type UserWithPasswordRecord
 } from "../auth.js";
+import { config } from "../config.js";
 import { pool } from "../db.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 
 const { DatabaseError } = pg;
+const maxPasswordBytes = 72;
+
+const loginRateLimitStore = new MemoryStore();
+const registerRateLimitStore = new MemoryStore();
+
+const authRateLimitHandler: express.RequestHandler = (_req, res) => {
+  res.status(429).json({ error: "Too many authentication attempts. Please try again later." });
+};
+
+const loginRateLimiter = rateLimit({
+  windowMs: config.authRateLimitWindowMs,
+  limit: config.authLoginRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: loginRateLimitStore,
+  handler: authRateLimitHandler
+});
+
+const registerRateLimiter = rateLimit({
+  windowMs: config.authRateLimitWindowMs,
+  limit: config.authRegisterRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: registerRateLimitStore,
+  handler: authRateLimitHandler
+});
 
 export const authRouter = express.Router();
 
-authRouter.post("/register", async (req, res, next) => {
+authRouter.post("/register", registerRateLimiter, async (req, res, next) => {
   try {
     const validation = validateRegistrationBody(req.body);
 
@@ -54,7 +82,7 @@ authRouter.post("/register", async (req, res, next) => {
   }
 });
 
-authRouter.post("/login", async (req, res, next) => {
+authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   try {
     const validation = validateLoginBody(req.body);
 
@@ -123,6 +151,10 @@ function validateRegistrationBody(body: unknown): ValidationResult<{
     return { ok: false, error: "Password must be at least 8 characters" };
   }
 
+  if (Buffer.byteLength(password, "utf8") > maxPasswordBytes) {
+    return { ok: false, error: "Password must be at most 72 bytes" };
+  }
+
   return {
     ok: true,
     value: {
@@ -176,4 +208,8 @@ function isValidEmail(email: string): boolean {
 
 function isUniqueEmailError(error: unknown): boolean {
   return error instanceof DatabaseError && error.constraint === "users_email_unique";
+}
+
+export async function resetAuthRateLimitersForTests(): Promise<void> {
+  await Promise.all([loginRateLimitStore.resetAll(), registerRateLimitStore.resetAll()]);
 }

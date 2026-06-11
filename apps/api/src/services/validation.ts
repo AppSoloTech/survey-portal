@@ -8,11 +8,13 @@ const answerOptionTextMaxLength = 240;
 const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
 const scaleRangeMaxValueCount = 21;
+const categoryNameMaxLength = 120;
 
 export function validateSurveyBody(body: unknown): ValidationResult<{
   title: string;
   description: string | null;
   status: SurveyStatus;
+  categoryId: number | null;
 }> {
   if (!isRecord(body)) {
     return { ok: false, error: "Request body is required" };
@@ -21,6 +23,7 @@ export function validateSurveyBody(body: unknown): ValidationResult<{
   const title = readTextField(body, "title");
   const description = readOptionalTextField(body, "description");
   const status = readTextField(body, "status") || "draft";
+  const categoryId = readOptionalPositiveIntegerField(body, "categoryId");
 
   if (!title) {
     return { ok: false, error: "Title is required" };
@@ -41,14 +44,37 @@ export function validateSurveyBody(body: unknown): ValidationResult<{
     return { ok: false, error: "Status must be draft, published, or retired" };
   }
 
+  if (categoryId === false) {
+    return { ok: false, error: "categoryId must be a positive integer" };
+  }
+
   return {
     ok: true,
     value: {
       title,
       description,
-      status
+      status,
+      categoryId
     }
   };
+}
+
+export function validateCategoryBody(body: unknown): ValidationResult<{ name: string }> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const name = readTextField(body, "name");
+
+  if (!name) {
+    return { ok: false, error: "Category name is required" };
+  }
+
+  if (name.length > categoryNameMaxLength) {
+    return { ok: false, error: `Category name must be ${categoryNameMaxLength} characters or fewer` };
+  }
+
+  return { ok: true, value: { name } };
 }
 
 export function validateSurveyStatusBody(body: unknown): ValidationResult<{ status: SurveyStatus }> {

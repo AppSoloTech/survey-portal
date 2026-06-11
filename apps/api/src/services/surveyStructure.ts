@@ -25,6 +25,7 @@ export interface FetchSurveyStructuresOptions {
   surveyIds?: number[];
   includeAllStatuses: boolean;
   includeHiddenTags: boolean;
+  includeDeleted?: boolean;
 }
 
 export async function fetchSurveyStructures(options: FetchSurveyStructuresOptions): Promise<Survey[]> {
@@ -32,12 +33,16 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
   const values: unknown[] = [];
 
   if (!options.includeAllStatuses) {
-    conditions.push("status = 'published'");
+    conditions.push("surveys.status = 'published'");
+  }
+
+  if (!options.includeDeleted) {
+    conditions.push("surveys.deleted_at is null");
   }
 
   if (options.surveyId !== undefined) {
     values.push(options.surveyId);
-    conditions.push(`id = $${values.length}`);
+    conditions.push(`surveys.id = $${values.length}`);
   }
 
   if (options.surveyIds !== undefined) {
@@ -46,23 +51,27 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     }
 
     values.push(options.surveyIds);
-    conditions.push(`id = any($${values.length}::int[])`);
+    conditions.push(`surveys.id = any($${values.length}::int[])`);
   }
 
   const surveysResult = await pool.query<SurveyRecord>(
     `select
-       id,
-       title,
-       description,
-       status,
-       created_by_user_id,
-       created_at,
-       updated_at,
-       published_at,
-       retired_at
+       surveys.id,
+       surveys.title,
+       surveys.description,
+       surveys.status,
+       surveys.category_id,
+       survey_categories.name as category_name,
+       surveys.created_by_user_id,
+       surveys.created_at,
+       surveys.updated_at,
+       surveys.published_at,
+       surveys.retired_at,
+       surveys.deleted_at
      from surveys
+     left join survey_categories on survey_categories.id = surveys.category_id
      ${conditions.length > 0 ? `where ${conditions.join(" and ")}` : ""}
-     order by id`,
+     order by surveys.id`,
     values
   );
 

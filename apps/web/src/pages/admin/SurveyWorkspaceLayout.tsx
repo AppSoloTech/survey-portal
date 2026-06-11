@@ -1,20 +1,11 @@
 import type { Survey, SurveyStatus } from "@survey-portal/shared";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type Dispatch,
-  type SetStateAction
-} from "react";
-import { Link, NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
-import { fetchAdminSurvey, updateSurveyStatus } from "../../api/surveys.js";
+import { duplicateSurvey, fetchAdminSurvey, updateSurveyStatus } from "../../api/surveys.js";
 import { confirmAdminAction } from "../../components/admin/builderForm.js";
-import {
-  SurveyEditStateBanner,
-  type TagPreset
-} from "../../components/admin/SurveyBuilderComponents.js";
+import { SurveyEditStateBanner } from "../../components/admin/SurveyBuilderComponents.js";
+import { useToast } from "../../components/ToastProvider.js";
 
 export interface SurveyWorkspaceContextValue {
   survey: Survey;
@@ -25,8 +16,6 @@ export interface SurveyWorkspaceContextValue {
   ) => Promise<boolean>;
   changeStatus: (status: SurveyStatus) => Promise<void>;
   setFeedback: (feedback: { error: string | null; notice: string | null }) => void;
-  customTagPresets: TagPreset[];
-  setCustomTagPresets: Dispatch<SetStateAction<TagPreset[]>>;
 }
 
 export function useSurveyWorkspace(): SurveyWorkspaceContextValue {
@@ -36,13 +25,13 @@ export function useSurveyWorkspace(): SurveyWorkspaceContextValue {
 export function SurveyWorkspaceLayout() {
   const { surveyId: surveyIdParam } = useParams();
   const surveyId = readSurveyIdParam(surveyIdParam);
+  const navigate = useNavigate();
+  const toast = useToast();
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [isLoading, setIsLoading] = useState(surveyId !== null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [customTagPresets, setCustomTagPresets] = useState<TagPreset[]>([]);
   // Mutation results are only applied while the layout still shows the survey
   // they were started for, mirroring the fetch effect's stale-response guard.
   const activeSurveyIdRef = useRef<number | null>(surveyId);
@@ -60,7 +49,6 @@ export function SurveyWorkspaceLayout() {
     setSurvey(null);
     setLoadError(null);
     setError(null);
-    setNotice(null);
     setIsSubmitting(false);
 
     fetchAdminSurvey(surveyId)
@@ -93,7 +81,6 @@ export function SurveyWorkspaceLayout() {
       const mutationSurveyId = activeSurveyIdRef.current;
 
       setError(null);
-      setNotice(null);
       setIsSubmitting(true);
 
       try {
@@ -104,7 +91,7 @@ export function SurveyWorkspaceLayout() {
         }
 
         setSurvey(response.survey);
-        setNotice(successMessage);
+        toast.success(successMessage);
         return true;
       } catch (mutationError) {
         if (activeSurveyIdRef.current !== mutationSurveyId) {
@@ -119,7 +106,7 @@ export function SurveyWorkspaceLayout() {
         }
       }
     },
-    []
+    [toast]
   );
 
   const changeStatus = useCallback(
@@ -156,10 +143,32 @@ export function SurveyWorkspaceLayout() {
   const setFeedback = useCallback(
     (feedback: { error: string | null; notice: string | null }) => {
       setError(feedback.error);
-      setNotice(feedback.notice);
+
+      if (feedback.notice) {
+        toast.success(feedback.notice);
+      }
     },
-    []
+    [toast]
   );
+
+  async function handleDuplicate() {
+    if (!survey) {
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await duplicateSurvey(survey.id);
+      toast.success("Editable draft copy created");
+      navigate(`/admin/surveys/${response.survey.id}/setup`);
+    } catch (duplicateError) {
+      setError(duplicateError instanceof Error ? duplicateError.message : "Request failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   if (surveyId === null || loadError) {
     return <WorkspaceNotFound loadError={loadError} />;
@@ -182,9 +191,7 @@ export function SurveyWorkspaceLayout() {
     isSubmitting,
     runSurveyMutation,
     changeStatus,
-    setFeedback,
-    customTagPresets,
-    setCustomTagPresets
+    setFeedback
   };
 
   return (
@@ -202,6 +209,16 @@ export function SurveyWorkspaceLayout() {
           </div>
           <div className="workspace-header-actions">
             <span className={`status-pill ${survey.status}`}>{survey.status}</span>
+            {!isDraft ? (
+              <button
+                className="button-link compact-button secondary-button"
+                disabled={isSubmitting}
+                onClick={() => void handleDuplicate()}
+                type="button"
+              >
+                Create editable draft copy
+              </button>
+            ) : null}
             <button
               className="button-link compact-button primary-button"
               disabled={isSubmitting || (!isDraft && !isRetired)}
@@ -233,7 +250,6 @@ export function SurveyWorkspaceLayout() {
       </nav>
 
       {error ? <p className="status error">{error}</p> : null}
-      {notice ? <p className="status success">{notice}</p> : null}
 
       <Outlet context={context} />
     </section>

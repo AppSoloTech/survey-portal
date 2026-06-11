@@ -42,8 +42,9 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
       <div className="builder-state-banner locked">
         <strong>Published survey</strong>
         <span>
-          Users can access this survey. Question types and delete actions are locked to
-          protect existing responses.
+          Users can access this survey. Questions, options, tags, and rules are locked to
+          protect existing responses — create an editable draft copy to make structural
+          changes. Title, description, and category stay editable.
         </span>
       </div>
     );
@@ -53,8 +54,8 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
     <div className="builder-state-banner retired">
       <strong>Retired survey</strong>
       <span>
-        New starts are paused. Review the survey, then republish if it should become
-        available again.
+        New starts are paused. The structure stays locked — create an editable draft copy
+        to make changes, or republish if the survey should become available again.
       </span>
     </div>
   );
@@ -196,7 +197,7 @@ export function QuestionEditor({
           <div className="inline-actions">
             <button
               className="button-link compact-button ghost-button"
-              disabled={isSubmitting || isFirst}
+              disabled={isSubmitting || isPublished || isFirst}
               onClick={() => void onMoveQuestion(question.id, -1)}
               type="button"
             >
@@ -204,7 +205,7 @@ export function QuestionEditor({
             </button>
             <button
               className="button-link compact-button ghost-button"
-              disabled={isSubmitting || isLast}
+              disabled={isSubmitting || isPublished || isLast}
               onClick={() => void onMoveQuestion(question.id, 1)}
               type="button"
             >
@@ -257,7 +258,7 @@ export function QuestionEditor({
         <div className="inline-actions">
           <button
             className="button-link compact-button primary-button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isPublished}
             type="submit"
           >
             Save question
@@ -308,7 +309,7 @@ export function QuestionEditor({
                   <div className="inline-actions">
                     <button
                       className="button-link compact-button ghost-button"
-                      disabled={isSubmitting || index === 0}
+                      disabled={isSubmitting || isPublished || index === 0}
                       onClick={() => void onMoveOption(question, option.id, -1)}
                       type="button"
                     >
@@ -316,7 +317,9 @@ export function QuestionEditor({
                     </button>
                     <button
                       className="button-link compact-button ghost-button"
-                      disabled={isSubmitting || index === question.answerOptions.length - 1}
+                      disabled={
+                        isSubmitting || isPublished || index === question.answerOptions.length - 1
+                      }
                       onClick={() => void onMoveOption(question, option.id, 1)}
                       type="button"
                     >
@@ -344,7 +347,7 @@ export function QuestionEditor({
                     <div className="inline-actions">
                       <button
                         className="button-link compact-button primary-button"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isPublished}
                         type="submit"
                       >
                         Save option text
@@ -379,20 +382,23 @@ export function QuestionEditor({
                       onSubmit={(event) => void onSaveTag(event, question, option, tag.id)}
                     >
                       <TagFields
+                        existingTags={(option.answerTags ?? [])
+                          .filter((item) => item.id !== tag.id)
+                          .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
                         initialTagKey={tag.tagKey}
                         initialTagValue={tag.tagValue}
                         tagPresets={tagPresets}
                       />
                       <button
                         className="button-link compact-button secondary-button"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isPublished}
                         type="submit"
                       >
                         Save tag
                       </button>
                       <button
                         className="button-link compact-button danger-button"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isPublished}
                         onClick={() => void onDeleteTag(question, option, tag.id)}
                         type="button"
                       >
@@ -405,10 +411,16 @@ export function QuestionEditor({
                     key={`add-tag-${option.id}-${option.answerTags?.length ?? 0}`}
                     onSubmit={(event) => void onAddTag(event, question, option)}
                   >
-                    <TagFields tagPresets={tagPresets} />
+                    <TagFields
+                      existingTags={(option.answerTags ?? []).map((item) => ({
+                        tagKey: item.tagKey,
+                        tagValue: item.tagValue
+                      }))}
+                      tagPresets={tagPresets}
+                    />
                     <button
                       className="button-link compact-button primary-button"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isPublished}
                       type="submit"
                     >
                       Add hidden tag
@@ -423,11 +435,11 @@ export function QuestionEditor({
             <form className="add-option-form" onSubmit={(event) => void onAddOption(event, question)}>
               <label>
                 New option text
-                <input name="optionText" required />
+                <input disabled={isPublished} name="optionText" required />
               </label>
               <button
                 className="button-link compact-button primary-button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isPublished}
                 type="submit"
               >
                 Add option
@@ -498,99 +510,6 @@ export function ScaleRangeFields({
         {disabled ? <input name="scaleMax" type="hidden" value={scaleMax} /> : null}
       </label>
     </div>
-  );
-}
-
-export function TagPresetManager({
-  customTagPresets,
-  onAddPreset,
-  onDeletePreset,
-  tagPresets
-}: {
-  customTagPresets: TagPreset[];
-  onAddPreset: (event: FormEvent<HTMLFormElement>) => void;
-  onDeletePreset: (preset: TagPreset) => void;
-  tagPresets: TagPreset[];
-}) {
-  const hasOnlyDefaultSuggestions = tagPresets.every((preset) => preset.source === "default");
-
-  return (
-    <section className="builder-form tag-preset-panel advanced-builder-section" id="survey-tags">
-      <div className="builder-section-heading">
-        <div>
-          <p className="eyebrow">Hidden tags</p>
-          <h3>Tag suggestions</h3>
-          <p className="builder-heading-note">
-            Suggestions speed up tag entry. Saved option tags remain managed on each answer option.
-          </p>
-        </div>
-      </div>
-
-      {hasOnlyDefaultSuggestions ? (
-        <div className="builder-empty-state compact">
-          <strong>Only built-in suggestions so far</strong>
-          <span>
-            Save hidden tags on answer options or add a custom suggestion to make this
-            list reflect your survey language.
-          </span>
-        </div>
-      ) : null}
-
-      <div className="tag-preset-list">
-        {tagPresets.length === 0 ? (
-          <div className="builder-empty-state compact">
-            <strong>No tag suggestions</strong>
-            <span>
-              Add a custom suggestion below, or save hidden tags on answer options to
-              build this list.
-            </span>
-          </div>
-        ) : null}
-        {tagPresets.map((preset) => {
-          const canRemove = hasCustomTagSuggestion(customTagPresets, preset);
-
-          return (
-            <span
-              className={`tag-preset-chip ${preset.source}${canRemove ? " removable" : ""}`}
-              key={`${preset.tagKey}:${preset.tagValue}`}
-            >
-              <span className="tag-preset-text">
-                <strong>{preset.tagKey}</strong>
-                <span>{preset.tagValue}</span>
-              </span>
-              <span className="tag-source-label">{formatTagPresetSource(preset.source)}</span>
-              {canRemove ? (
-                <button
-                  aria-label={`Remove ${preset.tagKey}: ${preset.tagValue}`}
-                  onClick={() => onDeletePreset(preset)}
-                  type="button"
-                >
-                  Remove custom
-                </button>
-              ) : null}
-            </span>
-          );
-        })}
-      </div>
-
-      <form className="tag-preset-form" onSubmit={onAddPreset}>
-        <label>
-          Custom suggestion key
-          <input name="tagKey" required />
-        </label>
-        <label>
-          Custom suggestion value
-          <input name="tagValue" required />
-        </label>
-        <button className="button-link compact-button secondary-button" type="submit">
-          Add suggestion
-        </button>
-      </form>
-
-      {customTagPresets.length === 0 ? (
-        <p className="muted">Custom suggestions stay in this builder session.</p>
-      ) : null}
-    </section>
   );
 }
 
@@ -699,10 +618,12 @@ function PreviewQuestionControl({ question }: { question: SurveyQuestion }) {
 }
 
 function TagFields({
+  existingTags = [],
   initialTagKey,
   initialTagValue,
   tagPresets
 }: {
+  existingTags?: { tagKey: string; tagValue: string }[];
   initialTagKey?: string;
   initialTagValue?: string;
   tagPresets: TagPreset[];
@@ -735,6 +656,8 @@ function TagFields({
     initialTagKey === activeKey ? initialTagValue : undefined
   ]);
   const isCustomValue = selectedValue === customTagOptionValue;
+  const activeValue = isCustomKey || isCustomValue || valueOptions.length === 0 ? customValue : selectedValue;
+  const isDuplicatePair = isDuplicateTagPair(existingTags, activeKey, activeValue);
 
   function handleKeyChange(nextKey: string) {
     setSelectedKey(nextKey);
@@ -802,7 +725,31 @@ function TagFields({
           </select>
         )}
       </label>
+      {isDuplicatePair ? (
+        <p className="tag-duplicate-warning" role="alert">
+          This key/value pair already exists on this option.
+        </p>
+      ) : null}
     </>
+  );
+}
+
+function isDuplicateTagPair(
+  existingTags: { tagKey: string; tagValue: string }[],
+  tagKey: string,
+  tagValue: string
+): boolean {
+  const normalizedKey = tagKey.trim().toLowerCase();
+  const normalizedValue = tagValue.trim().toLowerCase();
+
+  if (!normalizedKey || !normalizedValue) {
+    return false;
+  }
+
+  return existingTags.some(
+    (tag) =>
+      tag.tagKey.trim().toLowerCase() === normalizedKey &&
+      tag.tagValue.trim().toLowerCase() === normalizedValue
   );
 }
 
@@ -928,24 +875,6 @@ function sortAnswerOptions(options: AnswerOption[]): AnswerOption[] {
 
 function formatCount(count: number, singularLabel: string): string {
   return `${count} ${singularLabel}${count === 1 ? "" : "s"}`;
-}
-
-function formatTagPresetSource(source: TagPreset["source"]): string {
-  if (source === "default") {
-    return "Built-in";
-  }
-
-  if (source === "survey") {
-    return "Saved in surveys";
-  }
-
-  return "Custom";
-}
-
-function hasCustomTagSuggestion(customTagPresets: TagPreset[], preset: TagPreset): boolean {
-  return customTagPresets.some(
-    (item) => item.tagKey === preset.tagKey && item.tagValue === preset.tagValue
-  );
 }
 
 function uniqueValues(values: Array<string | undefined>): string[] {

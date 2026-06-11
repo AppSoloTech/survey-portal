@@ -64,11 +64,14 @@ function makeSurvey(
     title: "Flow survey",
     description: null,
     status: "draft",
+    categoryId: null,
+    categoryName: null,
     createdByUserId: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     publishedAt: null,
     retiredAt: null,
+    deletedAt: null,
     questions,
     conditionalLogicRules
   };

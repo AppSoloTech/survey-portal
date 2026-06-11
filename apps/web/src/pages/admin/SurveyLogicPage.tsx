@@ -17,6 +17,8 @@ import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 export function SurveyLogicPage() {
   const { isSubmitting, runSurveyMutation, survey } = useSurveyWorkspace();
   const [ruleSourceQuestionId, setRuleSourceQuestionId] = useState<number | null>(null);
+  // Structural changes are draft-only; the API rejects them after publish.
+  const isLocked = survey.status !== "draft";
 
   const selectableQuestions = survey.questions.filter((question) =>
     isSelectionQuestion(question)
@@ -99,8 +101,9 @@ export function SurveyLogicPage() {
             <p className="eyebrow">Conditional logic</p>
             <h3>Jump rules</h3>
             <p className="builder-heading-note">
-              Configure optional jumps for selection questions. Targets can stay in
-              normal order or appear only when a jump reaches them.
+              {isLocked
+                ? "Jump rules are locked after publishing. Create an editable draft copy to change conditional logic."
+                : "Configure optional jumps for selection questions. Targets can stay in normal order or appear only when a jump reaches them."}
             </p>
           </div>
         </div>
@@ -166,6 +169,7 @@ export function SurveyLogicPage() {
             className="button-link compact-button primary-button"
             disabled={
               isSubmitting ||
+              isLocked ||
               !activeRuleSourceQuestion ||
               activeRuleSourceAnswerOptionCount === 0 ||
               activeRuleTargetQuestions.length === 0
@@ -189,7 +193,7 @@ export function SurveyLogicPage() {
           ) : null}
           {survey.conditionalLogicRules.map((rule) => (
             <RuleEditor
-              isSubmitting={isSubmitting}
+              isSubmitting={isSubmitting || isLocked}
               key={rule.id}
               onDeleteRule={handleDeleteRule}
               onSaveRule={handleSaveRule}

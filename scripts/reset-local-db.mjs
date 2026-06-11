@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { runMigrations } from "./migrate-db.mjs";
+
 const rootDir = process.cwd();
 const envPath = path.join(rootDir, ".env");
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -31,12 +33,7 @@ if (process.env.HOSTED_DATABASE_URL && databaseUrl === process.env.HOSTED_DATABA
   fail("Refusing to reset HOSTED_DATABASE_URL.");
 }
 
-const migrationFiles = listSqlFiles(path.join(rootDir, "database", "migrations"));
 const seedFiles = listSqlFiles(path.join(rootDir, "database", "seeds"));
-
-if (migrationFiles.length === 0) {
-  fail("No migration files found.");
-}
 
 console.log(`Resetting local database at ${databaseHost}`);
 runPsql(databaseUrl, [
@@ -46,7 +43,13 @@ runPsql(databaseUrl, [
   "drop schema if exists public cascade; create schema public;"
 ]);
 
-for (const file of [...migrationFiles, ...seedFiles]) {
+try {
+  await runMigrations({ databaseUrl });
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
+}
+
+for (const file of seedFiles) {
   console.log(`Applying ${path.relative(rootDir, file)}`);
   runPsql(databaseUrl, ["-v", "ON_ERROR_STOP=1", "-f", file]);
 }

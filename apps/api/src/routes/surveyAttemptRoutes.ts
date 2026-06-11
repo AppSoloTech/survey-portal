@@ -35,6 +35,19 @@ surveyAttemptRouter.post("/:id/start", requireAuth, async (req, res, next) => {
     }
 
     const user = (req as AuthenticatedRequest).user;
+    const surveyResult = await pool.query<{ status: string; deleted_at: Date | null }>(
+      `select status, deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+    const surveyRow = surveyResult.rows[0];
+
+    if (!surveyRow || surveyRow.deleted_at) {
+      res.status(404).json({ error: "Published survey not found" });
+      return;
+    }
+
     const existingAttempt = await fetchActiveAttempt(user.id, surveyId);
 
     if (existingAttempt) {
@@ -43,15 +56,7 @@ surveyAttemptRouter.post("/:id/start", requireAuth, async (req, res, next) => {
       return;
     }
 
-    const surveyResult = await pool.query<{ id: number }>(
-      `select id
-       from surveys
-       where id = $1
-         and status = 'published'`,
-      [surveyId]
-    );
-
-    if (surveyResult.rowCount === 0) {
+    if (surveyRow.status !== "published") {
       res.status(404).json({ error: "Published survey not found" });
       return;
     }
@@ -92,6 +97,19 @@ surveyAttemptRouter.post("/:id/answer", requireAuth, async (req, res, next) => {
 
   try {
     await client.query("begin");
+
+    const surveyRow = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+
+    if (surveyRow.rows[0]?.deleted_at) {
+      await client.query("rollback");
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
 
     const attempt = await fetchAttemptForUser(client, validation.value.attemptId, user.id, surveyId);
 
@@ -175,6 +193,18 @@ surveyAttemptRouter.post("/:id/complete", requireAuth, async (req, res, next) =>
   const user = (req as AuthenticatedRequest).user;
 
   try {
+    const surveyRow = await pool.query<{ deleted_at: Date | null }>(
+      `select deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+
+    if (surveyRow.rows[0]?.deleted_at) {
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
+
     const attempt = await fetchAttemptForUser(pool, validation.value.attemptId, user.id, surveyId);
 
     if (!attempt) {

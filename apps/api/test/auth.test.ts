@@ -54,6 +54,18 @@ describe("auth routes", () => {
 
       expect(response.status).toBe(400);
     });
+
+    it("rejects passwords longer than bcrypt's 72-byte input limit", async () => {
+      const response = await request(app).post("/api/auth/register").send({
+        first_name: "Pat",
+        last_name: "Example",
+        email: uniqueEmail(),
+        password: "a".repeat(73)
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("Password must be at most 72 bytes");
+    });
   });
 
   describe("POST /api/auth/login", () => {
@@ -74,6 +86,14 @@ describe("auth routes", () => {
       expect(extractAuthCookie(response)).toMatch(/^survey_portal_auth=/);
     });
 
+    it("allows valid logins under the configured rate limit", async () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await request(app).post("/api/auth/login").send({ email, password });
+
+        expect(response.status).toBe(200);
+      }
+    });
+
     it("rejects a wrong password with a generic 401", async () => {
       const response = await request(app)
         .post("/api/auth/login")
@@ -90,6 +110,26 @@ describe("auth routes", () => {
 
       expect(response.status).toBe(401);
       expect(response.body.error).toBe("Invalid email or password");
+    });
+
+    it("rate limits repeated login attempts with a generic 429 error shape", async () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await request(app)
+          .post("/api/auth/login")
+          .send({ email, password: "wrong-password-123" });
+
+        expect(response.status).toBe(401);
+        expect(response.body.error).toBe("Invalid email or password");
+      }
+
+      const limitedResponse = await request(app)
+        .post("/api/auth/login")
+        .send({ email, password: "wrong-password-123" });
+
+      expect(limitedResponse.status).toBe(429);
+      expect(limitedResponse.body).toEqual({
+        error: "Too many authentication attempts. Please try again later."
+      });
     });
   });
 

@@ -1963,3 +1963,397 @@ Findings addressed:
 - Manual testing complete: Automated suite complete (95 tests); browser pass
   deferred and tracked.
 - Ready to commit: Yes, pending the user-driven browser checklist.
+
+---
+
+## Phase 9 — Deployment Hardening and Continuous Integration
+
+Date:
+2026-06-11
+
+Status:
+Implemented; Claude review pending
+
+Prompt:
+`prompts/prompt_9.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Implementation handoff: `notes/claude_handoff_phase_9.txt`
+- Claude review: `notes/claude_review_phase_9.txt` (pending)
+
+## Discovery
+
+1. `/api/health` previously called `checkDatabaseConnection()` with `select 1`
+   and always returned HTTP 200, even when PostgreSQL was unavailable.
+2. Migrations were untracked. README documented hand-applied `psql -f`
+   commands; `scripts/reset-local-db.mjs` and API test `globalSetup` each
+   applied every migration file directly with no `schema_migrations` state.
+3. The local seed creates/promotes `admin@example.test` with a committed
+   development password hash and sample survey data, so it must stay local-only
+   and guarded by script-level environment checks.
+4. Login already preserved generic timing-equalized 401 behavior through a
+   decoy bcrypt comparison when no email record exists.
+
+## Built
+
+- Added `express-rate-limit` to `POST /api/auth/login` and
+  `POST /api/auth/register`.
+- Added registration password validation rejecting values longer than 72 bytes
+  after UTF-8 encoding.
+- Added conservative proxy trust config: `TRUST_PROXY_HOPS` defaults to 1 in
+  `RUN_ENV=prod` for Azure App Service and 0 otherwise.
+- Split health endpoints:
+  - `/api/health/live`: process liveness, always 200, no DB touch.
+  - `/api/health/ready`: database/schema readiness, 200 or 503.
+  - `/api/health`: readiness alias for existing consumers.
+- Updated `HealthResponse` and frontend health fetch/rendering so unhealthy
+  readiness bodies still render useful status details.
+- Added `scripts/migrate-db.mjs` and `npm run db:migrate`.
+- Added `schema_migrations` tracking with filename order, SHA-256 checksums,
+  idempotent no-op reruns, mismatch failures, and explicit `--baseline`.
+- Updated `scripts/reset-local-db.mjs` and API test `globalSetup` to use the
+  migration runner.
+- Added `scripts/provision-admin.mjs` and `npm run admin:provision` for
+  hosted-safe admin creation/promotion from environment variables or prompts.
+- Added GitHub Actions CI at `.github/workflows/ci.yml`.
+- Updated `.env.example`, README, database docs, seed docs, global environment
+  notes, and follow-up tracking.
+
+## Important Decisions
+
+### Minimal Custom Migration Runner
+
+Decision:
+Use a small custom `pg` runner instead of `node-pg-migrate`.
+
+Reason:
+The project already has ordered SQL migrations. The missing deployment need was
+state tracking, checksums, idempotency, mismatch detection, and explicit
+baseline support, all of which are straightforward without changing the
+migration authoring format.
+
+Tradeoff:
+No down migrations or migration framework features. This matches current MVP
+needs and avoids a second migration DSL.
+
+### Health Readiness Alias
+
+Decision:
+Keep `/api/health` as a readiness alias and add explicit `/live` and `/ready`
+subpaths.
+
+Reason:
+Existing frontend consumers keep working, while Azure health checks can use the
+truthful readiness endpoint. The body remains compact and shared through
+`HealthResponse`.
+
+Tradeoff:
+Existing consumers now receive 503 when the database/schema check fails, which
+is the intended hosted behavior.
+
+### In-Memory Auth Rate Limiting
+
+Decision:
+Use `express-rate-limit` with `MemoryStore`, 5 requests per 15 minutes for
+login and registration by default.
+
+Reason:
+The MVP runs as a single Azure App Service instance. The limiter is explicit,
+configurable, and covered by tests.
+
+Tradeoff:
+Horizontal scaling will require a shared limiter store; this remains tracked in
+`markdown/FOLLOW_UPS.md`.
+
+## Architecture Notes
+
+- Database/schema impact: no existing migration files were changed. The runner
+  creates `schema_migrations` outside the ordered SQL files.
+- API contract impact: `/api/health` can now return 503 and `HealthResponse`
+  includes `database`.
+- Auth impact: login/register are rate limited; registration rejects passwords
+  above bcrypt's 72-byte effective input limit.
+- Data privacy impact: hidden tags and admin reporting boundaries were not
+  touched.
+- Environment/deployment impact: added migration, provisioning, rate-limit,
+  proxy-trust, and CI configuration.
+
+## Validation
+
+Commands run:
+
+```bash
+npm install -w apps/api express-rate-limit
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `npm test` — 109/109 tests (shared 12, web 18, API 79).
+- Passed: `git diff --check`.
+- Passed: focused API test run after implementation — 79/79.
+- Note: initial sandboxed API test run failed with `EPERM 127.0.0.1:5432`;
+  reran with approved local PostgreSQL access.
+- Note: local typecheck initially saw stale shared declaration output after
+  changing `HealthResponse`; rebuilding `packages/shared` cleared it, and the
+  root `typecheck` script now builds shared first.
+- Not run: GitHub Actions workflow itself. First real execution happens after
+  push or pull request and is tracked for human verification.
+
+## Follow-Up Tasks
+
+- Verify the first GitHub Actions CI run after this workflow reaches GitHub.
+- Replace the auth rate-limit in-memory store with a shared store if the API
+  scales horizontally.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Implementation handoff created: Yes (`notes/claude_handoff_phase_9.txt`)
+- Claude review created: Pending
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes; modular monolith, SQL migrations,
+  and server-side auth remain intact.
+- Security review complete: Implementation ready for Claude review; no secrets
+  committed.
+- Review findings addressed or deferred: Pending Claude review.
+- Manual testing complete: Automated validation complete; GitHub Actions first
+  hosted run pending.
+- Ready to commit: After Claude review.
+
+## Phase 10 — Testing Pass and Issue List Fixes
+
+Date:
+2026-06-11
+
+Status:
+Implemented; Codex review pending
+
+Prompt:
+`prompts/prompt_10.txt` with the issue list from `notes/phase_9_test_notes.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Implementation/review handoff: `notes/claude_handoff_phase_10.txt`
+- Role note: roles flipped this phase — Claude Code implemented, Codex reviews.
+
+## Received Issue List (Summary And Classification)
+
+General:
+1. Admin user management with promote-to-admin — feature (authz-sensitive).
+2. Survey categories with admin-managed grouping — feature (schema).
+3. Integer question input unclear — UX polish (stepper).
+4. Scale question rendered as blocks — UX polish (snapping slider).
+
+Login/Register:
+5. Center and polish login/register — UX polish.
+
+User role:
+6. Dashboard: remove "Choose a survey" panel, fill space, pagination — UX rework.
+7. Dedicated survey-taking screen with breadcrumbs — UX rework (routing).
+8. Saved-answers vs total-questions delta under skip logic — bug (confusing data).
+9. Remove "USER" nav pill; keep the admin pill — UX polish.
+
+Admin role:
+10. Admin workspace survey-list pagination — UX polish.
+11. Survey CRUD: clone-on-edit for published surveys; delete hides from users but
+    keeps all rows for analytics — feature (schema, data safety).
+12. Persistent "Survey metadata saved" notice — UX polish (toasts).
+13. Tag/key catalog table, management page, inline registration, duplicate
+    detection — feature (schema).
+
+No item was discarded; every item was implemented this phase.
+
+## Fixes Implemented
+
+- Migrations `0006_survey_soft_delete.sql` (surveys.deleted_at + index),
+  `0007_survey_categories.sql` (survey_categories table + surveys.category_id FK,
+  on delete set null), `0008_tag_definitions.sql` (tag_definitions table with
+  unique (tag_key, tag_value), backfilled from answer_tags).
+- Admin users API: `GET /api/admin/users` (server-paginated, never selects
+  password_hash) and `PATCH /api/admin/users/:id/role` (400 invalid role,
+  404 unknown user, 409 self-change guard). New `/admin/users` page with
+  promote/demote actions (self-actions disabled).
+- Survey soft delete: `DELETE /api/surveys/:id` stamps `deleted_at`. Deleted
+  surveys vanish from `GET /api/surveys` (all roles), `/api/my-surveys`
+  (both scope branches), start (404), answer/complete (409), and all builder
+  mutations (409 via a `rejectDeletedSurvey` guard that runs after the role
+  check). Admin reads by id and all reporting endpoints still resolve deleted
+  surveys, so analytics and rows are fully retained.
+- Survey duplicate: `POST /api/surveys/:id/duplicate` clones metadata
+  (+category), questions, options, hidden tags, and conditional rules in one
+  transaction with old→new ID remapping for all rule references. Clone is
+  always a draft titled "<title> (copy)"; attempts are not copied. Surfaced as
+  "Create editable draft copy" in the workspace header for non-draft surveys.
+- Categories: admin-only CRUD at `/api/categories` (top-level mount avoids the
+  `/api/surveys/:id` route-shadowing hazard); `categoryId` accepted on survey
+  create/update with existence validation; `categoryId`/`categoryName` embedded
+  in survey payloads. Category select + inline create on the setup page, and a
+  management panel on the admin overview. The user dashboard groups surveys by
+  category with filter chips.
+- Tag catalog: admin-only CRUD at `/api/tags` (409 on duplicate pairs). Tags
+  saved on answer options register in the catalog automatically (upsert).
+  New `/admin/tags` page replaces the session-only tag suggestion manager;
+  the questions page consumes catalog entries as suggestions and warns on
+  duplicate key/value pairs per option as the admin types; submits surface the
+  server 409.
+- Path-aware progress (shared `resolveAttemptPath`): the duplicated navigation
+  walks in `apps/api/src/services/surveyAttempts.ts` and the web runner were
+  consolidated into `packages/shared`. The participant runner now shows
+  "Question x of y" and the completion summary against the resolved path, so
+  skip-logic surveys no longer show a confusing answered/total delta.
+- Dedicated attempt route `/surveys/:surveyId/attempt` with breadcrumbs
+  (Dashboard / survey title), extracted from `UserDashboard.tsx`. The page
+  recovers from refresh by resuming the active attempt server-side; abandoned
+  attempts start fresh per the attempt policy.
+- Dashboard rework: removed the "Choose a survey" panel; full-width card grid
+  grouped by category, client-side pagination (9 per page).
+- Integer questions render as a stepper (−/+ buttons around the numeric
+  input); scale questions render as a native range slider snapping to whole
+  values with a current-value badge and min/max labels.
+- Login/register centered in an `auth-card` layout.
+- "USER" nav pill removed; the admin pill remains.
+- Admin overview: client-side pagination (10 per page) with completion reports
+  fetched only for the visible page; per-row delete with a confirm dialog that
+  states response data is retained.
+- Toast notifications replace the persistent workspace notice; errors remain
+  inline.
+
+## Assumptions And Deferrals
+
+- Soft delete is a `deleted_at` column, not a status: keeps the status check
+  constraint, publish/retire timestamp logic, and the survey's last real
+  status for analytics.
+- "Edit a published survey" is an explicit duplicate button, not an automatic
+  clone on edit, matching the tester's stated default while avoiding surprise
+  drafts.
+- Users who completed the original survey may take a published clone — it is
+  an independent survey by design; documented consequence of clone-on-edit.
+- Categories are single-assignment (`surveys.category_id`), not many-to-many.
+- Tag catalog has no FK from `answer_tags`; it is a registry. Deleting a
+  catalog entry never touches saved option tags. Normalization deferred.
+- Survey-list pagination is client-side at current data volumes; a lightweight
+  server-paginated list endpoint is deferred to FOLLOW_UPS.
+
+## Tests And Validation
+
+New suites: `adminUsers.test.ts`, `surveyDeletion.test.ts`,
+`surveyDuplicate.test.ts`, `categories.test.ts`, `tagCatalog.test.ts` (API),
+`resolveAttemptPath.test.ts` (shared). New factories: `deleteSurvey`,
+`duplicateSurvey`, `createCategory`, `createTagDefinition`.
+
+```bash
+npm run typecheck   # passed
+npm run lint        # passed
+npm run build       # passed
+npm test            # passed — 147/147 (shared 18, web 18, API 111)
+git diff --check    # passed
+npm run db:reset    # passed — applies 0006–0008 + seeds
+npm run db:migrate  # passed — idempotent no-op rerun
+```
+
+Manual-only verification (documented in the handoff): slider/stepper feel,
+login centering, toast behavior, breadcrumb/refresh flow, dashboard grouping
+and pagination at mobile widths.
+
+## Commit Readiness
+
+- Requirements implemented: Yes — all 13 issues addressed.
+- Implementation handoff created: Yes (`notes/claude_handoff_phase_10.txt`)
+- Codex review created: Pending
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes; error shape, hidden-tag
+  isolation, cookie auth, attempt policy, and add-only migrations preserved.
+- Ready to commit: After Codex review.
+
+## Phase 10 — Codex Review Fixes (Round 1)
+
+Date:
+2026-06-11
+
+Findings addressed (from Codex source review):
+
+1. Published surveys were still structurally mutable through builder
+   endpoints (question text/required/help updates, option add/rename, tag
+   add/change, rule add/update/delete), bypassing the clone-on-edit model.
+   Fixed with a shared `rejectStructurallyLockedSurvey` guard in
+   `apps/api/src/routes/surveyBuilderRoutes.ts` applied to all fourteen
+   structural routes (questions, reorders, options, tags, rules). It returns
+   409 "Survey structure can only be edited while the survey is a draft.
+   Create an editable draft copy to make changes" for published and retired
+   surveys, and also covers the deleted check so structural routes need one
+   lookup. Metadata/category updates (`PUT /api/surveys/:id`) and status
+   changes stay allowed by design. The now-dead inline draft checks and the
+   published-only type/scale-range checks were removed
+   (`hasScaleRangeChanged` deleted). The builder UI disables structural
+   controls on non-draft surveys and the edit-state banners point at
+   "Create editable draft copy".
+2. API test cleanup missed the new tables: `survey_categories` and
+   `tag_definitions` added to the truncate list in
+   `apps/api/test/helpers/setup.ts`.
+3. The tag catalog duplicate warning only covered create: edit rows in
+   `AdminTagsPage.tsx` are now controlled inputs with the same as-you-type
+   duplicate warning (excluding the tag being edited) and a disabled save on
+   duplicates.
+
+New regression coverage in `apps/api/test/surveyBuilder.test.ts`
+("published survey structural lock"): every structural mutation 409s on a
+published survey, retired surveys are equally locked, and metadata/category/
+status changes still succeed. One existing assertion updated to the new
+guard message.
+
+Validation rerun: typecheck, lint, build, `npm test` (150/150 — shared 18,
+web 18, API 114), `git diff --check` all passed.
+
+## Phase 10 — Codex Scoped Re-Review Result
+
+Date:
+2026-06-11
+
+Codex confirmed the round-1 fixes with no findings: the guard split in
+`surveyBuilderRoutes.ts` is correct (structural routes fronted by
+`rejectStructurallyLockedSurvey`; metadata/status/delete/duplicate by
+`rejectDeletedSurvey`; `POST /api/surveys` has neither since it has no
+`:id`), and the simplified PUT-question path is draft-only in practice
+because the guard runs before the handler. Codex reran
+`npm run test -w apps/api -- test/surveyBuilder.test.ts` (18/18 passed).
+
+Corrections from the re-review note: the handoff/phase-log said "15
+structural routes"; the correct count is 14 (4 question + 4 option +
+3 tag + 3 rule routes) — both documents fixed. Codex also noted the lock
+test sweep does not literally hit every structural endpoint (options
+reorder and tag update/delete are covered by source inspection plus the
+shared guard rather than dedicated requests); accepted as-is since the
+guard is a single shared middleware.
+
+Commit readiness: review complete with no open findings — ready to commit.
+
+## Phase 10 — Deployment Workflow Swap and Hosted DB Verification
+
+Date:
+2026-06-11
+
+- The Phase 9 `ci.yml` workflow was removed before it ever ran, replaced by
+  the Azure-generated deploy workflow `.github/workflows/main_njsda-wa.yml`
+  (created from the njsda-wa Web App resource, pulled from origin/main).
+  That workflow builds on push to `main` and deploys to the njsda-wa App
+  Service; its test step is commented out, so automated CI checks are
+  tracked as a follow-up.
+- Verified connectivity to the hosted Azure PostgreSQL server
+  (njsda-db.postgres.database.azure.com, PostgreSQL 18.4) using the
+  credentials kept in the untracked local `.env`: TLS connection with
+  certificate verification succeeded. The check used a read-only query and
+  the default `postgres` database; choosing a dedicated application
+  database plus migration/provisioning are tracked in FOLLOW_UPS.

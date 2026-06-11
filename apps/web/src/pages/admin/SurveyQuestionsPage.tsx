@@ -1,10 +1,11 @@
 import type {
   AnswerOption,
-  Survey,
   SurveyQuestion,
-  SurveyQuestionType
+  SurveyQuestionType,
+  TagDefinition
 } from "@survey-portal/shared";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 
 import {
   createAnswerOption,
@@ -13,13 +14,13 @@ import {
   deleteAnswerOption,
   deleteAnswerTag,
   deleteQuestion,
-  fetchAdminSurveys,
   reorderAnswerOptions,
   reorderQuestions,
   updateAnswerOption,
   updateAnswerTag,
   updateQuestion
 } from "../../api/surveys.js";
+import { fetchTagDefinitions } from "../../api/tags.js";
 import {
   confirmAdminAction,
   readFormInteger,
@@ -30,39 +31,30 @@ import {
 import {
   QuestionEditor,
   ScaleRangeFields,
-  TagPresetManager,
   formatQuestionType,
-  questionTypes,
-  type TagPreset
+  questionTypes
 } from "../../components/admin/SurveyBuilderComponents.js";
-import { buildTagPresets, mergeTagPresets } from "../../components/admin/tagPresets.js";
+import { buildTagPresets } from "../../components/admin/tagPresets.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 
 export function SurveyQuestionsPage() {
-  const {
-    customTagPresets,
-    isSubmitting,
-    runSurveyMutation,
-    setCustomTagPresets,
-    setFeedback,
-    survey
-  } = useSurveyWorkspace();
+  const { isSubmitting, runSurveyMutation, setFeedback, survey } = useSurveyWorkspace();
   const [newQuestionType, setNewQuestionType] = useState<SurveyQuestionType>("text");
-  const [otherSurveys, setOtherSurveys] = useState<Survey[]>([]);
+  const [catalogTags, setCatalogTags] = useState<TagDefinition[]>([]);
 
-  // Cross-survey saved tag suggestions ("Saved in surveys") need the other
-  // surveys' tags; the current survey stays live from workspace state.
+  // Tag suggestions come from the persistent tag catalog plus the current
+  // survey's live tags. Tags saved here register in the catalog server-side.
   useEffect(() => {
     let isActive = true;
 
-    fetchAdminSurveys()
+    fetchTagDefinitions()
       .then((response) => {
         if (isActive) {
-          setOtherSurveys(response.surveys.filter((item) => item.id !== survey.id));
+          setCatalogTags(response.tags);
         }
       })
       .catch(() => {
-        // Suggestions fall back to the current survey, defaults, and custom entries.
+        // Suggestions fall back to defaults and the current survey's tags.
       });
 
     return () => {
@@ -71,8 +63,16 @@ export function SurveyQuestionsPage() {
   }, [survey.id]);
 
   const tagPresets = useMemo(
-    () => buildTagPresets([...otherSurveys, survey], customTagPresets),
-    [customTagPresets, otherSurveys, survey]
+    () =>
+      buildTagPresets(
+        [survey],
+        catalogTags.map((tag) => ({
+          tagKey: tag.tagKey,
+          tagValue: tag.tagValue,
+          source: "custom" as const
+        }))
+      ),
+    [catalogTags, survey]
   );
 
   async function handleAddQuestion(event: FormEvent<HTMLFormElement>) {
@@ -347,36 +347,6 @@ export function SurveyQuestionsPage() {
     );
   }
 
-  function handleAddTagPreset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const tagKey = readFormText(data, "tagKey");
-    const tagValue = readFormText(data, "tagValue");
-
-    if (!tagKey || !tagValue) {
-      setFeedback({ error: "Tag key and value are required", notice: null });
-      return;
-    }
-
-    const preset: TagPreset = { tagKey, tagValue, source: "custom" };
-
-    setCustomTagPresets((current) =>
-      mergeTagPresets([...current, preset]).filter((item) => item.source === "custom")
-    );
-    setFeedback({ error: null, notice: "Tag suggestion added" });
-    form.reset();
-  }
-
-  function handleDeleteTagPreset(preset: TagPreset) {
-    setCustomTagPresets((current) =>
-      current.filter(
-        (item) => item.tagKey !== preset.tagKey || item.tagValue !== preset.tagValue
-      )
-    );
-    setFeedback({ error: null, notice: "Tag suggestion removed" });
-  }
-
   return (
     <div className="builder-workspace">
       <form
@@ -476,12 +446,21 @@ export function SurveyQuestionsPage() {
         ))}
       </div>
 
-      <TagPresetManager
-        customTagPresets={customTagPresets}
-        onAddPreset={handleAddTagPreset}
-        onDeletePreset={handleDeleteTagPreset}
-        tagPresets={tagPresets}
-      />
+      <div className="builder-form tag-catalog-link-panel">
+        <div className="builder-section-heading">
+          <div>
+            <p className="eyebrow">Hidden tags</p>
+            <h3>Tag catalog</h3>
+            <p className="builder-heading-note">
+              Tags saved on answer options register in the shared catalog automatically.
+              Manage reusable keys and values on the tag catalog page.
+            </p>
+          </div>
+          <Link className="button-link compact-button secondary-button" to="/admin/tags">
+            Manage tag catalog
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

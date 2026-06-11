@@ -27,15 +27,14 @@ database/
 ```bash
 npm install
 cp .env.example .env
-psql "$DATABASE_URL" -f database/migrations/0001_app_health_check.sql
-psql "$DATABASE_URL" -f database/migrations/0002_users.sql
-psql "$DATABASE_URL" -f database/migrations/0003_surveys.sql
-psql "$DATABASE_URL" -f database/seeds/0001_phase_2_seed.sql
+npm run db:migrate
 npm run dev
 ```
 
-The seed command is for local development only. Do not apply local seed files
-to hosted, shared, staging, or production databases.
+To load the local development admin and sample survey, use the guarded reset
+command below against a disposable local database. Do not apply local seed files
+directly with `psql -f`; raw SQL seed files cannot inspect `RUN_ENV` and must
+not be run against hosted, shared, staging, or production databases.
 
 To wipe and rebuild a messy local database:
 
@@ -43,11 +42,14 @@ To wipe and rebuild a messy local database:
 npm run db:reset
 ```
 
-This drops and recreates the local `public` schema, then applies all SQL files
-under `database/migrations/` and `database/seeds/` in filename order. It refuses
-to run unless `RUN_ENV=dev` and the target database host is local.
+This drops and recreates the local `public` schema, runs the tracked migration
+runner, then applies local seed SQL in filename order. It refuses to run unless
+`RUN_ENV=dev` and the target database host is local.
 
-The API serves `/api/health`, `/api/auth/*`, and `/api/surveys/*`. In development, Vite proxies API calls to the Express server.
+The API serves `/api/health`, `/api/health/live`, `/api/health/ready`,
+`/api/auth/*`, `/api/surveys/*`, `/api/my-surveys/*`, `/api/admin/*`,
+`/api/categories/*`, and `/api/tags/*`. In development, Vite proxies API calls
+to the Express server.
 
 ## Environment
 
@@ -57,12 +59,74 @@ Production PostgreSQL TLS verifies certificates by default. If the hosted databa
 
 Set `JWT_SECRET` to a non-placeholder secret for any shared, hosted, or production environment. `JWT_EXPIRES_IN` defaults to one hour when omitted.
 
+Authentication endpoints are rate limited per client IP in memory:
+
+- `POST /api/auth/login`: 5 requests per 15 minutes by default.
+- `POST /api/auth/register`: 5 requests per 15 minutes by default.
+
+Override with `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_LOGIN_RATE_LIMIT_MAX`, and
+`AUTH_REGISTER_RATE_LIMIT_MAX` when needed. Azure App Service should run with
+`TRUST_PROXY_HOPS=1` so Express trusts the single Azure proxy hop for client IP
+resolution. Do not set blanket proxy trust; spoofed `X-Forwarded-For` headers
+must not bypass auth rate limiting. If the API ever scales horizontally, replace
+the in-memory limiter store with a shared store.
+
 Production secrets should live in Azure App Service configuration, not in source control.
+
+## Health Checks
+
+- `GET /api/health/live` returns 200 when the Node process is up and does not
+  touch PostgreSQL.
+- `GET /api/health/ready` returns 200 only when the database readiness check
+  succeeds and 503 when it fails.
+- `GET /api/health` is kept for existing consumers and aliases readiness.
+
+Readiness queries `app_health_check`, so it verifies both PostgreSQL reachability
+and the presence of the migrated schema.
+
+## Database Migrations
+
+Run pending migrations with:
+
+```bash
+npm run db:migrate
+```
+
+The runner applies `database/migrations/*.sql` in filename order, records each
+file and checksum in `schema_migrations`, and no-ops when everything is current.
+If an existing already-migrated database predates `schema_migrations`, explicitly
+record the current files without applying SQL:
+
+```bash
+npm run db:migrate -- --baseline
+```
+
+Use the baseline path only after verifying that the target database already has
+the schema represented by the migration files. The runner refuses to infer this
+from a populated database.
+
+## Admin Provisioning
+
+Hosted environments must create the first admin with the provisioning command,
+not the local seed:
+
+```bash
+ADMIN_FIRST_NAME=Phase \
+ADMIN_LAST_NAME=Admin \
+ADMIN_EMAIL=admin@example.com \
+ADMIN_PASSWORD='replace-with-a-secret-password' \
+npm run admin:provision
+```
+
+The command hashes the password with bcrypt, creates the admin or promotes an
+existing user, and is safe to rerun. It never logs the password or hash.
 
 ## Scripts
 
 ```bash
 npm run dev
+npm run admin:provision
+npm run db:migrate
 npm run db:reset
 npm run typecheck
 npm run build

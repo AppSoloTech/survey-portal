@@ -246,7 +246,9 @@ describe("destructive delete guards", () => {
       .set("Cookie", admin.cookie);
 
     expect(response.status).toBe(409);
-    expect(response.body.error).toBe("Questions can only be deleted from draft surveys");
+    expect(response.body.error).toBe(
+      "Survey structure can only be edited while the survey is a draft. Create an editable draft copy to make changes"
+    );
   });
 
   it("blocks question deletes when saved responses exist, even on draft surveys", async () => {
@@ -308,5 +310,132 @@ describe("status transitions", () => {
     const republished = await setSurveyStatus(app, admin, survey.id, "published");
     expect(republished.status).toBe("published");
     expect(republished.retiredAt).toBeNull();
+  });
+});
+
+describe("published survey structural lock", () => {
+  const lockedError =
+    "Survey structure can only be edited while the survey is a draft. Create an editable draft copy to make changes";
+
+  it("blocks every structural mutation on a published survey", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, routeQuestion, jumpOptionId } = await createPublishedJumpSurvey(app, admin);
+    const rule = survey.conditionalLogicRules[0];
+
+    const attempts = [
+      request(app)
+        .post(`/api/surveys/${survey.id}/questions`)
+        .set("Cookie", admin.cookie)
+        .send({ questionText: "Late question", questionType: "text" }),
+      request(app)
+        .put(`/api/surveys/${survey.id}/questions/${routeQuestion.id}`)
+        .set("Cookie", admin.cookie)
+        .send({
+          questionText: "Edited live",
+          questionType: routeQuestion.questionType,
+          isRequired: false,
+          helpText: null
+        }),
+      request(app)
+        .patch(`/api/surveys/${survey.id}/questions/reorder`)
+        .set("Cookie", admin.cookie)
+        .send({ questionIds: survey.questions.map((question) => question.id).reverse() }),
+      request(app)
+        .post(`/api/surveys/${survey.id}/questions/${routeQuestion.id}/options`)
+        .set("Cookie", admin.cookie)
+        .send({ optionText: "Late option" }),
+      request(app)
+        .put(`/api/surveys/${survey.id}/questions/${routeQuestion.id}/options/${jumpOptionId}`)
+        .set("Cookie", admin.cookie)
+        .send({ optionText: "Renamed live" }),
+      request(app)
+        .patch(`/api/surveys/${survey.id}/questions/${routeQuestion.id}/options/reorder`)
+        .set("Cookie", admin.cookie)
+        .send({
+          optionIds: routeQuestion.answerOptions.map((option) => option.id).reverse()
+        }),
+      request(app)
+        .post(
+          `/api/surveys/${survey.id}/questions/${routeQuestion.id}/options/${jumpOptionId}/tags`
+        )
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "late", tagValue: "tag" }),
+      request(app)
+        .post(`/api/surveys/${survey.id}/rules`)
+        .set("Cookie", admin.cookie)
+        .send({
+          sourceQuestionId: rule.sourceQuestionId,
+          sourceAnswerOptionId: rule.sourceAnswerOptionId,
+          targetQuestionId: rule.targetQuestionId,
+          skipTargetInNormalFlow: false
+        }),
+      request(app)
+        .put(`/api/surveys/${survey.id}/rules/${rule.id}`)
+        .set("Cookie", admin.cookie)
+        .send({
+          sourceQuestionId: rule.sourceQuestionId,
+          sourceAnswerOptionId: rule.sourceAnswerOptionId,
+          targetQuestionId: rule.targetQuestionId,
+          skipTargetInNormalFlow: false
+        }),
+      request(app)
+        .delete(`/api/surveys/${survey.id}/rules/${rule.id}`)
+        .set("Cookie", admin.cookie)
+    ];
+
+    for (const attempt of attempts) {
+      const response = await attempt;
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe(lockedError);
+    }
+
+    // The survey is untouched by the rejected mutations.
+    const refetched = await request(app)
+      .get(`/api/surveys/${survey.id}`)
+      .set("Cookie", admin.cookie);
+    expect(refetched.body.survey.questions).toHaveLength(survey.questions.length);
+    expect(refetched.body.survey.conditionalLogicRules).toHaveLength(
+      survey.conditionalLogicRules.length
+    );
+  });
+
+  it("blocks structural mutations on retired surveys too", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, routeQuestion } = await createPublishedJumpSurvey(app, admin);
+    await setSurveyStatus(app, admin, survey.id, "retired");
+
+    const response = await request(app)
+      .put(`/api/surveys/${survey.id}/questions/${routeQuestion.id}`)
+      .set("Cookie", admin.cookie)
+      .send({
+        questionText: "Edited retired",
+        questionType: routeQuestion.questionType,
+        isRequired: false,
+        helpText: null
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe(lockedError);
+  });
+
+  it("still allows metadata, category, and status changes on published surveys", async () => {
+    const admin = await registerAdmin(app);
+    const { survey } = await createPublishedJumpSurvey(app, admin);
+
+    const metadataResponse = await request(app)
+      .put(`/api/surveys/${survey.id}`)
+      .set("Cookie", admin.cookie)
+      .send({
+        title: "Renamed published survey",
+        description: "Updated copy",
+        status: "published"
+      });
+
+    expect(metadataResponse.status).toBe(200);
+    expect(metadataResponse.body.survey.title).toBe("Renamed published survey");
+    expect(metadataResponse.body.survey.status).toBe("published");
+
+    const retired = await setSurveyStatus(app, admin, survey.id, "retired");
+    expect(retired.status).toBe("retired");
   });
 });

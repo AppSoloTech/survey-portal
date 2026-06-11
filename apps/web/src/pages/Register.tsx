@@ -33,13 +33,14 @@ export function Register() {
   }
 
   return (
-    <section className="page">
-      <div className="page-header">
-        <p className="eyebrow">User access</p>
-        <h2>Register</h2>
-        <p>Create a portal account.</p>
-      </div>
-      <form className="auth-form" onSubmit={handleSubmit}>
+    <section className="page auth-page">
+      <div className="auth-card">
+        <div className="page-header auth-card-header">
+          <p className="eyebrow">User access</p>
+          <h2>Register</h2>
+          <p>Create a portal account.</p>
+        </div>
+        <form className="auth-form" onSubmit={handleSubmit}>
         <label>
           First name
           <input
@@ -89,10 +90,11 @@ export function Register() {
         <button className="button-link form-button" disabled={isSubmitting} type="submit">
           {isSubmitting ? "Creating account..." : "Register"}
         </button>
-        <p className="form-note">
-          Already have an account? <Link to="/login">Login</Link>
-        </p>
-      </form>
+          <p className="form-note">
+            Already have an account? <Link to="/login">Login</Link>
+          </p>
+        </form>
+      </div>
     </section>
   );
 }

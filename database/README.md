@@ -25,14 +25,15 @@ Use `RUN_ENV=dev` for local database access and `RUN_ENV=prod` for hosted databa
 
 ## Applying Migrations
 
-Apply migrations in filename order:
+Apply pending migrations with the tracked runner:
 
 ```bash
-psql "$DATABASE_URL" -f database/migrations/0001_app_health_check.sql
-psql "$DATABASE_URL" -f database/migrations/0002_users.sql
-psql "$DATABASE_URL" -f database/migrations/0003_surveys.sql
-psql "$DATABASE_URL" -f database/migrations/0004_conditional_rule_normal_flow.sql
+npm run db:migrate
 ```
+
+The runner records applied filenames and checksums in `schema_migrations`.
+For an already-migrated database that predates the runner, use
+`npm run db:migrate -- --baseline` only after verifying the schema manually.
 
 ## Applying Local Seeds
 
@@ -40,8 +41,12 @@ Phase 2 local seed data includes one admin account and one published survey with
 representative MVP question types, answer tags, and a `JUMP_TO_QUESTION` rule.
 
 ```bash
-psql "$DATABASE_URL" -f database/seeds/0001_phase_2_seed.sql
+npm run db:reset
 ```
+
+Do not run seed files directly with `psql -f`. The local seed creates a known
+development admin password and cannot enforce runtime environment guards by
+itself.
 
 ## Resetting A Local Database
 
@@ -58,4 +63,5 @@ The reset job:
 - refuses hosted database URLs
 - refuses non-local database hosts unless `DB_RESET_ALLOW_NONLOCAL=1` is set
 - drops and recreates the `public` schema
-- applies every SQL file in `database/migrations/` and `database/seeds/` in filename order
+- runs the tracked migration runner
+- applies every SQL file in `database/seeds/` in filename order

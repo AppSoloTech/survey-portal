@@ -15,12 +15,26 @@ export const pool = new Pool({
       : undefined
 });
 
+let databaseHealthCheck = async (): Promise<void> => {
+  await pool.query("select 1 from app_health_check limit 1");
+};
+
 export async function checkDatabaseConnection(): Promise<boolean> {
   try {
-    await pool.query("select 1");
+    await databaseHealthCheck();
     return true;
   } catch (error) {
     console.warn("Database health check failed", error);
     return false;
   }
+}
+
+export function setDatabaseHealthCheckForTests(check: () => Promise<void>): void {
+  databaseHealthCheck = check;
+}
+
+export function resetDatabaseHealthCheckForTests(): void {
+  databaseHealthCheck = async () => {
+    await pool.query("select 1 from app_health_check limit 1");
+  };
 }

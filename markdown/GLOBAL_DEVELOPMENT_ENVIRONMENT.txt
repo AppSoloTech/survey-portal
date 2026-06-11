@@ -66,6 +66,14 @@ DATABASE_SSL_CA_PATH=
 DATABASE_SSL_CA=
 JWT_SECRET=
 JWT_EXPIRES_IN=
+TRUST_PROXY_HOPS=
+AUTH_RATE_LIMIT_WINDOW_MS=
+AUTH_LOGIN_RATE_LIMIT_MAX=
+AUTH_REGISTER_RATE_LIMIT_MAX=
+ADMIN_FIRST_NAME=
+ADMIN_LAST_NAME=
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
 ```
 
 If the implementation uses split PostgreSQL variables instead of `DATABASE_URL`, document the exact variables in `.env.example` and keep the database connection module consistent.

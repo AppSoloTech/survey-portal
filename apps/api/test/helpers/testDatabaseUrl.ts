@@ -37,7 +37,11 @@ export function resolveTestDatabaseUrl(): string {
   for (const conflictingName of ["DATABASE_URL", "LOCAL_DATABASE_URL", "HOSTED_DATABASE_URL"]) {
     const conflictingValue = process.env[conflictingName];
 
-    if (conflictingValue && conflictingValue === testDatabaseUrl) {
+    if (
+      conflictingValue &&
+      conflictingValue === testDatabaseUrl &&
+      process.env.SURVEY_PORTAL_TEST_DATABASE_APPLIED !== "1"
+    ) {
       throw new Error(
         `Refusing to run API tests: TEST_DATABASE_URL matches ${conflictingName}. Tests must use a dedicated test database.`
       );
@@ -56,6 +60,7 @@ export function applyTestEnvironment(): string {
   process.env.LOCAL_DATABASE_URL = testDatabaseUrl;
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test_only_jwt_secret_for_local_api_tests";
+  process.env.SURVEY_PORTAL_TEST_DATABASE_APPLIED = "1";
 
   return testDatabaseUrl;
 }

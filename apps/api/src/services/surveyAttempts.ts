@@ -1,5 +1,5 @@
 import {
-  resolveNextQuestion,
+  resolveAttemptPath,
   type AnswerSurveyResponse,
   type MySurveyResponse,
   type MySurveysResponse,
@@ -232,12 +232,14 @@ export async function buildMySurveysResponse(userId: number): Promise<MySurveysR
        select id
        from surveys
        where status = 'published'
+         and deleted_at is null
        union
        select surveys.id
        from survey_attempts
        join surveys on surveys.id = survey_attempts.survey_id
        where survey_attempts.user_id = $1
          and surveys.status <> 'draft'
+         and surveys.deleted_at is null
      )
      select id
      from survey_scope
@@ -539,23 +541,18 @@ export function validateReachedRequiredQuestions(
   attempt: SurveyAttempt
 ): ValidationResult<undefined> {
   const responsesByQuestionId = buildResponseMap(attempt);
-  let question = findFirstQuestion(survey);
-  const visitedQuestionIds = new Set<number>();
+  const { path, hasLoop } = resolveAttemptPath(survey, attempt.responses);
 
-  while (question) {
-    if (visitedQuestionIds.has(question.id)) {
-      return { ok: false, error: "Survey navigation contains a loop" };
-    }
-
-    visitedQuestionIds.add(question.id);
-
+  for (const question of path) {
     const response = responsesByQuestionId.get(question.id);
 
     if (question.isRequired && !hasMeaningfulResponse(question, response)) {
       return { ok: false, error: `Required question ${question.displayOrder} is unanswered` };
     }
+  }
 
-    question = resolveNextQuestion(survey, question, response);
+  if (hasLoop) {
+    return { ok: false, error: "Survey navigation contains a loop" };
   }
 
   return { ok: true, value: undefined };
@@ -570,34 +567,17 @@ export function determineCurrentQuestion(
   }
 
   const responsesByQuestionId = buildResponseMap(attempt);
-  let question = findFirstQuestion(survey);
-  const visitedQuestionIds = new Set<number>();
+  const { path } = resolveAttemptPath(survey, attempt.responses);
 
-  while (question) {
-    if (visitedQuestionIds.has(question.id)) {
-      return null;
-    }
-
-    visitedQuestionIds.add(question.id);
-
+  for (const question of path) {
     const response = responsesByQuestionId.get(question.id);
 
     if (!response || (question.isRequired && !hasMeaningfulResponse(question, response))) {
       return question;
     }
-
-    question = resolveNextQuestion(survey, question, response);
   }
 
   return null;
-}
-
-function findFirstQuestion(survey: Survey): SurveyQuestion | null {
-  return (
-    [...survey.questions].sort(
-      (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
-    )[0] ?? null
-  );
 }
 
 function buildResponseMap(attempt: SurveyAttempt): Map<number, SurveyResponseAnswer> {

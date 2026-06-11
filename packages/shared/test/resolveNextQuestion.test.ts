@@ -54,11 +54,14 @@ function makeSurvey(
     title: "Test survey",
     description: null,
     status: "published",
+    categoryId: null,
+    categoryName: null,
     createdByUserId: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     publishedAt: timestamp,
     retiredAt: null,
+    deletedAt: null,
     questions,
     conditionalLogicRules
   };

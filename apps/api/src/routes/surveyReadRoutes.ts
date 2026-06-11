@@ -35,7 +35,8 @@ surveyReadRouter.get("/:id", requireAuth, async (req, res, next) => {
     const surveys = await fetchSurveyStructures({
       surveyId: id,
       includeAllStatuses: isAdmin,
-      includeHiddenTags: isAdmin
+      includeHiddenTags: isAdmin,
+      includeDeleted: isAdmin
     });
     const survey = surveys[0];
 

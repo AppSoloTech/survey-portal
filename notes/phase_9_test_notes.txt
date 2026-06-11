@@ -1,0 +1,20 @@
+General
+1) Admin needs the ability to manage users. Needs the ability to promote a registered user to admin level account. 
+2) Consider categorically grouping surveys: Give admin ability to create categoris and perform the grouping. 
+3) Question type Int: intiger input is not clear as to what the input type is just by looking at it. This needs to be clear through visual representation (counter, number scroll).
+4) Question type Scale: This is just a bunch of blocks right now. Would like to improve visual with a slider that stops at the given whole number intervals.
+
+Login/Register Page
+1) center login and register section. Polish the login/register UI/UX to properly house components in a visually pleasing way.
+
+AS USER ROLE
+1) Survey Dashboard: Remove the "Choose a survey" section. Better utilize the space to fill with available surveys, smartly. Consider pagination.
+2) When I start a survey, render a dedicated screen for the survey Q&A process. Ensure clear and proper breadcrumbs. 
+3) There is an odd count (makes sense with current logic) when the survey questioning is finished. If there are any skip logic questions skipped, total questions aggregate all possible questions and not accounting for skipped questions so there is a delta between Saved Answers and Total Questions that is not immidiatly intelligible. Consider how to better represent relevent values or totaly remove from user level accounts. 
+4) Remove the "USER" pill in the nav header. Keep the pill for Admins.
+
+AS ADMIN USER
+1) Within Admin Workspace: consider pagination for the future increase of surveys. 
+2) Need to give admin CRUD functionality of surveys. This could conflict with what a "Published" survey currently is and the async nature of edits and how they would effect surveys in progress. My default would be to, upon wanting to edit an published survey, copy state of survey to create a completely new survey that then can be edited and published independent of the out dated one. If an admin deletes a survey, that should cascade down and remove servey from all users. Keep all db references for analytics.
+3) When saving survey metadata, the pop-up "Survey metadata saved" persists. Consider toast notifications. 
+4) Admins need CRUD functionality for tags and keys. Need db table. The new keys and tags created in the questions section should qualify as a new key and tag as if it were made in the future key/tag management page. Expand the CRUD function of Tag suggestions section and consider moving to its own page. Create logic to detect duplicate key/tag pairs and provide warning upon user input and submit.

@@ -13,12 +13,18 @@ const dataTables = [
   "answer_tags",
   "answer_options",
   "survey_questions",
+  "tag_definitions",
   "surveys",
+  "survey_categories",
   "users"
 ];
 
 beforeEach(async () => {
-  const { pool } = await import("../../src/db.js");
+  const { pool, resetDatabaseHealthCheckForTests } = await import("../../src/db.js");
+  const { resetAuthRateLimitersForTests } = await import("../../src/routes/auth.js");
+
+  resetDatabaseHealthCheckForTests();
+  await resetAuthRateLimitersForTests();
   await pool.query(`truncate ${dataTables.join(", ")} restart identity cascade`);
 });
 

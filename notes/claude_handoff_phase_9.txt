@@ -1,0 +1,56 @@
+# Phase 9 Handoff — Deployment Hardening and CI
+
+## Summary
+
+Implemented Phase 9 deployment hardening:
+
+- Added `express-rate-limit` to `POST /api/auth/login` and `POST /api/auth/register`.
+- Added a 72-byte UTF-8 registration password cap to avoid bcrypt truncation.
+- Split health checks into `/api/health/live` and `/api/health/ready`; kept `/api/health` as readiness.
+- Made readiness query `app_health_check`, returning 503 when the DB/schema check fails.
+- Added `scripts/migrate-db.mjs` and `npm run db:migrate` with `schema_migrations`, checksums, idempotent no-op reruns, mismatch detection, and explicit `--baseline`.
+- Updated API test `globalSetup` and `db:reset` to use the migration runner.
+- Added `scripts/provision-admin.mjs` and `npm run admin:provision` for hosted-safe admin creation/promotion.
+- Kept local seed SQL behind guarded `npm run db:reset`; documented direct `psql -f database/seeds/*.sql` as forbidden.
+- Added GitHub Actions CI in `.github/workflows/ci.yml`.
+
+## Decisions
+
+- Chose a minimal custom migration runner rather than `node-pg-migrate` because the repo already uses ordered SQL files and only needs tracking/checksum/idempotency/baseline behavior.
+- Default auth limits are 5 login attempts and 5 registration attempts per IP per 15 minutes. The in-memory store is acceptable for single-instance Azure App Service MVP; `FOLLOW_UPS.md` tracks replacing it if the API scales horizontally.
+- Express proxy trust defaults to `TRUST_PROXY_HOPS=1` in `RUN_ENV=prod` and `0` otherwise. This trusts the single Azure proxy hop without blanket-trusting spoofable forwarding headers.
+- `/api/health` aliases readiness so the existing frontend panel and future platform health checks get truthful database status.
+- Root `npm run typecheck` now builds `packages/shared` first because web/api project references can otherwise read stale shared declaration output.
+
+## Tests Added
+
+- Auth: max password byte rejection, valid logins under the limit, login 429 behavior, generic 401 regression.
+- Health: live 200 without DB check, ready 200 with DB up, ready 503 with DB down, `/api/health` readiness alias.
+- Migration runner: applies pending once, second run no-op, checksum mismatch fails, explicit baseline, refusal to infer baseline.
+- Provisioning/seed safety: admin create, rerun without duplicates, promote existing user, reset/seed guard refuses `RUN_ENV=prod`.
+
+## Validation
+
+Passed:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+`npm test` result: 109/109 tests passed.
+
+Not executed locally:
+
+- GitHub Actions workflow itself; first real workflow execution happens after push/PR.
+
+## Review Pointers
+
+- Check `apps/api/src/routes/auth.ts` for limiter placement and 401/429 behavior.
+- Check `apps/api/src/db.ts` and `apps/api/src/routes/health.ts` for readiness semantics and the `app_health_check` dependency.
+- Check `scripts/migrate-db.mjs` for migration-history mismatch behavior and baseline semantics.
+- Check `scripts/provision-admin.mjs` for password/hash logging safety and idempotent admin upsert.
+- Check `.github/workflows/ci.yml` for PostgreSQL service and command order.

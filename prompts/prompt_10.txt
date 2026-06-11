@@ -1,0 +1,158 @@
+# Phase 10 — Testing Pass and Issue List Fixes
+
+## Purpose
+
+Use this phase when the human developer has completed a manual or exploratory
+testing pass and wants Codex to address a pasted list of issues, regressions,
+polish requests, or small follow-up changes.
+
+This prompt is intentionally list-driven. The human may start the phase with:
+
+```txt
+Start prompts/prompt_10.txt
+
+Issues:
+1. ...
+2. ...
+3. ...
+```
+
+Codex must treat the text after the start line as the active testing report
+for this phase.
+
+## Role Note
+
+Roles follow the original arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_10.txt`
+* Claude review: `notes/claude_review_phase_10.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* The human-provided issue/change list in full.
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/REVIEW_CHECKLIST.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* README.md
+* Relevant source files, tests, docs, and phase prompts tied to the listed
+  issues.
+
+If a listed issue references a specific page, endpoint, component, command,
+test, screenshot, browser width, or user flow, inspect the corresponding code
+before changing it.
+
+---
+
+# Intake Rules
+
+Before writing code:
+
+1. Restate the received issue/change list in concise grouped form.
+2. Classify each item as one of:
+   - bug/regression
+   - security or data-visibility risk
+   - test gap
+   - documentation/setup issue
+   - UX polish
+   - unclear / needs confirmation
+3. Identify any item that would change:
+   - database schema
+   - existing API contracts
+   - participant-facing survey behavior
+   - hidden-tag visibility
+   - authentication or authorization semantics
+   - deployment or secret handling
+4. Ask for clarification only when an item cannot be safely inferred. If a
+   reasonable low-risk interpretation exists, proceed and document the
+   assumption.
+5. Produce a short implementation plan.
+
+Do not discard or silently skip any listed item. If an item is out of scope,
+blocked, or intentionally deferred, record why in the phase log and handoff.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly prioritizes otherwise:
+
+1. Security, authorization, hidden-tag isolation, data loss, or production
+   safety issues.
+2. Broken user/admin workflows.
+3. Test failures or missing regression coverage for fixed behavior.
+4. Documentation/setup issues that block reliable use.
+5. UX polish and minor copy/layout refinements.
+
+Keep changes narrowly scoped to the reported issues. Do not use this phase for
+unrelated refactors or speculative improvements.
+
+---
+
+# Testing Requirements
+
+For every fixed behavior:
+
+* Add or update automated tests when the behavior is testable in the existing
+  harness.
+* Preserve existing API error response shape: `{ "error": string }`.
+* Preserve hidden-tag isolation: participants must never receive hidden tags.
+* Preserve admin-only reporting visibility.
+* Preserve cookie auth semantics and server-side authorization.
+* Preserve the attempt policy unless the human explicitly lists it as a change:
+  completed attempts block new starts; abandoned attempts allow a fresh start.
+
+If an item is visual/manual-only and cannot be automated with the current
+tooling, document the manual verification steps and residual risk.
+
+---
+
+# Validation Gate
+
+Run the relevant checks for the files touched. Default full gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+If the full gate cannot run, document exactly which command failed or was not
+available, why, and what narrower validation was completed instead.
+
+For API tests, use the existing test database safety pattern. Never point tests
+at a non-test database.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* markdown/FOLLOW_UPS.md for deferred or newly discovered follow-ups.
+* markdown/PHASE_LOG.md with:
+  - received issue list summary
+  - fixes implemented
+  - assumptions and deferrals
+  - tests and validation results
+  - commit readiness
+* README.md or `.env.example` only if setup, scripts, environment variables, or
+  operator behavior changed.
+* `notes/claude_handoff_phase_10.txt` with review pointers and validation
+  results.
+
+Do not mark the phase complete until every listed item is either fixed,
+explicitly deferred with a reason, or blocked by a documented clarification.

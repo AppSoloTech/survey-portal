@@ -13,6 +13,8 @@ import type {
   SurveyStatus
 } from "@survey-portal/shared";
 
+import { apiRequest } from "./client.js";
+
 export async function fetchMySurveys(): Promise<MySurveysResponse> {
   return apiRequest<MySurveysResponse>("/api/my-surveys");
 }
@@ -71,12 +73,14 @@ export async function createSurvey(input: {
   title: string;
   description: string | null;
   status?: SurveyStatus;
+  categoryId?: number | null;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>("/api/surveys", {
     body: JSON.stringify({
       title: input.title,
       description: input.description,
-      status: input.status ?? "draft"
+      status: input.status ?? "draft",
+      categoryId: input.categoryId ?? null
     }),
     method: "POST"
   });
@@ -87,14 +91,28 @@ export async function updateSurveyMetadata(input: {
   title: string;
   description: string | null;
   status: SurveyStatus;
+  categoryId: number | null;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}`, {
     body: JSON.stringify({
       title: input.title,
       description: input.description,
-      status: input.status
+      status: input.status,
+      categoryId: input.categoryId
     }),
     method: "PUT"
+  });
+}
+
+export async function deleteSurvey(surveyId: number): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${surveyId}`, {
+    method: "DELETE"
+  });
+}
+
+export async function duplicateSurvey(surveyId: number): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${surveyId}/duplicate`, {
+    method: "POST"
   });
 }
 
@@ -347,30 +365,4 @@ export async function fetchSurveyAttemptDetail(
 // proxy) and production.
 export function surveyExportCsvUrl(surveyId: number): string {
   return `/api/surveys/${surveyId}/export.csv`;
-}
-
-async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...init.headers
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
-  }
-
-  return response.json() as Promise<T>;
-}
-
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "Request failed";
-  } catch {
-    return "Request failed";
-  }
 }

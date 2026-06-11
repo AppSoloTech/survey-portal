@@ -88,6 +88,32 @@ function readJwtSecret(runEnv: RunEnvironment): string {
   return value;
 }
 
+function readNonNegativeIntegerEnv(name: string, defaultValue: number): number {
+  const rawValue = process.env[name];
+
+  if (rawValue === undefined || rawValue === "") {
+    return defaultValue;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+
+  return value;
+}
+
+function readPositiveIntegerEnv(name: string, defaultValue: number): number {
+  const value = readNonNegativeIntegerEnv(name, defaultValue);
+
+  if (value === 0) {
+    throw new Error(`${name} must be greater than 0`);
+  }
+
+  return value;
+}
+
 const runEnv = readRunEnv();
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const isProduction = runEnv === "prod";
@@ -106,5 +132,15 @@ export const config = {
   databaseUrl: readDatabaseUrl(runEnv),
   databaseSslCa: readOptionalDatabaseSslCa(),
   jwtSecret: readJwtSecret(runEnv),
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "1h"
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "1h",
+  trustProxyHops: readNonNegativeIntegerEnv(
+    "TRUST_PROXY_HOPS",
+    runEnv === "prod" ? 1 : 0
+  ),
+  authRateLimitWindowMs: readPositiveIntegerEnv(
+    "AUTH_RATE_LIMIT_WINDOW_MS",
+    15 * 60 * 1000
+  ),
+  authLoginRateLimitMax: readPositiveIntegerEnv("AUTH_LOGIN_RATE_LIMIT_MAX", 5),
+  authRegisterRateLimitMax: readPositiveIntegerEnv("AUTH_REGISTER_RATE_LIMIT_MAX", 5)
 } as const;
