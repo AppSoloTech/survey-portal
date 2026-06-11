@@ -1,11 +1,14 @@
 import type {
+  AdminAttemptDetailResponse,
   AnswerSurveyResponse,
   CompleteSurveyResponse,
   MySurveyResponse,
   MySurveysResponse,
   StartSurveyResponse,
+  SurveyAttemptsListResponse,
   SurveyListResponse,
   SurveyQuestionType,
+  SurveyReportResponse,
   SurveyResponse,
   SurveyStatus
 } from "@survey-portal/shared";
@@ -320,6 +323,30 @@ export async function deleteConditionalRule(input: {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
     method: "DELETE"
   });
+}
+
+export async function fetchSurveyReport(surveyId: number): Promise<SurveyReportResponse> {
+  return apiRequest<SurveyReportResponse>(`/api/surveys/${surveyId}/report`);
+}
+
+export async function fetchSurveyAttempts(surveyId: number): Promise<SurveyAttemptsListResponse> {
+  return apiRequest<SurveyAttemptsListResponse>(`/api/surveys/${surveyId}/attempts`);
+}
+
+export async function fetchSurveyAttemptDetail(
+  surveyId: number,
+  attemptId: number
+): Promise<AdminAttemptDetailResponse> {
+  return apiRequest<AdminAttemptDetailResponse>(
+    `/api/surveys/${surveyId}/attempts/${attemptId}`
+  );
+}
+
+// The export is a plain authenticated download; cookie auth rides along on
+// same-origin navigation, so a regular link works in dev (via the vite
+// proxy) and production.
+export function surveyExportCsvUrl(surveyId: number): string {
+  return `/api/surveys/${surveyId}/export.csv`;
 }
 
 async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {

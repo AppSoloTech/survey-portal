@@ -2,12 +2,20 @@ import type { Survey } from "@survey-portal/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { createSurvey, fetchAdminSurveys } from "../../api/surveys.js";
+import { createSurvey, fetchAdminSurveys, fetchSurveyReport } from "../../api/surveys.js";
 import { readFormText, readNullableFormText } from "../../components/admin/builderForm.js";
+
+interface CompletionSummary {
+  completed: number;
+  total: number;
+}
 
 export function AdminSurveysOverview() {
   const navigate = useNavigate();
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [completionBySurveyId, setCompletionBySurveyId] = useState<
+    Map<number, CompletionSummary>
+  >(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,9 +24,43 @@ export function AdminSurveysOverview() {
     let isActive = true;
 
     fetchAdminSurveys()
-      .then((response) => {
+      .then(async (response) => {
+        if (!isActive) {
+          return;
+        }
+
+        setSurveys(response.surveys);
+
+        // Drafts cannot have attempts, so completion indicators only need
+        // reports for surveys that have been published at some point.
+        const reportableSurveys = response.surveys.filter(
+          (survey) => survey.status !== "draft"
+        );
+        const reports = await Promise.all(
+          reportableSurveys.map(async (survey) => {
+            try {
+              const reportResponse = await fetchSurveyReport(survey.id);
+              return [survey.id, reportResponse.report] as const;
+            } catch {
+              return null;
+            }
+          })
+        );
+
         if (isActive) {
-          setSurveys(response.surveys);
+          setCompletionBySurveyId(
+            new Map(
+              reports
+                .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+                .map(([surveyId, report]) => [
+                  surveyId,
+                  {
+                    completed: report.attemptCounts.completed,
+                    total: report.attemptCounts.total
+                  }
+                ])
+            )
+          );
         }
       })
       .catch((loadError) => {
@@ -113,6 +155,9 @@ export function AdminSurveysOverview() {
                   <span>{formatCount(survey.questions.length, "question")}</span>
                   <span>{formatCount(survey.conditionalLogicRules.length, "jump rule")}</span>
                   <span>Updated {formatDate(survey.updatedAt)}</span>
+                  {formatCompletion(completionBySurveyId.get(survey.id)) ? (
+                    <span>{formatCompletion(completionBySurveyId.get(survey.id))}</span>
+                  ) : null}
                 </div>
               </div>
               <span className={`status-pill ${survey.status}`}>{survey.status}</span>
@@ -126,6 +171,14 @@ export function AdminSurveysOverview() {
 
 function formatCount(count: number, singularLabel: string): string {
   return `${count} ${singularLabel}${count === 1 ? "" : "s"}`;
+}
+
+function formatCompletion(summary: CompletionSummary | undefined): string | null {
+  if (!summary || summary.total === 0) {
+    return null;
+  }
+
+  return `${summary.completed}/${summary.total} completed`;
 }
 
 function formatDate(isoDate: string): string {

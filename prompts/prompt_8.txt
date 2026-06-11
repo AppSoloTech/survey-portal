@@ -1,0 +1,342 @@
+# Phase 8 — Admin Reporting, CSV Export, and Automated Test Harness
+
+## Purpose
+
+Deliver the last unbuilt primary business goal from
+`prompts/MASTER_PRODUCT_CONTEXT.txt`: administrators must be able to review
+survey responses, review completion status, resolve hidden tags, identify
+incomplete surveys, and export survey results.
+
+This phase also stands up the project's first automated test harness. Test
+infrastructure has been deferred since Phase 0 while auth, attempt lifecycle,
+hidden-tag isolation, and publish validation grew hand-tested. Reporting adds
+admin-only endpoints that return participant response data and hidden tags —
+the highest-sensitivity data path in the application — so automated coverage
+lands in the same phase, before that surface ships.
+
+The phase has three workstreams, in order:
+
+1. Extract services from `apps/api/src/routes/surveys.ts` (no behavior change).
+2. Stand up the test harness and baseline tests against existing behavior.
+3. Build reporting APIs, reporting UI, and CSV export on the extracted
+   services, with tests written alongside.
+
+## Role Note
+
+Roles remain reversed per explicit human instruction:
+
+* Claude Code is the implementation assistant.
+* Codex is the review assistant.
+
+Closeout artifacts use the `codex_` naming established in Phases 5.1, 6, and 7.
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* markdown/ARCHITECTURE_PRINCIPLES.md
+* markdown/DATA_MODEL_VISION.md (especially Hidden Tag Resolution and
+  Reporting Implications)
+* markdown/FOLLOW_UPS.md
+* markdown/PHASE_LOG.md
+* markdown/REVIEW_CHECKLIST.md
+* markdown/SCALE_QUESTION_DATA_MODEL.md
+* prompts/MASTER_PRODUCT_CONTEXT.txt
+* database/migrations/0003_surveys.sql
+* packages/shared/src/index.ts
+* apps/api/src/app.ts
+* apps/api/src/routes/surveys.ts (all of it — this file is being split)
+* apps/api/src/auth.ts and apps/api/src/middleware/
+* apps/web/src/api/surveys.ts
+* apps/web/src/pages/admin/ (overview, workspace layout, and workspace pages)
+
+Before implementation:
+
+* Understand how `loadSurveyStructure`-style helpers control whether
+  `answerTags` are included, and every call site that must keep hidden tags
+  out of participant responses.
+* Understand the attempt lifecycle: start (active-attempt reuse), answer
+  (status guards, blank optional responses), complete (required-answer
+  validation), and how `resolveNextQuestion` drives reachability.
+* Understand that optional questions may have intentionally blank response
+  rows (Phase 3 decision) — reports must distinguish "answered blank" from
+  "never reached/answered".
+* Review `markdown/FOLLOW_UPS.md`; this phase completes at least:
+  - "Extract survey attempt/response lifecycle helpers..."
+  - "Extract Phase 4 survey-builder routes/services..."
+  - "Add an automated backend auth test harness..."
+  - "Add a lightweight frontend unit test runner..."
+  - "Add a live insert-at-position/reorder smoke test..." (as an automated
+    route test)
+
+If implementation requires modifying database schema or existing API
+contracts, stop and explain before proceeding. New additive reporting
+endpoints and types are in scope; changes to existing endpoint behavior are
+not.
+
+---
+
+# Product Decisions To Confirm Before Building Reports
+
+These shape what reports display. Confirm with the human developer before the
+reporting workstream begins; if unavailable, implement the recommended
+default and document it in the phase log.
+
+1. Repeat attempts: completed attempts currently block a second attempt via
+   active-attempt reuse. Recommended: keep one attempt per user per survey
+   and have reports treat the attempt as the unit of record.
+2. Branch-change orphans: when a participant changes a branching answer,
+   previously saved answers on now-unreachable questions are kept.
+   Recommended: keep them as historical data, but reports and exports must
+   mark such answers as "not on final path" rather than silently mixing them
+   with on-path answers. Compute on-path question ids by walking
+   `resolveNextQuestion` from the first question over the attempt's saved
+   responses (the `findPreviousQuestion` walk in `UserDashboard.tsx` is the
+   reference pattern).
+3. Blank optional responses: recommended display is "skipped (blank)" —
+   distinct from questions with no response row at all.
+
+---
+
+# Workstream 1 — Service Extraction (No Behavior Change)
+
+`apps/api/src/routes/surveys.ts` is ~3,700 lines and reporting would add more
+table readers. Split it before adding features:
+
+* Create `apps/api/src/services/` modules grouped by responsibility, for
+  example: survey structure loading (with/without hidden tags), survey
+  builder writes, publish validation, attempt/response lifecycle, and (new,
+  in workstream 3) reporting queries.
+* Create separate route files (for example `surveysBuilderRoutes.ts`,
+  `surveyAttemptRoutes.ts`, `surveyReportingRoutes.ts`) mounted exactly as
+  today; URL paths, methods, auth middleware, status codes, validation
+  messages, and response shapes must not change.
+* Pure helpers (validation readers, record mappers) move with their
+  consumers; nothing speculative.
+
+Gate: typecheck, lint, build pass, and the workstream 2 baseline route tests
+(written against the running behavior) pass identically before and after the
+split. Commit-sized checkpoint here is encouraged.
+
+---
+
+# Workstream 2 — Test Harness
+
+## Tooling
+
+* Use Vitest as the single test runner across workspaces (the web app
+  already builds with Vite; Vitest keeps tooling uniform and adds one runner
+  for all three packages).
+* API route tests use supertest against the Express `app` (no listening
+  port required).
+* Allowed new dev dependencies: `vitest`, `supertest`, `@types/supertest`.
+  Nothing else without a documented reason.
+* Add `test` scripts to each workspace and a root `npm test` that runs all
+  of them. CI-style usage is `npm test`; keep it non-interactive.
+
+## API Test Database Safety
+
+Route tests run against a real local PostgreSQL test database:
+
+* Tests read a dedicated `TEST_DATABASE_URL` (document in `.env.example`
+  with a placeholder pointing at a local `survey_portal_test` database).
+* The harness must refuse to run unless the database name contains `test`,
+  and must never fall back to `DATABASE_URL`. This is the same caution the
+  project applies to seeds.
+* Each test run applies migrations to a clean schema (drop/recreate schema
+  or truncate between suites — choose the simplest reliable approach and
+  document it). Tests create their own users/surveys; they never depend on
+  local seed data.
+
+## Required Backend Coverage (baseline, written before the reporting APIs)
+
+Auth:
+
+* register/login happy paths, duplicate email 409, bad credentials 401
+* cookie-based `GET /api/auth/me`, logout clears the cookie
+* role enforcement: standard user receives 403 on an admin route
+
+Survey visibility and hidden-tag isolation:
+
+* standard users see only published surveys
+* participant survey payloads and attempt payloads never contain
+  `answerTags`, while admin survey payloads do — assert on response shape
+  recursively, not on a single field
+
+Builder validation (representative, not exhaustive):
+
+* publish blocked without questions / without options on selection
+  questions / with invalid rule references
+* forward-only and same-survey rule validation rejections
+* non-draft and saved-response delete guards (409s)
+* insert-at-position and reorder endpoints produce the expected
+  `displayOrder` sequence (closes the live ordering smoke-test follow-up)
+
+Attempt lifecycle and navigation:
+
+* start/resume active-attempt reuse; answer guards on completed and
+  abandoned attempts (409)
+* required-answer validation on complete
+* a `JUMP_TO_QUESTION` path: answering the trigger option routes past
+  skipped questions; `skipTargetInNormalFlow` targets are skipped in the
+  non-triggered path
+
+## Required Shared/Frontend Coverage
+
+* `resolveNextQuestion` unit tests in `packages/shared`: normal order,
+  jump, skip-target exclusion, end-of-survey
+* `apps/web/src/components/admin/surveyFlowGraph.ts` unit tests: each issue
+  code fires on crafted survey fixtures, conditional-only labeling,
+  reachability, and the defensive cycle detection (closes the frontend
+  unit-runner follow-up)
+* Component-level React testing is NOT required this phase; pure-helper
+  coverage is the bar.
+
+---
+
+# Workstream 3 — Reporting And Export
+
+## API (all admin-only: requireAuth + requireRole("admin"))
+
+Additive endpoints; suggested shape (adjust names to existing conventions):
+
+* `GET /api/surveys/:id/report` — summary for one survey: attempt counts by
+  status (not_started is implicit and may be omitted), completion rate, and
+  per-question answered counts.
+* `GET /api/surveys/:id/attempts` — attempts list with participant name and
+  email, status, startedAt, lastActivityAt, completedAt, and answered-count.
+* `GET /api/surveys/:id/attempts/:attemptId` — full attempt detail: each
+  question in survey order with the saved answer (text, integer, or selected
+  option texts), resolved hidden tags for selected options, the blank-skip
+  marker, and the on-path/not-on-final-path marker from the product
+  decisions above.
+* `GET /api/surveys/:id/export.csv` — CSV download (`Content-Type:
+  text/csv`, `Content-Disposition` attachment with a filename including the
+  survey id). Long format — one row per attempt-question response:
+  survey id/title, attempt id, participant email and name, attempt status,
+  started/completed timestamps, question display order/text/type, answer
+  text, answer integer, selected option texts (pipe- or semicolon-joined,
+  documented), hidden tags as `key=value` pairs (joined, documented), and
+  the on-path marker. RFC 4180-style quoting: quote fields containing
+  commas, quotes, or newlines; double embedded quotes. Build rows with a
+  small pure helper so escaping is unit-testable.
+
+Reporting queries live in a reporting service module, use parameterized SQL,
+and resolve hidden tags through
+`survey_response_selected_options -> answer_options -> answer_tags`.
+
+New response types go in `packages/shared` alongside the existing API types.
+
+Every reporting endpoint gets route tests in the same workstream: admin 200s
+with correct aggregates (fixtures with mixed in-progress/completed attempts,
+a jump path, a blank optional answer, and an orphaned branch answer),
+standard user 403, unauthenticated 401, unknown survey 404, and CSV
+escaping/shape assertions.
+
+## UI
+
+Stay inside the existing admin information architecture; dense business
+tool, not a dashboard product:
+
+* Add a Results tab to the survey workspace (joining setup / questions /
+  logic / preview) showing: the summary stats, the attempts table, and an
+  Export CSV action (a plain authenticated link or fetch-and-download is
+  fine — keep it simple and document the choice).
+* Attempt row click/expand opens the attempt detail: questions in survey
+  order, the participant's answers, hidden tags shown with the existing
+  internal-metadata styling language, and clear markers for skipped-blank,
+  never-reached, and not-on-final-path answers.
+* Add a lightweight completion indicator (for example "4/9 completed") to
+  the surveys overview rows.
+* Loading, empty ("no attempts yet"), and error states for every new view.
+* Tables must degrade to stacked cards or horizontal scroll on mobile
+  widths consistent with Phase 7 conventions; no horizontal page overflow
+  at 360px.
+
+## Security Requirements
+
+* Hidden tags appear only in admin reporting responses and the admin CSV.
+  Participant-facing endpoints must remain tag-free (covered by tests).
+* CSV output is admin-only and contains participant emails — confirm the
+  export endpoint enforces the same auth as the JSON endpoints.
+* No raw SQL string interpolation; parameterized queries only.
+* Error responses follow existing conventions and leak no SQL or stack
+  details.
+
+---
+
+# Explicit Non-Goals
+
+Do NOT implement:
+
+* charts, graphs, or visual analytics
+* filtering/segmenting reports by hidden tag values (future phase)
+* scheduled or emailed exports; PDF/XLSX formats
+* report pagination beyond simple ordering (note as a follow-up if attempt
+  volume demands it)
+* admin reopening/editing of participant attempts
+* automatic abandonment of stale in-progress attempts
+* rate limiting, health readiness, migration runner, or other deployment
+  hardening (reserved for Phase 9)
+* React component/browser-automation test infrastructure
+* any change to participant-facing survey-taking behavior
+
+---
+
+# Required Validation
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+`npm test` must pass with the documented local test-database setup; document
+the one-time setup commands in the README testing section.
+
+Also perform a manual browser pass if possible:
+
+* as admin: open Results for a survey with mixed attempt statuses; verify
+  summary counts match the attempts table
+* open an attempt detail containing a conditional jump and verify skipped
+  questions are marked rather than shown as answered
+* download the CSV and spot-check it in a spreadsheet app: quoting, one row
+  per response, hidden tags present
+* as a standard user: confirm no Results UI is reachable and direct API
+  calls to reporting endpoints return 403
+* check the Results tab at ~360px width
+
+Record results (or a documented deferral) in `markdown/PHASE_LOG.md`.
+
+---
+
+# Deliverables
+
+Provide:
+
+1. Service extraction summary: the new module map and confirmation of
+   unchanged route behavior.
+2. Test harness summary: runner setup, test database safety mechanism, and
+   a coverage list by area.
+3. Reporting implementation summary: endpoints, types, UI, and the CSV
+   format specification.
+4. The three product decisions with their confirmed or defaulted answers.
+5. Manual test results or a documented deferral.
+6. Future enhancement list (tag filtering, pagination, abandonment
+   automation, component tests).
+
+Before committing:
+
+* update `markdown/PHASE_LOG.md`
+* update `markdown/FOLLOW_UPS.md` (move the completed extraction/test
+  follow-ups; add any new ones)
+* create a handoff note at `notes/codex_handoff_phase_8.txt`
+* request Codex review using `markdown/REVIEW_CHECKLIST.md`, recorded at
+  `notes/codex_review_phase_8.txt`
+* address or document review findings before commit

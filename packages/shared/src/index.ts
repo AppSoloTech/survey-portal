@@ -175,6 +175,92 @@ export interface HealthResponse {
   timestamp: string;
 }
 
+export interface ReportParticipant {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export interface SurveyReportQuestionStat {
+  questionId: number;
+  displayOrder: number;
+  questionText: string;
+  questionType: SurveyQuestionType;
+  isRequired: boolean;
+  answeredCount: number;
+  blankCount: number;
+}
+
+export interface SurveyReportSummary {
+  surveyId: number;
+  title: string;
+  status: SurveyStatus;
+  attemptCounts: {
+    inProgress: number;
+    completed: number;
+    abandoned: number;
+    total: number;
+  };
+  completionRate: number;
+  questionStats: SurveyReportQuestionStat[];
+}
+
+export interface SurveyReportResponse {
+  report: SurveyReportSummary;
+}
+
+export interface AdminAttemptSummary {
+  attemptId: number;
+  participant: ReportParticipant;
+  status: SurveyAttemptStatus;
+  startedAt: string | null;
+  lastActivityAt: string | null;
+  completedAt: string | null;
+  answeredCount: number;
+}
+
+export interface SurveyAttemptsListResponse {
+  surveyId: number;
+  attempts: AdminAttemptSummary[];
+}
+
+export interface AdminAttemptAnswerOption {
+  answerOptionId: number;
+  optionText: string;
+  hiddenTags: { tagKey: string; tagValue: string }[];
+}
+
+// answered: a meaningful response was saved.
+// skipped_blank: a blank response row was intentionally saved for an
+//   optional question.
+// not_reached: no response row exists for this question.
+export type AdminAttemptAnswerState = "answered" | "skipped_blank" | "not_reached";
+
+export interface AdminAttemptAnswer {
+  questionId: number;
+  displayOrder: number;
+  questionText: string;
+  questionType: SurveyQuestionType;
+  isRequired: boolean;
+  state: AdminAttemptAnswerState;
+  answerText: string | null;
+  answerInteger: number | null;
+  selectedOptions: AdminAttemptAnswerOption[];
+  // True when the question sits on the navigation path implied by the
+  // attempt's saved answers. Saved answers off this path are kept as
+  // historical data and reported as "not on final path".
+  onFinalPath: boolean;
+}
+
+export interface AdminAttemptDetailResponse {
+  surveyId: number;
+  surveyTitle: string;
+  participant: ReportParticipant;
+  attempt: SurveyAttempt;
+  answers: AdminAttemptAnswer[];
+}
+
 export function resolveNextQuestion(
   survey: Survey,
   question: SurveyQuestion,

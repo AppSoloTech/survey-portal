@@ -1,0 +1,108 @@
+# Codex Review — Phase 8 Admin Reporting, CSV Export, and Test Harness
+
+Date:
+2026-06-11
+
+Reviewed against:
+- `prompts/prompt_8.txt`
+- `markdown/REVIEW_CHECKLIST.md`
+- `notes/codex_handoff_phase_8.txt`
+
+## Findings
+
+1. Medium — Results detail can show the wrong participant after quick row changes.
+
+   `SurveyResultsPage.handleViewAnswers` applies every resolved detail request
+   directly to `detail`. If an admin clicks "View answers" for attempt A, then
+   quickly clicks attempt B before A's request resolves, A can resolve last and
+   render A's participant/answers while the selected row state points at B.
+   The page-level summary fetch has a stale-response guard, but the detail
+   fetch does not.
+
+   Affected code:
+   - `apps/web/src/pages/admin/SurveyResultsPage.tsx`, lines 60-80
+   - rendered detail: `apps/web/src/pages/admin/SurveyResultsPage.tsx`, lines 217-238
+
+   Suggested fix:
+   Add a request id/ref or compare the expected `{ surveyId, attemptId }`
+   before applying `setDetail`, `setError`, `setDetailAttemptId`, and
+   `setIsDetailLoading(false)`. This can mirror the stale-response pattern
+   already used for the Results summary load and the Phase 6 workspace fetch.
+
+2. Medium — The documented "one attempt per user per survey" decision is not enforced.
+
+   Phase 8 documents the recommended default as "one attempt per user per
+   survey stands", but the attempt lifecycle still only reuses active attempts.
+   `insertSurveyAttemptOrFetchActive` inserts a fresh row after a user's prior
+   attempt is `completed` or `abandoned`, and the database unique index only
+   covers `not_started` / `in_progress` attempts. Reports therefore can show
+   multiple attempts for the same participant/survey, and completion totals are
+   attempt-count based rather than user-count based.
+
+   Affected code:
+   - `apps/api/src/services/surveyAttempts.ts`, lines 34-71
+   - active-attempt lookup: `apps/api/src/services/surveyAttempts.ts`, lines 74-96
+   - partial unique index: `database/migrations/0003_surveys.sql`, lines 111-113
+
+   Suggested fix:
+   Reconcile the product decision before commit. If one attempt per user is
+   truly the Phase 8 default, add an explicit test for starting after
+   completion and enforce/reuse/block according to that decision. If repeat
+   attempts remain allowed for now, update the Phase 8 docs/handoff language
+   to say reports are per attempt and keep the client-confirmation follow-up.
+
+3. Low — Phase 8 includes undocumented shell/profile UI changes outside the handoff scope.
+
+   `App.tsx` now adds a mobile menu state, account identity in the primary
+   nav, and removes the unauthenticated `Login` primary-nav link. `UserDashboard`
+   also removes the signed-in profile strip. These may be useful polish, but
+   they are not described in the Phase 8 handoff, whose App changes are
+   described as Results route/tab wiring.
+
+   Affected code:
+   - `apps/web/src/App.tsx`, lines 63-128
+   - `apps/web/src/pages/UserDashboard.tsx`, lines 272-282
+
+   Suggested fix:
+   Either document these as intentional Phase 7 review/Phase 8 scope carryover,
+   or revert them from the Phase 8 commit so the reporting/test harness diff
+   stays tightly scoped.
+
+## Checks Completed
+
+- Reporting routes are mounted admin-only with `requireAuth` +
+  `requireRole("admin")`.
+- Participant survey reads still request structures with hidden tags disabled;
+  reporting and CSV expose hidden tags only through admin endpoints.
+- `collectFinalPathQuestionIds` uses shared `resolveNextQuestion` and has a
+  loop guard.
+- CSV escaping is pure and tested for commas, quotes, and newlines.
+- Route composition order does not shadow the new reporting endpoints.
+- Test DB guard refuses database names without `test` and does not fall back
+  to `DATABASE_URL` / `LOCAL_DATABASE_URL`.
+- Phase 7 mobile in-progress exit path is fixed by rendering `Back to surveys`
+  on active question screens.
+
+## Validation Run
+
+Passed locally:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Notes:
+- The first sandboxed `npm test` attempt failed because API tests could not
+  connect to `127.0.0.1:5432`; rerunning with local PostgreSQL access passed
+  93/93 tests.
+- Manual browser checklist from `prompts/prompt_8.txt` was not run here and
+  remains documented as deferred.
+
+## Review Status
+
+Phase 8 is well-covered by automated tests, but I recommend addressing or
+documenting the findings above before commit.

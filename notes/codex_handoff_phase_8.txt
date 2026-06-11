@@ -1,0 +1,118 @@
+Phase 8 Implementation Handoff — for Codex Review
+==================================================
+
+Roles are reversed per explicit human instruction: Claude Code implemented
+this phase; Codex is the review assistant. Please review against
+markdown/REVIEW_CHECKLIST.md and prompts/prompt_8.txt, and record findings in
+notes/codex_review_phase_8.txt.
+
+Scope Implemented
+-----------------
+
+1. Service extraction from apps/api/src/routes/surveys.ts (was 3,650 lines;
+   now a 19-line router composition). Zero intended behavior change.
+2. First automated test harness: Vitest in all workspaces, supertest API
+   route tests against a dedicated PostgreSQL test database. 93 tests total.
+3. Admin reporting + CSV export: four new admin-only endpoints, shared
+   types, a Results tab in the survey workspace, and an overview completion
+   indicator.
+
+Product decisions (human said: apply recommended defaults, document):
+- One attempt per user per survey stands; the attempt is the reporting unit.
+- Branch-orphaned answers are kept and marked "not on final path"
+  (on_final_path column in CSV; badge in attempt detail). Path computed by
+  walking shared resolveNextQuestion over saved responses.
+- Blank optional rows reported as "skipped (blank)"; absent rows are
+  "not answered yet" (on path) or "never reached" (off path).
+
+Files To Review
+---------------
+
+Extraction (moved code verbatim; review imports/exports, not logic):
+- apps/api/src/services/validation.ts
+- apps/api/src/services/surveyRecords.ts
+- apps/api/src/services/surveyStructure.ts
+- apps/api/src/services/surveyBuilder.ts
+- apps/api/src/services/surveyAttempts.ts
+- apps/api/src/routes/surveyReadRoutes.ts
+- apps/api/src/routes/surveyBuilderRoutes.ts
+- apps/api/src/routes/surveyAttemptRoutes.ts
+- apps/api/src/routes/mySurveysRoutes.ts
+- apps/api/src/routes/surveys.ts (composition only)
+
+New code (review closely):
+- apps/api/src/services/surveyReporting.ts
+- apps/api/src/services/csv.ts
+- apps/api/src/routes/surveyReportingRoutes.ts
+- packages/shared/src/index.ts (additive reporting types only)
+- apps/web/src/pages/admin/SurveyResultsPage.tsx
+- apps/web/src/pages/admin/AdminSurveysOverview.tsx (completion indicator)
+- apps/web/src/api/surveys.ts (reporting client functions)
+- apps/web/src/App.tsx, SurveyWorkspaceLayout.tsx (Results route/tab)
+- apps/web/src/styles.css (results styles appended at end)
+
+Test harness:
+- apps/api/vitest.config.ts
+- apps/api/test/helpers/{testDatabaseUrl,globalSetup,setup,factories}.ts
+- apps/api/test/{auth,surveyVisibility,surveyBuilder,attemptLifecycle,
+  reporting,csv}.test.ts
+- packages/shared/test/resolveNextQuestion.test.ts
+- apps/web/src/components/admin/surveyFlowGraph.test.ts
+- package.json scripts, .env.example (TEST_DATABASE_URL), README testing
+  section
+
+How The Extraction Was Verified
+-------------------------------
+
+The 45 baseline route tests were written and passing against the
+pre-extraction monolith, the split was performed by moving code bodies
+verbatim (line-range extraction; only import headers and export keywords
+added), and the same tests were re-run unchanged: 45/45 before and after.
+
+Suggested Review Focus
+----------------------
+
+1. Hidden-tag and PII boundaries: reporting responses and the CSV expose
+   hidden tags and participant emails by design — verify every reporting
+   route enforces requireAuth + requireRole("admin") and that no participant
+   path gained tag access. Tests assert this (reporting.test.ts
+   "reporting authorization", surveyVisibility.test.ts), but a second pair
+   of eyes on the route wiring is the point of review.
+2. The final-path walk (collectFinalPathQuestionIds in surveyReporting.ts):
+   confirm it faithfully mirrors resolveNextQuestion semantics, including
+   the loop guard for defensive legacy data.
+3. The extraction's mount order in routes/surveys.ts: read → builder →
+   attempts → reporting. Route patterns don't overlap across methods/paths,
+   but please double-check nothing shadows GET /:id vs GET /:id/report.
+4. Test DB safety: test/helpers/testDatabaseUrl.ts must make it impossible
+   to point tests at a real database. Note the documented caveat that a
+   bare `vitest` at the repo root races all projects against one DB —
+   acceptable, or worth hardening now?
+5. CSV correctness: services/csv.ts quoting (RFC 4180) and the export's
+   one-row-per-saved-response shape (not_reached questions are omitted).
+6. The overview completion indicator fetches one report per non-draft
+   survey (N+1). Accepted as MVP-scale and tracked in FOLLOW_UPS — flag if
+   you disagree.
+
+Validation Run
+--------------
+
+- npm run typecheck / lint / build: pass (all workspaces).
+- npm test: 93/93 (shared 12, web 18, API 63).
+- git diff --check: clean.
+- Manual browser pass: NOT run (no browser automation here); checklist
+  tracked in markdown/FOLLOW_UPS.md and prompts/prompt_8.txt.
+
+Known Limitations / Deferred
+----------------------------
+
+- No pagination or tag filtering on reports (explicit non-goals).
+- No React component tests (pure-helper coverage was the phase bar).
+- Deployment hardening untouched (reserved for Phase 9).
+- abandoned-attempt automation untouched; abandoned states in tests are set
+  via direct SQL, which is also how the defensive saved-response delete
+  guard is exercised.
+
+Docs updated: markdown/PHASE_LOG.md (Phase 8 entry, includes the product
+decision defaults), markdown/FOLLOW_UPS.md (completed + new items),
+README.md (testing section), .env.example (TEST_DATABASE_URL).

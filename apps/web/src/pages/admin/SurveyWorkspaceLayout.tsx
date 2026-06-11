@@ -229,6 +229,7 @@ export function SurveyWorkspaceLayout() {
         <WorkspaceTab label={`Questions (${survey.questions.length})`} to="questions" />
         <WorkspaceTab label={`Logic (${survey.conditionalLogicRules.length})`} to="logic" />
         <WorkspaceTab label="Preview" to="preview" />
+        <WorkspaceTab label="Results" to="results" />
       </nav>
 
       {error ? <p className="status error">{error}</p> : null}

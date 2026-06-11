@@ -16,6 +16,7 @@ import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
 import { SurveyLogicPage } from "./pages/admin/SurveyLogicPage.js";
 import { SurveyPreviewPage } from "./pages/admin/SurveyPreviewPage.js";
 import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
+import { SurveyResultsPage } from "./pages/admin/SurveyResultsPage.js";
 import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
 import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
 import { Home } from "./pages/Home.js";
@@ -47,6 +48,7 @@ export function App() {
                   <Route element={<SurveyQuestionsPage />} path="questions" />
                   <Route element={<SurveyLogicPage />} path="logic" />
                   <Route element={<SurveyPreviewPage />} path="preview" />
+                  <Route element={<SurveyResultsPage />} path="results" />
                 </Route>
               </Route>
               <Route element={<NotFound />} path="*" />

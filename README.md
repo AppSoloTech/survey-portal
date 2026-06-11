@@ -67,5 +67,40 @@ npm run db:reset
 npm run typecheck
 npm run build
 npm run lint
+npm run test
 npm run start
 ```
+
+## Testing
+
+Automated tests use Vitest in every workspace. Shared and web tests are pure
+unit tests; API tests run real Express routes with supertest against a
+dedicated local PostgreSQL test database.
+
+One-time setup for the API test database:
+
+```bash
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "create database survey_portal_test"
+```
+
+Then run everything from the repository root:
+
+```bash
+npm test
+```
+
+Test database safety rules:
+
+- API tests read `TEST_DATABASE_URL` (defaults to
+  `postgresql://postgres:postgres@localhost:5432/survey_portal_test`).
+- The harness refuses to run unless the database name contains `test`, and it
+  never falls back to `DATABASE_URL`, `LOCAL_DATABASE_URL`, or
+  `HOSTED_DATABASE_URL`.
+- Each `npm test -w apps/api` run drops and recreates the test schema, applies
+  every migration in `database/migrations/`, and truncates all tables between
+  tests. Never point `TEST_DATABASE_URL` at a database whose data you care
+  about.
+
+Always run API tests through `npm test` (or `npm test -w apps/api`). Running a
+bare `vitest` from the repository root executes every workspace's test files
+in parallel against the single test database and causes spurious failures.

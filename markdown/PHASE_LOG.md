@@ -1749,3 +1749,217 @@ Commit note:
   commit this UI update separately (or call it out explicitly in the commit
   message) so the reporting/test-harness diff stays tightly scoped.
 
+---
+
+## Phase 8 — Admin Reporting, CSV Export, and Automated Test Harness
+
+Date:
+2026-06-11
+
+Status:
+Implemented; Codex review findings addressed
+
+Prompt:
+`prompts/prompt_8.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Implementation handoff: `notes/codex_handoff_phase_8.txt`
+- Codex review: `notes/codex_review_phase_8.txt` (pending)
+
+## Goals
+
+- Extract services from the 3,650-line `apps/api/src/routes/surveys.ts` with
+  zero behavior change.
+- Stand up the project's first automated test harness (Vitest + supertest +
+  dedicated PostgreSQL test database) with baseline coverage of existing
+  behavior.
+- Deliver admin reporting: completion summary, attempts list, attempt detail
+  with resolved hidden tags, and CSV export, with a Results tab in the survey
+  workspace.
+
+## Built
+
+### Workstream 1 — Service Extraction (no behavior change)
+
+- `apps/api/src/services/validation.ts`: pure request-body validators and
+  field readers.
+- `apps/api/src/services/surveyRecords.ts`: DB record interfaces, record
+  mappers, scale helpers, and single-entity fetchers.
+- `apps/api/src/services/surveyStructure.ts`: `fetchSurveyStructures` with
+  hidden-tag inclusion control.
+- `apps/api/src/services/surveyBuilder.ts`: builder mutations, ordering,
+  publish validation, and rule-reference validation.
+- `apps/api/src/services/surveyAttempts.ts`: attempt lifecycle, answer
+  validation/persistence, and navigation walks.
+- Route files split by responsibility: `surveyReadRoutes.ts`,
+  `surveyBuilderRoutes.ts`, `surveyAttemptRoutes.ts`, `mySurveysRoutes.ts`,
+  with `routes/surveys.ts` reduced to router composition. Paths, methods,
+  middleware, status codes, and messages are unchanged; the extraction was
+  done by moving code bodies verbatim.
+
+### Workstream 2 — Test Harness
+
+- Vitest in all three workspaces plus a root `npm test` script.
+- API route tests run supertest against `createApp()` with a dedicated test
+  database. The harness reads `TEST_DATABASE_URL`, refuses database names
+  without `test`, never falls back to dev/hosted URLs, resets the schema and
+  applies all migrations per run, and truncates tables between tests.
+- Baseline suites written against the pre-extraction monolith and re-run
+  unchanged after extraction: auth (register/login/me/logout/roles), survey
+  visibility and recursive hidden-tag isolation, builder publish/rule/order
+  validation and delete guards, attempt lifecycle, conditional navigation,
+  and scale answers.
+- Pure-helper unit tests: shared `resolveNextQuestion` (12 cases) and web
+  `surveyFlowGraph` (18 cases including every issue code).
+- Totals: 93 tests (12 shared, 18 web, 63 API).
+
+### Workstream 3 — Reporting And Export
+
+- Admin-only endpoints (requireAuth + requireRole admin):
+  - `GET /api/surveys/:id/report` — attempt counts by status, completion
+    rate, per-question answered/blank counts.
+  - `GET /api/surveys/:id/attempts` — attempts with participant identity,
+    status, timestamps, answered counts.
+  - `GET /api/surveys/:id/attempts/:attemptId` — answers in survey order
+    with hidden tags resolved through selected options, blank-skip markers,
+    and final-path markers.
+  - `GET /api/surveys/:id/export.csv` — RFC 4180-quoted CSV download, one
+    row per saved response, with selected options and `key=value` hidden
+    tags joined by `; `.
+- `apps/api/src/services/surveyReporting.ts` and a pure, unit-tested
+  `apps/api/src/services/csv.ts`.
+- Shared reporting types in `packages/shared`.
+- UI: Results tab in the survey workspace (summary stats, per-question
+  counts, attempts list, expandable attempt detail, Export CSV link), and a
+  completion indicator on the surveys overview rows.
+
+## Important Decisions
+
+### Product Decisions (recommended defaults applied per human instruction)
+
+1. Repeat attempts: one attempt per user per survey stands; reports treat
+   the attempt as the unit of record.
+2. Branch-change orphans: answers left unreachable by a changed branching
+   answer are kept as historical data and explicitly marked
+   "not on final path" in the attempt detail and CSV (`on_final_path`
+   column). The final path is computed by walking shared
+   `resolveNextQuestion` over the attempt's saved responses.
+3. Blank optional responses: blank saved rows are reported as
+   "skipped (blank)", distinct from questions with no response row
+   ("not answered yet" on the final path; "never reached" off it).
+
+### Extraction Before Features
+
+The baseline route tests were written against the monolith first, then the
+split was performed by moving code verbatim, then the tests were re-run
+unchanged (45/45). Reporting was built only after that gate passed.
+
+### Test Database Safety
+
+Tests configure the API by setting `LOCAL_DATABASE_URL`/`DATABASE_URL` to the
+validated test URL before the config module loads. The name-must-contain-test
+rule plus explicit conflict checks against dev/hosted URLs follow the same
+defensive posture as the seed scripts.
+
+## Architecture Notes
+
+- Database/schema impact: none. No new tables or migrations.
+- API contract impact: four new additive admin-only reporting endpoints; all
+  existing endpoints unchanged (verified by baseline tests).
+- Auth or authorization impact: reporting endpoints enforce admin role
+  server-side; tests assert 401/403 on every reporting path.
+- Data privacy or visibility impact: hidden tags appear only in admin
+  reporting responses and the admin-only CSV (which also contains
+  participant emails). Participant payloads remain tag-free, asserted
+  recursively in tests.
+- Frontend UX impact: new Results tab and overview completion indicator;
+  no participant-facing changes.
+- Environment or deployment impact: new optional `TEST_DATABASE_URL`
+  documented in `.env.example` and README; local-only.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck, lint, build across all workspaces.
+- Passed: `npm test` — 93/93 (shared 12, web 18, API 63).
+- Passed: `git diff --check`.
+- Note: run API tests via `npm test`; a bare `vitest` at the repo root runs
+  all workspaces' files in parallel against the single test database and
+  fails spuriously (documented in README).
+- Not run: manual browser pass (no browser automation in this environment).
+  The Phase 8 checklist is tracked in `markdown/FOLLOW_UPS.md`.
+
+## Codex Review Notes
+
+Source:
+
+- `notes/codex_review_phase_8.txt`
+
+Status:
+
+- Completed. Three findings; all addressed.
+
+Findings addressed:
+
+- F1 (Medium): The Results attempt-detail fetch could apply a stale response
+  if rows were clicked quickly, showing one participant's answers under
+  another's selection. Fixed with a request-id ref guard around
+  `setDetail`/`setError`/`setIsDetailLoading`, mirroring the stale-response
+  pattern used by the page-level summary load. The guard also invalidates
+  in-flight requests when the panel is toggled closed or the survey changes.
+- F2 (Medium): The documented "one attempt per user per survey" default was
+  not enforced — the start endpoint created a fresh attempt after a
+  completed or abandoned one. Resolution per the data-model decision
+  ("one active/completed attempt per user per survey"): starting a survey
+  with an existing completed attempt now returns 409
+  "This survey has already been completed" (new `fetchCompletedAttempt`
+  service helper plus a route guard). Abandoned attempts intentionally do
+  NOT block a fresh start: abandonment exists so stale attempts cannot lock
+  users out, and abandoned attempts remain visible in reports as historical
+  records. Both behaviors are covered by new route tests (start-after-complete
+  409; start-after-abandoned creates a new attempt).
+- F3 (Low): The nav-header/dashboard-identity changes predate Phase 8 and
+  were a separate user-requested task sharing the working tree. Documented
+  above as a separate phase-log entry with a recommendation to commit them
+  separately from the Phase 8 diff.
+
+## Follow-Up Tasks
+
+- Manual browser checklist for the Results tab (tracked in FOLLOW_UPS).
+- Reporting pagination and hidden-tag filtering when volume demands.
+- Replace per-survey report fetches on the overview with a batched count
+  endpoint if survey count grows.
+- Consider hoisting the saved-path walk into `packages/shared` next time a
+  consumer is added.
+- Confirm with the client that completed-blocks-restart and
+  abandoned-allows-restart match the business need (enforced as of the F2
+  fix).
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Implementation handoff created: Yes
+- Codex review created: Yes; all findings addressed (F1/F2 fixed, F3
+  documented).
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Reporting endpoints admin-gated and tested;
+  hidden-tag isolation asserted; parameterized SQL throughout.
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Automated suite complete (95 tests); browser pass
+  deferred and tracked.
+- Ready to commit: Yes, pending the user-driven browser checklist.

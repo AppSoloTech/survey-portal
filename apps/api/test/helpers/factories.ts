@@ -1,0 +1,343 @@
+import type {
+  AuthUser,
+  Survey,
+  SurveyQuestion,
+  SurveyQuestionType,
+  SurveyStatus
+} from "@survey-portal/shared";
+import type { Express } from "express";
+import request, { type Response } from "supertest";
+
+export interface TestSession {
+  cookie: string;
+  user: AuthUser;
+  password: string;
+}
+
+let uniqueCounter = 0;
+
+export function uniqueEmail(prefix = "user"): string {
+  uniqueCounter += 1;
+  return `${prefix}.${uniqueCounter}@example.com`;
+}
+
+export function extractAuthCookie(response: Response): string {
+  const rawHeader = response.headers["set-cookie"];
+  const cookies: string[] = Array.isArray(rawHeader) ? rawHeader : rawHeader ? [rawHeader] : [];
+  const authCookie = cookies.find((cookie) => cookie.startsWith("survey_portal_auth="));
+
+  if (!authCookie) {
+    throw new Error("Expected response to set the survey_portal_auth cookie");
+  }
+
+  return authCookie.split(";")[0];
+}
+
+export async function registerUser(
+  app: Express,
+  overrides: { email?: string; firstName?: string; lastName?: string } = {}
+): Promise<TestSession> {
+  const email = overrides.email ?? uniqueEmail();
+  const password = "test-password-123";
+  const response = await request(app)
+    .post("/api/auth/register")
+    .send({
+      first_name: overrides.firstName ?? "Test",
+      last_name: overrides.lastName ?? "Participant",
+      email,
+      password
+    });
+
+  if (response.status !== 201) {
+    throw new Error(`Registration failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return { cookie: extractAuthCookie(response), user: response.body.user as AuthUser, password };
+}
+
+export async function registerAdmin(app: Express): Promise<TestSession> {
+  const session = await registerUser(app, { email: uniqueEmail("admin"), lastName: "Admin" });
+  const { pool } = await import("../../src/db.js");
+
+  await pool.query(`update users set role = 'admin' where id = $1`, [session.user.id]);
+
+  return { ...session, user: { ...session.user, role: "admin" } };
+}
+
+async function expectSurveyResponse(
+  responsePromise: request.Test,
+  expectedStatus: number
+): Promise<Survey> {
+  const response = await responsePromise;
+
+  if (response.status !== expectedStatus) {
+    throw new Error(
+      `Survey builder call failed with ${response.status}: ${JSON.stringify(response.body)}`
+    );
+  }
+
+  return response.body.survey as Survey;
+}
+
+export async function createDraftSurvey(
+  app: Express,
+  admin: TestSession,
+  title = "Test survey"
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app).post("/api/surveys").set("Cookie", admin.cookie).send({ title }),
+    201
+  );
+}
+
+export async function addQuestion(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  options: {
+    questionText: string;
+    questionType?: SurveyQuestionType;
+    isRequired?: boolean;
+    displayOrder?: number;
+    scaleMin?: number;
+    scaleMax?: number;
+  }
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .post(`/api/surveys/${surveyId}/questions`)
+      .set("Cookie", admin.cookie)
+      .send({
+        questionType: "text",
+        isRequired: true,
+        ...options
+      }),
+    201
+  );
+}
+
+export async function addOption(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  questionId: number,
+  optionText: string
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .post(`/api/surveys/${surveyId}/questions/${questionId}/options`)
+      .set("Cookie", admin.cookie)
+      .send({ optionText }),
+    201
+  );
+}
+
+export async function addTag(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  questionId: number,
+  optionId: number,
+  tagKey: string,
+  tagValue: string
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .post(`/api/surveys/${surveyId}/questions/${questionId}/options/${optionId}/tags`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey, tagValue }),
+    201
+  );
+}
+
+export async function addRule(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  rule: {
+    sourceQuestionId: number;
+    sourceAnswerOptionId: number;
+    targetQuestionId: number;
+    skipTargetInNormalFlow?: boolean;
+  }
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app).post(`/api/surveys/${surveyId}/rules`).set("Cookie", admin.cookie).send(rule),
+    201
+  );
+}
+
+export async function setSurveyStatus(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  status: SurveyStatus
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .patch(`/api/surveys/${surveyId}/status`)
+      .set("Cookie", admin.cookie)
+      .send({ status }),
+    200
+  );
+}
+
+export function findQuestion(survey: Survey, questionText: string): SurveyQuestion {
+  const question = survey.questions.find((item) => item.questionText === questionText);
+
+  if (!question) {
+    throw new Error(`Question "${questionText}" not found in survey ${survey.id}`);
+  }
+
+  return question;
+}
+
+// A published survey exercising conditional navigation:
+//   Q1 "Route" single_select with options "Jump" and "Stay"
+//   Q2 "Middle" optional text
+//   Q3 "Target" optional text, jump target of Q1=Jump, skipped in normal flow
+export async function createPublishedJumpSurvey(
+  app: Express,
+  admin: TestSession
+): Promise<{
+  survey: Survey;
+  routeQuestion: SurveyQuestion;
+  jumpOptionId: number;
+  stayOptionId: number;
+  middleQuestion: SurveyQuestion;
+  targetQuestion: SurveyQuestion;
+}> {
+  let survey = await createDraftSurvey(app, admin, "Jump survey");
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Route",
+    questionType: "single_select"
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Middle",
+    isRequired: false
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Target",
+    isRequired: false
+  });
+
+  const routeQuestionId = findQuestion(survey, "Route").id;
+  survey = await addOption(app, admin, survey.id, routeQuestionId, "Jump");
+  survey = await addOption(app, admin, survey.id, routeQuestionId, "Stay");
+
+  const routeQuestion = findQuestion(survey, "Route");
+  const jumpOption = routeQuestion.answerOptions.find((option) => option.optionText === "Jump");
+  const stayOption = routeQuestion.answerOptions.find((option) => option.optionText === "Stay");
+  const targetQuestion = findQuestion(survey, "Target");
+
+  if (!jumpOption || !stayOption) {
+    throw new Error("Jump survey options were not created");
+  }
+
+  survey = await addRule(app, admin, survey.id, {
+    sourceQuestionId: routeQuestion.id,
+    sourceAnswerOptionId: jumpOption.id,
+    targetQuestionId: targetQuestion.id,
+    skipTargetInNormalFlow: true
+  });
+  survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+  return {
+    survey,
+    routeQuestion: findQuestion(survey, "Route"),
+    jumpOptionId: jumpOption.id,
+    stayOptionId: stayOption.id,
+    middleQuestion: findQuestion(survey, "Middle"),
+    targetQuestion: findQuestion(survey, "Target")
+  };
+}
+
+export async function startAttempt(
+  app: Express,
+  session: TestSession,
+  surveyId: number,
+  expectedStatus = 201
+) {
+  const response = await request(app)
+    .post(`/api/surveys/${surveyId}/start`)
+    .set("Cookie", session.cookie)
+    .send({});
+
+  if (response.status !== expectedStatus) {
+    throw new Error(`Start failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body as {
+    attempt: { id: number; status: string };
+    survey: Survey;
+    currentQuestion: SurveyQuestion | null;
+  };
+}
+
+export async function submitAnswer(
+  app: Express,
+  session: TestSession,
+  surveyId: number,
+  body: {
+    attemptId: number;
+    questionId: number;
+    answerText?: string | null;
+    answerInteger?: number | null;
+    selectedAnswerOptionIds?: number[];
+  },
+  expectedStatus = 200
+) {
+  const response = await request(app)
+    .post(`/api/surveys/${surveyId}/answer`)
+    .set("Cookie", session.cookie)
+    .send(body);
+
+  if (response.status !== expectedStatus) {
+    throw new Error(`Answer failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body as {
+    attempt: { id: number; status: string };
+    currentQuestion: SurveyQuestion | null;
+    isCompleteReady: boolean;
+  };
+}
+
+export async function completeAttempt(
+  app: Express,
+  session: TestSession,
+  surveyId: number,
+  attemptId: number,
+  expectedStatus = 200
+) {
+  const response = await request(app)
+    .post(`/api/surveys/${surveyId}/complete`)
+    .set("Cookie", session.cookie)
+    .send({ attemptId });
+
+  if (response.status !== expectedStatus) {
+    throw new Error(`Complete failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body as { attempt: { id: number; status: string } };
+}
+
+// Recursively collects every object key in a JSON payload so tests can assert
+// that hidden-tag fields never appear anywhere in participant responses.
+export function collectObjectKeys(value: unknown, keys = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectObjectKeys(item, keys);
+    }
+    return keys;
+  }
+
+  if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      keys.add(key);
+      collectObjectKeys(child, keys);
+    }
+  }
+
+  return keys;
+}

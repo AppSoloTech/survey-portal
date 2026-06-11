@@ -12,7 +12,6 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 - Add rate limiting to `/api/auth/login` and `/api/auth/register` before public exposure or hosted deployment.
 - Add maximum password length validation to avoid bcrypt's 72-byte truncation edge case.
-- Add an automated backend auth test harness before auth-sensitive behavior grows further.
 
 ### Environment And Deployment
 
@@ -27,18 +26,17 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Avoid the redundant `/api/auth/me` fetch immediately after login/register.
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Either query `app_health_check` from the health check or document the table as a migration-pipeline placeholder.
-- Decide whether completed survey attempts should prevent later repeat attempts through the start endpoint.
-- Hoist pure survey navigation helpers into `packages/shared` if frontend and backend conditional navigation logic grows.
-- Extract survey attempt/response lifecycle helpers from `apps/api/src/routes/surveys.ts` before admin reporting adds more table readers.
-- Define whether changed branching answers should prune now-unreachable saved responses or keep them as historical response data before reporting.
-- Add a live insert-at-position/reorder smoke test for Phase 4 ordering paths.
-- Extract Phase 4 survey-builder routes/services from `apps/api/src/routes/surveys.ts` before admin reporting adds more table readers.
+- Confirm with the client that the enforced attempt policy matches the business need: a completed attempt blocks new starts (409), while an abandoned attempt allows a fresh start and stays visible in reports as history.
+- Hoist the saved-path walk (`collectFinalPathQuestionIds` in `apps/api/src/services/surveyReporting.ts`, plus the similar walks in `surveyAttempts.ts` and `UserDashboard.tsx`) into `packages/shared` alongside `resolveNextQuestion` if another consumer appears.
+- Add reporting pagination and hidden-tag filtering when attempt volume or analysis needs grow.
+- The surveys overview fetches one report per non-draft survey for its completion indicator; replace with a batched count endpoint if survey count grows.
 
 ### Frontend Validation
 
 - Run browser-based route and layout inspection when a browser automation setup is available.
 - Run the Phase 7 manual browser checklist from `prompts/prompt_7.txt` at 360/390/768px widths, including the Phase 5 conditional-jump text-isolation regression check.
-- Add a lightweight frontend unit test runner so pure helpers such as `apps/web/src/components/admin/surveyFlowGraph.ts` get committed tests instead of ad hoc verification scripts.
+- Run the Phase 8 manual browser checklist from `prompts/prompt_8.txt` (Results tab, attempt detail, CSV spot-check, 360px width).
+- Add React component tests when UI behavior grows beyond what pure-helper unit tests cover.
 
 ---
 
@@ -51,3 +49,9 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Phase 4: Hardened insert-at-position display-order shifting to use a two-statement park-then-set pattern.
 - Phase 4: Enforced forward-only `JUMP_TO_QUESTION` rule targets.
 - Phase 5.1/6: User-run manual browser pass on 2026-06-11 covered the flow map and the multi-page admin workspace; results accepted.
+- Phase 8: Extracted survey builder and attempt/response services from `apps/api/src/routes/surveys.ts` into `apps/api/src/services/` with focused route files.
+- Phase 8: Added the automated test harness (Vitest + supertest + dedicated test database) covering auth, hidden-tag isolation, builder validation, ordering, attempt lifecycle, conditional navigation, and reporting.
+- Phase 8: The Phase 4 insert-at-position/reorder smoke test now runs as automated route tests in `apps/api/test/surveyBuilder.test.ts`.
+- Phase 8: Frontend unit tests now cover `surveyFlowGraph.ts` and shared `resolveNextQuestion`.
+- Phase 8: Decided changed-branch response handling for reporting: keep historical answers, mark them "not on final path" in reports and exports.
+- Phase 8 (post-review): Enforced one-completed-attempt-per-user-per-survey — the start endpoint returns 409 once a completed attempt exists; abandoned attempts permit a fresh start. Resolves the long-standing "decide whether completed attempts should prevent repeat attempts" item.
