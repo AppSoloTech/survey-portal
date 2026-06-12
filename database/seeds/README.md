@@ -27,3 +27,13 @@ The Phase 2 seed creates:
 - published test survey with text, integer, single-select, and multi-select questions
 - sample hidden answer tags
 - one sample `JUMP_TO_QUESTION` conditional rule
+
+## Straight Survey Seed (0002)
+
+Applied automatically by the same `npm run db:reset` run. Creates two
+published surveys with linear flows for dashboard and long-attempt testing:
+
+- "Employee Onboarding Experience" — 8 questions
+- "Workplace Satisfaction Survey" — 10 questions
+- mixed question types (single/multi select, scale, integer, text)
+- no conditional rules and no hidden tags
