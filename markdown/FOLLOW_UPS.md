@@ -14,6 +14,8 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 - Public/anonymous survey links: tokenized URLs so participants can take a survey without an account. Touches auth and attempt ownership; needs its own design pass.
 - Email notifications: "new survey assigned" and completion receipts. Needs an email provider decision (Azure Communication Services?) and opt-in/opt-out handling.
+- Review and merge feature/templates-and-reporting (stacked on the dark-mode branch): duplicate-as-template, resume nudge, report date range + option distribution + tag rollup. Manual browser pass over the Results tab with real data before merging.
+- Cross-survey tag rollup: aggregate a hidden tag key across all surveys (e.g. compliance_result everywhere) — per-survey rollup shipped first.
 
 ---
 

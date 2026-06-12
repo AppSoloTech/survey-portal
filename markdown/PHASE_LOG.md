@@ -2477,3 +2477,38 @@ backend complexity).
 
 Validation: typecheck, lint, build, 27 + 31 + 124 = 182 tests,
 git diff --check — all green on the branch.
+
+## Feature Branch — Templates, Resume Nudge, Reporting Upgrade
+
+Date:
+2026-06-12
+
+Branch: feature/templates-and-reporting (stacked on
+experiment/dark-mode-and-extras; neither merged to main yet). Developer
+selected this slate; public/anonymous links and email notifications were
+parked under "Future Features" in FOLLOW_UPS.md.
+
+- Survey templates: implemented as duplicate-anywhere — every admin
+  overview row gains a Duplicate action and the workspace duplicate
+  button now shows for drafts, so any survey (a draft kept as a
+  template, or a live survey) can spawn an editable draft copy through
+  the existing duplicate API. No schema or API changes.
+- Attempt resume nudge: dashboard banner for the most recently touched
+  in-progress attempt with one-click resume; frontend-only over existing
+  my-surveys data.
+- Reporting upgrade (the "meaningful aggregation" item):
+  - from/to date-range filter (inclusive YYYY-MM-DD, validated) applied
+    consistently to /report, /attempts, and /export.csv;
+  - questionStats.optionStats: per-option selection counts rendered as
+    distribution bars for selects and scales;
+  - tagStats: per-survey hidden-tag rollup (selection count + distinct
+    respondent count per tag pair, zero-count pairs included) — the
+    first reporting consumer of the hidden-tag system; admin-only, never
+    exposed to participants, honoring the Hidden Tag Principle.
+
+API contract changes are additive only (new response fields, new
+optional query params). Validation: full gate green — typecheck, lint,
+build, 27 shared + 31 web + 128 api tests, git diff --check.
+
+Deferred: cross-survey tag rollup (aggregating one tag key across all
+surveys) — noted in FOLLOW_UPS as the natural next reporting step.
