@@ -12,6 +12,7 @@ import {
 import { AdminRoute } from "./auth/AdminRoute.js";
 import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 import { ProtectedRoute } from "./auth/ProtectedRoute.js";
+import { ThemeToggle } from "./components/ThemeToggle.js";
 import { ToastProvider } from "./components/ToastProvider.js";
 import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
 import { AdminTagsPage } from "./pages/admin/AdminTagsPage.js";
@@ -133,6 +134,7 @@ function Header() {
             ) : null}
           </div>
         ) : null}
+        <ThemeToggle />
         {links.map((link) => (
           <NavLink
             className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
