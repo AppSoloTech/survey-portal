@@ -1,107 +1,36 @@
-import type { SurveyAttemptStatus, SurveyAttemptSummary } from "@survey-portal/shared";
-import { useEffect, useMemo, useState } from "react";
+import type { SurveyAttemptSummary } from "@survey-portal/shared";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { fetchMySurveys } from "../api/surveys.js";
+import { PaginationRow } from "../components/PaginationRow.js";
+import { SurveySummaryCard } from "../components/SurveySummaryCard.js";
+import { useMySurveys } from "../hooks/useMySurveys.js";
+import { groupDashboardSummaries, type CategoryGroupSummary } from "./dashboardGrouping.js";
 
-const surveysPerPage = 9;
-const allCategoriesFilter = "__all__";
-const uncategorizedLabel = "More surveys";
+const cardsPerPage = 9;
+
+type DashboardCard =
+  | { kind: "group"; group: CategoryGroupSummary }
+  | { kind: "survey"; summary: SurveyAttemptSummary };
 
 export function UserDashboard() {
-  const navigate = useNavigate();
-  const [summaries, setSummaries] = useState<SurveyAttemptSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState(allCategoriesFilter);
+  const { summaries, isLoading, error } = useMySurveys();
   const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    let isActive = true;
+  // Category groups render first as drillable cards; uncategorized surveys
+  // keep their plain survey-card presentation after them.
+  const cards = useMemo<DashboardCard[]>(() => {
+    const { groups, ungrouped } = groupDashboardSummaries(summaries);
 
-    fetchMySurveys()
-      .then((response) => {
-        if (isActive) {
-          setSummaries(response.surveys);
-        }
-      })
-      .catch((loadError) => {
-        if (isActive) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load surveys");
-        }
-      })
-      .finally(() => {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  const categoryNames = useMemo(() => {
-    const names = new Set<string>();
-
-    for (const summary of summaries) {
-      if (summary.survey.categoryName) {
-        names.add(summary.survey.categoryName);
-      }
-    }
-
-    return [...names].sort((left, right) => left.localeCompare(right));
+    return [
+      ...groups.map((group): DashboardCard => ({ kind: "group", group })),
+      ...ungrouped.map((summary): DashboardCard => ({ kind: "survey", summary }))
+    ];
   }, [summaries]);
 
-  const filteredSummaries = useMemo(() => {
-    if (categoryFilter === allCategoriesFilter) {
-      return summaries;
-    }
-
-    return summaries.filter(
-      (summary) => (summary.survey.categoryName ?? uncategorizedLabel) === categoryFilter
-    );
-  }, [categoryFilter, summaries]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredSummaries.length / surveysPerPage));
+  const pageCount = Math.max(1, Math.ceil(cards.length / cardsPerPage));
   const safePage = Math.min(page, pageCount);
-  const pagedSummaries = filteredSummaries.slice(
-    (safePage - 1) * surveysPerPage,
-    safePage * surveysPerPage
-  );
-
-  const groupedSummaries = useMemo(() => {
-    const groups = new Map<string, SurveyAttemptSummary[]>();
-
-    for (const summary of pagedSummaries) {
-      const groupName = summary.survey.categoryName ?? uncategorizedLabel;
-      const group = groups.get(groupName) ?? [];
-      group.push(summary);
-      groups.set(groupName, group);
-    }
-
-    // Named categories first (alphabetical), the uncategorized group last.
-    return [...groups.entries()].sort(([left], [right]) => {
-      if (left === uncategorizedLabel) {
-        return 1;
-      }
-
-      if (right === uncategorizedLabel) {
-        return -1;
-      }
-
-      return left.localeCompare(right);
-    });
-  }, [pagedSummaries]);
-
-  function handleFilterChange(filter: string) {
-    setCategoryFilter(filter);
-    setPage(1);
-  }
-
-  function openSurvey(summary: SurveyAttemptSummary) {
-    navigate(`/surveys/${summary.survey.id}/attempt`);
-  }
+  const pagedCards = cards.slice((safePage - 1) * cardsPerPage, safePage * cardsPerPage);
 
   return (
     <section className="page dashboard-page">
@@ -117,125 +46,45 @@ export function UserDashboard() {
         <p className="status muted">No published surveys are available.</p>
       ) : null}
 
-      {categoryNames.length > 0 ? (
-        <div aria-label="Filter surveys by category" className="category-filter-row" role="group">
-          <FilterChip
-            isActive={categoryFilter === allCategoriesFilter}
-            label="All surveys"
-            onClick={() => handleFilterChange(allCategoriesFilter)}
-          />
-          {categoryNames.map((name) => (
-            <FilterChip
-              isActive={categoryFilter === name}
-              key={name}
-              label={name}
-              onClick={() => handleFilterChange(name)}
-            />
-          ))}
-          {summaries.some((summary) => !summary.survey.categoryName) ? (
-            <FilterChip
-              isActive={categoryFilter === uncategorizedLabel}
-              label={uncategorizedLabel}
-              onClick={() => handleFilterChange(uncategorizedLabel)}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      <div className="survey-grid">
+        {pagedCards.map((card) =>
+          card.kind === "group" ? (
+            <CategoryGroupCard group={card.group} key={`category-${card.group.categoryId}`} />
+          ) : (
+            <SurveySummaryCard key={`survey-${card.summary.survey.id}`} summary={card.summary} />
+          )
+        )}
+      </div>
 
-      {groupedSummaries.map(([groupName, groupSummaries]) => (
-        <div className="survey-category-group" key={groupName}>
-          {categoryNames.length > 0 ? <h3 className="survey-category-title">{groupName}</h3> : null}
-          <div className="survey-grid">
-            {groupSummaries.map((summary) => (
-              <article className="survey-card" key={summary.survey.id}>
-                <div>
-                  <h4>{summary.survey.title}</h4>
-                  {summary.survey.description ? <p>{summary.survey.description}</p> : null}
-                </div>
-                <div className="survey-card-footer">
-                  <span className={`status-pill ${summary.attempt?.status ?? "not_started"}`}>
-                    {formatAttemptStatus(summary.attempt?.status ?? "not_started")}
-                  </span>
-                  <button
-                    className={`button-link compact-button ${getSurveyActionButtonClass(
-                      summary.attempt?.status
-                    )}`}
-                    onClick={() => openSurvey(summary)}
-                    type="button"
-                  >
-                    {getSurveyActionLabel(summary.attempt?.status)}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {pageCount > 1 ? (
-        <div className="pagination-row" aria-label="Survey pages">
-          <button
-            className="button-link compact-button secondary-button"
-            disabled={safePage <= 1}
-            onClick={() => setPage(safePage - 1)}
-            type="button"
-          >
-            Previous
-          </button>
-          <span className="pagination-status">
-            Page {safePage} of {pageCount}
-          </span>
-          <button
-            className="button-link compact-button secondary-button"
-            disabled={safePage >= pageCount}
-            onClick={() => setPage(safePage + 1)}
-            type="button"
-          >
-            Next
-          </button>
-        </div>
-      ) : null}
+      <PaginationRow onPageChange={setPage} page={safePage} pageCount={pageCount} />
     </section>
   );
 }
 
-function FilterChip({
-  isActive,
-  label,
-  onClick
-}: {
-  isActive: boolean;
-  label: string;
-  onClick: () => void;
-}) {
+function CategoryGroupCard({ group }: { group: CategoryGroupSummary }) {
+  const navigate = useNavigate();
+
   return (
-    <button
-      aria-pressed={isActive}
-      className={isActive ? "category-filter-chip active" : "category-filter-chip"}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
+    <article className="survey-card category-card">
+      <div>
+        <p className="eyebrow">Survey group</p>
+        <h4>{group.categoryName}</h4>
+        <p>
+          {group.completedCount} of {group.surveyCount} completed
+        </p>
+      </div>
+      <div className="survey-card-footer">
+        <span className="status-pill">
+          {group.surveyCount === 1 ? "1 survey" : `${group.surveyCount} surveys`}
+        </span>
+        <button
+          className="button-link compact-button primary-button"
+          onClick={() => navigate(`/dashboard/category/${group.categoryId}`)}
+          type="button"
+        >
+          View surveys
+        </button>
+      </div>
+    </article>
   );
-}
-
-function getSurveyActionLabel(status: SurveyAttemptStatus | undefined): string {
-  if (status === "completed") {
-    return "View completed";
-  }
-
-  if (status === "in_progress" || status === "not_started") {
-    return status === "in_progress" ? "Resume survey" : "Start survey";
-  }
-
-  return "Start survey";
-}
-
-function getSurveyActionButtonClass(status: SurveyAttemptStatus | undefined): string {
-  return status === "completed" ? "secondary-button" : "primary-button";
-}
-
-function formatAttemptStatus(status: SurveyAttemptStatus): string {
-  return status.replace("_", " ");
 }

@@ -22,6 +22,7 @@ import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
 import { SurveyResultsPage } from "./pages/admin/SurveyResultsPage.js";
 import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
 import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
+import { CategorySurveysPage } from "./pages/CategorySurveysPage.js";
 import { Home } from "./pages/Home.js";
 import { Login } from "./pages/Login.js";
 import { NotFound } from "./pages/NotFound.js";
@@ -44,6 +45,7 @@ export function App() {
                 <Route element={<Register />} path="/register" />
                 <Route element={<ProtectedRoute />}>
                   <Route element={<UserDashboard />} path="/dashboard" />
+                  <Route element={<CategorySurveysPage />} path="/dashboard/category/:categoryId" />
                   <Route element={<SurveyAttemptPage />} path="/surveys/:surveyId/attempt" />
                 </Route>
                 <Route element={<AdminRoute />}>
