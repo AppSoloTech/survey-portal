@@ -9,6 +9,12 @@ on:
       - main
   workflow_dispatch:
 
+# Only the newest push should reach the Web App; cancel superseded runs so a
+# slow older deploy can never overwrite a newer one.
+concurrency:
+  group: deploy-njsda-wa
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,17 +29,24 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: npm install, build, and test
+      - name: Install, build, and prune to production dependencies
         run: |
-          npm install
-          npm run build --if-present
-          # npm run test --if-present
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      # Uploading the raw tree (node_modules is hundreds of thousands of
+      # small files) makes artifact upload/download take 30+ minutes; a
+      # single zip keeps the pipeline fast. zip follows the workspace
+      # symlinks in node_modules so the target needs no symlink support.
+      - name: Package app into a single zip artifact
+        run: zip -r -q release.zip . -x '.git/*' -x '.github/*'
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: release.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -47,7 +60,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -61,5 +74,4 @@ jobs:
         with:
           app-name: 'njsda-wa'
           slot-name: 'Production'
-          package: .
-          
+          package: release.zip
