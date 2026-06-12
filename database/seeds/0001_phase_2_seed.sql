@@ -198,3 +198,11 @@ where not exists (
     and existing.action_type = 'JUMP_TO_QUESTION'
     and existing.target_question_id = target_question.id
 );
+
+-- Register every seeded answer tag in the reusable tag catalog. Seed SQL
+-- bypasses the API's registerTagDefinition(), so without this the catalog
+-- page lists zero entries on a freshly seeded database.
+insert into tag_definitions (tag_key, tag_value)
+select distinct tag_key, tag_value
+from answer_tags
+on conflict (tag_key, tag_value) do nothing;
