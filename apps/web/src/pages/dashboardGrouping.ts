@@ -55,3 +55,22 @@ export function summariesForCategory(
 ): SurveyAttemptSummary[] {
   return summaries.filter((summary) => summary.survey.categoryId === categoryId);
 }
+
+// Case-insensitive match against title, description, and category name.
+// Runs before grouping, so group cards reflect the count of matches.
+export function filterSummaries(
+  summaries: SurveyAttemptSummary[],
+  query: string
+): SurveyAttemptSummary[] {
+  const needle = query.trim().toLowerCase();
+
+  if (!needle) {
+    return summaries;
+  }
+
+  return summaries.filter((summary) =>
+    [summary.survey.title, summary.survey.description, summary.survey.categoryName].some(
+      (field) => field?.toLowerCase().includes(needle)
+    )
+  );
+}

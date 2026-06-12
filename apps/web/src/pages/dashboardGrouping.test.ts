@@ -1,7 +1,11 @@
 import type { Survey, SurveyAttempt, SurveyAttemptSummary } from "@survey-portal/shared";
 import { describe, expect, it } from "vitest";
 
-import { groupDashboardSummaries, summariesForCategory } from "./dashboardGrouping.js";
+import {
+  filterSummaries,
+  groupDashboardSummaries,
+  summariesForCategory
+} from "./dashboardGrouping.js";
 
 let nextSurveyId = 1;
 
@@ -70,6 +74,34 @@ describe("groupDashboardSummaries", () => {
 
   it("handles an empty summary list", () => {
     expect(groupDashboardSummaries([])).toEqual({ groups: [], ungrouped: [] });
+  });
+});
+
+describe("filterSummaries", () => {
+  it("returns everything for a blank query", () => {
+    const summaries = [buildSummary({}), buildSummary({})];
+
+    expect(filterSummaries(summaries, "")).toHaveLength(2);
+    expect(filterSummaries(summaries, "   ")).toHaveLength(2);
+  });
+
+  it("matches title, description, and category name case-insensitively", () => {
+    const byTitle = buildSummary({});
+    byTitle.survey.title = "Employee Onboarding";
+    const byDescription = buildSummary({});
+    byDescription.survey.description = "Annual COMPLIANCE review";
+    const byCategory = buildSummary({ categoryId: 1, categoryName: "Workplace" });
+    const noMatch = buildSummary({});
+
+    const summaries = [byTitle, byDescription, byCategory, noMatch];
+
+    expect(filterSummaries(summaries, "onboarding")).toEqual([byTitle]);
+    expect(filterSummaries(summaries, "compliance")).toEqual([byDescription]);
+    expect(filterSummaries(summaries, "workplace")).toEqual([byCategory]);
+  });
+
+  it("returns an empty list when nothing matches", () => {
+    expect(filterSummaries([buildSummary({})], "zzz-no-match")).toEqual([]);
   });
 });
 

@@ -2021,6 +2021,7 @@ main {
   }
 
   .auth-form input,
+  .dashboard-search input,
   .question-form input[type="number"],
   .question-form textarea,
   .builder-form input,
@@ -2028,6 +2029,10 @@ main {
   .question-editor input,
   .question-editor select {
     min-height: var(--tap-target);
+  }
+
+  .dashboard-search input {
+    max-width: none;
   }
 
   .tag-preset-chip button {
@@ -2159,10 +2164,28 @@ main {
 .results-question-stat-row {
   align-items: baseline;
   border-bottom: 1px solid var(--divider);
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
+  display: grid;
+  gap: 0.25rem 0.75rem;
+  grid-template-columns: 1fr auto;
   padding: 0.5rem 0;
+}
+
+/* Funnel bar under each label/count pair; width comes from inline style. */
+.results-question-bar {
+  background: var(--surface-2);
+  border-radius: 999px;
+  display: block;
+  grid-column: 1 / -1;
+  height: 0.375rem;
+  overflow: hidden;
+}
+
+.results-question-bar-fill {
+  background: var(--brand);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+  min-width: 2px;
 }
 
 .results-question-label {
@@ -2336,9 +2359,7 @@ main {
   }
 
   .results-question-stat-row {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.25rem;
+    grid-template-columns: 1fr;
   }
 
   .results-question-counts {
@@ -2435,6 +2456,28 @@ main {
   margin: 0;
   max-width: none;
   padding: 0;
+}
+
+.dashboard-search {
+  margin-bottom: 1rem;
+}
+
+.dashboard-search input {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  max-width: 360px;
+  min-height: 2.6rem;
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+}
+
+.dashboard-search input:focus {
+  border-color: var(--brand);
+  outline: 3px solid var(--focus-ring);
 }
 
 .category-card {

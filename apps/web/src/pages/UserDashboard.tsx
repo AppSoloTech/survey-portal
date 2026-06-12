@@ -5,7 +5,11 @@ import { useNavigate } from "react-router-dom";
 import { PaginationRow } from "../components/PaginationRow.js";
 import { SurveySummaryCard } from "../components/SurveySummaryCard.js";
 import { useMySurveys } from "../hooks/useMySurveys.js";
-import { groupDashboardSummaries, type CategoryGroupSummary } from "./dashboardGrouping.js";
+import {
+  filterSummaries,
+  groupDashboardSummaries,
+  type CategoryGroupSummary
+} from "./dashboardGrouping.js";
 
 const cardsPerPage = 9;
 
@@ -16,17 +20,19 @@ type DashboardCard =
 export function UserDashboard() {
   const { summaries, isLoading, error } = useMySurveys();
   const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
 
   // Category groups render first as drillable cards; uncategorized surveys
-  // keep their plain survey-card presentation after them.
+  // keep their plain survey-card presentation after them. The search filter
+  // runs before grouping, so group cards reflect matching surveys only.
   const cards = useMemo<DashboardCard[]>(() => {
-    const { groups, ungrouped } = groupDashboardSummaries(summaries);
+    const { groups, ungrouped } = groupDashboardSummaries(filterSummaries(summaries, query));
 
     return [
       ...groups.map((group): DashboardCard => ({ kind: "group", group })),
       ...ungrouped.map((summary): DashboardCard => ({ kind: "survey", summary }))
     ];
-  }, [summaries]);
+  }, [query, summaries]);
 
   const pageCount = Math.max(1, Math.ceil(cards.length / cardsPerPage));
   const safePage = Math.min(page, pageCount);
@@ -44,6 +50,27 @@ export function UserDashboard() {
       {isLoading ? <p className="status muted">Loading surveys...</p> : null}
       {!isLoading && summaries.length === 0 ? (
         <p className="status muted">No published surveys are available.</p>
+      ) : null}
+
+      {summaries.length > 0 ? (
+        <div className="dashboard-search">
+          <label>
+            <span className="visually-hidden">Search surveys</span>
+            <input
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search surveys and groups..."
+              type="search"
+              value={query}
+            />
+          </label>
+        </div>
+      ) : null}
+
+      {!isLoading && summaries.length > 0 && cards.length === 0 ? (
+        <p className="status muted">No surveys match "{query.trim()}".</p>
       ) : null}
 
       <div className="survey-grid">
