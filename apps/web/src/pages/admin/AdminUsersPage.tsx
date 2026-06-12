@@ -109,17 +109,17 @@ export function AdminUsersPage() {
 
                 return (
                   <tr key={user.id}>
-                    <td>
+                    <td data-label="Name">
                       {user.firstName} {user.lastName}
                       {isSelf ? <span className="muted"> (you)</span> : null}
                     </td>
-                    <td>{user.email}</td>
-                    <td>
+                    <td data-label="Email">{user.email}</td>
+                    <td data-label="Role">
                       <span className={`nav-identity-role ${user.role}`}>
                         {user.role === "admin" ? "Admin" : "User"}
                       </span>
                     </td>
-                    <td>{formatDate(user.createdAt)}</td>
+                    <td data-label="Registered">{formatDate(user.createdAt)}</td>
                     <td>
                       {user.role === "admin" ? (
                         <button
