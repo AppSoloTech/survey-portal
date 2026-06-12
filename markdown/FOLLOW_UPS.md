@@ -19,7 +19,6 @@ Review this file before starting each implementation phase. When a follow-up is 
 ### Environment And Deployment
 
 - Verify the first run of the Azure deploy workflow (`.github/workflows/main_njsda-wa.yml`) after the Phase 9/10 code is pushed to `main`.
-- The Phase 9 `ci.yml` was replaced by the Azure-generated deploy workflow before it ever ran, and that workflow's test step is commented out (no PostgreSQL service in the job). Reintroduce automated CI checks (typecheck, lint, test with a PostgreSQL service) as a separate workflow or a gated job in the deploy workflow.
 - Configure the Azure Web App application settings for production: `RUN_ENV=prod`, `NODE_ENV=production`, a strong `JWT_SECRET`, `DATABASE_URL` for the hosted PostgreSQL server (connection verified 2026-06-11), and `TRUST_PROXY_HOPS=1`. Decide on a dedicated application database on the hosted server instead of the default `postgres` database, then run `npm run db:migrate` and `npm run admin:provision` against it.
 
 ### API And Code Quality
@@ -48,6 +47,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 10 round 2: Reintroduced automated CI checks as a gated job in the Azure deploy workflow — lint, build, and the full test suite run against a postgres:18 service container before packaging, and a red run blocks the deploy.
 - Phase 2: Added a safe local admin seed in `database/seeds/0001_phase_2_seed.sql`.
 - Phase 3: Migrated from local-storage bearer JWTs to httpOnly, SameSite cookie auth before persisted survey response data was implemented.
 - Phase 4: Added same-survey conditional rule validation, publish-time question requirements, and explicit length bounds for survey builder writes.
