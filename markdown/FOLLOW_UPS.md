@@ -3,6 +3,10 @@
 This file tracks accepted loose ends that should not be forgotten when a phase moves on without implementing them.
 
 Review this file before starting each implementation phase. When a follow-up is completed, move it to the completed section with the phase or commit that resolved it.
+- Run a manual browser pass over the round-2 Phase 10 changes: tag catalog listing seeded tags after `npm run db:reset`, dashboard category group cards and /dashboard/category/:categoryId drill-in (375/768/1280px), and the skip-rule builder flow (create multi-skip rules, flow map skip edges, attempt navigation both ways, Results states).
+- Consider grouping multi-target skip rules visually in the rules list (one row per skipped question today; grouped display deferred).
+- Consider a `skip_rule_covers_all_options` flow-map check (flag when every answer option of a source question skips the same target).
+- Consider a batch rules endpoint (`targetQuestionIds[]` in one transaction) if multi-skip rule creation volume grows; the UI currently fans out one POST per skipped question.
 
 ---
 

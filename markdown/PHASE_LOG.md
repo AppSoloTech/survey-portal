@@ -2378,3 +2378,72 @@ Verified by importing the built config in an Azure-like environment (no
 `.env` file, `RUN_ENV=prod`, only `DB_*` + `JWT_SECRET`): the URL resolves
 to the provided host/database with encoded credentials. Full validation
 gate rerun: typecheck, lint, build, 150/150 tests, `git diff --check`.
+
+## Phase 10 — Testing Pass Round 2: Tag Catalog Backfill, Category Drill-In, Conditional Skip Rules
+
+Date:
+2026-06-12
+
+Received issue list (3 items, from prompts/prompt_10.txt):
+1. Seeded tags not editable/accessible in the tag catalog (classified: bug).
+2. Survey groups displayed as drillable cards on the dashboard; ungrouped
+   surveys keep their plain card presentation (classified: UX feature).
+3. A second conditional-logic option that skips one or more questions based
+   on the answer provided, alongside existing jump rules (classified:
+   feature; participant-facing navigation + additive API contract).
+
+Intake finding: the "total CRUD" portion of issue 1 was already implemented
+in the earlier Phase 10 commit (routes/tags.ts, AdminTagsPage edit/delete,
+tagCatalog.test.ts). The remaining defect was that seed SQL bypasses the
+API's registerTagDefinition(), so seeded answer tags never reached
+tag_definitions and the catalog listed zero entries.
+
+Fixes implemented:
+- Issue 1: migration 0009_tag_definitions_backfill.sql re-runs the
+  idempotent catalog backfill; the seed file now registers its own tags.
+- Issue 2: dashboard shows one category group card per category (name,
+  completed-of-total, survey count) ahead of ungrouped survey cards in a
+  single paginated grid; clicking drills into the new protected route
+  /dashboard/category/:categoryId with breadcrumb back-navigation. Pure
+  grouping logic extracted to pages/dashboardGrouping.ts with unit tests;
+  shared SurveySummaryCard/PaginationRow components and a useMySurveys hook
+  replace the previous inline markup. The category filter-chip row was
+  removed (replaced by the group cards).
+- Issue 3: implemented as answer-conditional skip rules reusing the
+  HIDE_QUESTION action type already allowed by the schema — one rule row per
+  (source answer, skipped question); the admin UI multi-selects questions
+  and fans out one rule per choice. Shared engine: resolveNextQuestion gains
+  an optional hiddenQuestionIds set (static normal-flow skip set is now
+  JUMP-only; hidden jump targets fall through to the next visible question);
+  resolveAttemptPath activates skip rules incrementally along the walked
+  path, so stale off-path answers hide nothing and backward hides are
+  impossible. API: validation accepts both action types and forces
+  skipTargetInNormalFlow=false for skips; rule routes parameterize
+  action_type; publish validation treats HIDE_QUESTION as supported;
+  reporting's collectFinalPathQuestionIds now delegates to
+  resolveAttemptPath so report path semantics cannot diverge from the
+  runtime. Flow map renders skip edges with a new legend entry and a
+  duplicate_skip_rule informational issue; skip edges do not create
+  reachability. Migration 0010 extends the target-required check constraint
+  to HIDE_QUESTION rows.
+
+Assumptions (documented per intake rules): route-based drill-in and
+one-rule-row-per-skipped-question were confirmed with the developer before
+implementation; skipped questions report as not_reached / off final path,
+matching the existing jump-bypass presentation; rule-skipped required
+questions do not block completion (they are off the navigation path).
+
+Tests: 179 passing — shared 27 (skip-set semantics, hidden-set advance,
+hidden jump-target fall-through, incremental path activation, stale-answer
+isolation), web 28 (dashboard grouping; flow-graph skip support, redundant
+duplicate detection, reachability), api 124 (skip rule CRUD + forced flag,
+JUMP<->HIDE conversion, unsupported action rejection, attempt navigation
+with skips, completion with rule-hidden required questions, trigger-change
+restoration, reporting states for skipped and answered-then-hidden
+questions).
+
+Validation gate: npm run typecheck, lint, build, test (27 + 28 + 124), and
+git diff --check all pass.
+
+Commit readiness: implementation complete; pending Claude review per the
+phase role arrangement.

@@ -245,3 +245,93 @@ Re-review pointers:
 
 Validation rerun after fixes: typecheck, lint, build, npm test
 (150/150 — shared 18, web 18, API 114), git diff --check — all passed.
+
+=======================================================================
+Round 2 addendum — 2026-06-12 testing-pass fixes (3-item list)
+=======================================================================
+
+Issue list source: prompts/prompt_10.txt (embedded 3-item report).
+Phase log: markdown/PHASE_LOG.md ("Phase 10 — Testing Pass Round 2").
+
+Issue-by-issue map:
+
+1. Seeded tags missing from catalog (bug, small):
+   - database/migrations/0009_tag_definitions_backfill.sql (idempotent
+     re-backfill) and the registration insert appended to
+     database/seeds/0001_phase_2_seed.sql.
+   - Catalog CRUD itself pre-existed (routes/tags.ts, AdminTagsPage.tsx,
+     tagCatalog.test.ts) — verified, not re-implemented.
+
+2. Category group cards + drill-in (web only):
+   - apps/web/src/pages/dashboardGrouping.ts (+ .test.ts),
+     pages/UserDashboard.tsx (group cards first, ungrouped survey cards
+     after, single paginated grid), new pages/CategorySurveysPage.tsx at
+     /dashboard/category/:categoryId (App.tsx route, ProtectedRoute),
+     shared components/SurveySummaryCard.tsx, components/PaginationRow.tsx,
+     hooks/useMySurveys.ts. Filter chips removed (dead CSS pruned).
+
+3. Conditional skip rules (full stack — riskiest spots first):
+   - packages/shared/src/index.ts: resolveNextQuestion now takes an optional
+     hiddenQuestionIds set; the static normal-flow skip set is JUMP-only
+     (intentional behavior change for non-jump rules with the flag — old
+     shared test rewritten); hidden jump targets advance from the target.
+     resolveAttemptPath activates HIDE rules incrementally along the path
+     (collectActivatedHiddenQuestionIds). Review focus: ordering — rules
+     sourced at a question are activated AFTER the question is pushed to
+     the path and BEFORE the next-question resolution.
+   - apps/api/src/services/validation.ts: actionType now JUMP_TO_QUESTION |
+     HIDE_QUESTION; skipTargetInNormalFlow forced false for HIDE.
+   - apps/api/src/routes/surveyBuilderRoutes.ts: action_type parameterized
+     in POST/PUT rule SQL.
+   - apps/api/src/services/surveyBuilder.ts: publish validation accepts
+     HIDE_QUESTION and rejects HIDE rows with the static skip flag set.
+   - apps/api/src/services/surveyReporting.ts: collectFinalPathQuestionIds
+     delegates to resolveAttemptPath (removes the duplicated walk).
+   - apps/web/src/components/admin/surveyFlowGraph.ts: JUMP-only static
+     skip set, HIDE supported (no unsupported_action_type), skip edges
+     excluded from reachability adjacency, new duplicate_skip_rule issue.
+   - apps/web/src/components/admin/SurveyFlowMap.tsx: skip legend item,
+     "Skipped by rule …" incoming bucket, "skip question N" edge text.
+   - apps/web/src/pages/admin/SurveyLogicPage.tsx: Action select; skip mode
+     shows a checkbox list of later questions and creates one HIDE rule per
+     checked question sequentially inside one runSurveyMutation.
+   - apps/web/src/components/admin/SurveyBuilderComponents.tsx RuleEditor:
+     per-row Action select; skip rows hide the normal-flow checkbox.
+   - database/migrations/0010_hide_question_target_check.sql: target
+     requirement extended to HIDE_QUESTION.
+
+Contract changes (additive only): rule POST/PUT bodies accept
+actionType ("JUMP_TO_QUESTION" default | "HIDE_QUESTION"); responses carry
+the persisted actionType/skipTargetInNormalFlow as before. No auth,
+hidden-tag, attempt-policy, or error-shape changes.
+
+Validation: npm run typecheck, lint, build all pass; tests 27 shared +
+28 web + 124 api = 179 passing; git diff --check clean. API tests ran the
+new 0009/0010 migrations via the standard test-database global setup.
+
+Manual verification still owed (also in FOLLOW_UPS.md): browser pass over
+seeded-tag catalog visibility, dashboard drill-in at 375/768/1280px, and an
+end-to-end skip-rule attempt (both trigger paths) with flow map + Results.
+
+-----------------------------------------------------------------------
+Round 2 review fixes — 2026-06-12 (Codex findings)
+-----------------------------------------------------------------------
+
+P2 (stale skip targets / partial creation) — fixed:
+- SurveyLogicPage.tsx: changing the source question (or the action type)
+  now clears skipTargetIds, so selections can never outlive the target
+  list they were made from; submit additionally filters to ids present in
+  the current activeRuleTargetQuestions as defense in depth.
+- Partial-failure resync: the fan-out loop counts successful creates; if a
+  later create fails after earlier ones persisted, the page calls the new
+  reloadSurvey() from SurveyWorkspaceLayout context (toast-free refetch via
+  fetchAdminSurvey) so the saved partial rules are visible and deletable
+  alongside the error banner. Server-side atomic batch creation remains
+  deferred in FOLLOW_UPS.md.
+- Validation after fix: web typecheck, lint, 28 tests, build all pass.
+
+Open question (main_njsda-wa.yml packaging/pruning change) — answered:
+- That working-tree modification predates this round-2 implementation; it
+  was already uncommitted in git status before any round-2 work began and
+  no round-2 change touched the file. It is unrelated to the 3-item issue
+  list and should be reviewed/committed separately by the developer.

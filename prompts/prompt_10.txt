@@ -12,9 +12,10 @@ This prompt is intentionally list-driven. The human may start the phase with:
 Start prompts/prompt_10.txt
 
 Issues:
-1. ...
-2. ...
-3. ...
+1. Current/seeded tags are not editable or accessible in the "Manage tags catalog"
+- Need total CRUD functionality here
+2. Survey categoris grouping: survey groups need to be displayed as surveys are now. User should be able to click on a survey group to drill into individual surveys. If a survey is not in a group, continue to display as normal until assigned a group.
+3. Jump Logic: We are currently able to "Skip target in normal flow" or leave the target in the normal sequence of questions. Add a second option to skip any given question (would like to add multiple questions to skip) conditional to the answer provided.
 ```
 
 Codex must treat the text after the start line as the active testing report
