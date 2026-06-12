@@ -695,6 +695,35 @@ export async function duplicateSurveyTree(
     );
   }
 
+  const valueTagsResult = await queryable.query<{
+    question_id: number;
+    integer_min: number | null;
+    integer_max: number | null;
+    tag_key: string;
+    tag_value: string;
+  }>(
+    `select question_id, integer_min, integer_max, tag_key, tag_value
+     from question_value_tags
+     join survey_questions on survey_questions.id = question_value_tags.question_id
+     where survey_questions.survey_id = $1
+     order by question_value_tags.id`,
+    [surveyId]
+  );
+
+  for (const valueTag of valueTagsResult.rows) {
+    const newQuestionId = questionIdMap.get(valueTag.question_id);
+
+    if (!newQuestionId) {
+      continue;
+    }
+
+    await queryable.query(
+      `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value)
+       values ($1, $2, $3, $4, $5)`,
+      [newQuestionId, valueTag.integer_min, valueTag.integer_max, valueTag.tag_key, valueTag.tag_value]
+    );
+  }
+
   const rulesResult = await queryable.query<{
     source_question_id: number;
     source_answer_option_id: number;

@@ -378,12 +378,21 @@ function AnswerValue({ answer }: { answer: AdminAttemptAnswer }) {
     );
   }
 
-  if (answer.answerText !== null) {
-    return <p className="results-answer-value">{answer.answerText}</p>;
-  }
-
-  if (answer.answerInteger !== null) {
-    return <p className="results-answer-value">{answer.answerInteger}</p>;
+  if (answer.answerText !== null || answer.answerInteger !== null) {
+    return (
+      <>
+        <p className="results-answer-value">{answer.answerText ?? answer.answerInteger}</p>
+        {answer.valueTags.length > 0 ? (
+          <div className="results-selected-options">
+            {answer.valueTags.map((tag) => (
+              <span className="results-hidden-tag" key={`${tag.tagKey}:${tag.tagValue}`}>
+                {tag.tagKey}: {tag.tagValue}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
   }
 
   return null;

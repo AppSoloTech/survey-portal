@@ -10,9 +10,11 @@ import { Link } from "react-router-dom";
 import {
   createAnswerOption,
   createAnswerTag,
+  createQuestionValueTag,
   createQuestion,
   deleteAnswerOption,
   deleteAnswerTag,
+  deleteQuestionValueTag,
   deleteQuestion,
   reorderAnswerOptions,
   reorderQuestions,
@@ -269,6 +271,53 @@ export function SurveyQuestionsPage() {
     );
   }
 
+  // Value tags live on the question itself (text/integer types). Bounds are
+  // read leniently: blank inputs mean "no bound".
+  async function handleAddValueTag(event: FormEvent<HTMLFormElement>, question: SurveyQuestion) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const readOptionalBound = (field: string): number | null => {
+      const raw = String(data.get(field) ?? "").trim();
+
+      return raw === "" ? null : Number(raw);
+    };
+
+    const didSave = await runSurveyMutation(
+      () =>
+        createQuestionValueTag({
+          surveyId: survey.id,
+          questionId: question.id,
+          tagKey: readFormText(data, "tagKey"),
+          tagValue: readFormText(data, "tagValue"),
+          integerMin: question.questionType === "integer" ? readOptionalBound("integerMin") : null,
+          integerMax: question.questionType === "integer" ? readOptionalBound("integerMax") : null
+        }),
+      "Hidden tag added"
+    );
+
+    if (didSave) {
+      form.reset();
+    }
+  }
+
+  async function handleDeleteValueTag(question: SurveyQuestion, valueTagId: number) {
+    if (!confirmAdminAction("Remove this hidden tag?")) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        deleteQuestionValueTag({
+          surveyId: survey.id,
+          questionId: question.id,
+          valueTagId
+        }),
+      "Hidden tag removed"
+    );
+  }
+
   async function handleAddTag(
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion,
@@ -432,6 +481,8 @@ export function SurveyQuestionsPage() {
             key={question.id}
             onAddOption={handleAddOption}
             onAddTag={handleAddTag}
+            onAddValueTag={handleAddValueTag}
+            onDeleteValueTag={handleDeleteValueTag}
             onDeleteOption={handleDeleteOption}
             onDeleteQuestion={handleDeleteQuestion}
             onDeleteTag={handleDeleteTag}

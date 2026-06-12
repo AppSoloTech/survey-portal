@@ -46,6 +46,50 @@ export interface AnswerTag {
   updatedAt: string;
 }
 
+// Hidden tag conditioned on the respondent's entered value, for questions
+// without answer options. Integer questions use the optional inclusive
+// bounds; text questions have null bounds and match any non-blank answer.
+// Admin-only — like answerTags, never sent to participants.
+export interface QuestionValueTag {
+  id: number;
+  questionId: number;
+  integerMin: number | null;
+  integerMax: number | null;
+  tagKey: string;
+  tagValue: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// True when a saved response satisfies a value-tag's condition. Shared so
+// reporting (SQL-side aggregate mirrors this) and per-attempt views agree.
+export function valueTagMatchesResponse(
+  question: Pick<SurveyQuestion, "questionType">,
+  valueTag: Pick<QuestionValueTag, "integerMin" | "integerMax">,
+  response: Pick<SurveyResponseAnswer, "answerText" | "answerInteger"> | undefined
+): boolean {
+  if (!response) {
+    return false;
+  }
+
+  if (question.questionType === "text") {
+    return Boolean(response.answerText?.trim());
+  }
+
+  if (question.questionType === "integer") {
+    if (response.answerInteger === null) {
+      return false;
+    }
+
+    return (
+      (valueTag.integerMin === null || response.answerInteger >= valueTag.integerMin) &&
+      (valueTag.integerMax === null || response.answerInteger <= valueTag.integerMax)
+    );
+  }
+
+  return false;
+}
+
 export interface AnswerOption {
   id: number;
   questionId: number;
@@ -69,6 +113,8 @@ export interface SurveyQuestion {
   createdAt: string;
   updatedAt: string;
   answerOptions: AnswerOption[];
+  // Populated for admins only, mirroring answerTags on options.
+  valueTags?: QuestionValueTag[];
 }
 
 export interface ConditionalLogicRule {
@@ -324,6 +370,9 @@ export interface AdminAttemptAnswer {
   answerText: string | null;
   answerInteger: number | null;
   selectedOptions: AdminAttemptAnswerOption[];
+  // Hidden value tags whose condition this answer satisfies (text/integer
+  // questions). Admin-only, like selectedOptions[].hiddenTags.
+  valueTags: { tagKey: string; tagValue: string }[];
   // True when the question sits on the navigation path implied by the
   // attempt's saved answers. Saved answers off this path are kept as
   // historical data and reported as "not on final path".

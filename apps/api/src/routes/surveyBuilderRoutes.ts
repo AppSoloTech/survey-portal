@@ -37,6 +37,7 @@ import {
   validateAnswerOptionBody,
   validateAnswerTagBody,
   validateConditionalRuleBody,
+  validateQuestionValueTagBody,
   validateQuestionBody,
   validateReorderBody,
   validateSurveyBody,
@@ -1164,6 +1165,127 @@ surveyBuilderRouter.delete(
 
       if (result.rowCount === 0) {
         res.status(404).json({ error: "Answer tag not found" });
+        return;
+      }
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+
+// Value tags: hidden tags conditioned on the respondent's entered value,
+// for questions without answer options (text and integer types). Structural
+// like option tags — draft-only.
+surveyBuilderRouter.post(
+  "/:id/questions/:questionId/value-tags",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey and question ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateQuestionValueTagBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      if (question.question_type !== "text" && question.question_type !== "integer") {
+        res.status(400).json({
+          error: "Value tags are only supported on text and integer questions; tag the answer options instead"
+        });
+        return;
+      }
+
+      if (
+        question.question_type === "text" &&
+        (validation.value.integerMin !== null || validation.value.integerMax !== null)
+      ) {
+        res.status(400).json({ error: "Text questions do not support integer bounds" });
+        return;
+      }
+
+      await pool.query(
+        `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value)
+         values ($1, $2, $3, $4, $5)`,
+        [
+          questionId,
+          validation.value.integerMin,
+          validation.value.integerMax,
+          validation.value.tagKey,
+          validation.value.tagValue
+        ]
+      );
+      await registerTagDefinition(pool, validation.value.tagKey, validation.value.tagValue);
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.delete(
+  "/:id/questions/:questionId/value-tags/:valueTagId",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+    const valueTagId = readPositiveIntegerParam(req.params.valueTagId);
+
+    if (!surveyId || !questionId || !valueTagId) {
+      res.status(400).json({ error: "Survey, question, and value tag ids must be positive integers" });
+      return;
+    }
+
+    try {
+      const result = await pool.query(
+        `delete from question_value_tags
+         where id = $1
+           and question_id = $2
+           and exists (
+             select 1
+             from survey_questions
+             where survey_questions.id = $2
+               and survey_questions.survey_id = $3
+           )`,
+        [valueTagId, questionId, surveyId]
+      );
+
+      if (result.rowCount === 0) {
+        res.status(404).json({ error: "Value tag not found" });
         return;
       }
 

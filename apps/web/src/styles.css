@@ -1253,6 +1253,35 @@ main {
   gap: 0.75rem;
 }
 
+.value-tag-row {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.value-tag-row .button-link {
+  margin-left: auto;
+}
+
+.value-tag-condition {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.value-tag-form {
+  align-items: end;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+}
+
+.value-tag-form .inline-actions {
+  grid-column: 1 / -1;
+}
+
 .preview-panel {
   border-top-color: var(--brand) !important;
 }
@@ -1959,6 +1988,7 @@ main {
   .add-option-form,
   .tag-row,
   .tag-preset-form,
+  .value-tag-form,
   .rule-form {
     grid-template-columns: 1fr;
   }

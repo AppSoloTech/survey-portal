@@ -1,6 +1,7 @@
 import type {
   AnswerOption,
   ConditionalLogicRule,
+  QuestionValueTag,
   Survey,
   SurveyQuestion,
   SurveyQuestionType,
@@ -125,9 +126,11 @@ export function QuestionEditor({
   isSubmitting,
   onAddOption,
   onAddTag,
+  onAddValueTag,
   onDeleteOption,
   onDeleteQuestion,
   onDeleteTag,
+  onDeleteValueTag,
   onMoveOption,
   onMoveQuestion,
   onSaveOption,
@@ -146,6 +149,8 @@ export function QuestionEditor({
     question: SurveyQuestion,
     option: AnswerOption
   ) => Promise<void>;
+  onAddValueTag: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
+  onDeleteValueTag: (question: SurveyQuestion, valueTagId: number) => Promise<void>;
   onDeleteOption: (question: SurveyQuestion, optionId: number) => Promise<void>;
   onDeleteQuestion: (questionId: number) => Promise<void>;
   onDeleteTag: (
@@ -273,6 +278,69 @@ export function QuestionEditor({
           </button>
         </div>
       </form>
+
+      {question.questionType === "text" || question.questionType === "integer" ? (
+        <div className="option-editor value-tag-editor">
+          <div>
+            <h4>Hidden tags for answers</h4>
+            <p className="builder-heading-note">
+              {question.questionType === "integer"
+                ? "Tag respondents based on the number they enter. Bounds are inclusive; leave both blank to tag any answered value."
+                : "Tags apply whenever the respondent gives a non-blank answer."}
+            </p>
+          </div>
+
+          {(question.valueTags ?? []).map((valueTag) => (
+            <div className="value-tag-row" key={valueTag.id}>
+              <span className="results-hidden-tag">
+                {valueTag.tagKey}={valueTag.tagValue}
+              </span>
+              <span className="value-tag-condition">
+                {describeValueTagCondition(question.questionType, valueTag)}
+              </span>
+              <button
+                className="button-link compact-button danger-button"
+                disabled={isSubmitting || isPublished}
+                onClick={() => void onDeleteValueTag(question, valueTag.id)}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+
+          <form
+            className="builder-grid value-tag-form"
+            onSubmit={(event) => void onAddValueTag(event, question)}
+          >
+            <TagFields
+              existingTags={question.valueTags ?? []}
+              tagPresets={tagPresets}
+            />
+            {question.questionType === "integer" ? (
+              <>
+                <label>
+                  Min value (optional)
+                  <input autoComplete="off" inputMode="numeric" name="integerMin" type="number" />
+                </label>
+                <label>
+                  Max value (optional)
+                  <input autoComplete="off" inputMode="numeric" name="integerMax" type="number" />
+                </label>
+              </>
+            ) : null}
+            <div className="inline-actions">
+              <button
+                className="button-link compact-button primary-button"
+                disabled={isSubmitting || isPublished}
+                type="submit"
+              >
+                Add hidden tag
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {isOptionBacked ? (
         <div className="option-editor">
@@ -615,6 +683,32 @@ function PreviewQuestionControl({ question }: { question: SurveyQuestion }) {
         ))}
     </div>
   );
+}
+
+// Human-readable condition summary for a value tag row in the editor.
+export function describeValueTagCondition(
+  questionType: SurveyQuestionType,
+  valueTag: Pick<QuestionValueTag, "integerMin" | "integerMax">
+): string {
+  if (questionType === "text") {
+    return "any non-blank answer";
+  }
+
+  const { integerMin, integerMax } = valueTag;
+
+  if (integerMin !== null && integerMax !== null) {
+    return integerMin === integerMax ? `value = ${integerMin}` : `${integerMin} to ${integerMax}`;
+  }
+
+  if (integerMin !== null) {
+    return `${integerMin} or more`;
+  }
+
+  if (integerMax !== null) {
+    return `${integerMax} or fewer`;
+  }
+
+  return "any answered value";
 }
 
 function TagFields({

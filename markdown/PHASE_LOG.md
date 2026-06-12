@@ -2512,3 +2512,44 @@ build, 27 shared + 31 web + 128 api tests, git diff --check.
 
 Deferred: cross-survey tag rollup (aggregating one tag key across all
 surveys) — noted in FOLLOW_UPS as the natural next reporting step.
+
+## Feature Branch — Logic Rule Grouping and Question Value Tags
+
+Date:
+2026-06-12
+
+Branch: feature/templates-and-reporting (continued). Developer-reported
+items from the live review of the previous batch.
+
+1. Logic rules now render grouped by source question inside collapsible
+   details/summary blocks (rule counts in the bar, survey order, legacy
+   orphaned rules last).
+2. Skip rules render a spacer in the normal-flow checkbox grid cell so
+   Save/Delete sit in the same column as jump rules.
+3+4. Question value tags: hidden tags for integer and text questions,
+   which previously had no tag vehicle (tags lived only on answer
+   options). Developer-confirmed semantics: integer tags carry optional
+   inclusive min/max bounds (min-only, max-only, exact, range, or
+   unbounded = any answered value); text tags apply to any non-blank
+   answer.
+   - Migration 0011 adds question_value_tags (FK cascade, range check).
+   - Shared: QuestionValueTag type, SurveyQuestion.valueTags (admin-only,
+     mirroring answerTags), valueTagMatchesResponse helper shared by
+     reporting and attempt-detail so match semantics cannot diverge.
+   - API: POST/DELETE value-tag routes (draft-only, admin-only, per-type
+     shape validation), catalog auto-registration, duplicate-survey copies
+     value tags, participant isolation (valueTags never serialized without
+     includeHiddenTags).
+   - Reporting: the tag rollup is now a union of option-tag selections and
+     value-tag matches with distinct respondent counts; attempt detail and
+     CSV include matched value tags per answer.
+   - Web: "Hidden tags for answers" section in the question editor for
+     text/integer questions (reuses TagFields presets; bounds inputs for
+     integer), condition summaries per row, value-tag chips in the
+     results attempt detail.
+
+Tests: valueTags.test.ts covers CRUD and per-type validation, publish
+locking, duplication, catalog registration, participant isolation
+(collectObjectKeys sweep), and reporting integration (rollup, detail,
+CSV). Totals: 27 shared + 31 web + 135 api = 193 passing; typecheck,
+lint, build, git diff --check green.

@@ -1,5 +1,6 @@
 import {
   resolveAttemptPath,
+  valueTagMatchesResponse,
   type AdminAttemptAnswer,
   type AdminAttemptDetailResponse,
   type AdminAttemptSummary,
@@ -167,35 +168,71 @@ export async function fetchSurveyReportSummary(
     optionResult.rows.map((row) => [row.option_id, Number(row.selection_count)])
   );
 
-  // Hidden-tag rollup: every tag pair configured on this survey's options,
-  // with how often tagged options were selected and by how many distinct
-  // attempts. Zero-count pairs stay visible so admins see the full taxonomy.
+  // Hidden-tag rollup: every tag pair configured on this survey — on answer
+  // options (counted when a tagged option is selected) or as value tags on
+  // text/integer questions (counted when a response satisfies the tag's
+  // condition). One union keeps respondent counts distinct across both
+  // sources. Zero-count pairs stay visible so admins see the full taxonomy.
   const tagValues: unknown[] = [surveyId];
-  const tagRange = attemptRangeFilterSql("survey_attempts", range, tagValues);
+  const tagRange = attemptRangeFilterSql("tag_events", range, tagValues);
   const tagResult = await pool.query<{
     tag_key: string;
     tag_value: string;
     selection_count: string;
     respondent_count: string;
   }>(
-    `select
-       answer_tags.tag_key,
-       answer_tags.tag_value,
-       count(selected_options.id) filter (where ${tagRange})::text as selection_count,
-       count(distinct survey_attempts.id) filter (where ${tagRange})::text as respondent_count
-     from answer_tags
-     join answer_options on answer_options.id = answer_tags.answer_option_id
-     join survey_questions
-       on survey_questions.id = answer_options.question_id
-      and survey_questions.survey_id = $1
-     left join survey_response_selected_options selected_options
-       on selected_options.answer_option_id = answer_options.id
-     left join survey_response_answers
-       on survey_response_answers.id = selected_options.survey_response_answer_id
-     left join survey_attempts
-       on survey_attempts.id = survey_response_answers.survey_attempt_id
-     group by answer_tags.tag_key, answer_tags.tag_value
-     order by answer_tags.tag_key, answer_tags.tag_value`,
+    `with tag_events as (
+       select
+         answer_tags.tag_key,
+         answer_tags.tag_value,
+         selected_options.id as event_id,
+         survey_attempts.id as attempt_id,
+         survey_attempts.started_at
+       from answer_tags
+       join answer_options on answer_options.id = answer_tags.answer_option_id
+       join survey_questions
+         on survey_questions.id = answer_options.question_id
+        and survey_questions.survey_id = $1
+       left join survey_response_selected_options selected_options
+         on selected_options.answer_option_id = answer_options.id
+       left join survey_response_answers
+         on survey_response_answers.id = selected_options.survey_response_answer_id
+       left join survey_attempts
+         on survey_attempts.id = survey_response_answers.survey_attempt_id
+       union all
+       select
+         question_value_tags.tag_key,
+         question_value_tags.tag_value,
+         survey_response_answers.id as event_id,
+         survey_attempts.id as attempt_id,
+         survey_attempts.started_at
+       from question_value_tags
+       join survey_questions
+         on survey_questions.id = question_value_tags.question_id
+        and survey_questions.survey_id = $1
+       left join survey_response_answers
+         on survey_response_answers.question_id = survey_questions.id
+        and (
+          (survey_questions.question_type = 'text'
+            and coalesce(trim(survey_response_answers.answer_text), '') <> '')
+          or (survey_questions.question_type = 'integer'
+            and survey_response_answers.answer_integer is not null
+            and (question_value_tags.integer_min is null
+              or survey_response_answers.answer_integer >= question_value_tags.integer_min)
+            and (question_value_tags.integer_max is null
+              or survey_response_answers.answer_integer <= question_value_tags.integer_max))
+        )
+       left join survey_attempts
+         on survey_attempts.id = survey_response_answers.survey_attempt_id
+     )
+     select
+       tag_key,
+       tag_value,
+       count(event_id) filter (where ${tagRange})::text as selection_count,
+       count(distinct attempt_id) filter (where ${tagRange})::text as respondent_count
+     from tag_events
+     group by tag_key, tag_value
+     order by tag_key, tag_value`,
     tagValues
   );
 
@@ -385,11 +422,12 @@ export async function buildSurveyCsvExport(
         answer.answerText,
         answer.answerInteger,
         answer.selectedOptions.map((option) => option.optionText).join("; "),
-        answer.selectedOptions
-          .flatMap((option) =>
+        [
+          ...answer.selectedOptions.flatMap((option) =>
             option.hiddenTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`)
-          )
-          .join("; "),
+          ),
+          ...answer.valueTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`)
+        ].join("; "),
         answer.onFinalPath
       ]);
     }
@@ -454,6 +492,9 @@ export function buildAdminAttemptAnswers(
       answerText: response?.answerText ?? null,
       answerInteger: response?.answerInteger ?? null,
       selectedOptions,
+      valueTags: (question.valueTags ?? [])
+        .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
+        .map((valueTag) => ({ tagKey: valueTag.tagKey, tagValue: valueTag.tagValue })),
       onFinalPath: finalPathQuestionIds.has(question.id)
     };
   });

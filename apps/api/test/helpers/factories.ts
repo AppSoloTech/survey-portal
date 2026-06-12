@@ -150,6 +150,27 @@ export async function addTag(
   );
 }
 
+export async function addValueTag(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  questionId: number,
+  body: {
+    tagKey: string;
+    tagValue: string;
+    integerMin?: number | null;
+    integerMax?: number | null;
+  }
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .post(`/api/surveys/${surveyId}/questions/${questionId}/value-tags`)
+      .set("Cookie", admin.cookie)
+      .send(body),
+    201
+  );
+}
+
 export async function addRule(
   app: Express,
   admin: TestSession,

@@ -5,6 +5,7 @@ import type {
   ConditionalLogicActionType,
   ConditionalLogicConditionOperator,
   ConditionalLogicRule,
+  QuestionValueTag,
   Survey,
   SurveyAttempt,
   SurveyAttemptStatus,
@@ -53,6 +54,17 @@ export interface AnswerOptionRecord {
 export interface AnswerTagRecord {
   id: number;
   answer_option_id: number;
+  tag_key: string;
+  tag_value: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface QuestionValueTagRecord {
+  id: number;
+  question_id: number;
+  integer_min: number | null;
+  integer_max: number | null;
   tag_key: string;
   tag_value: string;
   created_at: Date;
@@ -186,6 +198,19 @@ export function mapAnswerTagRecord(record: AnswerTagRecord): AnswerTag {
   return {
     id: record.id,
     answerOptionId: record.answer_option_id,
+    tagKey: record.tag_key,
+    tagValue: record.tag_value,
+    createdAt: record.created_at.toISOString(),
+    updatedAt: record.updated_at.toISOString()
+  };
+}
+
+export function mapQuestionValueTagRecord(record: QuestionValueTagRecord): QuestionValueTag {
+  return {
+    id: record.id,
+    questionId: record.question_id,
+    integerMin: record.integer_min,
+    integerMax: record.integer_max,
     tagKey: record.tag_key,
     tagValue: record.tag_value,
     createdAt: record.created_at.toISOString(),

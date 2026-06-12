@@ -234,6 +234,44 @@ export function validateAnswerTagBody(body: unknown): ValidationResult<{
   };
 }
 
+// Body for hidden value tags on integer/text questions. Bounds are only
+// meaningful for integer questions; the route layer enforces the per-type
+// shape since it knows the question.
+export function validateQuestionValueTagBody(body: unknown): ValidationResult<{
+  tagKey: string;
+  tagValue: string;
+  integerMin: number | null;
+  integerMax: number | null;
+}> {
+  const tagValidation = validateAnswerTagBody(body);
+
+  if (!tagValidation.ok) {
+    return tagValidation;
+  }
+
+  const record = body as Record<string, unknown>;
+  const integerMin = readOptionalIntegerField(record, "integerMin");
+  const integerMax = readOptionalIntegerField(record, "integerMax");
+
+  if (integerMin === false || integerMax === false) {
+    return { ok: false, error: "integerMin and integerMax must be whole numbers" };
+  }
+
+  if (integerMin !== null && integerMax !== null && integerMin > integerMax) {
+    return { ok: false, error: "integerMin must be less than or equal to integerMax" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      tagKey: tagValidation.value.tagKey,
+      tagValue: tagValidation.value.tagValue,
+      integerMin,
+      integerMax
+    }
+  };
+}
+
 // Optional from/to query parameters for reporting endpoints. Both are
 // inclusive calendar dates in YYYY-MM-DD form.
 export function validateAttemptDateRange(query: {

@@ -295,6 +295,39 @@ export async function deleteAnswerTag(input: {
 
 export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
 
+export async function createQuestionValueTag(input: {
+  surveyId: number;
+  questionId: number;
+  tagKey: string;
+  tagValue: string;
+  integerMin: number | null;
+  integerMax: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/value-tags`,
+    {
+      body: JSON.stringify({
+        tagKey: input.tagKey,
+        tagValue: input.tagValue,
+        integerMin: input.integerMin,
+        integerMax: input.integerMax
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function deleteQuestionValueTag(input: {
+  surveyId: number;
+  questionId: number;
+  valueTagId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/value-tags/${input.valueTagId}`,
+    { method: "DELETE" }
+  );
+}
+
 export async function createConditionalRule(input: {
   surveyId: number;
   sourceQuestionId: number;

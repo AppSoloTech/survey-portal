@@ -2,6 +2,7 @@ import type {
   AnswerOption,
   AnswerTag,
   ConditionalLogicRule,
+  QuestionValueTag,
   Survey,
   SurveyQuestion
 } from "@survey-portal/shared";
@@ -11,11 +12,13 @@ import {
   mapAnswerOptionRecord,
   mapAnswerTagRecord,
   mapConditionalLogicRuleRecord,
+  mapQuestionValueTagRecord,
   mapSurveyQuestionRecord,
   mapSurveyRecord,
   type AnswerOptionRecord,
   type AnswerTagRecord,
   type ConditionalLogicRuleRecord,
+  type QuestionValueTagRecord,
   type SurveyQuestionRecord,
   type SurveyRecord
 } from "./surveyRecords.js";
@@ -134,6 +137,25 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
         )
       : { rows: [] as AnswerTagRecord[] };
 
+  const valueTagsResult =
+    options.includeHiddenTags && questionIds.length > 0
+      ? await pool.query<QuestionValueTagRecord>(
+          `select
+             id,
+             question_id,
+             integer_min,
+             integer_max,
+             tag_key,
+             tag_value,
+             created_at,
+             updated_at
+           from question_value_tags
+           where question_id = any($1::int[])
+           order by question_id, tag_key, tag_value, id`,
+          [questionIds]
+        )
+      : { rows: [] as QuestionValueTagRecord[] };
+
   const rulesResult = await pool.query<ConditionalLogicRuleRecord>(
     `select
        id,
@@ -152,6 +174,15 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
      order by survey_id, id`,
     [surveyIds]
   );
+
+  const valueTagsByQuestionId = new Map<number, QuestionValueTag[]>();
+
+  for (const valueTag of valueTagsResult.rows) {
+    const mapped = mapQuestionValueTagRecord(valueTag);
+    const tags = valueTagsByQuestionId.get(valueTag.question_id) ?? [];
+    tags.push(mapped);
+    valueTagsByQuestionId.set(valueTag.question_id, tags);
+  }
 
   const tagsByOptionId = new Map<number, AnswerTag[]>();
 
@@ -183,6 +214,11 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
       question,
       optionsByQuestionId.get(question.id) ?? []
     );
+
+    if (options.includeHiddenTags) {
+      mappedQuestion.valueTags = valueTagsByQuestionId.get(question.id) ?? [];
+    }
+
     const questionsForSurvey = questionsBySurveyId.get(question.survey_id) ?? [];
     questionsForSurvey.push(mappedQuestion);
     questionsBySurveyId.set(question.survey_id, questionsForSurvey);
