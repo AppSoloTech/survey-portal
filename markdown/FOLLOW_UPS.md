@@ -7,6 +7,8 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Consider grouping multi-target skip rules visually in the rules list (one row per skipped question today; grouped display deferred).
 - Consider a `skip_rule_covers_all_options` flow-map check (flag when every answer option of a source question skips the same target).
 - Consider a batch rules endpoint (`targetQuestionIds[]` in one transaction) if multi-skip rule creation volume grows; the UI currently fans out one POST per skipped question.
+- Review and merge (or discard) the experiment/dark-mode-and-extras branch: dark mode toggle, dashboard search, results drop-off bars. Manual browser pass in both themes at 375/768/1280px before merging.
+- Consider per-option answer distribution in the survey report payload (API + shared type addition) to upgrade the Results funnel bars into true answer-distribution charts.
 
 ---
 

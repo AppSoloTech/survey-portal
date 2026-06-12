@@ -2447,3 +2447,33 @@ git diff --check all pass.
 
 Commit readiness: implementation complete; pending Claude review per the
 phase role arrangement.
+
+## Experiment Branch — Dark Mode, Dashboard Search, Results Funnel
+
+Date:
+2026-06-12
+
+Branch: experiment/dark-mode-and-extras (not merged to main; developer
+review pending). Scope: developer-requested dark mode toggle plus two
+small presentation-only features. No API, schema, or auth changes —
+consistent with the architecture principles (simplicity, no speculative
+backend complexity).
+
+- Dark mode: every color literal in apps/web/src/styles.css now resolves
+  through ~40 semantic tokens in :root (the third token family alongside
+  the spacing and type scales), with a dark palette under
+  [data-theme="dark"], a new --on-brand token for text on brand
+  backgrounds, and color-scheme switching for native controls. Theme
+  defaults to the OS preference, is applied pre-paint by an inline
+  script in index.html, persists to localStorage, and toggles from a
+  header button (components/ThemeToggle.tsx).
+- Dashboard search: client-side filter over title/description/category
+  in pages/dashboardGrouping.ts (unit-tested), wired into UserDashboard
+  with pagination reset and a no-match state.
+- Results funnel: "Answers per question" rows render a bar scaled to the
+  most-answered question, visualizing drop-off from existing report data.
+- Deliberately deferred (would change the API contract): per-option
+  answer distribution in the report payload — recorded in FOLLOW_UPS.
+
+Validation: typecheck, lint, build, 27 + 31 + 124 = 182 tests,
+git diff --check — all green on the branch.
