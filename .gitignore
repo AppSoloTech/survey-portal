@@ -9,6 +9,8 @@ lerna-debug.log*
 notes/test_user.sh
 notes/phase-4-test-notes.txt
 notes/phase-5-test-notes.txt
+notes/phase_10_test_notes.txt
+test_notes.txt
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
