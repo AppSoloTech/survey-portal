@@ -234,6 +234,41 @@ export function validateAnswerTagBody(body: unknown): ValidationResult<{
   };
 }
 
+// Optional from/to query parameters for reporting endpoints. Both are
+// inclusive calendar dates in YYYY-MM-DD form.
+export function validateAttemptDateRange(query: {
+  from?: unknown;
+  to?: unknown;
+}): ValidationResult<{ from?: string; to?: string }> {
+  const range: { from?: string; to?: string } = {};
+
+  for (const field of ["from", "to"] as const) {
+    const value = query[field];
+
+    if (value === undefined || value === "") {
+      continue;
+    }
+
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return { ok: false, error: `${field} must be a date in YYYY-MM-DD format` };
+    }
+
+    const parsed = new Date(`${value}T00:00:00Z`);
+
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+      return { ok: false, error: `${field} must be a valid calendar date` };
+    }
+
+    range[field] = value;
+  }
+
+  if (range.from && range.to && range.from > range.to) {
+    return { ok: false, error: "from must be on or before to" };
+  }
+
+  return { ok: true, value: range };
+}
+
 export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
 
 export interface ConditionalRuleBodyValue {

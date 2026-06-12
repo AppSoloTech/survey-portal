@@ -461,3 +461,173 @@ describe("GET /api/surveys/:id/export.csv", () => {
     expect(response.text.trimEnd().split("\r\n")).toHaveLength(1);
   });
 });
+
+describe("report option distribution and tag rollup", () => {
+  it("counts selections per answer option", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReportingFixture(admin);
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/report`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+
+    const routeStat = response.body.report.questionStats.find(
+      (stat: { questionText: string }) => stat.questionText === "Route"
+    );
+    const countsByOption = new Map(
+      routeStat.optionStats.map((option: { optionText: string; selectionCount: number }) => [
+        option.optionText,
+        option.selectionCount
+      ])
+    );
+
+    expect(countsByOption.get("Jump")).toBe(1);
+    expect(countsByOption.get("Stay")).toBe(1);
+
+    const textStat = response.body.report.questionStats.find(
+      (stat: { questionText: string }) => stat.questionText === "Target"
+    );
+
+    expect(textStat.optionStats).toEqual([]);
+  });
+
+  it("rolls up hidden tag pairs with selection and respondent counts", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Tag rollup survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Pick",
+      questionType: "single_select"
+    });
+    const pickId = findQuestion(survey, "Pick").id;
+    survey = await addOption(app, admin, survey.id, pickId, "Secure");
+    survey = await addOption(app, admin, survey.id, pickId, "Finance");
+
+    const pick = findQuestion(survey, "Pick");
+    const secureOption = pick.answerOptions.find((option) => option.optionText === "Secure");
+    const financeOption = pick.answerOptions.find((option) => option.optionText === "Finance");
+
+    if (!secureOption || !financeOption) {
+      throw new Error("Options were not created");
+    }
+
+    survey = await addTag(app, admin, survey.id, pick.id, secureOption.id, "area", "security");
+    survey = await addTag(app, admin, survey.id, pick.id, secureOption.id, "review_required", "true");
+    survey = await addTag(app, admin, survey.id, pick.id, financeOption.id, "area", "finance");
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    for (let participant = 0; participant < 2; participant += 1) {
+      const user = await registerUser(app);
+      const started = await startAttempt(app, user, survey.id);
+      await submitAnswer(app, user, survey.id, {
+        attemptId: started.attempt.id,
+        questionId: pick.id,
+        selectedAnswerOptionIds: [secureOption.id]
+      });
+      await completeAttempt(app, user, survey.id, started.attempt.id);
+    }
+
+    const response = await request(app)
+      .get(`/api/surveys/${survey.id}/report`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.report.tagStats).toEqual([
+      { tagKey: "area", tagValue: "finance", selectionCount: 0, respondentCount: 0 },
+      { tagKey: "area", tagValue: "security", selectionCount: 2, respondentCount: 2 },
+      { tagKey: "review_required", tagValue: "true", selectionCount: 2, respondentCount: 2 }
+    ]);
+  });
+});
+
+describe("report date-range filter", () => {
+  it("filters counts, stats, attempts, and CSV rows by attempt start date", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReportingFixture(admin);
+    const { pool } = await import("../src/db.js");
+
+    // Move the completed attempt into January 2026; the other two attempts
+    // keep today's start date.
+    await pool.query(`update survey_attempts set started_at = '2026-01-15T12:00:00Z' where id = $1`, [
+      fixture.completerAttemptId
+    ]);
+
+    const january = "from=2026-01-01&to=2026-01-31";
+    const reportResponse = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/report?${january}`)
+      .set("Cookie", admin.cookie);
+
+    expect(reportResponse.status).toBe(200);
+    expect(reportResponse.body.report.attemptCounts).toEqual({
+      inProgress: 0,
+      completed: 1,
+      abandoned: 0,
+      total: 1
+    });
+
+    const routeStat = reportResponse.body.report.questionStats.find(
+      (stat: { questionText: string }) => stat.questionText === "Route"
+    );
+
+    // Only the January attempt's answer counts; its "Jump" selection is the
+    // only one inside the range.
+    expect(routeStat.answeredCount).toBe(1);
+    expect(
+      routeStat.optionStats.find(
+        (option: { optionText: string }) => option.optionText === "Stay"
+      ).selectionCount
+    ).toBe(0);
+
+    const attemptsResponse = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts?${january}`)
+      .set("Cookie", admin.cookie);
+
+    expect(attemptsResponse.status).toBe(200);
+    expect(attemptsResponse.body.attempts).toHaveLength(1);
+    expect(attemptsResponse.body.attempts[0].attemptId).toBe(fixture.completerAttemptId);
+
+    const csvResponse = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/export.csv?${january}`)
+      .set("Cookie", admin.cookie);
+
+    expect(csvResponse.status).toBe(200);
+
+    const csvLines = csvResponse.text.trimEnd().split("\r\n");
+    const attemptIdColumn = csvLines.slice(1).map((line) => line.split(",")[2]);
+
+    expect(new Set(attemptIdColumn)).toEqual(new Set([String(fixture.completerAttemptId)]));
+
+    const emptyRange = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/report?from=2020-01-01&to=2020-12-31`)
+      .set("Cookie", admin.cookie);
+
+    expect(emptyRange.body.report.attemptCounts.total).toBe(0);
+  });
+
+  it("rejects malformed or inverted ranges", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReportingFixture(admin);
+
+    const malformed = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/report?from=banana`)
+      .set("Cookie", admin.cookie);
+
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.error).toBe("from must be a date in YYYY-MM-DD format");
+
+    const inverted = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts?from=2026-02-01&to=2026-01-01`)
+      .set("Cookie", admin.cookie);
+
+    expect(inverted.status).toBe(400);
+    expect(inverted.body.error).toBe("from must be on or before to");
+
+    const invalidDay = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/export.csv?to=2026-02-30`)
+      .set("Cookie", admin.cookie);
+
+    expect(invalidDay.status).toBe(400);
+    expect(invalidDay.body.error).toBe("to must be a valid calendar date");
+  });
+});

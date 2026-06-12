@@ -7,7 +7,7 @@ import {
   fetchAdminAttempts,
   fetchSurveyReportSummary
 } from "../services/surveyReporting.js";
-import { readPositiveIntegerParam } from "../services/validation.js";
+import { readPositiveIntegerParam, validateAttemptDateRange } from "../services/validation.js";
 
 export const surveyReportingRouter = express.Router();
 
@@ -24,7 +24,14 @@ surveyReportingRouter.get(
         return;
       }
 
-      const report = await fetchSurveyReportSummary(surveyId);
+      const rangeValidation = validateAttemptDateRange(req.query);
+
+      if (!rangeValidation.ok) {
+        res.status(400).json({ error: rangeValidation.error });
+        return;
+      }
+
+      const report = await fetchSurveyReportSummary(surveyId, rangeValidation.value);
 
       if (!report) {
         res.status(404).json({ error: "Survey not found" });
@@ -51,7 +58,14 @@ surveyReportingRouter.get(
         return;
       }
 
-      const attempts = await fetchAdminAttempts(surveyId);
+      const rangeValidation = validateAttemptDateRange(req.query);
+
+      if (!rangeValidation.ok) {
+        res.status(400).json({ error: rangeValidation.error });
+        return;
+      }
+
+      const attempts = await fetchAdminAttempts(surveyId, rangeValidation.value);
 
       if (!attempts) {
         res.status(404).json({ error: "Survey not found" });
@@ -106,7 +120,14 @@ surveyReportingRouter.get(
         return;
       }
 
-      const csvExport = await buildSurveyCsvExport(surveyId);
+      const rangeValidation = validateAttemptDateRange(req.query);
+
+      if (!rangeValidation.ok) {
+        res.status(400).json({ error: rangeValidation.error });
+        return;
+      }
+
+      const csvExport = await buildSurveyCsvExport(surveyId, rangeValidation.value);
 
       if (!csvExport) {
         res.status(404).json({ error: "Survey not found" });

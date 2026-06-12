@@ -237,6 +237,13 @@ export interface ReportParticipant {
   email: string;
 }
 
+export interface SurveyReportOptionStat {
+  answerOptionId: number;
+  optionText: string;
+  displayOrder: number;
+  selectionCount: number;
+}
+
 export interface SurveyReportQuestionStat {
   questionId: number;
   displayOrder: number;
@@ -245,6 +252,20 @@ export interface SurveyReportQuestionStat {
   isRequired: boolean;
   answeredCount: number;
   blankCount: number;
+  // Present for option-backed questions (selects and scales); empty for
+  // text and integer questions.
+  optionStats: SurveyReportOptionStat[];
+}
+
+// Admin-only rollup of hidden tag pairs implied by participants' selected
+// options. selectionCount totals option selections carrying the pair;
+// respondentCount is distinct attempts, so multi-select double-picks and
+// multiple tagged questions in one attempt count once.
+export interface SurveyReportTagStat {
+  tagKey: string;
+  tagValue: string;
+  selectionCount: number;
+  respondentCount: number;
 }
 
 export interface SurveyReportSummary {
@@ -259,6 +280,7 @@ export interface SurveyReportSummary {
   };
   completionRate: number;
   questionStats: SurveyReportQuestionStat[];
+  tagStats: SurveyReportTagStat[];
 }
 
 export interface SurveyReportResponse {

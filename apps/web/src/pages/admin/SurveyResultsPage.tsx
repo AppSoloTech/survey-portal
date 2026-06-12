@@ -3,7 +3,9 @@ import type {
   AdminAttemptDetailResponse,
   AdminAttemptSummary,
   SurveyAttemptStatus,
-  SurveyReportSummary
+  SurveyReportOptionStat,
+  SurveyReportSummary,
+  SurveyReportTagStat
 } from "@survey-portal/shared";
 import { useEffect, useRef, useState } from "react";
 
@@ -25,6 +27,14 @@ export function SurveyResultsPage() {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Inclusive started-at window applied to the report, attempts list, and
+  // CSV export together so every number on the page describes one cohort.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const dateRange = {
+    from: fromDate || undefined,
+    to: toDate || undefined
+  };
   // Detail requests can resolve out of order when rows are clicked quickly;
   // only the most recent request may apply its result.
   const detailRequestIdRef = useRef(0);
@@ -38,7 +48,9 @@ export function SurveyResultsPage() {
     setDetail(null);
     setDetailAttemptId(null);
 
-    Promise.all([fetchSurveyReport(survey.id), fetchSurveyAttempts(survey.id)])
+    const range = { from: fromDate || undefined, to: toDate || undefined };
+
+    Promise.all([fetchSurveyReport(survey.id, range), fetchSurveyAttempts(survey.id, range)])
       .then(([reportResponse, attemptsResponse]) => {
         if (isActive) {
           setReport(reportResponse.report);
@@ -59,7 +71,7 @@ export function SurveyResultsPage() {
     return () => {
       isActive = false;
     };
-  }, [survey.id, reloadKey]);
+  }, [survey.id, reloadKey, fromDate, toDate]);
 
   async function handleViewAnswers(attemptId: number) {
     if (detailAttemptId === attemptId) {
@@ -130,11 +142,44 @@ export function SurveyResultsPage() {
             </button>
             <a
               className="button-link compact-button secondary-button"
-              href={surveyExportCsvUrl(survey.id)}
+              href={surveyExportCsvUrl(survey.id, dateRange)}
             >
               Export CSV
             </a>
           </div>
+        </div>
+
+        <div aria-label="Filter results by attempt start date" className="results-date-filter">
+          <label>
+            From
+            <input
+              max={toDate || undefined}
+              onChange={(event) => setFromDate(event.target.value)}
+              type="date"
+              value={fromDate}
+            />
+          </label>
+          <label>
+            To
+            <input
+              min={fromDate || undefined}
+              onChange={(event) => setToDate(event.target.value)}
+              type="date"
+              value={toDate}
+            />
+          </label>
+          {fromDate || toDate ? (
+            <button
+              className="button-link compact-button ghost-button"
+              onClick={() => {
+                setFromDate("");
+                setToDate("");
+              }}
+              type="button"
+            >
+              Clear dates
+            </button>
+          ) : null}
         </div>
 
         <dl className="results-summary-grid" aria-label="Attempt counts">
@@ -183,11 +228,14 @@ export function SurveyResultsPage() {
                       style={{ width: `${barPercent}%` }}
                     />
                   </span>
+                  <OptionDistribution optionStats={stat.optionStats} />
                 </div>
               );
             })}
           </div>
         ) : null}
+
+        <TagRollup tagStats={report.tagStats} />
       </section>
 
       <section className="builder-form results-attempts-panel">
@@ -343,6 +391,71 @@ function AnswerValue({ answer }: { answer: AdminAttemptAnswer }) {
 
 function formatAttemptStatus(status: SurveyAttemptStatus): string {
   return status.replace("_", " ");
+}
+
+// Per-option selection bars for select/scale questions, scaled within the
+// question so the most-picked option fills the track.
+function OptionDistribution({ optionStats }: { optionStats: SurveyReportOptionStat[] }) {
+  if (optionStats.length === 0) {
+    return null;
+  }
+
+  const maxSelections = Math.max(1, ...optionStats.map((option) => option.selectionCount));
+
+  return (
+    <div className="results-option-distribution">
+      {optionStats.map((option) => (
+        <div className="results-option-row" key={option.answerOptionId}>
+          <span className="results-option-label">{option.optionText}</span>
+          <span className="results-question-counts">{option.selectionCount}</span>
+          <span aria-hidden="true" className="results-question-bar">
+            <span
+              className="results-question-bar-fill results-option-bar-fill"
+              style={{ width: `${Math.round((option.selectionCount / maxSelections) * 100)}%` }}
+            />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Admin-only rollup of hidden tag pairs implied by selected options.
+function TagRollup({ tagStats }: { tagStats: SurveyReportTagStat[] }) {
+  if (tagStats.length === 0) {
+    return null;
+  }
+
+  const maxSelections = Math.max(1, ...tagStats.map((stat) => stat.selectionCount));
+
+  return (
+    <div className="results-tag-rollup">
+      <h4>Hidden tag rollup</h4>
+      <p className="builder-heading-note">
+        How often participants selected options carrying each hidden tag pair.
+        Respondents counts each attempt once. Never shown to participants.
+      </p>
+      {tagStats.map((stat) => (
+        <div className="results-question-stat-row" key={`${stat.tagKey}:${stat.tagValue}`}>
+          <span className="results-tag-pair">
+            <span className="results-hidden-tag">
+              {stat.tagKey}={stat.tagValue}
+            </span>
+          </span>
+          <span className="results-question-counts">
+            {formatCount(stat.selectionCount, "selection")} ·{" "}
+            {formatCount(stat.respondentCount, "respondent")}
+          </span>
+          <span aria-hidden="true" className="results-question-bar">
+            <span
+              className="results-question-bar-fill"
+              style={{ width: `${Math.round((stat.selectionCount / maxSelections) * 100)}%` }}
+            />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function formatPercent(rate: number): string {

@@ -54,8 +54,46 @@ const meaningfulResponseSql = `(
   )
 )`;
 
+// Inclusive calendar-date window over survey_attempts.started_at. Values
+// are validated YYYY-MM-DD strings (see validateAttemptDateRange); the
+// upper bound compares against the next day so the "to" date is inclusive.
+export interface AttemptDateRange {
+  from?: string;
+  to?: string;
+}
+
+// Appends range predicates for the given attempts-table alias, pushing
+// parameter values onto the shared values array. Returns SQL beginning with
+// " and ..." or an empty string when no range is set.
+function attemptRangeSql(alias: string, range: AttemptDateRange | undefined, values: unknown[]): string {
+  let sql = "";
+
+  if (range?.from) {
+    values.push(range.from);
+    sql += ` and ${alias}.started_at >= $${values.length}::date`;
+  }
+
+  if (range?.to) {
+    values.push(range.to);
+    sql += ` and ${alias}.started_at < ($${values.length}::date + 1)`;
+  }
+
+  return sql;
+}
+
+// Variant for use inside aggregate `filter (where ...)` clauses, where a
+// leading "true" keeps the expression valid with or without a range.
+function attemptRangeFilterSql(
+  alias: string,
+  range: AttemptDateRange | undefined,
+  values: unknown[]
+): string {
+  return `true${attemptRangeSql(alias, range, values)}`;
+}
+
 export async function fetchSurveyReportSummary(
-  surveyId: number
+  surveyId: number,
+  range?: AttemptDateRange
 ): Promise<SurveyReportSummary | null> {
   const [survey] = await fetchSurveyStructures({
     surveyId,
@@ -68,12 +106,13 @@ export async function fetchSurveyReportSummary(
     return null;
   }
 
+  const countsValues: unknown[] = [surveyId];
   const countsResult = await pool.query<AttemptCountRecord>(
     `select status, count(*)::text as count
      from survey_attempts
-     where survey_id = $1
+     where survey_id = $1${attemptRangeSql("survey_attempts", range, countsValues)}
      group by status`,
-    [surveyId]
+    countsValues
   );
 
   const countsByStatus = new Map(
@@ -85,19 +124,80 @@ export async function fetchSurveyReportSummary(
   const abandoned = countsByStatus.get("abandoned") ?? 0;
   const total = inProgress + completed + abandoned;
 
+  const statsValues: unknown[] = [surveyId];
+  const statsRange = attemptRangeFilterSql("survey_attempts", range, statsValues);
   const statsResult = await pool.query<QuestionStatRecord>(
     `select
        survey_questions.id as question_id,
-       count(survey_response_answers.id) filter (where ${meaningfulResponseSql})::text as answered_count,
-       count(survey_response_answers.id) filter (where not ${meaningfulResponseSql})::text as blank_count
+       count(survey_response_answers.id) filter (where ${meaningfulResponseSql} and ${statsRange})::text as answered_count,
+       count(survey_response_answers.id) filter (where not ${meaningfulResponseSql} and ${statsRange})::text as blank_count
      from survey_questions
      left join survey_response_answers
        on survey_response_answers.question_id = survey_questions.id
+     left join survey_attempts
+       on survey_attempts.id = survey_response_answers.survey_attempt_id
      where survey_questions.survey_id = $1
      group by survey_questions.id`,
-    [surveyId]
+    statsValues
   );
   const statsByQuestionId = new Map(statsResult.rows.map((row) => [row.question_id, row]));
+
+  // Selection counts per answer option, for distribution charts on
+  // option-backed questions.
+  const optionValues: unknown[] = [surveyId];
+  const optionRange = attemptRangeFilterSql("survey_attempts", range, optionValues);
+  const optionResult = await pool.query<{ option_id: number; selection_count: string }>(
+    `select
+       answer_options.id as option_id,
+       count(selected_options.id) filter (where ${optionRange})::text as selection_count
+     from answer_options
+     join survey_questions
+       on survey_questions.id = answer_options.question_id
+      and survey_questions.survey_id = $1
+     left join survey_response_selected_options selected_options
+       on selected_options.answer_option_id = answer_options.id
+     left join survey_response_answers
+       on survey_response_answers.id = selected_options.survey_response_answer_id
+     left join survey_attempts
+       on survey_attempts.id = survey_response_answers.survey_attempt_id
+     group by answer_options.id`,
+    optionValues
+  );
+  const selectionCountByOptionId = new Map(
+    optionResult.rows.map((row) => [row.option_id, Number(row.selection_count)])
+  );
+
+  // Hidden-tag rollup: every tag pair configured on this survey's options,
+  // with how often tagged options were selected and by how many distinct
+  // attempts. Zero-count pairs stay visible so admins see the full taxonomy.
+  const tagValues: unknown[] = [surveyId];
+  const tagRange = attemptRangeFilterSql("survey_attempts", range, tagValues);
+  const tagResult = await pool.query<{
+    tag_key: string;
+    tag_value: string;
+    selection_count: string;
+    respondent_count: string;
+  }>(
+    `select
+       answer_tags.tag_key,
+       answer_tags.tag_value,
+       count(selected_options.id) filter (where ${tagRange})::text as selection_count,
+       count(distinct survey_attempts.id) filter (where ${tagRange})::text as respondent_count
+     from answer_tags
+     join answer_options on answer_options.id = answer_tags.answer_option_id
+     join survey_questions
+       on survey_questions.id = answer_options.question_id
+      and survey_questions.survey_id = $1
+     left join survey_response_selected_options selected_options
+       on selected_options.answer_option_id = answer_options.id
+     left join survey_response_answers
+       on survey_response_answers.id = selected_options.survey_response_answer_id
+     left join survey_attempts
+       on survey_attempts.id = survey_response_answers.survey_attempt_id
+     group by answer_tags.tag_key, answer_tags.tag_value
+     order by answer_tags.tag_key, answer_tags.tag_value`,
+    tagValues
+  );
 
   return {
     surveyId: survey.id,
@@ -117,18 +217,37 @@ export async function fetchSurveyReportSummary(
       questionType: question.questionType,
       isRequired: question.isRequired,
       answeredCount: Number(statsByQuestionId.get(question.id)?.answered_count ?? 0),
-      blankCount: Number(statsByQuestionId.get(question.id)?.blank_count ?? 0)
+      blankCount: Number(statsByQuestionId.get(question.id)?.blank_count ?? 0),
+      optionStats: [...question.answerOptions]
+        .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)
+        .map((option) => ({
+          answerOptionId: option.id,
+          optionText: option.optionText,
+          displayOrder: option.displayOrder,
+          selectionCount: selectionCountByOptionId.get(option.id) ?? 0
+        }))
+    })),
+    tagStats: tagResult.rows.map((row) => ({
+      tagKey: row.tag_key,
+      tagValue: row.tag_value,
+      selectionCount: Number(row.selection_count),
+      respondentCount: Number(row.respondent_count)
     }))
   };
 }
 
-export async function fetchAdminAttempts(surveyId: number): Promise<AdminAttemptSummary[] | null> {
+export async function fetchAdminAttempts(
+  surveyId: number,
+  range?: AttemptDateRange
+): Promise<AdminAttemptSummary[] | null> {
   const survey = await fetchSurveyRecord(pool, surveyId);
 
   if (!survey) {
     return null;
   }
 
+  const values: unknown[] = [surveyId];
+  const rangeSql = attemptRangeSql("survey_attempts", range, values);
   const attemptsResult = await pool.query<
     SurveyAttemptRecord & ParticipantRecord & { attempt_id: number; answered_count: string }
   >(
@@ -147,10 +266,10 @@ export async function fetchAdminAttempts(surveyId: number): Promise<AdminAttempt
      join users on users.id = survey_attempts.user_id
      left join survey_response_answers
        on survey_response_answers.survey_attempt_id = survey_attempts.id
-     where survey_attempts.survey_id = $1
+     where survey_attempts.survey_id = $1${rangeSql}
      group by survey_attempts.id, users.id
      order by survey_attempts.started_at desc nulls last, survey_attempts.id desc`,
-    [surveyId]
+    values
   );
 
   return attemptsResult.rows.map((row) => ({
@@ -202,7 +321,8 @@ export async function fetchAdminAttemptDetail(
 }
 
 export async function buildSurveyCsvExport(
-  surveyId: number
+  surveyId: number,
+  range?: AttemptDateRange
 ): Promise<{ filename: string; content: string } | null> {
   const [survey] = await fetchSurveyStructures({
     surveyId,
@@ -215,7 +335,7 @@ export async function buildSurveyCsvExport(
     return null;
   }
 
-  const attempts = await fetchAttemptsWithResponsesForSurvey(surveyId);
+  const attempts = await fetchAttemptsWithResponsesForSurvey(surveyId, undefined, range);
   const participantIds = [...new Set(attempts.map((attempt) => attempt.userId))];
   const participantsById = await fetchParticipantsByIds(participantIds);
 
@@ -349,7 +469,8 @@ function responseHasContent(response: SurveyResponseAnswer): boolean {
 
 async function fetchAttemptsWithResponsesForSurvey(
   surveyId: number,
-  attemptId?: number
+  attemptId?: number,
+  range?: AttemptDateRange
 ): Promise<SurveyAttempt[]> {
   const values: unknown[] = [surveyId];
   let condition = "survey_attempts.survey_id = $1";
@@ -358,6 +479,8 @@ async function fetchAttemptsWithResponsesForSurvey(
     values.push(attemptId);
     condition += ` and survey_attempts.id = $${values.length}`;
   }
+
+  condition += attemptRangeSql("survey_attempts", range, values);
 
   const attemptsResult = await pool.query<SurveyAttemptRecord>(
     `select

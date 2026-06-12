@@ -347,12 +347,45 @@ export async function deleteConditionalRule(input: {
   });
 }
 
-export async function fetchSurveyReport(surveyId: number): Promise<SurveyReportResponse> {
-  return apiRequest<SurveyReportResponse>(`/api/surveys/${surveyId}/report`);
+// Optional inclusive YYYY-MM-DD bounds filtering report data by when
+// attempts started.
+export interface AttemptDateRange {
+  from?: string;
+  to?: string;
 }
 
-export async function fetchSurveyAttempts(surveyId: number): Promise<SurveyAttemptsListResponse> {
-  return apiRequest<SurveyAttemptsListResponse>(`/api/surveys/${surveyId}/attempts`);
+function rangeQueryString(range?: AttemptDateRange): string {
+  const params = new URLSearchParams();
+
+  if (range?.from) {
+    params.set("from", range.from);
+  }
+
+  if (range?.to) {
+    params.set("to", range.to);
+  }
+
+  const query = params.toString();
+
+  return query ? `?${query}` : "";
+}
+
+export async function fetchSurveyReport(
+  surveyId: number,
+  range?: AttemptDateRange
+): Promise<SurveyReportResponse> {
+  return apiRequest<SurveyReportResponse>(
+    `/api/surveys/${surveyId}/report${rangeQueryString(range)}`
+  );
+}
+
+export async function fetchSurveyAttempts(
+  surveyId: number,
+  range?: AttemptDateRange
+): Promise<SurveyAttemptsListResponse> {
+  return apiRequest<SurveyAttemptsListResponse>(
+    `/api/surveys/${surveyId}/attempts${rangeQueryString(range)}`
+  );
 }
 
 export async function fetchSurveyAttemptDetail(
@@ -367,6 +400,6 @@ export async function fetchSurveyAttemptDetail(
 // The export is a plain authenticated download; cookie auth rides along on
 // same-origin navigation, so a regular link works in dev (via the vite
 // proxy) and production.
-export function surveyExportCsvUrl(surveyId: number): string {
-  return `/api/surveys/${surveyId}/export.csv`;
+export function surveyExportCsvUrl(surveyId: number, range?: AttemptDateRange): string {
+  return `/api/surveys/${surveyId}/export.csv${rangeQueryString(range)}`;
 }
