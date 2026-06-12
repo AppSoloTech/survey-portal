@@ -11,6 +11,7 @@ import {
 import {
   createSurvey,
   deleteSurvey,
+  duplicateSurvey,
   fetchAdminSurveys,
   fetchSurveyReport
 } from "../../api/surveys.js";
@@ -136,6 +137,22 @@ export function AdminSurveysOverview() {
     }
   }
 
+  // Templates workflow: any survey (drafts included) can serve as a
+  // template — duplicating opens an editable draft copy of its full tree.
+  async function handleDuplicateSurvey(survey: Survey) {
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await duplicateSurvey(survey.id);
+      toast.success(`Draft copy of "${survey.title}" created`);
+      navigate(`/admin/surveys/${response.survey.id}/setup`);
+    } catch (duplicateError) {
+      setError(duplicateError instanceof Error ? duplicateError.message : "Request failed");
+      setIsSubmitting(false);
+    }
+  }
+
   async function handleDeleteSurvey(survey: Survey) {
     if (
       !confirmAdminAction(
@@ -223,6 +240,15 @@ export function AdminSurveysOverview() {
               </Link>
               <div className="overview-survey-actions">
                 <span className={`status-pill ${survey.status}`}>{survey.status}</span>
+                <button
+                  className="button-link compact-button secondary-button"
+                  disabled={isSubmitting}
+                  onClick={() => void handleDuplicateSurvey(survey)}
+                  title="Create an editable draft copy of this survey"
+                  type="button"
+                >
+                  Duplicate
+                </button>
                 <button
                   className="button-link compact-button danger-button"
                   disabled={isSubmitting}

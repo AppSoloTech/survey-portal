@@ -10,6 +10,11 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Review and merge (or discard) the experiment/dark-mode-and-extras branch: dark mode toggle, dashboard search, results drop-off bars. Manual browser pass in both themes at 375/768/1280px before merging.
 - Consider per-option answer distribution in the survey report payload (API + shared type addition) to upgrade the Results funnel bars into true answer-distribution charts.
 
+## Future Features (parked by the developer)
+
+- Public/anonymous survey links: tokenized URLs so participants can take a survey without an account. Touches auth and attempt ownership; needs its own design pass.
+- Email notifications: "new survey assigned" and completion receipts. Needs an email provider decision (Azure Communication Services?) and opt-in/opt-out handling.
+
 ---
 
 ## Active Follow-Ups

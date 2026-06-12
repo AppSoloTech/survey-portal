@@ -2458,6 +2458,29 @@ main {
   padding: 0;
 }
 
+.resume-nudge {
+  align-items: center;
+  background: var(--success-surface);
+  border: 1px solid var(--success-border);
+  border-left: 4px solid var(--brand);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.resume-nudge > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.resume-nudge span {
+  color: var(--text-muted);
+}
+
 .dashboard-search {
   margin-bottom: 1rem;
 }

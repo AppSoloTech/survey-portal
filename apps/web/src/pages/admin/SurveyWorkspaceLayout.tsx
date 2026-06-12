@@ -232,16 +232,14 @@ export function SurveyWorkspaceLayout() {
           </div>
           <div className="workspace-header-actions">
             <span className={`status-pill ${survey.status}`}>{survey.status}</span>
-            {!isDraft ? (
-              <button
-                className="button-link compact-button secondary-button"
-                disabled={isSubmitting}
-                onClick={() => void handleDuplicate()}
-                type="button"
-              >
-                Create editable draft copy
-              </button>
-            ) : null}
+            <button
+              className="button-link compact-button secondary-button"
+              disabled={isSubmitting}
+              onClick={() => void handleDuplicate()}
+              type="button"
+            >
+              {isDraft ? "Duplicate survey" : "Create editable draft copy"}
+            </button>
             <button
               className="button-link compact-button primary-button"
               disabled={isSubmitting || (!isDraft && !isRetired)}

@@ -52,6 +52,8 @@ export function UserDashboard() {
         <p className="status muted">No published surveys are available.</p>
       ) : null}
 
+      <ResumeNudge summaries={summaries} />
+
       {summaries.length > 0 ? (
         <div className="dashboard-search">
           <label>
@@ -85,6 +87,43 @@ export function UserDashboard() {
 
       <PaginationRow onPageChange={setPage} page={safePage} pageCount={pageCount} />
     </section>
+  );
+}
+
+// Banner for the most recently touched in-progress attempt so returning
+// participants can jump straight back in without scanning the grid.
+function ResumeNudge({ summaries }: { summaries: SurveyAttemptSummary[] }) {
+  const navigate = useNavigate();
+  const inProgress = summaries
+    .filter((summary) => summary.attempt?.status === "in_progress")
+    .sort((left, right) =>
+      (right.attempt?.lastActivityAt ?? "").localeCompare(left.attempt?.lastActivityAt ?? "")
+    );
+  const latest = inProgress[0];
+
+  if (!latest) {
+    return null;
+  }
+
+  const others = inProgress.length - 1;
+
+  return (
+    <div className="resume-nudge">
+      <div>
+        <strong>Pick up where you left off</strong>
+        <span>
+          "{latest.survey.title}" is still in progress
+          {others > 0 ? ` (and ${others} other ${others === 1 ? "survey" : "surveys"})` : ""}.
+        </span>
+      </div>
+      <button
+        className="button-link compact-button primary-button"
+        onClick={() => navigate(`/surveys/${latest.survey.id}/attempt`)}
+        type="button"
+      >
+        Resume survey
+      </button>
+    </div>
   );
 }
 
