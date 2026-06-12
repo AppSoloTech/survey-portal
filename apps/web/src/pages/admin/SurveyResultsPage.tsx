@@ -159,17 +159,33 @@ export function SurveyResultsPage() {
         {report.questionStats.length > 0 ? (
           <div className="results-question-stats">
             <h4>Answers per question</h4>
-            {report.questionStats.map((stat) => (
-              <div className="results-question-stat-row" key={stat.questionId}>
-                <span className="results-question-label">
-                  {stat.displayOrder}. {stat.questionText}
-                </span>
-                <span className="results-question-counts">
-                  {formatCount(stat.answeredCount, "answer")}
-                  {stat.blankCount > 0 ? `, ${stat.blankCount} blank` : ""}
-                </span>
-              </div>
-            ))}
+            {report.questionStats.map((stat) => {
+              // Bars scale against the most-answered question so the list
+              // reads as a drop-off funnel through the survey.
+              const maxAnswered = Math.max(
+                1,
+                ...report.questionStats.map((each) => each.answeredCount)
+              );
+              const barPercent = Math.round((stat.answeredCount / maxAnswered) * 100);
+
+              return (
+                <div className="results-question-stat-row" key={stat.questionId}>
+                  <span className="results-question-label">
+                    {stat.displayOrder}. {stat.questionText}
+                  </span>
+                  <span className="results-question-counts">
+                    {formatCount(stat.answeredCount, "answer")}
+                    {stat.blankCount > 0 ? `, ${stat.blankCount} blank` : ""}
+                  </span>
+                  <span aria-hidden="true" className="results-question-bar">
+                    <span
+                      className="results-question-bar-fill"
+                      style={{ width: `${barPercent}%` }}
+                    />
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </section>
