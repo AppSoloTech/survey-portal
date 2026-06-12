@@ -1311,13 +1311,6 @@ main {
   overflow-wrap: anywhere;
 }
 
-.tag-source-label {
-  color: #5d6f65;
-  font-size: 0.75rem;
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
 .tag-preset-chip button {
   justify-self: start;
   background: transparent;

@@ -21,7 +21,7 @@ const customTagOptionValue = "__custom_tag_value__";
 export interface TagPreset {
   tagKey: string;
   tagValue: string;
-  source: "default" | "survey" | "custom";
+  source: "survey" | "custom";
 }
 
 export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
