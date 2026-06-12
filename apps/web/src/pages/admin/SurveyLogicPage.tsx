@@ -294,15 +294,31 @@ export function SurveyLogicPage() {
           {survey.conditionalLogicRules.length === 0 ? (
             <p className="status muted">No logic rules configured.</p>
           ) : null}
-          {survey.conditionalLogicRules.map((rule) => (
-            <RuleEditor
-              isSubmitting={isSubmitting || isLocked}
-              key={rule.id}
-              onDeleteRule={handleDeleteRule}
-              onSaveRule={handleSaveRule}
-              rule={rule}
-              survey={survey}
-            />
+          {groupRulesBySource(survey).map(({ question, rules }) => (
+            <details className="rule-group" key={question?.id ?? "orphaned"}>
+              <summary>
+                <span className="rule-group-title">
+                  {question
+                    ? `${question.displayOrder}. ${question.questionText}`
+                    : "Rules with a missing source question"}
+                </span>
+                <span className="rule-group-count">
+                  {rules.length === 1 ? "1 rule" : `${rules.length} rules`}
+                </span>
+              </summary>
+              <div className="rule-group-body">
+                {rules.map((rule) => (
+                  <RuleEditor
+                    isSubmitting={isSubmitting || isLocked}
+                    key={rule.id}
+                    onDeleteRule={handleDeleteRule}
+                    onSaveRule={handleSaveRule}
+                    rule={rule}
+                    survey={survey}
+                  />
+                ))}
+              </div>
+            </details>
           ))}
         </div>
       </section>
@@ -310,6 +326,37 @@ export function SurveyLogicPage() {
       <SurveyFlowMap survey={survey} />
     </div>
   );
+}
+
+// Rules grouped by source question in survey order; rules whose source
+// question was deleted (legacy data) collect under a trailing group.
+function groupRulesBySource(survey: ReturnType<typeof useSurveyWorkspace>["survey"]) {
+  const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
+  const groups = new Map<number | null, ConditionalLogicRule[]>();
+
+  for (const rule of survey.conditionalLogicRules) {
+    const key = questionsById.has(rule.sourceQuestionId) ? rule.sourceQuestionId : null;
+    const list = groups.get(key) ?? [];
+    list.push(rule);
+    groups.set(key, list);
+  }
+
+  return [...groups.entries()]
+    .map(([questionId, rules]) => ({
+      question: questionId === null ? null : questionsById.get(questionId) ?? null,
+      rules
+    }))
+    .sort((left, right) => {
+      if (!left.question) {
+        return 1;
+      }
+
+      if (!right.question) {
+        return -1;
+      }
+
+      return left.question.displayOrder - right.question.displayOrder;
+    });
 }
 
 function RuleBuilderEmptyState({

@@ -1464,6 +1464,65 @@ main {
   padding: 1rem;
 }
 
+.rule-row .inline-actions {
+  justify-content: flex-end;
+}
+
+.rule-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rule-group summary {
+  align-items: center;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  list-style: none;
+  min-height: var(--tap-target);
+  padding: 0.75rem 1rem;
+}
+
+.rule-group summary::before {
+  content: "▸";
+  color: var(--text-faint);
+}
+
+.rule-group[open] summary::before {
+  content: "▾";
+}
+
+.rule-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.rule-group-title {
+  flex: 1 1 auto;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.rule-group-count {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-label);
+  font-size: 0.75rem;
+  font-weight: 750;
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+}
+
+.rule-group-body {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
 .builder-form.status-action-panel {
   border-top-color: var(--warn);
 }

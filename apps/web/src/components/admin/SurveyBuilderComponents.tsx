@@ -852,7 +852,11 @@ export function RuleEditor({
           ))}
         </select>
       </label>
-      {isSkipRule ? null : (
+      {isSkipRule ? (
+        // Occupies the normal-flow checkbox cell so Save/Delete land in the
+        // same grid column for both rule kinds.
+        <span aria-hidden="true" className="rule-flow-spacer" />
+      ) : (
         <label className="checkbox-label rule-flow-toggle">
           <input
             defaultChecked={rule.skipTargetInNormalFlow}
