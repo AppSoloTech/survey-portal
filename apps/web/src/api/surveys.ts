@@ -293,11 +293,14 @@ export async function deleteAnswerTag(input: {
   );
 }
 
+export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+
 export async function createConditionalRule(input: {
   surveyId: number;
   sourceQuestionId: number;
   sourceAnswerOptionId: number;
   targetQuestionId: number;
+  actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules`, {
@@ -307,7 +310,7 @@ export async function createConditionalRule(input: {
       targetQuestionId: input.targetQuestionId,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
       conditionOperator: "equals",
-      actionType: "JUMP_TO_QUESTION"
+      actionType: input.actionType ?? "JUMP_TO_QUESTION"
     }),
     method: "POST"
   });
@@ -319,6 +322,7 @@ export async function updateConditionalRule(input: {
   sourceQuestionId: number;
   sourceAnswerOptionId: number;
   targetQuestionId: number;
+  actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
@@ -328,7 +332,7 @@ export async function updateConditionalRule(input: {
       targetQuestionId: input.targetQuestionId,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
       conditionOperator: "equals",
-      actionType: "JUMP_TO_QUESTION"
+      actionType: input.actionType ?? "JUMP_TO_QUESTION"
     }),
     method: "PUT"
   });

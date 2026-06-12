@@ -1,5 +1,5 @@
 import {
-  resolveNextQuestion,
+  resolveAttemptPath,
   type AdminAttemptAnswer,
   type AdminAttemptDetailResponse,
   type AdminAttemptSummary,
@@ -284,20 +284,15 @@ export async function buildSurveyCsvExport(
 // Walks the navigation path implied by the attempt's saved answers, exactly
 // as the shared runtime resolver would during survey taking. Questions
 // outside this walk either were never reached or hold historical answers
-// from a changed branching path.
+// from a changed branching path. Delegates to the shared walker so jump and
+// skip semantics can never diverge from the attempt engine.
 export function collectFinalPathQuestionIds(
   survey: Survey,
   responsesByQuestionId: Map<number, SurveyResponseAnswer>
 ): Set<number> {
-  const visited = new Set<number>();
-  let question: SurveyQuestion | null = sortQuestions(survey.questions)[0] ?? null;
+  const { path } = resolveAttemptPath(survey, [...responsesByQuestionId.values()]);
 
-  while (question && !visited.has(question.id)) {
-    visited.add(question.id);
-    question = resolveNextQuestion(survey, question, responsesByQuestionId.get(question.id));
-  }
-
-  return visited;
+  return new Set(path.map((question) => question.id));
 }
 
 export function buildAdminAttemptAnswers(

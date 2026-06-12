@@ -15,6 +15,7 @@ export type SurveyFlowIssueCode =
   | "unsupported_action_type"
   | "backward_or_self_target"
   | "duplicate_rule_for_option"
+  | "duplicate_skip_rule"
   | "unreachable_question"
   | "circular_navigation";
 
@@ -60,12 +61,12 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
   const questionsById = new Map(orderedQuestions.map((question) => [question.id, question]));
   const startQuestion = orderedQuestions[0] ?? null;
 
-  // Mirrors the skip set in resolveNextQuestion: any rule with
-  // skipTargetInNormalFlow and a target removes that target from normal flow,
-  // regardless of the rule's action type or operator.
+  // Mirrors the static skip set in resolveNextQuestion: only JUMP rules with
+  // skipTargetInNormalFlow remove their target from normal flow. HIDE rule
+  // targets stay in the normal flow and are skipped per attempt at runtime.
   const skipTargetQuestionIds = new Set(
     survey.conditionalLogicRules
-      .filter((rule) => rule.skipTargetInNormalFlow)
+      .filter((rule) => rule.actionType === "JUMP_TO_QUESTION" && rule.skipTargetInNormalFlow)
       .map((rule) => rule.targetQuestionId)
       .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null)
   );
@@ -121,6 +122,7 @@ function buildConditionalEdges(
 ): SurveyFlowConditionalEdge[] {
   const orderedRules = [...survey.conditionalLogicRules].sort((left, right) => left.id - right.id);
   const firstRuleIdBySourceOption = new Map<string, number>();
+  const firstSkipRuleIdByKey = new Map<string, number>();
   const edges: SurveyFlowConditionalEdge[] = [];
 
   for (const rule of orderedRules) {
@@ -143,7 +145,7 @@ function buildConditionalEdges(
         code: "invalid_source_question_type",
         ruleId: rule.id,
         questionId: sourceQuestion.id,
-        message: `Rule ${rule.id}: source ${formatQuestionLabel(sourceQuestion)} is a ${sourceQuestion.questionType} question; jump rules are only supported from single_select or multi_select questions.`
+        message: `Rule ${rule.id}: source ${formatQuestionLabel(sourceQuestion)} is a ${sourceQuestion.questionType} question; jump and skip rules are only supported from single_select or multi_select questions.`
       });
     }
 
@@ -164,15 +166,11 @@ function buildConditionalEdges(
       });
     }
 
-    if (rule.actionType !== "JUMP_TO_QUESTION") {
+    if (rule.actionType !== "JUMP_TO_QUESTION" && rule.actionType !== "HIDE_QUESTION") {
       edgeIssues.push({
         code: "unsupported_action_type",
         ruleId: rule.id,
-        message: `Rule ${rule.id}: action type "${rule.actionType}" is not executed by the survey runtime.${
-          rule.skipTargetInNormalFlow && targetQuestion
-            ? ` Its target ${formatQuestionLabel(targetQuestion)} is still skipped from normal flow.`
-            : ""
-        }`
+        message: `Rule ${rule.id}: action type "${rule.actionType}" is not executed by the survey runtime.`
       });
     }
 
@@ -190,21 +188,21 @@ function buildConditionalEdges(
           code: "backward_or_self_target",
           ruleId: rule.id,
           questionId: sourceQuestion.id,
-          message: `Rule ${rule.id}: ${formatQuestionLabel(sourceQuestion)} jumps to itself, which can trap participants. Valid admin-created rules are forward-only.`
+          message: `Rule ${rule.id}: ${formatQuestionLabel(sourceQuestion)} targets itself, which can trap participants. Valid admin-created jump and skip rules are forward-only.`
         });
       } else if (targetQuestion.displayOrder <= sourceQuestion.displayOrder) {
         edgeIssues.push({
           code: "backward_or_self_target",
           ruleId: rule.id,
           questionId: sourceQuestion.id,
-          message: `Rule ${rule.id}: target ${formatQuestionLabel(targetQuestion)} comes before source ${formatQuestionLabel(sourceQuestion)}. Valid admin-created rules are forward-only.`
+          message: `Rule ${rule.id}: target ${formatQuestionLabel(targetQuestion)} comes before source ${formatQuestionLabel(sourceQuestion)}. Valid admin-created jump and skip rules are forward-only.`
         });
       }
     }
 
-    // The runtime matches rules with Array.find over the id-ordered rule list,
-    // so a later rule for the same source question and answer option is
-    // shadowed by the first one and can never execute.
+    // The runtime matches jump rules with Array.find over the id-ordered rule
+    // list, so a later jump rule for the same source question and answer
+    // option is shadowed by the first one and can never execute.
     let isShadowedDuplicate = false;
 
     if (
@@ -227,6 +225,27 @@ function buildConditionalEdges(
       }
     }
 
+    // Skip rules union their targets at runtime, so an identical second skip
+    // rule is harmless but redundant — flag it for cleanup.
+    if (
+      rule.conditionOperator === "equals" &&
+      rule.actionType === "HIDE_QUESTION" &&
+      rule.targetQuestionId !== null
+    ) {
+      const skipKey = `${rule.sourceQuestionId}:${rule.sourceAnswerOptionId}:${rule.targetQuestionId}`;
+      const firstSkipRuleId = firstSkipRuleIdByKey.get(skipKey);
+
+      if (firstSkipRuleId === undefined) {
+        firstSkipRuleIdByKey.set(skipKey, rule.id);
+      } else {
+        edgeIssues.push({
+          code: "duplicate_skip_rule",
+          ruleId: rule.id,
+          message: `Rule ${rule.id}: repeats skip rule ${firstSkipRuleId} for the same answer and target question. It is redundant and can be deleted.`
+        });
+      }
+    }
+
     edges.push({
       ruleId: rule.id,
       sourceQuestionId: rule.sourceQuestionId,
@@ -245,13 +264,13 @@ function buildConditionalEdges(
   return edges;
 }
 
-// A rule can trigger at runtime when resolveNextQuestion can match it: the
+// A rule can trigger at runtime when the attempt engine can match it: the
 // source question must exist with the rule's option among its answer options
 // (so a saved response can contain that option id), the operator must be
-// equals, and the action must be JUMP_TO_QUESTION with a target id. A missing
-// target question still "fires" but ends the survey, which is reported as a
-// missing-target issue instead. Shadowing by an earlier duplicate rule for the
-// same source option is handled at the call site.
+// equals, and the action must be a jump or skip with a target id. A missing
+// jump target still "fires" but ends the survey, which is reported as a
+// missing-target issue instead. Shadowing by an earlier duplicate jump rule
+// for the same source option is handled at the call site.
 function canRuleFireAtRuntime(
   rule: ConditionalLogicRule,
   sourceQuestion: SurveyQuestion | null,
@@ -262,7 +281,7 @@ function canRuleFireAtRuntime(
     sourceOptionBelongsToSource &&
     isOptionBackedQuestionType(sourceQuestion.questionType) &&
     rule.conditionOperator === "equals" &&
-    rule.actionType === "JUMP_TO_QUESTION" &&
+    (rule.actionType === "JUMP_TO_QUESTION" || rule.actionType === "HIDE_QUESTION") &&
     rule.targetQuestionId !== null
   );
 }
@@ -284,7 +303,10 @@ function buildAdjacency(
     }
 
     for (const edge of conditionalEdges) {
+      // Skip edges remove a question from a path; they never navigate to
+      // their target, so only jump edges contribute reachability.
       if (
+        edge.actionType === "JUMP_TO_QUESTION" &&
         edge.sourceQuestionId === question.id &&
         edge.canFireAtRuntime &&
         edge.targetQuestionId !== null &&

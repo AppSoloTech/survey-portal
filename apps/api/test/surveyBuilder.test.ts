@@ -167,6 +167,96 @@ describe("conditional rule validation", () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("Source answer option must belong to the source question");
   });
+
+  it("accepts skip rules and forces skipTargetInNormalFlow off", async () => {
+    const admin = await registerAdmin(app);
+    const survey = await surveyWithSourceAndTarget(admin);
+    const source = findQuestion(survey, "Source");
+
+    const updated = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: source.answerOptions[0].id,
+      targetQuestionId: findQuestion(survey, "Target").id,
+      actionType: "HIDE_QUESTION",
+      // The static skip flag is a jump-rule concept; the server must ignore
+      // it for skip rules so the target stays in the normal flow.
+      skipTargetInNormalFlow: true
+    });
+
+    expect(updated.conditionalLogicRules).toHaveLength(1);
+    expect(updated.conditionalLogicRules[0]).toMatchObject({
+      actionType: "HIDE_QUESTION",
+      skipTargetInNormalFlow: false
+    });
+  });
+
+  it("converts a jump rule into a skip rule via update", async () => {
+    const admin = await registerAdmin(app);
+    const survey = await surveyWithSourceAndTarget(admin);
+    const source = findQuestion(survey, "Source");
+    const target = findQuestion(survey, "Target");
+
+    const withRule = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: source.answerOptions[0].id,
+      targetQuestionId: target.id
+    });
+    const ruleId = withRule.conditionalLogicRules[0].id;
+
+    const response = await request(app)
+      .put(`/api/surveys/${survey.id}/rules/${ruleId}`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: source.answerOptions[0].id,
+        targetQuestionId: target.id,
+        actionType: "HIDE_QUESTION"
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.survey.conditionalLogicRules[0]).toMatchObject({
+      actionType: "HIDE_QUESTION",
+      skipTargetInNormalFlow: false
+    });
+  });
+
+  it("rejects unsupported action types", async () => {
+    const admin = await registerAdmin(app);
+    const survey = await surveyWithSourceAndTarget(admin);
+    const source = findQuestion(survey, "Source");
+
+    const response = await request(app)
+      .post(`/api/surveys/${survey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: source.answerOptions[0].id,
+        targetQuestionId: findQuestion(survey, "Target").id,
+        actionType: "END_SURVEY"
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Action type must be JUMP_TO_QUESTION or HIDE_QUESTION");
+  });
+
+  it("rejects skip rules targeting the source question or earlier", async () => {
+    const admin = await registerAdmin(app);
+    const survey = await surveyWithSourceAndTarget(admin);
+    const source = findQuestion(survey, "Source");
+
+    const response = await request(app)
+      .post(`/api/surveys/${survey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: source.answerOptions[0].id,
+        targetQuestionId: source.id,
+        actionType: "HIDE_QUESTION"
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Target question must come after the source question");
+  });
 });
 
 describe("question ordering", () => {

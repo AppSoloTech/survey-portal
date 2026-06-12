@@ -447,7 +447,11 @@ export async function validateSurveyCanPublish(
          or target_question.display_order <= source_question.display_order
          or source_question.question_type not in ('single_select', 'multi_select')
          or conditional_logic_rules.condition_operator <> 'equals'
-         or conditional_logic_rules.action_type <> 'JUMP_TO_QUESTION'
+         or conditional_logic_rules.action_type not in ('JUMP_TO_QUESTION', 'HIDE_QUESTION')
+         or (
+           conditional_logic_rules.action_type = 'HIDE_QUESTION'
+           and conditional_logic_rules.skip_target_in_normal_flow
+         )
        )
      limit 1`,
     [surveyId]

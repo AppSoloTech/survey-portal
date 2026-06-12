@@ -33,6 +33,7 @@ export function SurveyFlowMap({ survey }: { survey: Survey }) {
       <div className="flow-map-legend" aria-label="Flow map legend">
         <span className="flow-legend-item normal">Normal flow</span>
         <span className="flow-legend-item conditional">Conditional jump</span>
+        <span className="flow-legend-item skip">Conditional skip</span>
         <span className="flow-legend-item conditional-only">
           Conditional only (skipped in normal flow)
         </span>
@@ -117,8 +118,9 @@ function FlowQuestionNode({
   const incomingJumpEdges = incomingEdges.filter(
     (edge) => edge.actionType === "JUMP_TO_QUESTION"
   );
+  const incomingSkipEdges = incomingEdges.filter((edge) => edge.actionType === "HIDE_QUESTION");
   const incomingNonExecutedEdges = incomingEdges.filter(
-    (edge) => edge.actionType !== "JUMP_TO_QUESTION"
+    (edge) => edge.actionType !== "JUMP_TO_QUESTION" && edge.actionType !== "HIDE_QUESTION"
   );
   const nodeClassNames = [
     "flow-node",
@@ -158,6 +160,15 @@ function FlowQuestionNode({
           <p className="flow-path incoming">
             Jump target of {incomingJumpEdges.length === 1 ? "rule" : "rules"}{" "}
             {incomingJumpEdges
+              .map((edge) => describeIncomingEdge(edge, nodesByQuestionId))
+              .join("; ")}
+          </p>
+        ) : null}
+
+        {incomingSkipEdges.length > 0 ? (
+          <p className="flow-path incoming">
+            Skipped by {incomingSkipEdges.length === 1 ? "rule" : "rules"}{" "}
+            {incomingSkipEdges
               .map((edge) => describeIncomingEdge(edge, nodesByQuestionId))
               .join("; ")}
           </p>
@@ -219,6 +230,10 @@ function describeOutgoingEdge(
     : edge.targetQuestionId !== null
       ? `missing question id ${edge.targetQuestionId}`
       : "a missing target";
+
+  if (edge.actionType === "HIDE_QUESTION") {
+    return `If answer is ${optionLabel}, skip ${targetLabel}.`;
+  }
 
   if (edge.actionType !== "JUMP_TO_QUESTION") {
     return `If answer is ${optionLabel}: rule action ${edge.actionType} targets ${targetLabel} but is not executed by the runtime.`;

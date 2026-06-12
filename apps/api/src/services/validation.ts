@@ -234,10 +234,13 @@ export function validateAnswerTagBody(body: unknown): ValidationResult<{
   };
 }
 
+export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+
 export interface ConditionalRuleBodyValue {
   sourceQuestionId: number;
   sourceAnswerOptionId: number;
   targetQuestionId: number;
+  actionType: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }
 
@@ -266,8 +269,8 @@ export function validateConditionalRuleBody(
     return { ok: false, error: "Condition operator must be equals" };
   }
 
-  if (actionType !== "JUMP_TO_QUESTION") {
-    return { ok: false, error: "Action type must be JUMP_TO_QUESTION" };
+  if (actionType !== "JUMP_TO_QUESTION" && actionType !== "HIDE_QUESTION") {
+    return { ok: false, error: "Action type must be JUMP_TO_QUESTION or HIDE_QUESTION" };
   }
 
   if (
@@ -283,8 +286,16 @@ export function validateConditionalRuleBody(
       sourceQuestionId,
       sourceAnswerOptionId,
       targetQuestionId,
+      actionType,
+      // A HIDE_QUESTION target must stay in the normal flow — it is only
+      // skipped per attempt when its trigger answer is selected. The static
+      // skip flag is a jump-rule concept, so it is forced off for skips.
       skipTargetInNormalFlow:
-        typeof skipTargetInNormalFlowValue === "boolean" ? skipTargetInNormalFlowValue : true
+        actionType === "HIDE_QUESTION"
+          ? false
+          : typeof skipTargetInNormalFlowValue === "boolean"
+            ? skipTargetInNormalFlowValue
+            : true
     }
   };
 }

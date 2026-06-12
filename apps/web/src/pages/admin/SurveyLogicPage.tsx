@@ -4,7 +4,8 @@ import { useState, type FormEvent } from "react";
 import {
   createConditionalRule,
   deleteConditionalRule,
-  updateConditionalRule
+  updateConditionalRule,
+  type ConditionalRuleActionType
 } from "../../api/surveys.js";
 import { confirmAdminAction, readFormNumber } from "../../components/admin/builderForm.js";
 import {
@@ -15,10 +16,14 @@ import { SurveyFlowMap } from "../../components/admin/SurveyFlowMap.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 
 export function SurveyLogicPage() {
-  const { isSubmitting, runSurveyMutation, survey } = useSurveyWorkspace();
+  const { isSubmitting, reloadSurvey, runSurveyMutation, survey } = useSurveyWorkspace();
   const [ruleSourceQuestionId, setRuleSourceQuestionId] = useState<number | null>(null);
+  const [ruleActionType, setRuleActionType] =
+    useState<ConditionalRuleActionType>("JUMP_TO_QUESTION");
+  const [skipTargetIds, setSkipTargetIds] = useState<number[]>([]);
   // Structural changes are draft-only; the API rejects them after publish.
   const isLocked = survey.status !== "draft";
+  const isSkipAction = ruleActionType === "HIDE_QUESTION";
 
   const selectableQuestions = survey.questions.filter((question) =>
     isSelectionQuestion(question)
@@ -37,21 +42,71 @@ export function SurveyLogicPage() {
 
     const form = event.currentTarget;
     const data = new FormData(form);
+    const sourceQuestionId = readFormNumber(data, "sourceQuestionId");
+    const sourceAnswerOptionId = readFormNumber(data, "sourceAnswerOptionId");
 
-    const didSave = await runSurveyMutation(
-      () =>
-        createConditionalRule({
-          surveyId: survey.id,
-          sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
-          sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
-          targetQuestionId: readFormNumber(data, "targetQuestionId"),
-          skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
-        }),
-      "Jump rule added"
-    );
+    let didSave = false;
+
+    if (isSkipAction) {
+      // Only target questions that are valid for the currently selected
+      // source — selections made under a previous source are dropped.
+      const validTargetIds = skipTargetIds.filter((targetId) =>
+        activeRuleTargetQuestions.some((question) => question.id === targetId)
+      );
+
+      if (validTargetIds.length === 0) {
+        return;
+      }
+
+      // Each skipped question is its own rule row; create them sequentially
+      // so the toast and refreshed survey reflect the final state.
+      let savedCount = 0;
+
+      didSave = await runSurveyMutation(async () => {
+        let response: Awaited<ReturnType<typeof createConditionalRule>> | null = null;
+
+        for (const targetQuestionId of validTargetIds) {
+          response = await createConditionalRule({
+            surveyId: survey.id,
+            sourceQuestionId,
+            sourceAnswerOptionId,
+            targetQuestionId,
+            actionType: "HIDE_QUESTION",
+            skipTargetInNormalFlow: false
+          });
+          savedCount += 1;
+        }
+
+        if (!response) {
+          throw new Error("Choose at least one question to skip");
+        }
+
+        return response;
+      }, validTargetIds.length === 1 ? "Skip rule added" : "Skip rules added");
+
+      if (!didSave && savedCount > 0) {
+        // A later create failed after earlier ones persisted; resync the
+        // rule list so the partial rules are visible and deletable.
+        await reloadSurvey();
+      }
+    } else {
+      didSave = await runSurveyMutation(
+        () =>
+          createConditionalRule({
+            surveyId: survey.id,
+            sourceQuestionId,
+            sourceAnswerOptionId,
+            targetQuestionId: readFormNumber(data, "targetQuestionId"),
+            actionType: "JUMP_TO_QUESTION",
+            skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
+          }),
+        "Jump rule added"
+      );
+    }
 
     if (didSave) {
       setRuleSourceQuestionId(null);
+      setSkipTargetIds([]);
       form.reset();
     }
   }
@@ -63,6 +118,8 @@ export function SurveyLogicPage() {
     event.preventDefault();
 
     const data = new FormData(event.currentTarget);
+    const actionType: ConditionalRuleActionType =
+      data.get("actionType") === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION";
 
     await runSurveyMutation(
       () =>
@@ -72,14 +129,16 @@ export function SurveyLogicPage() {
           sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
           sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
           targetQuestionId: readFormNumber(data, "targetQuestionId"),
-          skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
+          actionType,
+          skipTargetInNormalFlow:
+            actionType === "HIDE_QUESTION" ? false : data.get("skipTargetInNormalFlow") === "on"
         }),
-      "Jump rule saved"
+      "Rule saved"
     );
   }
 
   async function handleDeleteRule(ruleId: number) {
-    if (!confirmAdminAction("Delete this jump rule?")) {
+    if (!confirmAdminAction("Delete this rule?")) {
       return;
     }
 
@@ -89,7 +148,7 @@ export function SurveyLogicPage() {
           surveyId: survey.id,
           ruleId
         }),
-      "Jump rule deleted"
+      "Rule deleted"
     );
   }
 
@@ -99,11 +158,11 @@ export function SurveyLogicPage() {
         <div className="builder-section-heading">
           <div>
             <p className="eyebrow">Conditional logic</p>
-            <h3>Jump rules</h3>
+            <h3>Logic rules</h3>
             <p className="builder-heading-note">
               {isLocked
-                ? "Jump rules are locked after publishing. Create an editable draft copy to change conditional logic."
-                : "Configure optional jumps for selection questions. Targets can stay in normal order or appear only when a jump reaches them."}
+                ? "Logic rules are locked after publishing. Create an editable draft copy to change conditional logic."
+                : "Configure answer-conditional logic for selection questions: jump ahead to a later question, or skip one or more later questions when a specific answer is chosen."}
             </p>
           </div>
         </div>
@@ -113,11 +172,14 @@ export function SurveyLogicPage() {
             Source question
             <select
               name="sourceQuestionId"
-              onChange={(event) =>
+              onChange={(event) => {
                 setRuleSourceQuestionId(
                   event.target.value ? Number(event.target.value) : null
-                )
-              }
+                );
+                // Skip selections belong to the previous source's target
+                // list; keeping them could submit stale question ids.
+                setSkipTargetIds([]);
+              }}
               value={activeRuleSourceQuestion?.id ?? ""}
               required
             >
@@ -146,25 +208,65 @@ export function SurveyLogicPage() {
             </select>
           </label>
           <label>
-            Target question
+            Action
             <select
-              disabled={!activeRuleSourceQuestion}
-              key={`rule-target-question-${activeRuleSourceQuestion?.id ?? "empty"}`}
-              name="targetQuestionId"
-              required
+              name="actionType"
+              onChange={(event) => {
+                setRuleActionType(
+                  event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
+                );
+                setSkipTargetIds([]);
+              }}
+              value={ruleActionType}
             >
-              <option value="">Choose target question</option>
-              {activeRuleTargetQuestions.map((question) => (
-                <option key={question.id} value={question.id}>
-                  {question.displayOrder}. {question.questionText}
-                </option>
-              ))}
+              <option value="JUMP_TO_QUESTION">Jump to question</option>
+              <option value="HIDE_QUESTION">Skip questions</option>
             </select>
           </label>
-          <label className="checkbox-label rule-flow-toggle">
-            <input defaultChecked name="skipTargetInNormalFlow" type="checkbox" />
-            Skip target in normal flow
-          </label>
+          {isSkipAction ? (
+            <fieldset className="skip-target-fieldset" disabled={!activeRuleSourceQuestion}>
+              <legend>Questions to skip</legend>
+              {activeRuleTargetQuestions.map((question) => (
+                <label className="checkbox-label" key={question.id}>
+                  <input
+                    checked={skipTargetIds.includes(question.id)}
+                    onChange={(event) =>
+                      setSkipTargetIds((current) =>
+                        event.target.checked
+                          ? [...current, question.id]
+                          : current.filter((id) => id !== question.id)
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  {question.displayOrder}. {question.questionText}
+                </label>
+              ))}
+            </fieldset>
+          ) : (
+            <>
+              <label>
+                Target question
+                <select
+                  disabled={!activeRuleSourceQuestion}
+                  key={`rule-target-question-${activeRuleSourceQuestion?.id ?? "empty"}`}
+                  name="targetQuestionId"
+                  required
+                >
+                  <option value="">Choose target question</option>
+                  {activeRuleTargetQuestions.map((question) => (
+                    <option key={question.id} value={question.id}>
+                      {question.displayOrder}. {question.questionText}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="checkbox-label rule-flow-toggle">
+                <input defaultChecked name="skipTargetInNormalFlow" type="checkbox" />
+                Skip target in normal flow
+              </label>
+            </>
+          )}
           <button
             className="button-link compact-button primary-button"
             disabled={
@@ -172,11 +274,12 @@ export function SurveyLogicPage() {
               isLocked ||
               !activeRuleSourceQuestion ||
               activeRuleSourceAnswerOptionCount === 0 ||
-              activeRuleTargetQuestions.length === 0
+              activeRuleTargetQuestions.length === 0 ||
+              (isSkipAction && skipTargetIds.length === 0)
             }
             type="submit"
           >
-            Add rule
+            {isSkipAction ? "Add skip rules" : "Add rule"}
           </button>
         </form>
 
@@ -189,7 +292,7 @@ export function SurveyLogicPage() {
 
         <div className="rule-list">
           {survey.conditionalLogicRules.length === 0 ? (
-            <p className="status muted">No jump rules configured.</p>
+            <p className="status muted">No logic rules configured.</p>
           ) : null}
           {survey.conditionalLogicRules.map((rule) => (
             <RuleEditor

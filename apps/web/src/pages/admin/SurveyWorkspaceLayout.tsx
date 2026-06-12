@@ -16,6 +16,9 @@ export interface SurveyWorkspaceContextValue {
   ) => Promise<boolean>;
   changeStatus: (status: SurveyStatus) => Promise<void>;
   setFeedback: (feedback: { error: string | null; notice: string | null }) => void;
+  // Refetches the survey without toasting; for resyncing the UI after a
+  // mutation that may have partially persisted before failing.
+  reloadSurvey: () => Promise<void>;
 }
 
 export function useSurveyWorkspace(): SurveyWorkspaceContextValue {
@@ -151,6 +154,25 @@ export function SurveyWorkspaceLayout() {
     [toast]
   );
 
+  const reloadSurvey = useCallback(async (): Promise<void> => {
+    const reloadSurveyId = activeSurveyIdRef.current;
+
+    if (reloadSurveyId === null) {
+      return;
+    }
+
+    try {
+      const response = await fetchAdminSurvey(reloadSurveyId);
+
+      if (activeSurveyIdRef.current === reloadSurveyId) {
+        setSurvey(response.survey);
+      }
+    } catch {
+      // Keep the current (possibly stale) survey; the existing error state
+      // from the failed mutation already tells the admin something is wrong.
+    }
+  }, []);
+
   async function handleDuplicate() {
     if (!survey) {
       return;
@@ -191,7 +213,8 @@ export function SurveyWorkspaceLayout() {
     isSubmitting,
     runSurveyMutation,
     changeStatus,
-    setFeedback
+    setFeedback,
+    reloadSurvey
   };
 
   return (

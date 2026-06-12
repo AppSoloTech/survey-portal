@@ -7,6 +7,7 @@ import {
   completeAttempt,
   createDraftSurvey,
   createPublishedJumpSurvey,
+  createPublishedSkipSurvey,
   findQuestion,
   registerAdmin,
   registerUser,
@@ -140,6 +141,95 @@ describe("conditional navigation", () => {
     // The jump target is skipTargetInNormalFlow, so the normal path ends here.
     expect(afterMiddle.currentQuestion).toBeNull();
     expect(afterMiddle.isCompleteReady).toBe(true);
+  });
+
+  it("skips hidden questions when the trigger option is selected", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const { survey, triggerQuestion, skipOptionId, finalQuestion } =
+      await createPublishedSkipSurvey(app, admin);
+
+    const started = await startAttempt(app, user, survey.id);
+    const afterTrigger = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: triggerQuestion.id,
+      selectedAnswerOptionIds: [skipOptionId]
+    });
+
+    expect(afterTrigger.currentQuestion?.id).toBe(finalQuestion.id);
+  });
+
+  it("keeps skip-rule targets in the flow for other answers", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const { survey, triggerQuestion, keepOptionId, hiddenQuestionA } =
+      await createPublishedSkipSurvey(app, admin);
+
+    const started = await startAttempt(app, user, survey.id);
+    const afterTrigger = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: triggerQuestion.id,
+      selectedAnswerOptionIds: [keepOptionId]
+    });
+
+    expect(afterTrigger.currentQuestion?.id).toBe(hiddenQuestionA.id);
+  });
+
+  it("completes an attempt whose required questions were skipped by rule", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const { survey, triggerQuestion, skipOptionId, finalQuestion } =
+      await createPublishedSkipSurvey(app, admin);
+
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: triggerQuestion.id,
+      selectedAnswerOptionIds: [skipOptionId]
+    });
+    const afterFinal = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: finalQuestion.id,
+      answerText: "done"
+    });
+
+    expect(afterFinal.isCompleteReady).toBe(true);
+
+    const completed = await completeAttempt(app, user, survey.id, started.attempt.id);
+
+    expect(completed.attempt.status).toBe("completed");
+  });
+
+  it("blocks completion again when the trigger answer changes back", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const { survey, triggerQuestion, skipOptionId, keepOptionId } =
+      await createPublishedSkipSurvey(app, admin);
+
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: triggerQuestion.id,
+      selectedAnswerOptionIds: [skipOptionId]
+    });
+
+    // Changing the answer restores the hidden required questions, so the
+    // attempt can no longer complete until they are answered.
+    const afterChange = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: triggerQuestion.id,
+      selectedAnswerOptionIds: [keepOptionId]
+    });
+
+    expect(afterChange.isCompleteReady).toBe(false);
+
+    const response = await request(app)
+      .post(`/api/surveys/${survey.id}/complete`)
+      .set("Cookie", user.cookie)
+      .send({ attemptId: started.attempt.id });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/^Required question/);
   });
 });
 

@@ -9,6 +9,7 @@ import {
   completeAttempt,
   createDraftSurvey,
   createPublishedJumpSurvey,
+  createPublishedSkipSurvey,
   findQuestion,
   registerAdmin,
   registerUser,
@@ -269,6 +270,84 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
 
     expect(middle).toMatchObject({ state: "answered", onFinalPath: false });
     expect(middle.answerText).toBe("middle answer kept as history");
+  });
+
+  it("marks rule-skipped questions as not reached and off the final path", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await createPublishedSkipSurvey(app, admin);
+    const user = await registerUser(app);
+
+    const started = await startAttempt(app, user, fixture.survey.id);
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.triggerQuestion.id,
+      selectedAnswerOptionIds: [fixture.skipOptionId]
+    });
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.finalQuestion.id,
+      answerText: "done"
+    });
+    await completeAttempt(app, user, fixture.survey.id, started.attempt.id);
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+
+    const answersByText = new Map(
+      response.body.answers.map((answer: { questionText: string }) => [
+        answer.questionText,
+        answer
+      ])
+    );
+
+    expect(answersByText.get("Hidden A")).toMatchObject({
+      state: "not_reached",
+      onFinalPath: false
+    });
+    expect(answersByText.get("Hidden B")).toMatchObject({
+      state: "not_reached",
+      onFinalPath: false
+    });
+    expect(answersByText.get("Final")).toMatchObject({ state: "answered", onFinalPath: true });
+  });
+
+  it("marks answers hidden by a later trigger change as off the final path", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await createPublishedSkipSurvey(app, admin);
+    const user = await registerUser(app);
+
+    const started = await startAttempt(app, user, fixture.survey.id);
+    // Take the keep path and answer the first hidden-able question...
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.triggerQuestion.id,
+      selectedAnswerOptionIds: [fixture.keepOptionId]
+    });
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.hiddenQuestionA.id,
+      answerText: "kept as history"
+    });
+    // ...then flip the trigger so the question is skipped by rule.
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.triggerQuestion.id,
+      selectedAnswerOptionIds: [fixture.skipOptionId]
+    });
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+
+    const hiddenA = response.body.answers.find(
+      (answer: { questionText: string }) => answer.questionText === "Hidden A"
+    );
+
+    expect(hiddenA).toMatchObject({ state: "answered", onFinalPath: false });
+    expect(hiddenA.answerText).toBe("kept as history");
   });
 
   it("includes hidden tags on selected options for admins", async () => {

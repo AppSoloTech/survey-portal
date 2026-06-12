@@ -194,6 +194,110 @@ describe("buildSurveyFlowGraph validation issues", () => {
     expect(issueCodes(survey)).toContain("unsupported_action_type");
   });
 
+  it("treats skip rules as supported", () => {
+    const survey = makeSurvey(
+      [sourceWithOption(), makeQuestion({ id: 2 })],
+      [
+        makeRule({
+          id: 1,
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    expect(issueCodes(survey)).not.toContain("unsupported_action_type");
+  });
+
+  it("keeps skip-rule targets in the normal flow", () => {
+    // Even with a (legacy) skip-in-normal-flow flag, a HIDE rule's target
+    // must stay in normal progression — it is only hidden per attempt.
+    const survey = makeSurvey(
+      [sourceWithOption(), makeQuestion({ id: 2 }), makeQuestion({ id: 3 })],
+      [
+        makeRule({
+          id: 1,
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: true
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+    const targetNode = graph.nodes.find((node) => node.questionId === 2);
+
+    expect(targetNode?.isConditionalOnly).toBe(false);
+    expect(targetNode?.isReachable).toBe(true);
+  });
+
+  it("flags redundant duplicate skip rules", () => {
+    const survey = makeSurvey(
+      [sourceWithOption(), makeQuestion({ id: 2 })],
+      [
+        makeRule({
+          id: 1,
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        }),
+        makeRule({
+          id: 2,
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    expect(issueCodes(survey)).toContain("duplicate_skip_rule");
+  });
+
+  it("allows multiple skip rules with different targets for one answer", () => {
+    const survey = makeSurvey(
+      [sourceWithOption(), makeQuestion({ id: 2 }), makeQuestion({ id: 3 })],
+      [
+        makeRule({
+          id: 1,
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        }),
+        makeRule({
+          id: 2,
+          targetQuestionId: 3,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    const codes = issueCodes(survey);
+
+    expect(codes).not.toContain("duplicate_skip_rule");
+    expect(codes).not.toContain("duplicate_rule_for_option");
+  });
+
+  it("does not let skip edges create reachability", () => {
+    // Question 3 is statically skipped by a broken jump rule that can never
+    // fire; the firable skip rule targeting it must not count as a path.
+    const survey = makeSurvey(
+      [sourceWithOption(), makeQuestion({ id: 2 }), makeQuestion({ id: 3 })],
+      [
+        makeRule({ id: 1, sourceAnswerOptionId: 999, targetQuestionId: 3 }),
+        makeRule({
+          id: 2,
+          targetQuestionId: 3,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+
+    expect(graph.nodes.find((node) => node.questionId === 3)?.isReachable).toBe(false);
+  });
+
   it("flags self-targeting and backward rules", () => {
     const selfTarget = makeSurvey(
       [sourceWithOption(), makeQuestion({ id: 2 })],

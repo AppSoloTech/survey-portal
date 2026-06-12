@@ -190,20 +190,22 @@ describe("resolveNextQuestion", () => {
     expect(resolveNextQuestion(survey, q1, makeResponse(1, [11]))?.id).toBe(2);
   });
 
-  it("still skips the target of a non-executable rule when skipTargetInNormalFlow is set", () => {
+  it("only statically skips targets of JUMP_TO_QUESTION rules", () => {
+    // HIDE_QUESTION (and other non-jump) targets stay in the normal flow;
+    // they are only excluded per attempt once their trigger answer is given.
     const q1 = makeQuestion({ id: 1 });
     const q2 = makeQuestion({ id: 2 });
     const q3 = makeQuestion({ id: 3 });
-    const unsupportedAction = makeRule({
+    const hideRule = makeRule({
       id: 1,
       sourceQuestionId: 1,
       targetQuestionId: 2,
-      actionType: "SHOW_QUESTION",
+      actionType: "HIDE_QUESTION",
       skipTargetInNormalFlow: true
     });
-    const survey = makeSurvey([q1, q2, q3], [unsupportedAction]);
+    const survey = makeSurvey([q1, q2, q3], [hideRule]);
 
-    expect(resolveNextQuestion(survey, q1, makeResponse(1, [11]))?.id).toBe(3);
+    expect(resolveNextQuestion(survey, q1, makeResponse(1, [99]))?.id).toBe(2);
   });
 
   it("ends the survey when a fired rule targets a question that no longer exists", () => {
@@ -223,5 +225,38 @@ describe("resolveNextQuestion", () => {
     const survey = makeSurvey([q1, q2, q3], [rule]);
 
     expect(resolveNextQuestion(survey, q1, makeResponse(1, [7, 11, 13]))?.id).toBe(3);
+  });
+
+  it("excludes hidden questions from the normal advance", () => {
+    const q1 = makeQuestion({ id: 1 });
+    const q2 = makeQuestion({ id: 2 });
+    const q3 = makeQuestion({ id: 3 });
+    const survey = makeSurvey([q1, q2, q3]);
+
+    expect(resolveNextQuestion(survey, q1, undefined, new Set([2]))?.id).toBe(3);
+  });
+
+  it("returns null when every remaining question is hidden", () => {
+    const q1 = makeQuestion({ id: 1 });
+    const q2 = makeQuestion({ id: 2 });
+    const survey = makeSurvey([q1, q2]);
+
+    expect(resolveNextQuestion(survey, q1, undefined, new Set([2]))).toBeNull();
+  });
+
+  it("advances past a hidden jump target to the next visible question", () => {
+    const q1 = makeQuestion({ id: 1 });
+    const q2 = makeQuestion({ id: 2 });
+    const q3 = makeQuestion({ id: 3 });
+    const q4 = makeQuestion({ id: 4 });
+    const jumpRule = makeRule({
+      id: 1,
+      sourceQuestionId: 1,
+      targetQuestionId: 3,
+      skipTargetInNormalFlow: false
+    });
+    const survey = makeSurvey([q1, q2, q3, q4], [jumpRule]);
+
+    expect(resolveNextQuestion(survey, q1, makeResponse(1, [11]), new Set([3]))?.id).toBe(4);
   });
 });

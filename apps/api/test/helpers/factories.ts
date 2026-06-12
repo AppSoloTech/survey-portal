@@ -158,6 +158,7 @@ export async function addRule(
     sourceQuestionId: number;
     sourceAnswerOptionId: number;
     targetQuestionId: number;
+    actionType?: "JUMP_TO_QUESTION" | "HIDE_QUESTION";
     skipTargetInNormalFlow?: boolean;
   }
 ): Promise<Survey> {
@@ -306,6 +307,66 @@ export async function createPublishedJumpSurvey(
     stayOptionId: stayOption.id,
     middleQuestion: findQuestion(survey, "Middle"),
     targetQuestion: findQuestion(survey, "Target")
+  };
+}
+
+// Published survey where answering "Skip" on the trigger question hides both
+// required follow-up questions, leaving only the optional final question.
+export async function createPublishedSkipSurvey(
+  app: Express,
+  admin: TestSession
+): Promise<{
+  survey: Survey;
+  triggerQuestion: SurveyQuestion;
+  skipOptionId: number;
+  keepOptionId: number;
+  hiddenQuestionA: SurveyQuestion;
+  hiddenQuestionB: SurveyQuestion;
+  finalQuestion: SurveyQuestion;
+}> {
+  let survey = await createDraftSurvey(app, admin, "Skip survey");
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Trigger",
+    questionType: "single_select"
+  });
+  survey = await addQuestion(app, admin, survey.id, { questionText: "Hidden A" });
+  survey = await addQuestion(app, admin, survey.id, { questionText: "Hidden B" });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Final",
+    isRequired: false
+  });
+
+  const triggerQuestionId = findQuestion(survey, "Trigger").id;
+  survey = await addOption(app, admin, survey.id, triggerQuestionId, "Skip");
+  survey = await addOption(app, admin, survey.id, triggerQuestionId, "Keep");
+
+  const triggerQuestion = findQuestion(survey, "Trigger");
+  const skipOption = triggerQuestion.answerOptions.find((option) => option.optionText === "Skip");
+  const keepOption = triggerQuestion.answerOptions.find((option) => option.optionText === "Keep");
+
+  if (!skipOption || !keepOption) {
+    throw new Error("Skip survey options were not created");
+  }
+
+  for (const hiddenText of ["Hidden A", "Hidden B"]) {
+    survey = await addRule(app, admin, survey.id, {
+      sourceQuestionId: triggerQuestion.id,
+      sourceAnswerOptionId: skipOption.id,
+      targetQuestionId: findQuestion(survey, hiddenText).id,
+      actionType: "HIDE_QUESTION"
+    });
+  }
+
+  survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+  return {
+    survey,
+    triggerQuestion: findQuestion(survey, "Trigger"),
+    skipOptionId: skipOption.id,
+    keepOptionId: keepOption.id,
+    hiddenQuestionA: findQuestion(survey, "Hidden A"),
+    hiddenQuestionB: findQuestion(survey, "Hidden B"),
+    finalQuestion: findQuestion(survey, "Final")
   };
 }
 

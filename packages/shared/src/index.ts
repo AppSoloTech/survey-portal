@@ -319,11 +319,15 @@ export interface AdminAttemptDetailResponse {
 export function resolveNextQuestion(
   survey: Survey,
   question: SurveyQuestion,
-  response: SurveyResponseAnswer | undefined
+  response: SurveyResponseAnswer | undefined,
+  hiddenQuestionIds: ReadonlySet<number> = new Set()
 ): SurveyQuestion | null {
+  // Only jump targets are statically excluded from the normal flow.
+  // HIDE_QUESTION targets stay in the normal flow and are excluded per
+  // attempt via hiddenQuestionIds once their trigger answer is given.
   const conditionalTargetQuestionIds = new Set(
     survey.conditionalLogicRules
-      .filter((rule) => rule.skipTargetInNormalFlow)
+      .filter((rule) => rule.actionType === "JUMP_TO_QUESTION" && rule.skipTargetInNormalFlow)
       .map((rule) => rule.targetQuestionId)
       .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null)
   );
@@ -336,20 +340,51 @@ export function resolveNextQuestion(
       response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId)
   );
 
-  if (matchingRule?.targetQuestionId) {
-    return survey.questions.find((candidate) => candidate.id === matchingRule.targetQuestionId) ?? null;
-  }
-
-  return (
+  const advanceFrom = (fromQuestion: SurveyQuestion): SurveyQuestion | null =>
     survey.questions
       .filter(
         (candidate) =>
-          candidate.displayOrder > question.displayOrder &&
-          !conditionalTargetQuestionIds.has(candidate.id)
+          candidate.displayOrder > fromQuestion.displayOrder &&
+          !conditionalTargetQuestionIds.has(candidate.id) &&
+          !hiddenQuestionIds.has(candidate.id)
       )
       .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)[0] ??
-    null
-  );
+    null;
+
+  if (matchingRule?.targetQuestionId) {
+    const target =
+      survey.questions.find((candidate) => candidate.id === matchingRule.targetQuestionId) ?? null;
+
+    // A jump target hidden by an active skip rule is bypassed: continue
+    // forward from the target along the visible normal flow.
+    if (target && hiddenQuestionIds.has(target.id)) {
+      return advanceFrom(target);
+    }
+
+    return target;
+  }
+
+  return advanceFrom(question);
+}
+
+// Collects the questions hidden by HIDE_QUESTION rules whose source question
+// was just answered with the rule's trigger option.
+export function collectActivatedHiddenQuestionIds(
+  survey: Survey,
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer | undefined
+): number[] {
+  return survey.conditionalLogicRules
+    .filter(
+      (rule) =>
+        rule.actionType === "HIDE_QUESTION" &&
+        rule.conditionOperator === "equals" &&
+        rule.targetQuestionId !== null &&
+        rule.sourceQuestionId === question.id &&
+        response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId) === true
+    )
+    .map((rule) => rule.targetQuestionId)
+    .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null);
 }
 
 export interface AttemptPathResult {
@@ -371,6 +406,10 @@ export function resolveAttemptPath(
   );
   const path: SurveyQuestion[] = [];
   const visitedQuestionIds = new Set<number>();
+  // Skip rules activate incrementally along the walked path, so answers on
+  // questions the walk never visits (stale off-path data) hide nothing, and
+  // a hide can only ever affect questions after its source.
+  const activeHiddenQuestionIds = new Set<number>();
   let question: SurveyQuestion | null =
     [...survey.questions].sort(
       (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
@@ -383,7 +422,14 @@ export function resolveAttemptPath(
 
     visitedQuestionIds.add(question.id);
     path.push(question);
-    question = resolveNextQuestion(survey, question, responsesByQuestionId.get(question.id));
+
+    const response = responsesByQuestionId.get(question.id);
+
+    for (const hiddenQuestionId of collectActivatedHiddenQuestionIds(survey, question, response)) {
+      activeHiddenQuestionIds.add(hiddenQuestionId);
+    }
+
+    question = resolveNextQuestion(survey, question, response, activeHiddenQuestionIds);
   }
 
   return { path, hasLoop: false };

@@ -1217,11 +1217,12 @@ surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), reject
          target_question_id,
          skip_target_in_normal_flow
        )
-       values ($1, $2, $3, 'equals', 'JUMP_TO_QUESTION', $4, $5)`,
+       values ($1, $2, $3, 'equals', $4, $5, $6)`,
       [
         surveyId,
         validation.value.sourceQuestionId,
         validation.value.sourceAnswerOptionId,
+        validation.value.actionType,
         validation.value.targetQuestionId,
         validation.value.skipTargetInNormalFlow
       ]
@@ -1284,9 +1285,9 @@ surveyBuilderRouter.put(
          set source_question_id = $3,
              source_answer_option_id = $4,
              condition_operator = 'equals',
-             action_type = 'JUMP_TO_QUESTION',
-             target_question_id = $5,
-             skip_target_in_normal_flow = $6,
+             action_type = $5,
+             target_question_id = $6,
+             skip_target_in_normal_flow = $7,
              target_page_id = null,
              updated_at = now()
          where survey_id = $1
@@ -1296,6 +1297,7 @@ surveyBuilderRouter.put(
           ruleId,
           validation.value.sourceQuestionId,
           validation.value.sourceAnswerOptionId,
+          validation.value.actionType,
           validation.value.targetQuestionId,
           validation.value.skipTargetInNormalFlow
         ]

@@ -771,10 +771,17 @@ export function RuleEditor({
 }) {
   const sourceQuestions = survey.questions.filter((question) => isSelectionQuestion(question));
   const [sourceQuestionId, setSourceQuestionId] = useState(rule.sourceQuestionId);
+  const [actionType, setActionType] = useState(rule.actionType);
 
   useEffect(() => {
     setSourceQuestionId(rule.sourceQuestionId);
   }, [rule.sourceQuestionId]);
+
+  useEffect(() => {
+    setActionType(rule.actionType);
+  }, [rule.actionType]);
+
+  const isSkipRule = actionType === "HIDE_QUESTION";
 
   const sourceQuestion =
     sourceQuestions.find((question) => question.id === sourceQuestionId) ??
@@ -817,7 +824,22 @@ export function RuleEditor({
         </select>
       </label>
       <label>
-        Target question
+        Action
+        <select
+          name="actionType"
+          onChange={(event) =>
+            setActionType(
+              event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
+            )
+          }
+          value={isSkipRule ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"}
+        >
+          <option value="JUMP_TO_QUESTION">Jump to question</option>
+          <option value="HIDE_QUESTION">Skip question</option>
+        </select>
+      </label>
+      <label>
+        {isSkipRule ? "Question to skip" : "Target question"}
         <select
           defaultValue={rule.targetQuestionId ?? ""}
           key={sourceQuestion?.id ?? "target-question"}
@@ -830,14 +852,16 @@ export function RuleEditor({
           ))}
         </select>
       </label>
-      <label className="checkbox-label rule-flow-toggle">
-        <input
-          defaultChecked={rule.skipTargetInNormalFlow}
-          name="skipTargetInNormalFlow"
-          type="checkbox"
-        />
-        Skip target in normal flow
-      </label>
+      {isSkipRule ? null : (
+        <label className="checkbox-label rule-flow-toggle">
+          <input
+            defaultChecked={rule.skipTargetInNormalFlow}
+            name="skipTargetInNormalFlow"
+            type="checkbox"
+          />
+          Skip target in normal flow
+        </label>
+      )}
       <div className="inline-actions">
         <button
           className="button-link compact-button primary-button"
