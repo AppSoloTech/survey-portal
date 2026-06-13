@@ -2,10 +2,12 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext.js";
+import { useReveal } from "../motion/motion.js";
 
 export function Register() {
   const { isAuthenticated, register } = useAuth();
   const navigate = useNavigate();
+  const revealRef = useReveal<HTMLElement>();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,15 +35,15 @@ export function Register() {
   }
 
   return (
-    <section className="page auth-page">
-      <div className="auth-card">
+    <section className="page auth-page" ref={revealRef}>
+      <div className="auth-card" data-reveal>
         <div className="page-header auth-card-header">
           <p className="eyebrow">User access</p>
-          <h2>Register</h2>
-          <p>Create a portal account.</p>
+          <h2>Create your account</h2>
+          <p>Join the portal in under a minute.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
-        <label>
+        <label data-reveal>
           First name
           <input
             autoComplete="given-name"
@@ -52,7 +54,7 @@ export function Register() {
             value={firstName}
           />
         </label>
-        <label>
+        <label data-reveal>
           Last name
           <input
             autoComplete="family-name"
@@ -63,7 +65,7 @@ export function Register() {
             value={lastName}
           />
         </label>
-        <label>
+        <label data-reveal>
           Email
           <input
             autoComplete="email"
@@ -74,7 +76,7 @@ export function Register() {
             value={email}
           />
         </label>
-        <label>
+        <label data-reveal>
           Password
           <input
             autoComplete="new-password"
@@ -87,10 +89,10 @@ export function Register() {
           />
         </label>
         {error ? <p className="status error">{error}</p> : null}
-        <button className="button-link form-button" disabled={isSubmitting} type="submit">
+        <button className="button-link form-button" data-reveal disabled={isSubmitting} type="submit">
           {isSubmitting ? "Creating account..." : "Register"}
         </button>
-          <p className="form-note">
+          <p className="form-note" data-reveal>
             Already have an account? <Link to="/login">Login</Link>
           </p>
         </form>

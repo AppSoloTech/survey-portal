@@ -2,11 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext.js";
+import { useReveal } from "../motion/motion.js";
 
 export function Login() {
   const { isAuthenticated, login } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const revealRef = useReveal<HTMLElement>();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,15 +35,15 @@ export function Login() {
   }
 
   return (
-    <section className="page auth-page">
-      <div className="auth-card">
+    <section className="page auth-page" ref={revealRef}>
+      <div className="auth-card" data-reveal>
         <div className="page-header auth-card-header">
           <p className="eyebrow">User access</p>
-          <h2>Login</h2>
+          <h2>Welcome back</h2>
           <p>Access your survey workspace.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
-        <label>
+        <label data-reveal>
           Email
           <input
             autoComplete="email"
@@ -52,7 +54,7 @@ export function Login() {
             value={email}
           />
         </label>
-        <label>
+        <label data-reveal>
           Password
           <input
             autoComplete="current-password"
@@ -64,10 +66,10 @@ export function Login() {
           />
         </label>
         {error ? <p className="status error">{error}</p> : null}
-        <button className="button-link form-button" disabled={isSubmitting} type="submit">
+        <button className="button-link form-button" data-reveal disabled={isSubmitting} type="submit">
           {isSubmitting ? "Logging in..." : "Login"}
         </button>
-          <p className="form-note">
+          <p className="form-note" data-reveal>
             Need an account? <Link to="/register">Register</Link>
           </p>
         </form>

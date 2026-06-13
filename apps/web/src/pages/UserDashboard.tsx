@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { PaginationRow } from "../components/PaginationRow.js";
 import { SurveySummaryCard } from "../components/SurveySummaryCard.js";
 import { useMySurveys } from "../hooks/useMySurveys.js";
+import { useReveal } from "../motion/motion.js";
 import {
   filterSummaries,
   groupDashboardSummaries,
@@ -38,9 +39,13 @@ export function UserDashboard() {
   const safePage = Math.min(page, pageCount);
   const pagedCards = cards.slice((safePage - 1) * cardsPerPage, safePage * cardsPerPage);
 
+  // Re-run the stagger when loading settles or the visible page flips;
+  // search keystrokes intentionally don't re-animate the grid.
+  const revealRef = useReveal<HTMLElement>([isLoading, safePage]);
+
   return (
-    <section className="page dashboard-page">
-      <div className="page-header">
+    <section className="page dashboard-page" ref={revealRef}>
+      <div className="page-header" data-reveal>
         <p className="eyebrow">User portal</p>
         <h2>Survey Dashboard</h2>
         <p>Browse available surveys, resume saved progress, and review completed attempts.</p>
@@ -55,7 +60,7 @@ export function UserDashboard() {
       <ResumeNudge summaries={summaries} />
 
       {summaries.length > 0 ? (
-        <div className="dashboard-search">
+        <div className="dashboard-search" data-reveal>
           <label>
             <span className="visually-hidden">Search surveys</span>
             <input
@@ -78,9 +83,13 @@ export function UserDashboard() {
       <div className="survey-grid">
         {pagedCards.map((card) =>
           card.kind === "group" ? (
-            <CategoryGroupCard group={card.group} key={`category-${card.group.categoryId}`} />
+            <div data-reveal key={`category-${card.group.categoryId}`}>
+              <CategoryGroupCard group={card.group} />
+            </div>
           ) : (
-            <SurveySummaryCard key={`survey-${card.summary.survey.id}`} summary={card.summary} />
+            <div data-reveal key={`survey-${card.summary.survey.id}`}>
+              <SurveySummaryCard summary={card.summary} />
+            </div>
           )
         )}
       </div>
@@ -108,7 +117,7 @@ function ResumeNudge({ summaries }: { summaries: SurveyAttemptSummary[] }) {
   const others = inProgress.length - 1;
 
   return (
-    <div className="resume-nudge">
+    <div className="resume-nudge" data-reveal>
       <div>
         <strong>Pick up where you left off</strong>
         <span>

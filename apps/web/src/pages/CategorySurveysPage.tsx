@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { PaginationRow } from "../components/PaginationRow.js";
 import { SurveySummaryCard } from "../components/SurveySummaryCard.js";
 import { useMySurveys } from "../hooks/useMySurveys.js";
+import { useReveal } from "../motion/motion.js";
 import { summariesForCategory } from "./dashboardGrouping.js";
 
 const cardsPerPage = 9;
@@ -26,9 +27,10 @@ export function CategorySurveysPage() {
     (safePage - 1) * cardsPerPage,
     safePage * cardsPerPage
   );
+  const revealRef = useReveal<HTMLElement>([isLoading, safePage]);
 
   return (
-    <section className="page dashboard-page">
+    <section className="page dashboard-page" ref={revealRef}>
       <nav aria-label="Breadcrumb" className="attempt-breadcrumbs">
         <Link to="/dashboard">Dashboard</Link>
         <span aria-hidden="true">/</span>
@@ -60,7 +62,9 @@ export function CategorySurveysPage() {
 
       <div className="survey-grid">
         {pagedSummaries.map((summary) => (
-          <SurveySummaryCard key={summary.survey.id} summary={summary} />
+          <div data-reveal key={summary.survey.id}>
+            <SurveySummaryCard summary={summary} />
+          </div>
         ))}
       </div>
 

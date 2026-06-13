@@ -6,7 +6,15 @@ import {
   type SurveyQuestion,
   type SurveyResponseAnswer
 } from "@survey-portal/shared";
-import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -16,6 +24,8 @@ import {
   fetchMySurveys,
   startSurvey
 } from "../api/surveys.js";
+import { AnimatedNumber } from "../components/AnimatedNumber.js";
+import { prefersReducedMotion, useReveal } from "../motion/motion.js";
 
 interface ActiveSurveyState {
   survey: Survey;
@@ -350,6 +360,10 @@ function SurveyRunner({
   selectedAnswerOptionIds: number[];
 }) {
   const { survey, attempt, currentQuestion } = activeSurvey;
+  // Each question (and the completion panel) cascades in as it appears.
+  // Two refs because the runner renders either a <form> or a <div> panel.
+  const revealRef = useReveal<HTMLDivElement>([currentQuestion?.id ?? null, attempt.status]);
+  const formRevealRef = useReveal<HTMLFormElement>([currentQuestion?.id ?? null]);
   // The resolved path counts only questions the participant actually visits:
   // skip-logic targets excluded from the normal flow are not part of the
   // total unless an answer jumps to them.
@@ -364,8 +378,8 @@ function SurveyRunner({
     const isCompleted = attempt.status === "completed";
 
     return (
-      <div className="completion-panel">
-        <div className="completion-heading">
+      <div className="completion-panel" ref={revealRef}>
+        <div className="completion-heading" data-reveal>
           <div>
             <p className="eyebrow">{survey.title}</p>
             <h3>{isCompleted ? "Survey submitted" : "Ready to submit"}</h3>
@@ -373,18 +387,22 @@ function SurveyRunner({
           <span className={`status-pill ${attempt.status}`}>{formatAttemptStatus(attempt.status)}</span>
         </div>
 
-        <dl className="completion-summary" aria-label="Survey attempt summary">
+        <dl className="completion-summary" aria-label="Survey attempt summary" data-reveal>
           <div>
             <dt>Answered</dt>
-            <dd>{savedAnswerCount}</dd>
+            <dd>
+              <AnimatedNumber value={savedAnswerCount} />
+            </dd>
           </div>
           <div>
             <dt>Questions on your path</dt>
-            <dd>{path.length}</dd>
+            <dd>
+              <AnimatedNumber value={path.length} />
+            </dd>
           </div>
         </dl>
 
-        <div className="completion-note">
+        <div className="completion-note" data-reveal>
           <strong>{isCompleted ? "Your attempt is complete." : "Review before submitting."}</strong>
           <span>
             {isCompleted
@@ -425,18 +443,34 @@ function SurveyRunner({
   const progressValue = currentIndex >= 0 ? currentIndex + 1 : 1;
 
   return (
-    <form className="question-form" key={currentQuestion.id} onSubmit={onSubmit}>
-      <div className="question-progress">
+    <form
+      className="question-form"
+      key={currentQuestion.id}
+      onSubmit={onSubmit}
+      ref={formRevealRef}
+    >
+      <div className="question-progress" data-reveal>
         <div>
           <p className="eyebrow">{survey.title}</p>
           <h3>
             Question {progressValue} of {path.length}
           </h3>
         </div>
-        <progress max={path.length} value={progressValue} />
+        <div
+          aria-valuemax={path.length}
+          aria-valuemin={0}
+          aria-valuenow={progressValue}
+          className="progress-track"
+          role="progressbar"
+        >
+          <span
+            className="progress-fill"
+            style={{ width: `${Math.round((progressValue / Math.max(path.length, 1)) * 100)}%` }}
+          />
+        </div>
       </div>
 
-      <fieldset>
+      <fieldset data-reveal>
         <legend>{currentQuestion.questionText}</legend>
         {currentQuestion.helpText ? <p className="muted">{currentQuestion.helpText}</p> : null}
         {renderQuestionControl({
@@ -450,7 +484,7 @@ function SurveyRunner({
         })}
       </fieldset>
 
-      <div className="survey-actions">
+      <div className="survey-actions" data-reveal>
         <button
           className="button-link secondary-button"
           disabled={!previousQuestion || isSubmitting}
@@ -528,7 +562,7 @@ function renderQuestionControl({
   return (
     <div className="option-list">
       {currentQuestion.answerOptions.map((option) => (
-        <label className="option-row" key={option.id}>
+        <label className="option-row" data-reveal key={option.id}>
           <input
             checked={selectedAnswerOptionIds.includes(option.id)}
             name={`question-${currentQuestion.id}`}
@@ -556,10 +590,26 @@ function IntegerStepperControl({
   question: SurveyQuestion;
   value: string;
 }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Re-trigger the value-pop animation each time a stepper button fires.
+  function bump() {
+    const node = inputRef.current;
+
+    if (!node || prefersReducedMotion()) {
+      return;
+    }
+
+    node.classList.remove("bump");
+    void node.offsetWidth;
+    node.classList.add("bump");
+  }
+
   function step(delta: number) {
     const parsed = value.trim() ? Number(value) : 0;
     const base = Number.isInteger(parsed) ? parsed : 0;
     onChange(String(base + delta));
+    bump();
   }
 
   return (
@@ -577,6 +627,7 @@ function IntegerStepperControl({
           inputMode="numeric"
           onChange={(event) => onChange(event.target.value)}
           placeholder="0"
+          ref={inputRef}
           required={question.isRequired}
           step={1}
           type="number"
@@ -627,10 +678,17 @@ function ScaleSliderControl({
     }
   }
 
+  // Drives the track's gradient fill up to the thumb position.
+  const fillPercent = max > min ? ((sliderValue - min) / (max - min)) * 100 : 0;
+  const tickCount = max - min + 1;
+
   return (
     <div className="scale-slider-control">
       <div className="scale-slider-header">
-        <span className={selectedValue === null ? "scale-slider-value empty" : "scale-slider-value"}>
+        <span
+          className={selectedValue === null ? "scale-slider-value empty" : "scale-slider-value"}
+          key={selectedValue ?? "none"}
+        >
           {selectedValue ?? "–"}
         </span>
         <span className="input-helper-text">
@@ -641,15 +699,28 @@ function ScaleSliderControl({
       </div>
       <input
         aria-label={`Scale from ${min} to ${max}`}
-        className="scale-slider"
+        className={selectedValue === null ? "scale-slider unset" : "scale-slider"}
         max={max}
         min={min}
         onChange={(event) => selectValue(Number(event.target.value))}
         onClick={(event) => selectValue(Number(event.currentTarget.value))}
         step={1}
+        style={{ "--fill": `${fillPercent}%` } as CSSProperties}
         type="range"
         value={sliderValue}
       />
+      {tickCount >= 3 && tickCount <= 21 ? (
+        <div aria-hidden="true" className="scale-slider-ticks">
+          {Array.from({ length: tickCount }, (_, index) => (
+            <span
+              className={
+                selectedValue !== null && min + index <= selectedValue ? "tick filled" : "tick"
+              }
+              key={index}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="scale-slider-labels" aria-hidden="true">
         <span>{min}</span>
         <span>{max}</span>

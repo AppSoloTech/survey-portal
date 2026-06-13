@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Link,
   Navigate,
@@ -6,6 +6,7 @@ import {
   Route,
   BrowserRouter as Router,
   Routes,
+  useLocation,
   useNavigate
 } from "react-router-dom";
 
@@ -23,6 +24,7 @@ import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
 import { SurveyResultsPage } from "./pages/admin/SurveyResultsPage.js";
 import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
 import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
+import { RouteTransition } from "./motion/RouteTransition.js";
 import { CategorySurveysPage } from "./pages/CategorySurveysPage.js";
 import { Home } from "./pages/Home.js";
 import { Login } from "./pages/Login.js";
@@ -36,34 +38,40 @@ export function App() {
     <AuthProvider>
       <ToastProvider>
         <Router>
+          <BackdropGate />
           <div className="app-shell">
             <Header />
 
             <main>
-              <Routes>
-                <Route element={<Home />} path="/" />
-                <Route element={<Login />} path="/login" />
-                <Route element={<Register />} path="/register" />
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<UserDashboard />} path="/dashboard" />
-                  <Route element={<CategorySurveysPage />} path="/dashboard/category/:categoryId" />
-                  <Route element={<SurveyAttemptPage />} path="/surveys/:surveyId/attempt" />
-                </Route>
-                <Route element={<AdminRoute />}>
-                  <Route element={<AdminSurveysOverview />} path="/admin" />
-                  <Route element={<AdminUsersPage />} path="/admin/users" />
-                  <Route element={<AdminTagsPage />} path="/admin/tags" />
-                  <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
-                    <Route element={<Navigate replace to="setup" />} index />
-                    <Route element={<SurveySetupPage />} path="setup" />
-                    <Route element={<SurveyQuestionsPage />} path="questions" />
-                    <Route element={<SurveyLogicPage />} path="logic" />
-                    <Route element={<SurveyPreviewPage />} path="preview" />
-                    <Route element={<SurveyResultsPage />} path="results" />
+              <RouteTransition>
+                <Routes>
+                  <Route element={<Home />} path="/" />
+                  <Route element={<Login />} path="/login" />
+                  <Route element={<Register />} path="/register" />
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<UserDashboard />} path="/dashboard" />
+                    <Route
+                      element={<CategorySurveysPage />}
+                      path="/dashboard/category/:categoryId"
+                    />
+                    <Route element={<SurveyAttemptPage />} path="/surveys/:surveyId/attempt" />
                   </Route>
-                </Route>
-                <Route element={<NotFound />} path="*" />
-              </Routes>
+                  <Route element={<AdminRoute />}>
+                    <Route element={<AdminSurveysOverview />} path="/admin" />
+                    <Route element={<AdminUsersPage />} path="/admin/users" />
+                    <Route element={<AdminTagsPage />} path="/admin/tags" />
+                    <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
+                      <Route element={<Navigate replace to="setup" />} index />
+                      <Route element={<SurveySetupPage />} path="setup" />
+                      <Route element={<SurveyQuestionsPage />} path="questions" />
+                      <Route element={<SurveyLogicPage />} path="logic" />
+                      <Route element={<SurveyPreviewPage />} path="preview" />
+                      <Route element={<SurveyResultsPage />} path="results" />
+                    </Route>
+                  </Route>
+                  <Route element={<NotFound />} path="*" />
+                </Routes>
+              </RouteTransition>
             </main>
           </div>
         </Router>
@@ -72,10 +80,44 @@ export function App() {
   );
 }
 
+// three.js stays out of the main bundle; only public pages render the aurora.
+const AmbientBackdrop = lazy(() => import("./components/AmbientBackdrop.js"));
+
+const backdropPaths = new Set(["/", "/login", "/register"]);
+
+function BackdropGate() {
+  const { pathname } = useLocation();
+
+  if (!backdropPaths.has(pathname)) {
+    return null;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <AmbientBackdrop />
+    </Suspense>
+  );
+}
+
 function Header() {
   const { isAuthenticated, logout, user } = useAuth();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // The glass header earns its border/shadow only after the page moves.
+  useEffect(() => {
+    function onScroll() {
+      setIsScrolled(window.scrollY > 8);
+    }
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
   const links = isAuthenticated
     ? [
@@ -104,7 +146,7 @@ function Header() {
   }
 
   return (
-    <header className="app-header">
+    <header className={isScrolled ? "app-header scrolled" : "app-header"}>
       <Link className="brand-link" onClick={closeMenu} to="/">
         <p className="eyebrow">Survey Portal</p>
         <h1>Survey workspace</h1>
