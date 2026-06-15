@@ -220,9 +220,7 @@ function describeOutgoingEdge(
   edge: SurveyFlowConditionalEdge,
   nodesByQuestionId: Map<number, SurveyFlowNode>
 ): string {
-  const optionLabel = edge.sourceOptionText
-    ? `"${truncateText(edge.sourceOptionText, 40)}"`
-    : `option id ${edge.sourceAnswerOptionId} (missing)`;
+  const conditionLabel = describeEdgeCondition(edge);
   const targetNode =
     edge.targetQuestionId !== null ? nodesByQuestionId.get(edge.targetQuestionId) : undefined;
   const targetLabel = targetNode
@@ -232,18 +230,18 @@ function describeOutgoingEdge(
       : "a missing target";
 
   if (edge.actionType === "HIDE_QUESTION") {
-    return `If answer is ${optionLabel}, skip ${targetLabel}.`;
+    return `If ${conditionLabel}, skip ${targetLabel}.`;
   }
 
   if (edge.actionType !== "JUMP_TO_QUESTION") {
-    return `If answer is ${optionLabel}: rule action ${edge.actionType} targets ${targetLabel} but is not executed by the runtime.`;
+    return `If ${conditionLabel}: rule action ${edge.actionType} targets ${targetLabel} but is not executed by the runtime.`;
   }
 
   const skipLabel = edge.skipTargetInNormalFlow
     ? " Target is skipped in normal flow."
     : " Target also stays in normal flow.";
 
-  return `If answer is ${optionLabel}, jump to ${targetLabel}.${skipLabel}`;
+  return `If ${conditionLabel}, jump to ${targetLabel}.${skipLabel}`;
 }
 
 function describeIncomingEdge(
@@ -254,11 +252,26 @@ function describeIncomingEdge(
   const sourceLabel = sourceNode
     ? formatNodeReference(sourceNode)
     : `missing question id ${edge.sourceQuestionId}`;
-  const optionLabel = edge.sourceOptionText
-    ? ` when "${truncateText(edge.sourceOptionText, 40)}" is selected`
-    : "";
+  const optionLabel =
+    edge.conditionOperator === "is_blank"
+      ? " when answer is blank"
+      : edge.sourceOptionText
+        ? ` when "${truncateText(edge.sourceOptionText, 40)}" is selected`
+        : "";
 
   return `from ${sourceLabel}${optionLabel}`;
+}
+
+function describeEdgeCondition(edge: SurveyFlowConditionalEdge): string {
+  if (edge.conditionOperator === "is_blank") {
+    return "answer is blank";
+  }
+
+  if (edge.sourceOptionText) {
+    return `answer is "${truncateText(edge.sourceOptionText, 40)}"`;
+  }
+
+  return `answer option id ${edge.sourceAnswerOptionId ?? "missing"} is selected`;
 }
 
 function formatNodeReference(node: SurveyFlowNode | undefined): string {

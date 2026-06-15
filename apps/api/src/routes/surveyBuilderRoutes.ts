@@ -1339,11 +1339,12 @@ surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), reject
          target_question_id,
          skip_target_in_normal_flow
        )
-       values ($1, $2, $3, 'equals', $4, $5, $6)`,
+       values ($1, $2, $3, $4, $5, $6, $7)`,
       [
         surveyId,
         validation.value.sourceQuestionId,
         validation.value.sourceAnswerOptionId,
+        validation.value.conditionOperator,
         validation.value.actionType,
         validation.value.targetQuestionId,
         validation.value.skipTargetInNormalFlow
@@ -1406,10 +1407,10 @@ surveyBuilderRouter.put(
         `update conditional_logic_rules
          set source_question_id = $3,
              source_answer_option_id = $4,
-             condition_operator = 'equals',
-             action_type = $5,
-             target_question_id = $6,
-             skip_target_in_normal_flow = $7,
+             condition_operator = $5,
+             action_type = $6,
+             target_question_id = $7,
+             skip_target_in_normal_flow = $8,
              target_page_id = null,
              updated_at = now()
          where survey_id = $1
@@ -1419,6 +1420,7 @@ surveyBuilderRouter.put(
           ruleId,
           validation.value.sourceQuestionId,
           validation.value.sourceAnswerOptionId,
+          validation.value.conditionOperator,
           validation.value.actionType,
           validation.value.targetQuestionId,
           validation.value.skipTargetInNormalFlow

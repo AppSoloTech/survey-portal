@@ -41,8 +41,9 @@ export interface SurveyFlowNode {
 export interface SurveyFlowConditionalEdge {
   ruleId: number;
   sourceQuestionId: number;
-  sourceAnswerOptionId: number;
+  sourceAnswerOptionId: number | null;
   sourceOptionText: string | null;
+  conditionOperator: ConditionalLogicRule["conditionOperator"];
   targetQuestionId: number | null;
   actionType: ConditionalLogicRule["actionType"];
   skipTargetInNormalFlow: boolean;
@@ -129,8 +130,10 @@ function buildConditionalEdges(
     const edgeIssues: SurveyFlowIssue[] = [];
     const sourceQuestion = questionsById.get(rule.sourceQuestionId) ?? null;
     const sourceOption =
-      sourceQuestion?.answerOptions.find((option) => option.id === rule.sourceAnswerOptionId) ??
-      null;
+      rule.sourceAnswerOptionId === null
+        ? null
+        : sourceQuestion?.answerOptions.find((option) => option.id === rule.sourceAnswerOptionId) ??
+          null;
     const targetQuestion =
       rule.targetQuestionId !== null ? questionsById.get(rule.targetQuestionId) ?? null : null;
 
@@ -140,16 +143,16 @@ function buildConditionalEdges(
         ruleId: rule.id,
         message: `Rule ${rule.id}: source question (id ${rule.sourceQuestionId}) does not exist in this survey, so the rule can never trigger.`
       });
-    } else if (!isAllowedJumpSourceType(sourceQuestion.questionType)) {
+    } else if (!isAllowedRuleSource(rule, sourceQuestion)) {
       edgeIssues.push({
         code: "invalid_source_question_type",
         ruleId: rule.id,
         questionId: sourceQuestion.id,
-        message: `Rule ${rule.id}: source ${formatQuestionLabel(sourceQuestion)} is a ${sourceQuestion.questionType} question; jump and skip rules are only supported from single_select or multi_select questions.`
+        message: `Rule ${rule.id}: source ${formatQuestionLabel(sourceQuestion)} is a ${sourceQuestion.questionType} question; equals rules require single_select or multi_select sources, and blank rules require text sources.`
       });
     }
 
-    if (sourceQuestion && !sourceOption) {
+    if (sourceQuestion && rule.conditionOperator === "equals" && !sourceOption) {
       edgeIssues.push({
         code: "missing_source_option",
         ruleId: rule.id,
@@ -158,11 +161,23 @@ function buildConditionalEdges(
       });
     }
 
-    if (rule.conditionOperator !== "equals") {
+    if (rule.conditionOperator !== "equals" && rule.conditionOperator !== "is_blank") {
       edgeIssues.push({
         code: "unsupported_condition_operator",
         ruleId: rule.id,
-        message: `Rule ${rule.id}: condition operator "${rule.conditionOperator}" is not supported by the survey runtime; only "equals" is evaluated.`
+        message: `Rule ${rule.id}: condition operator "${rule.conditionOperator}" is not supported by the survey runtime; only "equals" and "is_blank" are evaluated.`
+      });
+    }
+
+    if (
+      rule.conditionOperator === "is_blank" &&
+      (rule.sourceAnswerOptionId !== null || rule.actionType !== "HIDE_QUESTION")
+    ) {
+      edgeIssues.push({
+        code: "unsupported_condition_operator",
+        ruleId: rule.id,
+        questionId: sourceQuestion?.id,
+        message: `Rule ${rule.id}: blank text conditions can only skip questions and cannot reference a source answer option.`
       });
     }
 
@@ -210,7 +225,7 @@ function buildConditionalEdges(
       rule.actionType === "JUMP_TO_QUESTION" &&
       rule.targetQuestionId !== null
     ) {
-      const sourceOptionKey = `${rule.sourceQuestionId}:${rule.sourceAnswerOptionId}`;
+      const sourceOptionKey = `${rule.sourceQuestionId}:${rule.conditionOperator}:${rule.sourceAnswerOptionId}`;
       const firstRuleId = firstRuleIdBySourceOption.get(sourceOptionKey);
 
       if (firstRuleId === undefined) {
@@ -232,7 +247,7 @@ function buildConditionalEdges(
       rule.actionType === "HIDE_QUESTION" &&
       rule.targetQuestionId !== null
     ) {
-      const skipKey = `${rule.sourceQuestionId}:${rule.sourceAnswerOptionId}:${rule.targetQuestionId}`;
+      const skipKey = `${rule.sourceQuestionId}:${rule.conditionOperator}:${rule.sourceAnswerOptionId ?? "blank"}:${rule.targetQuestionId}`;
       const firstSkipRuleId = firstSkipRuleIdByKey.get(skipKey);
 
       if (firstSkipRuleId === undefined) {
@@ -251,6 +266,7 @@ function buildConditionalEdges(
       sourceQuestionId: rule.sourceQuestionId,
       sourceAnswerOptionId: rule.sourceAnswerOptionId,
       sourceOptionText: sourceOption?.optionText ?? null,
+      conditionOperator: rule.conditionOperator,
       targetQuestionId: rule.targetQuestionId,
       actionType: rule.actionType,
       skipTargetInNormalFlow: rule.skipTargetInNormalFlow,
@@ -264,13 +280,10 @@ function buildConditionalEdges(
   return edges;
 }
 
-// A rule can trigger at runtime when the attempt engine can match it: the
-// source question must exist with the rule's option among its answer options
-// (so a saved response can contain that option id), the operator must be
-// equals, and the action must be a jump or skip with a target id. A missing
-// jump target still "fires" but ends the survey, which is reported as a
-// missing-target issue instead. Shadowing by an earlier duplicate jump rule
-// for the same source option is handled at the call site.
+// A rule can trigger at runtime when the attempt engine can match it. Option
+// equals rules need a valid source option; blank text rules need a text source
+// and no source option. Shadowing by an earlier duplicate jump rule is handled
+// at the call site.
 function canRuleFireAtRuntime(
   rule: ConditionalLogicRule,
   sourceQuestion: SurveyQuestion | null,
@@ -278,9 +291,10 @@ function canRuleFireAtRuntime(
 ): boolean {
   return (
     sourceQuestion !== null &&
-    sourceOptionBelongsToSource &&
-    isOptionBackedQuestionType(sourceQuestion.questionType) &&
-    rule.conditionOperator === "equals" &&
+    isAllowedRuleSource(rule, sourceQuestion) &&
+    (rule.conditionOperator === "equals"
+      ? sourceOptionBelongsToSource
+      : rule.sourceAnswerOptionId === null) &&
     (rule.actionType === "JUMP_TO_QUESTION" || rule.actionType === "HIDE_QUESTION") &&
     rule.targetQuestionId !== null
   );
@@ -406,15 +420,18 @@ function sortQuestions(questions: SurveyQuestion[]): SurveyQuestion[] {
   );
 }
 
-function isAllowedJumpSourceType(questionType: SurveyQuestionType): boolean {
-  return questionType === "single_select" || questionType === "multi_select";
-}
+function isAllowedRuleSource(
+  rule: ConditionalLogicRule,
+  sourceQuestion: SurveyQuestion
+): boolean {
+  if (rule.conditionOperator === "equals") {
+    return sourceQuestion.questionType === "single_select" || sourceQuestion.questionType === "multi_select";
+  }
 
-function isOptionBackedQuestionType(questionType: SurveyQuestionType): boolean {
   return (
-    questionType === "single_select" ||
-    questionType === "multi_select" ||
-    questionType === "scale"
+    rule.conditionOperator === "is_blank" &&
+    sourceQuestion.questionType === "text" &&
+    rule.actionType === "HIDE_QUESTION"
   );
 }
 

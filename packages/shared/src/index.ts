@@ -28,7 +28,7 @@ export type SurveyStatus = "draft" | "published" | "retired";
 
 export type SurveyQuestionType = "text" | "integer" | "single_select" | "multi_select" | "scale";
 
-export type ConditionalLogicConditionOperator = "equals";
+export type ConditionalLogicConditionOperator = "equals" | "is_blank";
 
 export type ConditionalLogicActionType =
   | "JUMP_TO_QUESTION"
@@ -121,7 +121,7 @@ export interface ConditionalLogicRule {
   id: number;
   surveyId: number;
   sourceQuestionId: number;
-  sourceAnswerOptionId: number;
+  sourceAnswerOptionId: number | null;
   conditionOperator: ConditionalLogicConditionOperator;
   actionType: ConditionalLogicActionType;
   targetQuestionId: number | null;
@@ -405,10 +405,9 @@ export function resolveNextQuestion(
   const matchingRule = survey.conditionalLogicRules.find(
     (rule) =>
       rule.sourceQuestionId === question.id &&
-      rule.conditionOperator === "equals" &&
       rule.actionType === "JUMP_TO_QUESTION" &&
       rule.targetQuestionId !== null &&
-      response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId)
+      doesRuleMatchResponse(rule, response)
   );
 
   const advanceFrom = (fromQuestion: SurveyQuestion): SurveyQuestion | null =>
@@ -449,13 +448,37 @@ export function collectActivatedHiddenQuestionIds(
     .filter(
       (rule) =>
         rule.actionType === "HIDE_QUESTION" &&
-        rule.conditionOperator === "equals" &&
         rule.targetQuestionId !== null &&
         rule.sourceQuestionId === question.id &&
-        response?.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId) === true
+        doesRuleMatchResponse(rule, response)
     )
     .map((rule) => rule.targetQuestionId)
     .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null);
+}
+
+export function doesRuleMatchResponse(
+  rule: Pick<
+    ConditionalLogicRule,
+    "conditionOperator" | "sourceAnswerOptionId"
+  >,
+  response: SurveyResponseAnswer | undefined
+): boolean {
+  if (!response) {
+    return false;
+  }
+
+  if (rule.conditionOperator === "equals") {
+    return (
+      rule.sourceAnswerOptionId !== null &&
+      response.selectedAnswerOptionIds.includes(rule.sourceAnswerOptionId)
+    );
+  }
+
+  if (rule.conditionOperator === "is_blank") {
+    return !response.answerText?.trim();
+  }
+
+  return false;
 }
 
 export interface AttemptPathResult {

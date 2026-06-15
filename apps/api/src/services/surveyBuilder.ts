@@ -433,7 +433,7 @@ export async function validateSurveyCanPublish(
      left join survey_questions source_question
        on source_question.id = conditional_logic_rules.source_question_id
       and source_question.survey_id = conditional_logic_rules.survey_id
-     left join answer_options source_option
+       left join answer_options source_option
        on source_option.id = conditional_logic_rules.source_answer_option_id
       and source_option.question_id = conditional_logic_rules.source_question_id
      left join survey_questions target_question
@@ -442,11 +442,24 @@ export async function validateSurveyCanPublish(
      where conditional_logic_rules.survey_id = $1
        and (
          source_question.id is null
-         or source_option.id is null
          or target_question.id is null
          or target_question.display_order <= source_question.display_order
-         or source_question.question_type not in ('single_select', 'multi_select')
-         or conditional_logic_rules.condition_operator <> 'equals'
+         or conditional_logic_rules.condition_operator not in ('equals', 'is_blank')
+         or (
+           conditional_logic_rules.condition_operator = 'equals'
+           and (
+             source_option.id is null
+             or source_question.question_type not in ('single_select', 'multi_select')
+           )
+         )
+         or (
+           conditional_logic_rules.condition_operator = 'is_blank'
+           and (
+             conditional_logic_rules.source_answer_option_id is not null
+             or source_question.question_type <> 'text'
+             or conditional_logic_rules.action_type <> 'HIDE_QUESTION'
+           )
+         )
          or conditional_logic_rules.action_type not in ('JUMP_TO_QUESTION', 'HIDE_QUESTION')
          or (
            conditional_logic_rules.action_type = 'HIDE_QUESTION'
@@ -485,20 +498,30 @@ export async function validateConditionalRuleReferences(
     return { ok: false, error: "Source question must belong to this survey" };
   }
 
-  if (!isSelectionQuestionType(sourceQuestion.question_type)) {
-    return { ok: false, error: "Source question must be single_select or multi_select" };
-  }
+  if (value.conditionOperator === "equals") {
+    if (!isSelectionQuestionType(sourceQuestion.question_type)) {
+      return { ok: false, error: "Source question must be single_select or multi_select" };
+    }
 
-  const optionResult = await queryable.query<{ id: number }>(
-    `select id
-     from answer_options
-     where id = $1
-       and question_id = $2`,
-    [value.sourceAnswerOptionId, sourceQuestion.id]
-  );
+    const optionResult = await queryable.query<{ id: number }>(
+      `select id
+       from answer_options
+       where id = $1
+         and question_id = $2`,
+      [value.sourceAnswerOptionId, sourceQuestion.id]
+    );
 
-  if (!optionResult.rows[0]) {
-    return { ok: false, error: "Source answer option must belong to the source question" };
+    if (!optionResult.rows[0]) {
+      return { ok: false, error: "Source answer option must belong to the source question" };
+    }
+  } else {
+    if (sourceQuestion.question_type !== "text") {
+      return { ok: false, error: "Blank text rules must use a text source question" };
+    }
+
+    if (value.actionType !== "HIDE_QUESTION") {
+      return { ok: false, error: "Blank text rules can only skip questions" };
+    }
   }
 
   const targetQuestion = await fetchQuestionForSurvey(
@@ -726,7 +749,7 @@ export async function duplicateSurveyTree(
 
   const rulesResult = await queryable.query<{
     source_question_id: number;
-    source_answer_option_id: number;
+    source_answer_option_id: number | null;
     condition_operator: string;
     action_type: string;
     target_question_id: number | null;
@@ -747,13 +770,14 @@ export async function duplicateSurveyTree(
 
   for (const rule of rulesResult.rows) {
     const newSourceQuestionId = questionIdMap.get(rule.source_question_id);
-    const newSourceOptionId = optionIdMap.get(rule.source_answer_option_id);
+    const newSourceOptionId =
+      rule.source_answer_option_id === null ? null : optionIdMap.get(rule.source_answer_option_id);
     const newTargetQuestionId =
       rule.target_question_id === null ? null : questionIdMap.get(rule.target_question_id);
 
     if (
       !newSourceQuestionId ||
-      !newSourceOptionId ||
+      newSourceOptionId === undefined ||
       (rule.target_question_id !== null && !newTargetQuestionId)
     ) {
       throw new Error("Survey duplicate failed to remap a conditional rule reference");

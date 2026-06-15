@@ -863,9 +863,11 @@ export function RuleEditor({
   rule: ConditionalLogicRule;
   survey: Survey;
 }) {
-  const sourceQuestions = survey.questions.filter((question) => isSelectionQuestion(question));
-  const [sourceQuestionId, setSourceQuestionId] = useState(rule.sourceQuestionId);
   const [actionType, setActionType] = useState(rule.actionType);
+  const sourceQuestions = survey.questions.filter(
+    (question) => isSelectionQuestion(question) || question.questionType === "text"
+  );
+  const [sourceQuestionId, setSourceQuestionId] = useState(rule.sourceQuestionId);
 
   useEffect(() => {
     setSourceQuestionId(rule.sourceQuestionId);
@@ -881,6 +883,7 @@ export function RuleEditor({
     sourceQuestions.find((question) => question.id === sourceQuestionId) ??
     sourceQuestions[0] ??
     null;
+  const isBlankTextRule = sourceQuestion?.questionType === "text";
   const targetQuestions = sourceQuestion
     ? survey.questions.filter(
         (question) => question.displayOrder > sourceQuestion.displayOrder
@@ -893,7 +896,16 @@ export function RuleEditor({
         Source question
         <select
           name="sourceQuestionId"
-          onChange={(event) => setSourceQuestionId(Number(event.target.value))}
+          onChange={(event) => {
+            const nextQuestionId = Number(event.target.value);
+            const nextQuestion =
+              sourceQuestions.find((question) => question.id === nextQuestionId) ?? null;
+
+            setSourceQuestionId(nextQuestionId);
+            if (nextQuestion?.questionType === "text") {
+              setActionType("HIDE_QUESTION");
+            }
+          }}
           value={sourceQuestion?.id ?? ""}
         >
           {sourceQuestions.map((question) => (
@@ -903,34 +915,50 @@ export function RuleEditor({
           ))}
         </select>
       </label>
-      <label>
-        Source answer
-        <select
-          defaultValue={rule.sourceAnswerOptionId}
-          key={sourceQuestion?.id ?? "source-answer"}
-          name="sourceAnswerOptionId"
-        >
-          {sourceQuestion?.answerOptions.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.optionText}
-            </option>
-          ))}
-        </select>
-      </label>
+      {isBlankTextRule ? (
+        <label>
+          Condition
+          <input readOnly value="Answer is blank" />
+          <input name="conditionOperator" type="hidden" value="is_blank" />
+        </label>
+      ) : (
+        <label>
+          Source answer
+          <select
+            defaultValue={rule.sourceAnswerOptionId ?? ""}
+            key={sourceQuestion?.id ?? "source-answer"}
+            name="sourceAnswerOptionId"
+          >
+            {sourceQuestion?.answerOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.optionText}
+              </option>
+            ))}
+          </select>
+          <input name="conditionOperator" type="hidden" value="equals" />
+        </label>
+      )}
       <label>
         Action
-        <select
-          name="actionType"
-          onChange={(event) =>
-            setActionType(
-              event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
-            )
-          }
-          value={isSkipRule ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"}
-        >
-          <option value="JUMP_TO_QUESTION">Jump to question</option>
-          <option value="HIDE_QUESTION">Skip question</option>
-        </select>
+        {isBlankTextRule ? (
+          <>
+            <input readOnly value="Skip question" />
+            <input name="actionType" type="hidden" value="HIDE_QUESTION" />
+          </>
+        ) : (
+          <select
+            name="actionType"
+            onChange={(event) => {
+              setActionType(
+                event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
+              );
+            }}
+            value={isSkipRule ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"}
+          >
+            <option value="JUMP_TO_QUESTION">Jump to question</option>
+            <option value="HIDE_QUESTION">Skip question</option>
+          </select>
+        )}
       </label>
       <label>
         {isSkipRule ? "Question to skip" : "Target question"}

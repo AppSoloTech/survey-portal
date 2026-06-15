@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import {
   addOption,
   addQuestion,
+  addRule,
   addTag,
   collectObjectKeys,
   completeAttempt,
@@ -67,7 +68,10 @@ describe("survey duplicate", () => {
     for (const rule of clone.conditionalLogicRules) {
       expect(rule.surveyId).toBe(clone.id);
       expect(cloneQuestionIds.has(rule.sourceQuestionId)).toBe(true);
-      expect(cloneOptionIds.has(rule.sourceAnswerOptionId)).toBe(true);
+
+      if (rule.sourceAnswerOptionId !== null) {
+        expect(cloneOptionIds.has(rule.sourceAnswerOptionId)).toBe(true);
+      }
 
       if (rule.targetQuestionId !== null) {
         expect(cloneQuestionIds.has(rule.targetQuestionId)).toBe(true);
@@ -111,6 +115,41 @@ describe("survey duplicate", () => {
     expect(keys.has("tagKey")).toBe(false);
     expect(keys.has("tagValue")).toBe(false);
     expect(keys.has("answerTags")).toBe(false);
+  });
+
+  it("clones blank-text skip rules with a null source option", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Blank text source");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Optional notes",
+      isRequired: false
+    });
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Follow-up" });
+
+    const source = findQuestion(survey, "Optional notes");
+    const target = findQuestion(survey, "Follow-up");
+    survey = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: null,
+      conditionOperator: "is_blank",
+      targetQuestionId: target.id,
+      actionType: "HIDE_QUESTION"
+    });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const clone = await duplicateSurvey(app, admin, survey.id);
+    const cloneSource = findQuestion(clone, "Optional notes");
+    const cloneTarget = findQuestion(clone, "Follow-up");
+
+    expect(clone.conditionalLogicRules).toEqual([
+      expect.objectContaining({
+        sourceQuestionId: cloneSource.id,
+        sourceAnswerOptionId: null,
+        conditionOperator: "is_blank",
+        actionType: "HIDE_QUESTION",
+        targetQuestionId: cloneTarget.id
+      })
+    ]);
   });
 
   it("treats the clone as a new survey for the attempt policy", async () => {

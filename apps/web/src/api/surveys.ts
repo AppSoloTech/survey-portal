@@ -294,6 +294,7 @@ export async function deleteAnswerTag(input: {
 }
 
 export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+export type ConditionalRuleConditionOperator = "equals" | "is_blank";
 
 export async function createQuestionValueTag(input: {
   surveyId: number;
@@ -331,8 +332,9 @@ export async function deleteQuestionValueTag(input: {
 export async function createConditionalRule(input: {
   surveyId: number;
   sourceQuestionId: number;
-  sourceAnswerOptionId: number;
+  sourceAnswerOptionId: number | null;
   targetQuestionId: number;
+  conditionOperator?: ConditionalRuleConditionOperator;
   actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
@@ -342,7 +344,7 @@ export async function createConditionalRule(input: {
       sourceAnswerOptionId: input.sourceAnswerOptionId,
       targetQuestionId: input.targetQuestionId,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
-      conditionOperator: "equals",
+      conditionOperator: input.conditionOperator ?? "equals",
       actionType: input.actionType ?? "JUMP_TO_QUESTION"
     }),
     method: "POST"
@@ -353,8 +355,9 @@ export async function updateConditionalRule(input: {
   surveyId: number;
   ruleId: number;
   sourceQuestionId: number;
-  sourceAnswerOptionId: number;
+  sourceAnswerOptionId: number | null;
   targetQuestionId: number;
+  conditionOperator?: ConditionalRuleConditionOperator;
   actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
@@ -364,7 +367,7 @@ export async function updateConditionalRule(input: {
       sourceAnswerOptionId: input.sourceAnswerOptionId,
       targetQuestionId: input.targetQuestionId,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
-      conditionOperator: "equals",
+      conditionOperator: input.conditionOperator ?? "equals",
       actionType: input.actionType ?? "JUMP_TO_QUESTION"
     }),
     method: "PUT"

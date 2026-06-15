@@ -83,6 +83,19 @@ function makeResponse(
   };
 }
 
+function makeTextResponse(questionId: number, answerText: string | null): SurveyResponseAnswer {
+  return {
+    id: questionId,
+    surveyAttemptId: 1,
+    questionId,
+    answerText,
+    answerInteger: null,
+    selectedAnswerOptionIds: [],
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
 describe("resolveAttemptPath", () => {
   it("walks every question in display order when no rules exist", () => {
     const survey = makeSurvey([makeQuestion({ id: 1 }), makeQuestion({ id: 2 }), makeQuestion({ id: 3 })]);
@@ -282,6 +295,68 @@ describe("resolveAttemptPath", () => {
     const result = resolveAttemptPath(survey, [makeResponse(1, [7, 11, 13])]);
 
     expect(result.path.map((question) => question.id)).toEqual([1, 3]);
+  });
+
+  it("omits questions hidden by a blank text skip rule", () => {
+    const survey = makeSurvey(
+      [
+        makeQuestion({ id: 1, questionType: "text", isRequired: false }),
+        makeQuestion({ id: 2 }),
+        makeQuestion({ id: 3 })
+      ],
+      [
+        makeRule({
+          id: 1,
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: null,
+          conditionOperator: "is_blank",
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    expect(resolveAttemptPath(survey, [makeTextResponse(1, null)]).path.map((q) => q.id)).toEqual([
+      1,
+      3
+    ]);
+    expect(resolveAttemptPath(survey, [makeTextResponse(1, "")]).path.map((q) => q.id)).toEqual([
+      1,
+      3
+    ]);
+    expect(resolveAttemptPath(survey, [makeTextResponse(1, "   ")]).path.map((q) => q.id)).toEqual([
+      1,
+      3
+    ]);
+  });
+
+  it("keeps blank-text skip targets for non-blank or missing text responses", () => {
+    const survey = makeSurvey(
+      [
+        makeQuestion({ id: 1, questionType: "text", isRequired: false }),
+        makeQuestion({ id: 2 }),
+        makeQuestion({ id: 3 })
+      ],
+      [
+        makeRule({
+          id: 1,
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: null,
+          conditionOperator: "is_blank",
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    expect(resolveAttemptPath(survey, [makeTextResponse(1, "done")]).path.map((q) => q.id)).toEqual([
+      1,
+      2,
+      3
+    ]);
+    expect(resolveAttemptPath(survey, []).path.map((q) => q.id)).toEqual([1, 2, 3]);
   });
 
   it("ignores skip rules sourced at questions the walk never visits", () => {

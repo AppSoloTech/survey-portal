@@ -210,6 +210,33 @@ describe("buildSurveyFlowGraph validation issues", () => {
     expect(issueCodes(survey)).not.toContain("unsupported_action_type");
   });
 
+  it("treats blank text skip rules as supported", () => {
+    const survey = makeSurvey(
+      [
+        makeQuestion({ id: 1, questionType: "text", isRequired: false }),
+        makeQuestion({ id: 2 })
+      ],
+      [
+        makeRule({
+          id: 1,
+          sourceAnswerOptionId: null,
+          conditionOperator: "is_blank",
+          targetQuestionId: 2,
+          actionType: "HIDE_QUESTION",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+
+    expect(graph.issues).toHaveLength(0);
+    expect(graph.conditionalEdges[0]).toMatchObject({
+      sourceAnswerOptionId: null,
+      conditionOperator: "is_blank",
+      canFireAtRuntime: true
+    });
+  });
+
   it("keeps skip-rule targets in the normal flow", () => {
     // Even with a (legacy) skip-in-normal-flow flag, a HIDE rule's target
     // must stay in normal progression — it is only hidden per attempt.
