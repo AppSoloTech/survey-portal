@@ -75,7 +75,7 @@ export interface ConditionalLogicRuleRecord {
   id: number;
   survey_id: number;
   source_question_id: number;
-  source_answer_option_id: number;
+  source_answer_option_id: number | null;
   condition_operator: ConditionalLogicConditionOperator;
   action_type: ConditionalLogicActionType;
   target_question_id: number | null;

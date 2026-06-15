@@ -5,6 +5,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+screenshot/
 
 notes/test_user.sh
 notes/phase-4-test-notes.txt

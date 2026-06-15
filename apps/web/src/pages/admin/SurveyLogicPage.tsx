@@ -5,7 +5,8 @@ import {
   createConditionalRule,
   deleteConditionalRule,
   updateConditionalRule,
-  type ConditionalRuleActionType
+  type ConditionalRuleActionType,
+  type ConditionalRuleConditionOperator
 } from "../../api/surveys.js";
 import { confirmAdminAction, readFormNumber } from "../../components/admin/builderForm.js";
 import {
@@ -25,11 +26,15 @@ export function SurveyLogicPage() {
   const isLocked = survey.status !== "draft";
   const isSkipAction = ruleActionType === "HIDE_QUESTION";
 
-  const selectableQuestions = survey.questions.filter((question) =>
-    isSelectionQuestion(question)
+  const ruleSourceQuestions = survey.questions.filter(
+    (question) =>
+      isSelectionQuestion(question) ||
+      (ruleActionType === "HIDE_QUESTION" && question.questionType === "text")
   );
   const activeRuleSourceQuestion =
-    selectableQuestions.find((question) => question.id === ruleSourceQuestionId) ?? null;
+    ruleSourceQuestions.find((question) => question.id === ruleSourceQuestionId) ?? null;
+  const isBlankTextRule =
+    ruleActionType === "HIDE_QUESTION" && activeRuleSourceQuestion?.questionType === "text";
   const activeRuleSourceAnswerOptionCount = activeRuleSourceQuestion?.answerOptions.length ?? 0;
   const activeRuleTargetQuestions = activeRuleSourceQuestion
     ? survey.questions.filter(
@@ -43,7 +48,12 @@ export function SurveyLogicPage() {
     const form = event.currentTarget;
     const data = new FormData(form);
     const sourceQuestionId = readFormNumber(data, "sourceQuestionId");
-    const sourceAnswerOptionId = readFormNumber(data, "sourceAnswerOptionId");
+    const conditionOperator: ConditionalRuleConditionOperator = isBlankTextRule
+      ? "is_blank"
+      : "equals";
+    const sourceAnswerOptionId = isBlankTextRule
+      ? null
+      : readFormNumber(data, "sourceAnswerOptionId");
 
     let didSave = false;
 
@@ -70,6 +80,7 @@ export function SurveyLogicPage() {
             surveyId: survey.id,
             sourceQuestionId,
             sourceAnswerOptionId,
+            conditionOperator,
             targetQuestionId,
             actionType: "HIDE_QUESTION",
             skipTargetInNormalFlow: false
@@ -96,6 +107,7 @@ export function SurveyLogicPage() {
             surveyId: survey.id,
             sourceQuestionId,
             sourceAnswerOptionId,
+            conditionOperator,
             targetQuestionId: readFormNumber(data, "targetQuestionId"),
             actionType: "JUMP_TO_QUESTION",
             skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
@@ -120,6 +132,10 @@ export function SurveyLogicPage() {
     const data = new FormData(event.currentTarget);
     const actionType: ConditionalRuleActionType =
       data.get("actionType") === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION";
+    const conditionOperator: ConditionalRuleConditionOperator =
+      data.get("conditionOperator") === "is_blank" ? "is_blank" : "equals";
+    const sourceAnswerOptionId =
+      conditionOperator === "is_blank" ? null : readFormNumber(data, "sourceAnswerOptionId");
 
     await runSurveyMutation(
       () =>
@@ -127,8 +143,9 @@ export function SurveyLogicPage() {
           surveyId: survey.id,
           ruleId: rule.id,
           sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
-          sourceAnswerOptionId: readFormNumber(data, "sourceAnswerOptionId"),
+          sourceAnswerOptionId,
           targetQuestionId: readFormNumber(data, "targetQuestionId"),
+          conditionOperator,
           actionType,
           skipTargetInNormalFlow:
             actionType === "HIDE_QUESTION" ? false : data.get("skipTargetInNormalFlow") === "on"
@@ -184,29 +201,38 @@ export function SurveyLogicPage() {
               required
             >
               <option value="">Choose source question</option>
-              {selectableQuestions.map((question) => (
+              {ruleSourceQuestions.map((question) => (
                 <option key={question.id} value={question.id}>
                   {question.displayOrder}. {question.questionText}
                 </option>
               ))}
             </select>
           </label>
-          <label>
-            Source answer
-            <select
-              disabled={!activeRuleSourceQuestion}
-              key={`rule-source-answer-${activeRuleSourceQuestion?.id ?? "empty"}`}
-              name="sourceAnswerOptionId"
-              required
-            >
-              <option value="">Choose source answer</option>
-              {activeRuleSourceQuestion?.answerOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.optionText}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isBlankTextRule ? (
+            <label>
+              Condition
+              <input readOnly value="Answer is blank" />
+              <input name="conditionOperator" type="hidden" value="is_blank" />
+            </label>
+          ) : (
+            <label>
+              Source answer
+              <select
+                disabled={!activeRuleSourceQuestion}
+                key={`rule-source-answer-${activeRuleSourceQuestion?.id ?? "empty"}`}
+                name="sourceAnswerOptionId"
+                required
+              >
+                <option value="">Choose source answer</option>
+                {activeRuleSourceQuestion?.answerOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.optionText}
+                  </option>
+                ))}
+              </select>
+              <input name="conditionOperator" type="hidden" value="equals" />
+            </label>
+          )}
           <label>
             Action
             <select
@@ -215,6 +241,7 @@ export function SurveyLogicPage() {
                 setRuleActionType(
                   event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
                 );
+                setRuleSourceQuestionId(null);
                 setSkipTargetIds([]);
               }}
               value={ruleActionType}
@@ -273,7 +300,7 @@ export function SurveyLogicPage() {
               isSubmitting ||
               isLocked ||
               !activeRuleSourceQuestion ||
-              activeRuleSourceAnswerOptionCount === 0 ||
+              (!isBlankTextRule && activeRuleSourceAnswerOptionCount === 0) ||
               activeRuleTargetQuestions.length === 0 ||
               (isSkipAction && skipTargetIds.length === 0)
             }
@@ -286,7 +313,8 @@ export function SurveyLogicPage() {
         <RuleBuilderEmptyState
           activeRuleSourceAnswerOptionCount={activeRuleSourceAnswerOptionCount}
           activeRuleSourceQuestion={activeRuleSourceQuestion}
-          selectableQuestionCount={selectableQuestions.length}
+          isBlankTextRule={isBlankTextRule}
+          selectableQuestionCount={ruleSourceQuestions.length}
           targetQuestionCount={activeRuleTargetQuestions.length}
         />
 
@@ -362,11 +390,13 @@ function groupRulesBySource(survey: ReturnType<typeof useSurveyWorkspace>["surve
 function RuleBuilderEmptyState({
   activeRuleSourceAnswerOptionCount,
   activeRuleSourceQuestion,
+  isBlankTextRule,
   selectableQuestionCount,
   targetQuestionCount
 }: {
   activeRuleSourceAnswerOptionCount: number;
   activeRuleSourceQuestion: SurveyQuestion | null;
+  isBlankTextRule: boolean;
   selectableQuestionCount: number;
   targetQuestionCount: number;
 }) {
@@ -375,19 +405,19 @@ function RuleBuilderEmptyState({
       <div className="builder-empty-state compact">
         <strong>No eligible source questions</strong>
         <span>
-          Jump rules start from single-select or multi-select questions. Add one with
-          answer options before configuring conditional logic.
+          Jump rules start from single-select or multi-select questions. Skip rules can
+          also start from text questions when the condition is blank.
         </span>
       </div>
     );
   }
 
-  if (activeRuleSourceQuestion && activeRuleSourceAnswerOptionCount === 0) {
+  if (activeRuleSourceQuestion && !isBlankTextRule && activeRuleSourceAnswerOptionCount === 0) {
     return (
       <div className="builder-empty-state compact">
         <strong>Source question has no answers</strong>
         <span>
-          Add answer options to this question before creating a jump rule from it.
+          Add answer options to this question before creating a rule from it.
         </span>
       </div>
     );

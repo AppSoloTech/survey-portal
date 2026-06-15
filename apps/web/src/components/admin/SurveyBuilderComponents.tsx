@@ -863,9 +863,13 @@ export function RuleEditor({
   rule: ConditionalLogicRule;
   survey: Survey;
 }) {
-  const sourceQuestions = survey.questions.filter((question) => isSelectionQuestion(question));
-  const [sourceQuestionId, setSourceQuestionId] = useState(rule.sourceQuestionId);
   const [actionType, setActionType] = useState(rule.actionType);
+  const sourceQuestions = survey.questions.filter(
+    (question) =>
+      isSelectionQuestion(question) ||
+      (actionType === "HIDE_QUESTION" && question.questionType === "text")
+  );
+  const [sourceQuestionId, setSourceQuestionId] = useState(rule.sourceQuestionId);
 
   useEffect(() => {
     setSourceQuestionId(rule.sourceQuestionId);
@@ -881,6 +885,7 @@ export function RuleEditor({
     sourceQuestions.find((question) => question.id === sourceQuestionId) ??
     sourceQuestions[0] ??
     null;
+  const isBlankTextRule = isSkipRule && sourceQuestion?.questionType === "text";
   const targetQuestions = sourceQuestion
     ? survey.questions.filter(
         (question) => question.displayOrder > sourceQuestion.displayOrder
@@ -903,29 +908,39 @@ export function RuleEditor({
           ))}
         </select>
       </label>
-      <label>
-        Source answer
-        <select
-          defaultValue={rule.sourceAnswerOptionId}
-          key={sourceQuestion?.id ?? "source-answer"}
-          name="sourceAnswerOptionId"
-        >
-          {sourceQuestion?.answerOptions.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.optionText}
-            </option>
-          ))}
-        </select>
-      </label>
+      {isBlankTextRule ? (
+        <label>
+          Condition
+          <input readOnly value="Answer is blank" />
+          <input name="conditionOperator" type="hidden" value="is_blank" />
+        </label>
+      ) : (
+        <label>
+          Source answer
+          <select
+            defaultValue={rule.sourceAnswerOptionId ?? ""}
+            key={sourceQuestion?.id ?? "source-answer"}
+            name="sourceAnswerOptionId"
+          >
+            {sourceQuestion?.answerOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.optionText}
+              </option>
+            ))}
+          </select>
+          <input name="conditionOperator" type="hidden" value="equals" />
+        </label>
+      )}
       <label>
         Action
         <select
           name="actionType"
-          onChange={(event) =>
+          onChange={(event) => {
             setActionType(
               event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
-            )
-          }
+            );
+            setSourceQuestionId(sourceQuestions[0]?.id ?? rule.sourceQuestionId);
+          }}
           value={isSkipRule ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"}
         >
           <option value="JUMP_TO_QUESTION">Jump to question</option>

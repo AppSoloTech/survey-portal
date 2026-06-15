@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   addQuestion,
+  addRule,
   completeAttempt,
   createDraftSurvey,
   createPublishedJumpSurvey,
@@ -222,6 +223,95 @@ describe("conditional navigation", () => {
     });
 
     expect(afterChange.isCompleteReady).toBe(false);
+
+    const response = await request(app)
+      .post(`/api/surveys/${survey.id}/complete`)
+      .set("Cookie", user.cookie)
+      .send({ attemptId: started.attempt.id });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/^Required question/);
+  });
+
+  it("skips required questions when an optional text source is saved blank", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    let survey = await createDraftSurvey(app, admin, "Blank text skip");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Optional notes",
+      isRequired: false
+    });
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Required follow-up" });
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Final" });
+
+    const source = findQuestion(survey, "Optional notes");
+    const hiddenTarget = findQuestion(survey, "Required follow-up");
+    const finalQuestion = findQuestion(survey, "Final");
+
+    survey = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: null,
+      conditionOperator: "is_blank",
+      targetQuestionId: hiddenTarget.id,
+      actionType: "HIDE_QUESTION"
+    });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const started = await startAttempt(app, user, survey.id);
+    const afterBlank = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: source.id,
+      answerText: "   "
+    });
+
+    expect(afterBlank.currentQuestion?.id).toBe(finalQuestion.id);
+
+    const afterFinal = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: finalQuestion.id,
+      answerText: "done"
+    });
+
+    expect(afterFinal.isCompleteReady).toBe(true);
+    await completeAttempt(app, user, survey.id, started.attempt.id);
+  });
+
+  it("restores blank-text skip targets when the source answer becomes non-blank", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    let survey = await createDraftSurvey(app, admin, "Blank text restored");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Optional notes",
+      isRequired: false
+    });
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Required follow-up" });
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Final" });
+
+    const source = findQuestion(survey, "Optional notes");
+    const hiddenTarget = findQuestion(survey, "Required follow-up");
+
+    survey = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: null,
+      conditionOperator: "is_blank",
+      targetQuestionId: hiddenTarget.id,
+      actionType: "HIDE_QUESTION"
+    });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: source.id,
+      answerText: null
+    });
+    const afterChange = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: source.id,
+      answerText: "Needs follow-up"
+    });
+
+    expect(afterChange.currentQuestion?.id).toBe(hiddenTarget.id);
 
     const response = await request(app)
       .post(`/api/surveys/${survey.id}/complete`)

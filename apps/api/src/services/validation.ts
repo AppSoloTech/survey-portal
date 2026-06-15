@@ -308,11 +308,13 @@ export function validateAttemptDateRange(query: {
 }
 
 export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+export type ConditionalRuleConditionOperator = "equals" | "is_blank";
 
 export interface ConditionalRuleBodyValue {
   sourceQuestionId: number;
-  sourceAnswerOptionId: number;
+  sourceAnswerOptionId: number | null;
   targetQuestionId: number;
+  conditionOperator: ConditionalRuleConditionOperator;
   actionType: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }
@@ -331,19 +333,39 @@ export function validateConditionalRuleBody(
   const conditionOperator = readTextField(body, "conditionOperator") || "equals";
   const actionType = readTextField(body, "actionType") || "JUMP_TO_QUESTION";
 
-  if (!sourceQuestionId || !sourceAnswerOptionId || !targetQuestionId) {
+  if (!sourceQuestionId || !targetQuestionId) {
     return {
       ok: false,
-      error: "Source question, source answer option, and target question are required"
+      error: "Source question and target question are required"
     };
   }
 
-  if (conditionOperator !== "equals") {
-    return { ok: false, error: "Condition operator must be equals" };
+  if (conditionOperator !== "equals" && conditionOperator !== "is_blank") {
+    return { ok: false, error: "Condition operator must be equals or is_blank" };
   }
 
   if (actionType !== "JUMP_TO_QUESTION" && actionType !== "HIDE_QUESTION") {
     return { ok: false, error: "Action type must be JUMP_TO_QUESTION or HIDE_QUESTION" };
+  }
+
+  if (conditionOperator === "equals" && !sourceAnswerOptionId) {
+    return {
+      ok: false,
+      error: "Source answer option is required for equals rules"
+    };
+  }
+
+  if (conditionOperator === "is_blank") {
+    if (sourceAnswerOptionId) {
+      return {
+        ok: false,
+        error: "Blank text rules cannot include a source answer option"
+      };
+    }
+
+    if (actionType !== "HIDE_QUESTION") {
+      return { ok: false, error: "Blank text rules can only skip questions" };
+    }
   }
 
   if (
@@ -357,8 +379,9 @@ export function validateConditionalRuleBody(
     ok: true,
     value: {
       sourceQuestionId,
-      sourceAnswerOptionId,
+      sourceAnswerOptionId: conditionOperator === "is_blank" ? null : sourceAnswerOptionId,
       targetQuestionId,
+      conditionOperator,
       actionType,
       // A HIDE_QUESTION target must stay in the normal flow — it is only
       // skipped per attempt when its trigger answer is selected. The static

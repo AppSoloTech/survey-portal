@@ -177,8 +177,9 @@ export async function addRule(
   surveyId: number,
   rule: {
     sourceQuestionId: number;
-    sourceAnswerOptionId: number;
+    sourceAnswerOptionId?: number | null;
     targetQuestionId: number;
+    conditionOperator?: "equals" | "is_blank";
     actionType?: "JUMP_TO_QUESTION" | "HIDE_QUESTION";
     skipTargetInNormalFlow?: boolean;
   }

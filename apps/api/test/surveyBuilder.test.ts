@@ -190,6 +190,97 @@ describe("conditional rule validation", () => {
     });
   });
 
+  it("accepts blank-text skip rules without a source option", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin);
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Optional notes",
+      isRequired: false
+    });
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Follow-up" });
+    const source = findQuestion(survey, "Optional notes");
+    const target = findQuestion(survey, "Follow-up");
+
+    const updated = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: null,
+      conditionOperator: "is_blank",
+      targetQuestionId: target.id,
+      actionType: "HIDE_QUESTION",
+      skipTargetInNormalFlow: true
+    });
+
+    expect(updated.conditionalLogicRules).toHaveLength(1);
+    expect(updated.conditionalLogicRules[0]).toMatchObject({
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: null,
+      conditionOperator: "is_blank",
+      actionType: "HIDE_QUESTION",
+      targetQuestionId: target.id,
+      skipTargetInNormalFlow: false
+    });
+  });
+
+  it("rejects blank-text rules for jump actions, selection sources, and source options", async () => {
+    const admin = await registerAdmin(app);
+    const survey = await surveyWithSourceAndTarget(admin);
+    const source = findQuestion(survey, "Source");
+    const target = findQuestion(survey, "Target");
+
+    const jumpResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: null,
+        conditionOperator: "is_blank",
+        targetQuestionId: target.id,
+        actionType: "JUMP_TO_QUESTION"
+      });
+
+    expect(jumpResponse.status).toBe(400);
+    expect(jumpResponse.body.error).toBe("Blank text rules can only skip questions");
+
+    const selectionSourceResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: null,
+        conditionOperator: "is_blank",
+        targetQuestionId: target.id,
+        actionType: "HIDE_QUESTION"
+      });
+
+    expect(selectionSourceResponse.status).toBe(400);
+    expect(selectionSourceResponse.body.error).toBe(
+      "Blank text rules must use a text source question"
+    );
+
+    let textSurvey = await createDraftSurvey(app, admin, "Text survey");
+    textSurvey = await addQuestion(app, admin, textSurvey.id, {
+      questionText: "Optional notes",
+      isRequired: false
+    });
+    textSurvey = await addQuestion(app, admin, textSurvey.id, { questionText: "Follow-up" });
+
+    const sourceOptionResponse = await request(app)
+      .post(`/api/surveys/${textSurvey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: findQuestion(textSurvey, "Optional notes").id,
+        sourceAnswerOptionId: source.answerOptions[0].id,
+        conditionOperator: "is_blank",
+        targetQuestionId: findQuestion(textSurvey, "Follow-up").id,
+        actionType: "HIDE_QUESTION"
+      });
+
+    expect(sourceOptionResponse.status).toBe(400);
+    expect(sourceOptionResponse.body.error).toBe(
+      "Blank text rules cannot include a source answer option"
+    );
+  });
+
   it("converts a jump rule into a skip rule via update", async () => {
     const admin = await registerAdmin(app);
     const survey = await surveyWithSourceAndTarget(admin);
