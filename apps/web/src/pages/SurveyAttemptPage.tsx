@@ -471,7 +471,10 @@ function SurveyRunner({
       </div>
 
       <fieldset data-reveal>
-        <legend>{currentQuestion.questionText}</legend>
+        <legend className="visually-hidden">{currentQuestion.questionText}</legend>
+        <h4 aria-hidden="true" className="question-prompt">
+          {currentQuestion.questionText}
+        </h4>
         {currentQuestion.helpText ? <p className="muted">{currentQuestion.helpText}</p> : null}
         {renderQuestionControl({
           answerInteger,

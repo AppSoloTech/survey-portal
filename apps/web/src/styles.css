@@ -1371,17 +1371,16 @@ main {
   width: 100%;
 }
 
-.question-form legend {
+.question-form .question-prompt {
   color: var(--ink);
-  display: block;
   font-family: var(--font-display);
   font-size: clamp(1.25rem, 2.4vw, 1.5rem);
   font-weight: 700;
   letter-spacing: -0.015em;
+  margin: 0;
   max-width: var(--answer-max);
   min-width: 0;
   overflow-wrap: anywhere;
-  padding: 0;
   white-space: normal;
   width: 100%;
 }
@@ -4003,7 +4002,7 @@ main {
     font-size: 0.75rem;
   }
 
-  .question-form legend {
+  .question-form .question-prompt {
     font-size: 1.125rem;
   }
 
