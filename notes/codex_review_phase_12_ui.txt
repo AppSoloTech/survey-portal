@@ -1,0 +1,66 @@
+Phase 12 Round 2 Codex Review — UI Delta
+========================================
+
+Review date: 2026-06-16
+Reviewer: Codex
+Branch: phase-12-survey-builder-page-split
+
+Scope
+-----
+Reviewed only the changes called out in `notes/codex_handoff_phase_12_ui.txt`,
+covering work after the first Codex review in `notes/codex_review_phase_12.txt`.
+
+Files reviewed:
+- apps/web/src/components/admin/PageSwitcher.tsx
+- apps/web/src/components/admin/organizeDrag.ts
+- apps/web/src/components/admin/organizeDrag.test.ts
+- apps/web/src/pages/admin/SurveyOrganizePage.tsx
+- apps/web/src/pages/admin/SurveyQuestionsPage.tsx
+- apps/web/src/components/admin/SurveyBuilderComponents.tsx
+- apps/web/src/styles.css
+- notes/phase_12_test_notes.txt
+
+Findings
+--------
+No new actionable findings in the round-2 delta.
+
+Verification Notes
+------------------
+- Round-1 P2 drag race fix is present: `handleDragEnd` returns while
+  `isSubmitting`, and sortable page/question controls receive
+  `disabled={!isDraft || isSubmitting}`.
+- Round-1 P3 Add-question type reset is present: `newQuestionType` resets to
+  `"text"` when `activePageId` changes.
+- Round-1 P3 locked-field fix is present: question text, help text, and required
+  checkbox are disabled in locked/published view.
+- `organizeDrag.resolveDragOutcome` preserves the old drag behavior: page
+  reorder, same-page question reorder, cross-page moves with 1-based
+  `displayOrder`, empty-page drops, and page-header drops.
+- Collapse behavior does not introduce a conditional-hook issue. `useDroppable`
+  remains unconditional, and collapsed pages can still receive question drops via
+  the page sortable target, appending to the end of that page.
+- The PageSwitcher dropdown handles first/last stepper bounds and the temporary
+  no-active-page state without mutating data.
+- Router state pre-selection falls back to the first page when the supplied
+  `pageId` is absent or invalid; hard-refresh deep-linking remains intentionally
+  deferred.
+
+Validation
+----------
+- `npm test -w apps/web -- organizeDrag`: pass, 11 tests.
+- `npm run typecheck`: pass.
+- `npm run lint`: pass.
+- `git diff --check`: pass.
+- `git diff --cached --check`: pass.
+
+Not run by this reviewer:
+- Full `npm test`
+- `npm run build`
+- Manual browser workflow/responsive/keyboard-drag pass
+
+Summary
+-------
+The round-2 changes address the first review findings and the developer's
+manual-test feedback without introducing a new issue I would block on. Remaining
+risk is concentrated in manual drag/drop and responsive behavior, which still
+needs the planned browser pass.

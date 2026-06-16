@@ -2653,3 +2653,221 @@ Status:
 - Review findings addressed or deferred: Yes; C1 fixed, test gap reduced with shared helper coverage, API/manual validation remain tracked.
 - Manual testing complete: No; follow-up tracked
 - Ready to commit: After API test approval/run and manual browser pass, or with those explicitly accepted as carried follow-ups
+
+---
+
+## Phase 12 — Survey Builder Page Split + Organize Tab
+
+Date:
+2026-06-16
+
+Status:
+Completed (Codex review done; findings addressed)
+
+Prompt:
+`prompts/prompt_12.txt`
+
+Git Commit:
+Pending (branch `phase-12-survey-builder-page-split`)
+
+Review Artifacts:
+- Implementation handoff (for Codex): `notes/codex_handoff_phase_12.txt`
+- Codex review (round 1): `notes/codex_review_phase_12.txt` (completed)
+- Round-2 UI-delta handoff (for Codex): `notes/codex_handoff_phase_12_ui.txt`
+- Codex review (round 2, UI delta): `notes/codex_review_phase_12_ui.txt` (completed; no new findings)
+
+Role note: roles reversed for this phase — Claude Code implemented, Codex reviews
+(precedent: Phases 5.1–8). Source planning note:
+`notes/ui_ux_questions_builder_split.txt`.
+
+## Goals
+
+- Bifurcate the overloaded Questions tab at the page level: edit one page at a
+  time, selected via a pill rail + "jump to page" dropdown.
+- Provide a dedicated, low-clutter "Organize" tab for arranging pages and
+  questions via drag-and-drop (reorder pages, reorder questions, move questions
+  across pages), plus add/delete pages.
+
+## Built
+
+- PageSwitcher component (pill rail reusing `.workspace-tab` styling + jump
+  dropdown) driving a local `activePageId` on the Questions tab.
+- SurveyQuestionsPage restructured: renders only the active page's metadata edit
+  form, a page-scoped Add-question form (page picker removed), and that page's
+  reused `QuestionEditor` list. Removed the Add-page form, per-question
+  "Move to page" dropdown, and per-page move/delete buttons (moved to Organize).
+- New "Organize" workspace tab: route in `App.tsx`, `WorkspaceTab` in
+  `SurveyWorkspaceLayout.tsx`, and `SurveyOrganizePage` with a `@dnd-kit` board
+  (sortable page cards + compact sortable question rows) plus the Add-page form.
+- New dependency `@dnd-kit/{core,sortable,utilities}`; `jsx-global-shim.d.ts` to
+  restore the global `JSX` namespace for @dnd-kit under React 19.
+- New CSS section in `styles.css` (page switcher, organize board, compact rows,
+  drag handle/overlay) with 767.98px mobile rules.
+
+## Important Decisions
+
+### Frontend-only; reuse existing endpoints
+
+Decision: implement entirely in the web app using the existing
+reorderSurveyPages / reorderQuestions / moveQuestionToPage / page CRUD endpoints.
+
+Reason: the Phase 11 page model already exposes everything needed; the request
+was UX, not data-model.
+
+Tradeoff: none material; no schema/API/auth surface touched.
+
+### Organize as a separate workspace tab + drag-and-drop
+
+Decision: a new top-level "Organize" tab (not an in-tab mode toggle), with
+drag-and-drop reordering via @dnd-kit; the Questions tab keeps its within-page
+Up/Down controls.
+
+Reason: developer preference; keeps reordering out of the editing surface.
+
+Tradeoff: adds a dependency and a route/tab; no live cross-container drag preview
+(drop-to-commit via DragOverlay) to keep the implementation robust.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none (existing endpoints only).
+- Auth or authorization impact: none; all structural controls remain draft-only
+  via `survey.status !== "draft"` gating, now also disabling drag.
+- Data privacy or visibility impact: none; the Organize board shows no hidden
+  tags; hidden tags stay admin-only on the Questions tab.
+- Frontend UX impact: Questions tab is single-page-focused; new Organize tab.
+- Environment or deployment impact: new frontend dependency only.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck, lint, build, all tests (shared 43, web 34, api 148 = 225),
+  git diff --check clean. API suite ran against the local Postgres test DB.
+- Failed: none.
+- Not run: manual browser pass (no browser automation in this environment).
+
+Manual tests:
+
+- Pending — see the checklist in `notes/codex_handoff_phase_12.txt` and the new
+  FOLLOW_UPS entry.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final summary: Yes
+- Handoff path: `notes/codex_handoff_phase_12.txt`
+- Codex review status before commit: Pending
+
+## Codex Review Notes
+
+Source: `notes/codex_review_phase_12.txt` (Claude implemented, Codex reviewed).
+
+Status: Completed. No critical issues. Three findings, all accepted and fixed:
+
+- P2 (race): Organize drag handles stayed active during in-flight mutations, so a
+  fast second drag could submit a reorder/move from a stale survey snapshot.
+  Fixed by gating the sortable `disabled` state on `isSubmitting` and early-
+  returning from `handleDragEnd` when `isSubmitting` (SurveyOrganizePage.tsx).
+- P3 (UX acceptance): switching pages did not reset the controlled
+  `newQuestionType`, so the scale type/fields could carry to a new page. Fixed
+  with an effect resetting it to `"text"` on `activePageId` change
+  (SurveyQuestionsPage.tsx).
+- P3 (UX acceptance, pre-existing): locked surveys left the question text, help
+  text, and required checkbox enabled in `QuestionEditor`. Fixed by passing
+  `disabled={isPublished}` to those inputs (SurveyBuilderComponents.tsx),
+  matching the other locked controls.
+
+Re-validation after fixes: typecheck, lint, build all pass; tests pass (shared
+43, web 34, api 148 = 225); git diff --check clean.
+
+## Post-Review Enhancements (same branch)
+
+After the review, two in-scope improvements were added:
+
+- Extracted the Organize board's drag-end decision logic into a pure,
+  dependency-free helper (`apps/web/src/components/admin/organizeDrag.ts`:
+  `resolveDragOutcome` / `resolveOverPageId` / `parseEntityId`) and added unit
+  coverage (`organizeDrag.test.ts`, 11 cases) for page reorder, same-page
+  reorder, cross-page move (1-based displayOrder), empty-page and header drops,
+  and no-op guards. `SurveyOrganizePage.handleDragEnd` now just dispatches the
+  resolved outcome. Web tests: 34 -> 45.
+- The Organize page card "Open in Questions" link now pre-selects that page on
+  the Questions tab via router navigation state (`SurveyQuestionsPage` reads
+  `location.state.pageId` in its lazy initializer, falling back to the first
+  page). URL-based deep-linking remains the deferred follow-up.
+
+Re-validation after enhancements: typecheck, lint, build pass; tests pass
+(shared 43, web 45, api 148 = 236); git diff --check clean.
+
+## Manual Test Round 1 (same branch)
+
+Developer manual-test feedback (`notes/phase_12_test_notes.txt`) addressed:
+
+- Organize: long question lists made page reordering unwieldy. Added a per-page
+  collapse/expand toggle (chevron) and a board-level "Collapse all / Expand all"
+  so pages can be hidden down to their headers for easy reordering. Collapse is a
+  view-only concern (works on locked surveys); cross-page drops onto a collapsed
+  page still resolve via the card header.
+- Questions: the page pills wrapped into a disorganized multi-row block, and the
+  "Jump to page" dropdown duplicated them. First reconciled to a single contained
+  horizontally scrolling pill bar; when that bar would not scroll reliably (a
+  grid-blowout: the single auto column expanded to the pills' max-content), the
+  developer opted to replace the pills entirely with a single page dropdown +
+  prev/next stepper arrows + an "X of N" indicator. `.builder-workspace` was also
+  pinned to `grid-template-columns: minmax(0, 1fr)` as general blowout hygiene.
+
+Re-validation: typecheck, lint, build pass; web tests 45; git diff --check clean.
+
+## Codex Round-2 Review (UI delta)
+
+Source: `notes/codex_review_phase_12_ui.txt`. Status: completed, no new
+actionable findings. Codex verified the three round-1 fixes are present and
+correct, confirmed `resolveDragOutcome` preserves the prior drag behavior
+(1-based displayOrder, empty-page and page-header drops), confirmed the collapse
+feature introduces no conditional-hook issue and still accepts drops on collapsed
+pages via the header, and confirmed the dropdown stepper bounds and the
+router-state page pre-selection fallback. Remaining risk is the manual drag/drop +
+responsive browser pass (already tracked as a follow-up).
+
+## Problems Encountered
+
+- Problem: typecheck failed because @types/react v19 dropped the global `JSX`
+  namespace that @dnd-kit's type defs reference.
+  Resolution: added `apps/web/src/jsx-global-shim.d.ts` re-aliasing global `JSX`
+  to `React.JSX`.
+
+## Follow-Up Tasks
+
+- Manual browser + responsive pass (375/768/1280px) on the Questions and
+  Organize tabs, including keyboard drag and read-only behavior.
+- Optional: URL deep-linking of the active page / pre-select page from the
+  Organize "Open in Questions" link.
+- Optional: optimistic/local reorder for snappier drag persistence and a live
+  cross-page drag preview.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Codex review found no auth/data-model/hidden-tag
+  regression (no critical issues).
+- Review findings addressed or deferred: Yes; all three round-1 Codex findings
+  (P2, P3, P3) fixed and re-validated. Round-2 Codex review of the UI delta found
+  no new actionable issues.
+- Manual testing complete: No; full browser/responsive/keyboard-drag pass tracked
+  as a follow-up (developer has manually exercised the page switcher and Organize
+  collapse).
+- Ready to commit: Yes, pending the manual browser pass or its explicit acceptance
+  as a carried follow-up.

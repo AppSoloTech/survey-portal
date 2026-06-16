@@ -1,0 +1,11 @@
+Organize Page
+1) The number of questions can be large and could become difficult to reorder pages. Have the option to collapse the questions within the page container.
+
+Questions Page
+1) I like the pills that sit between the survey nav-header and the page. They are a bit dissorganized by default. either remove them or contain them in a sustainable way to accomidate for an increasing number of pages.
+2) The "Jump to page seems to be redundent with what the pills provide in the way of functionality. Reconcile the two.
+
+---
+Resolutions (Phase 12, manual test round 1):
+- Organize 1: each page card now has a collapse/expand toggle (chevron), plus a board-level "Collapse all / Expand all" so long pages can be hidden for easy page reordering. Cross-page drops onto a collapsed page still work via the card header.
+- Questions 1+2: after the contained scrolling pill bar would not scroll reliably across screen widths, the pills were replaced (per developer call) with a single nice-looking page dropdown flanked by prev/next stepper arrows and an "X of N" indicator. One control, scales to any number of pages, no overflow. This also removes the redundant separate "Jump to page" dropdown.

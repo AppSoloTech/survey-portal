@@ -265,6 +265,7 @@ export function SurveyWorkspaceLayout() {
       <nav className="workspace-tabs" aria-label="Survey workspace pages">
         <WorkspaceTab label="Setup" to="setup" />
         <WorkspaceTab label={`Questions (${survey.questions.length})`} to="questions" />
+        <WorkspaceTab label={`Organize (${survey.pages.length})`} to="organize" />
         <WorkspaceTab label={`Logic (${survey.conditionalLogicRules.length})`} to="logic" />
         <WorkspaceTab label="Preview" to="preview" />
         <WorkspaceTab label="Results" to="results" />

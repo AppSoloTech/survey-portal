@@ -1,0 +1,86 @@
+Phase 12 Codex Review — Survey Builder Page Split + Organize Tab
+================================================================
+
+Review date: 2026-06-16
+Reviewer: Codex
+Branch: phase-12-survey-builder-page-split
+
+Reviewed Against
+----------------
+- prompts/prompt_12.txt
+- notes/ui_ux_questions_builder_split.txt
+- notes/codex_handoff_phase_12.txt
+- markdown/REVIEW_CHECKLIST.md
+- Staged implementation diff
+
+Findings
+--------
+
+1. P2 — Organize drag handles remain active while a mutation is already in flight.
+
+   File: apps/web/src/pages/admin/SurveyOrganizePage.tsx
+   Lines: 140-227, 280-292, 335-338, 359-365
+
+   `handleDragEnd` starts reorder/move mutations with `void runSurveyMutation(...)`
+   and only guards on `!isDraft`. The sortable controls are disabled with
+   `disabled={!isDraft}`, so after the first drag starts a request and
+   `isSubmitting` becomes true, page/question drag handles remain enabled. A
+   quick second drag can submit another reorder/move from the same stale survey
+   snapshot. That can make the final persisted order depend on request timing,
+   especially for cross-page moves or repeated page reorders.
+
+   Suggested fix: include `isSubmitting` in the drag-disabled state and add an
+   early `if (isSubmitting || !isDraft) return;` in `handleDragEnd`.
+
+2. P3 — Switching pages does not fully clear the Add-question form state.
+
+   File: apps/web/src/pages/admin/SurveyQuestionsPage.tsx
+   Lines: 48, 519-558
+
+   The form is keyed by active page, so uncontrolled text/help/checkbox fields
+   remount when the admin switches pages. The question type, however, is
+   controlled by `newQuestionType`, which lives outside the keyed form. If an
+   admin selects `scale`, starts configuring a question, then switches pages, the
+   new page's Add-question form still shows `scale` and the scale fields. The
+   phase acceptance criteria says switching pages clears a half-typed
+   Add-question form, so this should reset alongside the remount.
+
+   Suggested fix: reset `newQuestionType` to `"text"` when `activePageId`
+   changes, or move that state into a keyed child/form component.
+
+3. P3 — Locked surveys still expose editable-looking question fields on the
+   Questions tab.
+
+   File: apps/web/src/components/admin/SurveyBuilderComponents.tsx
+   Lines: 231-267
+
+   The phase requires published/retired surveys to be viewable but immutable on
+   both tabs. `QuestionEditor` disables the type select and action buttons, but
+   the question text input, help text input, and required checkbox are still
+   enabled when `isPublished` is true. The server and disabled save button still
+   prevent persistence, so this is not a data integrity issue, but the UI allows
+   local edits that cannot be saved and does not meet the "all edit disabled"
+   acceptance criterion. This behavior appears to predate Phase 12, but the new
+   implementation explicitly relies on this component for read-only behavior.
+
+   Suggested fix: pass `disabled={isPublished}` to those inputs, mirroring the
+   other locked controls.
+
+Validation
+----------
+- `npm run typecheck`: pass.
+- `npm run lint`: pass.
+- `git diff --cached --check`: pass.
+
+Not run by this reviewer:
+- `npm run build`
+- `npm test`
+- Manual browser workflow/responsive/keyboard-drag pass
+
+Summary
+-------
+The page-level Questions split and new Organize route match the planned scope,
+and the cross-page `displayOrder` mapping matches the existing API's 1-based
+move semantics. I would address the in-flight drag guard before commit because
+it is the only finding with a real persistence/race risk. The other two are UX
+acceptance gaps.

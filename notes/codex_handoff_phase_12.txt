@@ -1,0 +1,162 @@
+Phase 12 Implementation Handoff — for Codex Review
+==================================================
+
+Roles are reversed for this phase per explicit human instruction (precedent:
+Phases 5.1–8): Claude Code implemented; Codex is the review assistant. Please
+review against markdown/REVIEW_CHECKLIST.md and prompts/prompt_12.txt, and
+record findings in:
+
+    notes/codex_review_phase_12.txt
+
+Then summarize the result in chat. Do not leave the review only in chat. Do not
+modify source files during review unless the human developer explicitly asks for
+fixes.
+
+Reference Documents
+-------------------
+- prompts/prompt_12.txt (frozen phase prompt)
+- notes/ui_ux_questions_builder_split.txt (planning note / confirmed decisions)
+- markdown/ARCHITECTURE_PRINCIPLES.md
+- markdown/DATA_MODEL_VISION.md
+- markdown/FLOW.md
+- markdown/REVIEW_CHECKLIST.md
+- markdown/PHASE_LOG.md
+- prompts/MASTER_PRODUCT_CONTEXT.txt
+
+Scope Implemented
+-----------------
+Frontend-only restructuring of the admin survey builder. No schema, migration,
+API-contract, auth, or hidden-tag changes. All persistence uses pre-existing
+endpoints.
+
+1. Questions tab is now a focused, one-page-at-a-time editor.
+   - New PageSwitcher (apps/web/src/components/admin/PageSwitcher.tsx): a pill
+     rail reusing the .workspace-tab look + a "jump to page" <select>. Drives a
+     local activePageId.
+   - SurveyQuestionsPage.tsx: removed newQuestionPageId; added activePageId with
+     a validity effect mirroring the prior one (keep current page if it still
+     exists, else first page, else null). Renders only the active page's
+     metadata edit form, the Add-question form (page <select> removed; page is
+     implied by activePageId), and that page's QuestionEditor list (reused
+     unchanged, keeps within-page Up/Down). Removed from this tab: the Add-page
+     form, the per-question "Move to page" <select>, and the per-page
+     Move up/down/Delete buttons (all now on Organize).
+
+2. New "Organize" workspace tab (drag-and-drop board).
+   - Route: apps/web/src/App.tsx (nested "organize" route after "questions").
+   - Tab: SurveyWorkspaceLayout.tsx (WorkspaceTab "Organize (<pageCount>)").
+   - SurveyOrganizePage.tsx: Add-page form + a @dnd-kit board. Sortable page
+     cards (reorderSurveyPages on drop). Each card holds compact sortable
+     question rows (OrganizeQuestionRow.tsx). Within-page drop -> reorderQuestions;
+     cross-page drop -> moveQuestionToPage(displayOrder = dropIndex + 1, since the
+     server treats displayOrder as 1-based). Page delete (existing guard: empty +
+     >1 page) and per-row question delete are available. Keyboard drag via
+     @dnd-kit KeyboardSensor + sortableKeyboardCoordinates; PointerSensor uses a
+     6px activation distance so button clicks are not swallowed.
+
+3. New dependency: @dnd-kit/core ^6.3.1, @dnd-kit/sortable ^10.0.0,
+   @dnd-kit/utilities ^3.2.2 in apps/web (package.json + root lockfile).
+
+4. apps/web/src/jsx-global-shim.d.ts: re-aliases the global `JSX` namespace to
+   `React.JSX`. @types/react v19 removed the global JSX namespace; @dnd-kit's
+   shipped type defs still reference it, so typecheck failed without this shim.
+
+5. CSS appended to styles.css (section "10b"): .page-switcher(.-rail/-pill/
+   -jump/.active/-count), .organize-board, .organize-page-card(.dragging),
+   .organize-page-card-header/-heading/-questions, .compact-question-row
+   (.dragging) + body/locator/text/type, .drag-handle, .organize-drag-overlay,
+   plus mobile rules in the existing 767.98px block (pill rail horizontal scroll,
+   compact-row wrap). Reuses existing design tokens.
+
+Files To Review
+---------------
+New:
+- apps/web/src/components/admin/PageSwitcher.tsx
+- apps/web/src/components/admin/OrganizeQuestionRow.tsx
+- apps/web/src/pages/admin/SurveyOrganizePage.tsx
+- apps/web/src/jsx-global-shim.d.ts
+
+Changed:
+- apps/web/src/pages/admin/SurveyQuestionsPage.tsx (restructured)
+- apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx (one tab added)
+- apps/web/src/App.tsx (one route added)
+- apps/web/src/styles.css (new classes appended; mobile rules added)
+- apps/web/package.json, package-lock.json (@dnd-kit/*)
+
+Unchanged but central to behavior (reused):
+- apps/web/src/api/surveys.ts (reorderSurveyPages/reorderQuestions/
+  moveQuestionToPage/createSurveyPage/deleteSurveyPage/deleteQuestion)
+- apps/web/src/components/admin/SurveyBuilderComponents.tsx (QuestionEditor,
+  formatQuestionLocator, formatQuestionType)
+- apps/api/src/routes/surveyBuilderRoutes.ts (move-to-page semantics)
+
+Suggested Review Focus
+----------------------
+1. Drag-and-drop correctness in SurveyOrganizePage.handleDragEnd:
+   - id namespacing (page:<id>, q:<id>, pagedrop:<id>) and resolveOverPageId().
+   - same-page reorder uses arrayMove(ids, oldIndex, overIndex); confirm the
+     resulting questionIds set is the full page list (server validates the set).
+   - cross-page move passes displayOrder = targetIndex + 1 (1-based). Verify
+     against the route at apps/api/.../surveyBuilderRoutes.ts (it splices at
+     displayOrder-1 for same-page and inserts at displayOrder for cross-page).
+   - dropping a question onto an empty page (the pagedrop droppable) and onto a
+     page header (the page sortable) both resolve to that page, index = end.
+2. Read-only gating: every structural control is disabled when
+   survey.status !== "draft" (useSortable disabled, add/delete buttons disabled,
+   handleDragEnd early-returns). Confirm a published/retired survey is fully
+   viewable but immutable on both tabs.
+3. activePageId validity effect in SurveyQuestionsPage: after deleting the active
+   page on Organize or switching surveys, the Questions tab must fall back to a
+   valid page (or the no-pages empty state).
+4. The JSX global shim: confirm it is the minimal correct fix and does not mask
+   real type errors (typecheck passes app-wide with it).
+5. No participant-facing or data-model drift: Survey/SurveyPage/SurveyQuestion
+   types are untouched; questions remain database-driven; hidden tags are still
+   admin-only (the Organize board shows no tags).
+
+Validation Run
+--------------
+- npm run typecheck: pass (shared build + web + api).
+- npm run lint: pass (shared, web, api).
+- npm run build: pass (web vite build + api tsc). Pre-existing >500kB chunk
+  warning (three.js/gsap) unchanged.
+- npm test: pass — shared 43, web 34, api 148 (225 total). API suite ran against
+  the local Postgres test DB.
+- git diff --check: clean.
+
+Manual browser pass: NOT run (no browser automation in this environment, per the
+established project convention). Tracked as a follow-up in markdown/FOLLOW_UPS.md
+and listed below.
+
+Manual Checklist For The Human / Reviewer
+-----------------------------------------
+On /admin/surveys/5/questions:
+- Pill rail + "jump to page" switch the active page; only that page's questions
+  render; Add-question targets the active page; switching pages clears a
+  half-typed Add-question form; option/tag editing and within-page Up/Down work.
+On /admin/surveys/5/organize:
+- Drag to reorder pages (persists across reload); drag to reorder questions in a
+  page; drag a question into another page card (lands at the drop position); add
+  a page; delete an empty page; keyboard drag (Tab to a handle, Space, arrows,
+  Space). Check 375 / 768 / 1280px widths.
+Read-only:
+- Open a published survey; both tabs viewable, all drag/add/delete/edit disabled.
+Edge:
+- Delete the active page on Organize, return to Questions -> a valid page is
+  active; a zero-question page shows the correct empty state.
+
+Known Limitations / Deferred
+----------------------------
+- No URL deep-linking of the active page / Organize selection (the app uses no
+  query params today). The "Open in Questions" link on each Organize page card
+  lands on the Questions tab but does not pre-select that page. Deferred to
+  FOLLOW_UPS.
+- No live cross-container drag preview: a question dragged toward another page is
+  shown via the DragOverlay and lands on drop; it does not visually re-home mid-
+  drag. Within-page reordering animates normally. Optional optimistic-reorder
+  polish deferred to FOLLOW_UPS.
+- Manual browser pass + responsive check pending (no browser automation here).
+
+Docs updated: markdown/PHASE_LOG.md (Phase 12 entry, Codex review Pending,
+commit Pending), markdown/FOLLOW_UPS.md (new deferrals), prompts/prompt_12.txt,
+notes/ui_ux_questions_builder_split.txt.

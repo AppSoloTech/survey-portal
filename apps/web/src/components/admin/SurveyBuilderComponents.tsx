@@ -229,7 +229,12 @@ export function QuestionEditor({
         <div className="builder-grid two-columns">
           <label>
             Question text
-            <input defaultValue={question.questionText} name="questionText" required />
+            <input
+              defaultValue={question.questionText}
+              disabled={isPublished}
+              name="questionText"
+              required
+            />
           </label>
           <label>
             Type
@@ -261,10 +266,15 @@ export function QuestionEditor({
         ) : null}
         <label>
           Help text
-          <input defaultValue={question.helpText ?? ""} name="helpText" />
+          <input defaultValue={question.helpText ?? ""} disabled={isPublished} name="helpText" />
         </label>
         <label className="checkbox-label">
-          <input defaultChecked={question.isRequired} name="isRequired" type="checkbox" />
+          <input
+            defaultChecked={question.isRequired}
+            disabled={isPublished}
+            name="isRequired"
+            type="checkbox"
+          />
           Required
         </label>
         <div className="inline-actions">

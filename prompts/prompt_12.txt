@@ -1,0 +1,185 @@
+# Phase 12 — Survey Builder Page Split + Organize Tab
+
+## Purpose
+
+Reduce the overload of the admin Questions tab (`/admin/surveys/:id/questions`)
+by bifurcating the survey builder at the page level, and provide a dedicated,
+low-clutter place to arrange pages and questions.
+
+Today the Questions tab renders every page and every question expanded at once,
+with page reorder/delete buttons and per-question "Move to page" dropdowns buried
+among the option/tag editors. The outcome of this phase:
+
+* The Questions tab edits ONE page at a time, selected via a page pill rail plus
+  a "jump to page" dropdown.
+* A new "Organize" workspace tab provides a drag-and-drop board for reordering
+  pages, reordering questions within a page, and moving questions across pages,
+  plus adding and deleting pages.
+
+Source planning note:
+
+```txt
+notes/ui_ux_questions_builder_split.txt
+```
+
+## Role Note
+
+Roles are REVERSED for this phase per explicit human instruction (precedent:
+Phases 5.1–8):
+
+* Claude Code is the implementation assistant.
+* Codex is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/codex_handoff_phase_12.txt`
+* Codex review: `notes/codex_review_phase_12.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/ui_ux_questions_builder_split.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `prompts/prompt_11A.txt` (the page model this builds on)
+* Source: `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`,
+  `SurveyWorkspaceLayout.tsx`, `App.tsx`, `components/admin/SurveyBuilderComponents.tsx`,
+  `api/surveys.ts`, `styles.css`.
+
+---
+
+# Received Feedback
+
+1. The questions section is "doing a lot of work"; bifurcate it at the page level
+   so each page holds its own questions and the admin moves to the page they want
+   to work on — via a tab and/or a dropdown.
+2. Page (and question) ordering is clunky; provide a separate, low-clutter
+   section that handles page ordering and question ordering without the editor
+   clutter.
+
+# Intake Classification
+
+* Both items: UX polish / broken (clunky) workflow. Frontend only.
+* No item touches: database schema or migrations, API contracts, participant-
+  facing survey behavior, hidden-tag visibility, authentication/authorization,
+  deployment or secret handling. Existing frontend tests may need light updates.
+
+---
+
+# Scope
+
+Implement (frontend only; all required endpoints already exist):
+
+* Add a drag-and-drop dependency: `@dnd-kit/core`, `@dnd-kit/sortable`,
+  `@dnd-kit/utilities` in `apps/web`.
+* Questions tab (`SurveyQuestionsPage.tsx`): a `PageSwitcher` (pill rail reusing
+  `.workspace-tab(s)` styling + a "jump to page" `<select>`) drives a single
+  `activePageId`. Render only the active page's metadata edit form, the
+  Add-question form (page picker removed; page implied by `activePageId`), and
+  that page's `QuestionEditor` list (reused unchanged). Remove from this tab: the
+  Add-page form, the per-question "Move to page" `<select>`, and the per-page
+  Move up/down/Delete buttons.
+* New "Organize" workspace tab: nested route `organize` in `App.tsx`, a
+  `WorkspaceTab` in `SurveyWorkspaceLayout.tsx`, and `SurveyOrganizePage.tsx`
+  holding the Add-page form + a `@dnd-kit` board — sortable page cards
+  (`reorderSurveyPages`), each with compact sortable question rows
+  (`reorderQuestions` within a page, `moveQuestionToPage` across pages using the
+  drop index). Keyboard reorder via `KeyboardSensor` + `sortableKeyboardCoordinates`.
+* CSS in `styles.css` for `.page-switcher`, the organize board, compact rows, and
+  the drag overlay — reusing existing design tokens and the 767.98px breakpoint.
+
+## Non-Goals
+
+Do not implement:
+
+* Any database schema, migration, API contract, or auth/authorization change.
+* Any participant-facing survey behavior change.
+* Deep-linking the active page or organize mode via URL query params (the app
+  uses no query params today; defer to FOLLOW_UPS).
+* Removal of the existing within-page up/down move control on the Questions tab.
+* Sections separate from pages, or any new survey entity.
+
+## Assumptions
+
+* The page model from Phase 11A–D is in place: `survey.pages[]` with
+  `displayOrder`, and `survey.questions[]` flattened with `pageId`/`displayOrder`.
+* Structural edits remain draft-only; published/retired surveys are viewable with
+  all structural controls disabled.
+* `@dnd-kit` (core ≥6.3) is compatible with React 19 (`react >=16.8` peer).
+
+## Open Questions
+
+* None. Design decisions were confirmed with the developer (see planning note).
+
+---
+
+# Implementation Priorities
+
+1. Preserve existing authorization/draft-gating exactly (no structural edits to
+   non-draft surveys).
+2. Keep all mutations on existing endpoints via `runSurveyMutation`.
+3. Maintain a focused, uncluttered Questions tab and an accessible drag board.
+4. Match existing styling tokens and responsive behavior.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The Questions tab shows one active page at a time, switchable via pill rail and
+  jump dropdown; Add-question targets the active page; switching pages clears the
+  Add-question form; option/tag editing still works.
+* The Organize tab reorders pages, reorders questions within a page, moves
+  questions across pages (landing at the drop position), adds a page, and deletes
+  an empty page — all persisted; keyboard drag works.
+* Published/retired surveys: both tabs viewable, all drag/add/delete/edit
+  disabled.
+* Edge cases hold: zero pages, zero-question page, active page deleted from
+  Organize falls back to a valid page.
+* Every received feedback item is implemented or explicitly deferred to
+  FOLLOW_UPS.
+
+---
+
+# Testing Requirements
+
+Full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Update affected frontend tests where practical. Manual checks:
+
+* `/admin/surveys/5/questions` — page switching, scoped add-question, editing.
+* `/admin/surveys/5/organize` — page/question drag, cross-page move, add/delete
+  page, keyboard drag; 375/768/1280px widths.
+* A published survey — read-only behavior on both tabs.
+
+Document any command that cannot run and the narrower validation completed.
+
+---
+
+# Documentation And Closeout
+
+* `notes/codex_handoff_phase_12.txt` before marking implementation complete
+  (instructs Codex to write findings to `notes/codex_review_phase_12.txt`).
+* `markdown/PHASE_LOG.md` — Phase 12 entry; mark Codex review status Pending and
+  Git Commit Pending until done.
+* `markdown/FOLLOW_UPS.md` — record deferrals (URL deep-linking of active page;
+  optional optimistic-reorder polish).

@@ -1,0 +1,126 @@
+Phase 12 — Round 2 Review Handoff (post-review UI delta) — for Codex
+===================================================================
+
+Roles reversed (Claude implemented, Codex reviews). This is a SECOND review pass
+covering only what changed AFTER your first review (notes/codex_review_phase_12.txt).
+Please record findings in:
+
+    notes/codex_review_phase_12_ui.txt
+
+Then summarize in chat. Do not modify source unless the developer asks for fixes.
+
+Context
+-------
+Your first review (notes/codex_review_phase_12.txt) passed with no critical
+issues and three findings (P2 drag race, P3 type reset, P3 locked fields). Those
+were fixed, then two enhancements and a round of developer manual-test feedback
+landed on the same branch. Nothing is committed yet, so the full Phase 12 diff is
+`git diff main`; this handoff scopes you to the files changed since round 1.
+
+What changed since round 1
+--------------------------
+A. Round-1 findings — fixes to verify:
+   - P2 (drag race): SurveyOrganizePage.handleDragEnd now early-returns on
+     `!isDraft || isSubmitting`, and the sortable `disabled` prop passed to page
+     cards / question rows is now `!isDraft || isSubmitting`.
+   - P3 (type reset): SurveyQuestionsPage adds an effect resetting
+     `newQuestionType` to "text" when `activePageId` changes.
+   - P3 (locked fields): QuestionEditor now passes `disabled={isPublished}` to the
+     question text input, help text input, and required checkbox.
+
+B. Enhancements:
+   - Extracted the drag-end decision logic into a pure, dependency-free helper
+     `apps/web/src/components/admin/organizeDrag.ts` (`resolveDragOutcome`,
+     `resolveOverPageId`, `parseEntityId`) with unit tests
+     `organizeDrag.test.ts` (11 cases). `SurveyOrganizePage.handleDragEnd` now
+     builds a `questionIdsByPage` map, calls `resolveDragOutcome`, and dispatches
+     the returned outcome to reorderSurveyPages / reorderQuestions /
+     moveQuestionToPage. The old inline math and local `resolveOverPageId` were
+     removed; the `arrayMove` import was dropped (helper has its own `moveItem`).
+   - "Open in Questions" on each Organize page card now pre-selects that page:
+     the Link passes `state={{ pageId }}`, and SurveyQuestionsPage seeds
+     `activePageId` from `location.state.pageId` in a lazy useState initializer
+     (falling back to the first page if absent/invalid).
+
+C. Manual-test round 1 (developer feedback in notes/phase_12_test_notes.txt):
+   - Organize: added per-page collapse/expand (a chevron toggle in the card
+     header) plus a board-level "Collapse all / Expand all" toggle, so long pages
+     can be collapsed to their headers for easy page reordering. State is a
+     `collapsedPageIds: Set<number>` in SurveyOrganizePage. When collapsed, the
+     question list region (and its `pagedrop` droppable node) is not rendered.
+   - Questions page navigation: the page pills were first reworked into a
+     contained horizontally-scrolling bar; that bar would not scroll across
+     screen widths (a CSS grid blowout — see D), so per the developer's call the
+     pills were REPLACED with a single dropdown page navigator (PageSwitcher.tsx):
+     a labeled `<select>` of all pages (each shows `order. title (count)`),
+     flanked by prev/next stepper arrows and an "X of N" indicator. This also
+     removed the previously-separate redundant "Jump to page" dropdown.
+
+D. CSS:
+   - Root-caused the scroll failure: `.builder-workspace` is `display: grid` with
+     a single implicit `auto` column that expanded to the pills' max-content. Even
+     with `min-width: 0` on the bar, the track itself blew out. Added
+     `.builder-workspace { grid-template-columns: minmax(0, 1fr); }` as general
+     blowout hygiene. The pill bar was then replaced by the dropdown (C), so this
+     rule now just hardens the single-column layout.
+   - New `.page-switcher` styles (centered flex bar) + `.page-switcher-label`,
+     `-select` (flex 0 1 auto, min 220 / max 460), `-step` (arrow buttons),
+     `-meta`. Removed all `.page-switcher-pill*` rules and the old mobile
+     scrollbar overrides. `.organize-board-toolbar` and `.organize-collapse-toggle`
+     added for the collapse UI.
+
+Files to review (changed since round 1)
+---------------------------------------
+- apps/web/src/components/admin/PageSwitcher.tsx        (rewritten: pills -> dropdown)
+- apps/web/src/components/admin/organizeDrag.ts          (new: pure drag helper)
+- apps/web/src/components/admin/organizeDrag.test.ts     (new: 11 unit tests)
+- apps/web/src/pages/admin/SurveyOrganizePage.tsx        (helper refactor, drag guard, collapse, nav-state link)
+- apps/web/src/pages/admin/SurveyQuestionsPage.tsx       (type reset, nav-state init)
+- apps/web/src/components/admin/SurveyBuilderComponents.tsx (locked-field disables)
+- apps/web/src/styles.css                                 (page-switcher dropdown, collapse, grid-template-columns)
+
+Diff commands
+-------------
+    git diff main                # full Phase 12 delta (round 1 + this round)
+    git diff main -- apps/web/src/components/admin/organizeDrag.ts \
+                     apps/web/src/components/admin/PageSwitcher.tsx \
+                     apps/web/src/pages/admin/SurveyOrganizePage.tsx \
+                     apps/web/src/pages/admin/SurveyQuestionsPage.tsx \
+                     apps/web/src/components/admin/SurveyBuilderComponents.tsx \
+                     apps/web/src/styles.css
+
+Suggested review focus
+----------------------
+1. Verify the three round-1 fixes are correct and complete (especially the drag
+   in-flight guard: confirm both `handleDragEnd` and the sortable `disabled`
+   path are gated on `isSubmitting`).
+2. organizeDrag.resolveDragOutcome: confirm the refactor preserved behavior vs
+   the old inline logic — same-page reorder (arrayMove semantics via `moveItem`),
+   cross-page move with 1-based `displayOrder = targetIndex + 1`, and the
+   empty-page / page-header drop cases (targetIndex = end). Check the unit tests
+   cover the meaningful branches.
+3. Collapse feature: `useDroppable` is still called unconditionally in
+   SortablePageCard (only its node is conditionally attached) — confirm no
+   conditional-hook violation. Confirm a question can still be dropped onto a
+   COLLAPSED page (resolves via the page sortable header -> end of page) and that
+   stale ids in `collapsedPageIds` after a page delete are harmless.
+4. PageSwitcher dropdown: prev/next bounds (disabled at first/last), behavior when
+   `activePageId` is null / activeIndex === -1, and label/aria correctness.
+5. CSS grid-blowout fix: `.builder-workspace { grid-template-columns: minmax(0,1fr) }`
+   — confirm it does not regress other consumers of `.builder-workspace`
+   (SurveyQuestionsPage, SurveyOrganizePage). No participant-facing CSS touched.
+6. Nav-state pre-selection: invalid/stale `location.state.pageId` falls back to the
+   first page; state is intentionally lost on hard reload (URL deep-link deferred).
+
+Validation already run
+----------------------
+- npm run typecheck / lint / build: pass.
+- npm test: pass — shared 43, web 45 (was 34; +11 from organizeDrag.test.ts),
+  api 148 = 236.
+- git diff --check: clean.
+- Manual browser pass: still pending (no browser automation here); tracked in
+  markdown/FOLLOW_UPS.md. The developer has manually exercised the Questions page
+  switcher and the Organize collapse during this round.
+
+No data-model, API, auth, or participant-facing changes in this round — it is
+admin builder UI plus one pure helper and its tests.

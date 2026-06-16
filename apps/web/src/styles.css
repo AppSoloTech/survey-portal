@@ -2097,6 +2097,13 @@ main {
   gap: 1rem;
 }
 
+/* Single-column grid: pin the column to minmax(0, 1fr) so a wide child (e.g. the
+   page-switcher pill bar) scrolls internally instead of expanding the track and
+   overflowing the page. */
+.builder-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .builder-form,
 .question-editor {
   background: var(--surface);
@@ -3572,10 +3579,234 @@ main {
 }
 
 /* ------------------------------------------------------------------ */
+/*  10b. Survey builder page switcher + organize board                  */
+/* ------------------------------------------------------------------ */
+
+.page-switcher {
+  align-items: center;
+  background: var(--header-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+}
+
+.page-switcher-label {
+  color: var(--text-label);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.page-switcher-select {
+  flex: 0 1 auto;
+  max-width: 460px;
+  min-width: 220px;
+}
+
+.page-switcher-step {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-label);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 1.15rem;
+  justify-content: center;
+  line-height: 1;
+  min-height: 2.6rem;
+  min-width: 2.6rem;
+  padding: 0;
+  transition:
+    border-color var(--speed-fast) var(--ease-out),
+    color var(--speed-fast) var(--ease-out);
+}
+
+.page-switcher-step:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.page-switcher-step:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.page-switcher-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.organize-board-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.organize-board {
+  display: grid;
+  gap: 1rem;
+}
+
+.organize-collapse-toggle {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.85rem;
+  justify-content: center;
+  line-height: 1;
+  min-height: 2rem;
+  min-width: 2rem;
+  padding: 0;
+}
+
+.organize-collapse-toggle:hover {
+  background: var(--surface-2);
+  color: var(--brand);
+}
+
+.organize-page-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-top: 4px solid var(--info);
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.1rem 1.25rem;
+}
+
+.organize-page-card.dragging {
+  box-shadow: 0 12px 30px var(--glow);
+  opacity: 0.85;
+}
+
+.organize-page-card-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.organize-page-card-heading {
+  flex: 1 1 240px;
+}
+
+.organize-page-card-heading h3 {
+  margin: 0;
+}
+
+.organize-page-card-questions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.compact-question-row {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.compact-question-row.dragging {
+  box-shadow: 0 10px 24px var(--glow);
+  opacity: 0.85;
+}
+
+.compact-question-row-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.compact-question-row-locator {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.compact-question-row-text {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-question-row-type {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.drag-handle {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: grab;
+  display: inline-flex;
+  font-size: 1rem;
+  justify-content: center;
+  line-height: 1;
+  min-height: 2rem;
+  min-width: 2rem;
+  padding: 0;
+  touch-action: none;
+}
+
+.drag-handle:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--brand);
+}
+
+.drag-handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.organize-drag-overlay {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 30px var(--glow);
+  color: var(--ink);
+  display: flex;
+  font-weight: 700;
+  max-width: 360px;
+  overflow: hidden;
+  padding: 0.55rem 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ */
 /*  11. Responsive                                                      */
 /* ------------------------------------------------------------------ */
 
 @media (max-width: 767.98px) {
+  .compact-question-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
   .flow-node {
     margin-left: 2.2rem;
     padding: 0.75rem;

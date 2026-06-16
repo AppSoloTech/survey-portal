@@ -1,0 +1,81 @@
+Planning Note — Survey Builder Questions Page Split + Organize Tab
+=================================================================
+
+Source: developer (Matt) UI/UX request, 2026-06-16, in working session.
+Owning phase: Phase 12.
+Roles for this phase: REVERSED — Claude Code implements, Codex reviews.
+
+Raw request (developer wording, lightly summarized)
+---------------------------------------------------
+"I would like to make some needed UI/UX changes by expanding out the questions
+section (reference route /admin/surveys/5/questions). This section is doing a lot
+of work. I think a smart bifurcation to extract into another section would be at
+the page level. Each page holds its own questions and the admin can move over to
+any page they need to do the work on it. I'm not sure how to add that — perhaps a
+tab somewhere for navigation, perhaps an added dropdown. I would also like to
+reduce the clunkiness of the current way a user orders the pages. Perhaps a new
+section that could handle the page ordering as well as question ordering without
+having to deal with all the clutter. I am open to your considerations."
+
+Problem
+-------
+The Questions tab (apps/web/src/pages/admin/SurveyQuestionsPage.tsx) renders, in
+one long scroll: an Add-page form, an Add-question form with a page picker, then
+EVERY page and EVERY question expanded at once (full option/tag editors), plus
+per-page Move up/down/Delete buttons and a per-question "Move to page" dropdown.
+It is hard to focus on a single page, and reordering pages/questions is clunky
+and lost among the editors.
+
+Confirmed design decisions (developer, this session)
+----------------------------------------------------
+1. Page navigation: a horizontal PILL RAIL of pages (reusing the existing
+   workspace-tab styling) PLUS a "jump to page" dropdown for many pages. The
+   Questions tab edits ONE active page at a time.
+2. The low-clutter reorder experience lives in a SEPARATE workspace tab named
+   "Organize" (alongside Setup / Questions / Logic / Preview / Results).
+3. Reordering uses DRAG-AND-DROP (new dependency: @dnd-kit), with a
+   keyboard-accessible fallback via @dnd-kit's KeyboardSensor.
+4. Phase identifier: Phase 12. Execute prompt + implementation this session on a
+   new branch (phase-12-survey-builder-page-split).
+
+Scope shape
+-----------
+- Frontend only. The backend already exposes everything needed:
+  reorderSurveyPages, reorderQuestions, moveQuestionToPage, createSurveyPage,
+  deleteSurveyPage, createQuestion (apps/web/src/api/surveys.ts → existing API
+  routes). No schema, API-contract, auth, or hidden-tag changes.
+- Questions tab: PageSwitcher (pill rail + jump dropdown) drives an activePageId;
+  only that page's QuestionEditor list renders; Add-question targets the active
+  page (page picker removed). Page reorder/delete and cross-page question moves
+  leave this tab.
+- Organize tab: new route + WorkspaceTab + SurveyOrganizePage. A @dnd-kit board:
+  sortable page cards (reorder pages), each holding compact sortable question
+  rows (reorder within a page, drag across pages → moveQuestionToPage). Includes
+  the Add-page form and empty-page delete. All drag/add/delete disabled when the
+  survey is not a draft.
+
+Non-goals
+---------
+- No database schema, migration, API contract, or auth changes.
+- No participant-facing survey behavior change.
+- No deep-linking of the active page via URL query params (deferred follow-up;
+  the app uses no query params today).
+- No removal of the existing within-page up/down move on the Questions tab.
+
+Edge cases to honor
+-------------------
+- Published/retired surveys: both tabs viewable, all structural controls disabled
+  (keep existing `survey.status !== "draft"` gating).
+- Zero pages, page with zero questions, active page deleted from Organize
+  (activePageId validity effect falls back to the first page).
+
+Validation gate
+---------------
+npm run typecheck / lint / build / test, git diff --check, plus a manual browser
+pass on /admin/surveys/5/questions and /admin/surveys/5/organize.
+
+Closeout artifacts (reversed roles)
+-----------------------------------
+- Implementation handoff for the reviewer: notes/codex_handoff_phase_12.txt
+- Codex review output: notes/codex_review_phase_12.txt
+- markdown/PHASE_LOG.md Phase 12 entry; markdown/FOLLOW_UPS.md deferrals.

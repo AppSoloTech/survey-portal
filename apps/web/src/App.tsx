@@ -19,6 +19,7 @@ import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
 import { AdminTagsPage } from "./pages/admin/AdminTagsPage.js";
 import { AdminUsersPage } from "./pages/admin/AdminUsersPage.js";
 import { SurveyLogicPage } from "./pages/admin/SurveyLogicPage.js";
+import { SurveyOrganizePage } from "./pages/admin/SurveyOrganizePage.js";
 import { SurveyPreviewPage } from "./pages/admin/SurveyPreviewPage.js";
 import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
 import { SurveyResultsPage } from "./pages/admin/SurveyResultsPage.js";
@@ -64,6 +65,7 @@ export function App() {
                       <Route element={<Navigate replace to="setup" />} index />
                       <Route element={<SurveySetupPage />} path="setup" />
                       <Route element={<SurveyQuestionsPage />} path="questions" />
+                      <Route element={<SurveyOrganizePage />} path="organize" />
                       <Route element={<SurveyLogicPage />} path="logic" />
                       <Route element={<SurveyPreviewPage />} path="preview" />
                       <Route element={<SurveyResultsPage />} path="results" />

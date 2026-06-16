@@ -21,6 +21,13 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Active Follow-Ups
 
+### Phase 12 Builder Page Split + Organize Tab
+
+- Run a manual browser + responsive pass (375/768/1280px) on the Questions and Organize tabs: page pill rail + jump dropdown, page-scoped add-question, within-page Up/Down; on Organize — drag-reorder pages, drag-reorder questions, drag a question across pages (lands at the drop position), add page, delete empty page, keyboard drag (Tab to handle, Space, arrows, Space), and read-only behavior on a published survey.
+- URL deep-link the active page: the Organize "Open in Questions" link now pre-selects the page via router navigation state, but that state is lost on a full reload and is not shareable. Consider reflecting the active page (and optionally a selected survey) in the URL (`?page=`) for a durable, shareable deep link.
+- Optional optimistic/local reorder on the Organize board for snappier drag persistence, plus a live cross-page drag preview (today a cross-page drag shows the DragOverlay and re-homes only on drop; within-page reordering already animates).
+- Re-check the @dnd-kit React 19 `JSX` global shim (`apps/web/src/jsx-global-shim.d.ts`) when upgrading @dnd-kit or @types/react; remove it if upstream type defs stop referencing the global `JSX` namespace.
+
 ### Phase 11 Page-Based Flow
 
 - Run the API test suite after explicit approval to reset the local PostgreSQL test schema; sandbox escalation was rejected because the harness drops/recreates `public`.
