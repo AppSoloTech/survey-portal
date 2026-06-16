@@ -2302,6 +2302,15 @@ main {
   gap: 1rem;
 }
 
+.page-builder-panel > form {
+  display: grid;
+  gap: 1rem;
+}
+
+.page-builder-panel > form > .button-link {
+  justify-self: start;
+}
+
 .question-editor > form {
   display: grid;
   gap: 0.75rem;

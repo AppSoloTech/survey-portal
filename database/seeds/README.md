@@ -39,3 +39,15 @@ published surveys with linear flows for dashboard and long-attempt testing:
 - one generated page per seeded question
 - mixed question types (single/multi select, scale, integer, text)
 - no conditional rules and no hidden tags
+
+## Workplace Role Based Survey Seed (0003)
+
+Applied automatically by the same `npm run db:reset` run. Creates the draft
+"Workplace Role Based Survey" exported from the local builder for page-based
+runner testing:
+
+- category: `New Tests`
+- seven pages, including Engineering, Sales, and Operations role pages
+- mixed question types with multi-question pages
+- answer option tags and value tags for role, quantity, quality, benefits, and completion rollups
+- no conditional rules

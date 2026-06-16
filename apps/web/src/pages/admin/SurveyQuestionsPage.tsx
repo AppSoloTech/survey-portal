@@ -706,6 +706,7 @@ export function SurveyQuestionsPage() {
                       defaultValue={page.description ?? ""}
                       disabled={survey.status !== "draft"}
                       name="description"
+                      placeholder="Optional text shown at the top of this page"
                     />
                   </label>
                 </div>
