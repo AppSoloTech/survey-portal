@@ -1,11 +1,13 @@
 import {
-  resolveAttemptPath,
+  getQuestionsForPage,
+  resolveProgressivePageState,
   type AnswerSurveyResponse,
   type MySurveyResponse,
   type MySurveysResponse,
   type StartSurveyResponse,
   type Survey,
   type SurveyAttempt,
+  type SurveyPage,
   type SurveyQuestion,
   type SurveyResponseAnswer
 } from "@survey-portal/shared";
@@ -26,6 +28,7 @@ import { fetchSurveyStructures } from "./surveyStructure.js";
 import type {
   AnswerRequestValue,
   NormalizedAnswerValue,
+  PageAnswerRequestValue,
   ValidationResult
 } from "./validation.js";
 
@@ -165,7 +168,9 @@ export async function buildStartSurveyResponse(
   return {
     attempt: detail.attempt,
     survey: detail.survey,
-    currentQuestion: detail.currentQuestion
+    currentQuestion: detail.currentQuestion,
+    currentPage: detail.currentPage,
+    currentPageQuestionIds: detail.currentPageQuestionIds
   };
 }
 
@@ -178,7 +183,9 @@ export async function buildAnswerSurveyResponse(
   return {
     attempt: detail.attempt,
     currentQuestion: detail.currentQuestion,
-    isCompleteReady: detail.currentQuestion === null
+    currentPage: detail.currentPage,
+    currentPageQuestionIds: detail.currentPageQuestionIds,
+    isCompleteReady: detail.currentPage === null
   };
 }
 
@@ -205,7 +212,7 @@ export async function buildMySurveyResponse(
   return {
     attempt,
     survey,
-    currentQuestion: determineCurrentQuestion(survey, attempt)
+    ...determineProgressiveAttemptState(survey, attempt)
   };
 }
 
@@ -216,6 +223,8 @@ export async function buildAttemptDetail(
   attempt: SurveyAttempt;
   survey: Survey;
   currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
 }> {
   const response = await buildMySurveyResponse(attemptId, userId);
 
@@ -494,6 +503,64 @@ export async function validateAnswerForQuestion(
   };
 }
 
+export async function savePageAnswers(
+  queryable: Queryable,
+  survey: Survey,
+  pageId: number,
+  attemptId: number,
+  value: PageAnswerRequestValue
+): Promise<ValidationResult<undefined>> {
+  const page = survey.pages.find((candidate) => candidate.id === pageId);
+
+  if (!page) {
+    return { ok: false, error: "Page does not belong to this survey" };
+  }
+
+  const questions = getQuestionsForPage(survey, pageId);
+  const questionIds = new Set(questions.map((question) => question.id));
+
+  for (const answer of value.answers) {
+    if (!questionIds.has(answer.questionId)) {
+      return { ok: false, error: "All answers must belong to the submitted page" };
+    }
+  }
+
+  const answersByQuestionId = new Map(value.answers.map((answer) => [answer.questionId, answer]));
+
+  for (const question of questions) {
+    const answer =
+      answersByQuestionId.get(question.id) ??
+      ({
+        attemptId: value.attemptId,
+        questionId: question.id,
+        answerText: null,
+        answerInteger: null,
+        selectedAnswerOptionIds: []
+      } satisfies AnswerRequestValue);
+    const questionRecord = {
+      id: question.id,
+      survey_id: question.surveyId,
+      page_id: question.pageId,
+      question_text: question.questionText,
+      question_type: question.questionType,
+      display_order: question.displayOrder,
+      is_required: question.isRequired,
+      help_text: question.helpText,
+      created_at: new Date(question.createdAt),
+      updated_at: new Date(question.updatedAt)
+    };
+    const validation = await validateAnswerForQuestion(queryable, questionRecord, answer);
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    await saveAnswer(queryable, attemptId, questionRecord, validation.value);
+  }
+
+  return { ok: true, value: undefined };
+}
+
 export async function saveAnswer(
   queryable: Queryable,
   attemptId: number,
@@ -541,21 +608,54 @@ export function validateReachedRequiredQuestions(
   attempt: SurveyAttempt
 ): ValidationResult<undefined> {
   const responsesByQuestionId = buildResponseMap(attempt);
-  const { path, hasLoop } = resolveAttemptPath(survey, attempt.responses);
+  const state = resolveProgressivePageState(survey, attempt.responses);
 
-  for (const question of path) {
-    const response = responsesByQuestionId.get(question.id);
-
-    if (question.isRequired && !hasMeaningfulResponse(question, response)) {
-      return { ok: false, error: `Required question ${question.displayOrder} is unanswered` };
-    }
-  }
-
-  if (hasLoop) {
+  if (state.hasLoop) {
     return { ok: false, error: "Survey navigation contains a loop" };
   }
 
+  // A non-null currentQuestion means the progressive walk has not yet revealed
+  // and resolved every question on the path. Optional questions also gate
+  // completion until they have been explicitly visited (a response row exists),
+  // so word the message by whether the blocking question is required.
+  // See FOLLOW_UPS "Optional-question completion gating" for the implications.
+  if (state.currentQuestion) {
+    return {
+      ok: false,
+      error: state.currentQuestion.isRequired
+        ? `Required question ${state.currentQuestion.displayOrder} is unanswered`
+        : `Question ${state.currentQuestion.displayOrder} must be visited before completing`
+    };
+  }
+
+  for (const page of state.path) {
+    for (const questionId of state.visibleQuestionIdsByPageId[page.id] ?? []) {
+      const question = survey.questions.find((candidate) => candidate.id === questionId);
+
+      if (!question) {
+        continue;
+      }
+
+      const response = responsesByQuestionId.get(question.id);
+
+      if (question.isRequired && !hasMeaningfulResponse(question, response)) {
+        return { ok: false, error: `Required question ${question.displayOrder} is unanswered` };
+      }
+    }
+  }
+
   return { ok: true, value: undefined };
+}
+
+export function determineCurrentPage(
+  survey: Survey,
+  attempt: SurveyAttempt
+): SurveyPage | null {
+  if (attempt.status === "completed") {
+    return null;
+  }
+
+  return resolveProgressivePageState(survey, attempt.responses).currentPage;
 }
 
 export function determineCurrentQuestion(
@@ -566,18 +666,32 @@ export function determineCurrentQuestion(
     return null;
   }
 
-  const responsesByQuestionId = buildResponseMap(attempt);
-  const { path } = resolveAttemptPath(survey, attempt.responses);
+  return resolveProgressivePageState(survey, attempt.responses).currentQuestion;
+}
 
-  for (const question of path) {
-    const response = responsesByQuestionId.get(question.id);
-
-    if (!response || (question.isRequired && !hasMeaningfulResponse(question, response))) {
-      return question;
-    }
+function determineProgressiveAttemptState(
+  survey: Survey,
+  attempt: SurveyAttempt
+): {
+  currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
+} {
+  if (attempt.status === "completed") {
+    return {
+      currentQuestion: null,
+      currentPage: null,
+      currentPageQuestionIds: []
+    };
   }
 
-  return null;
+  const state = resolveProgressivePageState(survey, attempt.responses);
+
+  return {
+    currentQuestion: state.currentQuestion,
+    currentPage: state.currentPage,
+    currentPageQuestionIds: state.currentPageQuestionIds
+  };
 }
 
 function buildResponseMap(attempt: SurveyAttempt): Map<number, SurveyResponseAnswer> {

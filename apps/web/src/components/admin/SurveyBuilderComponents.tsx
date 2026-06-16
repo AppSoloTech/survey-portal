@@ -1,11 +1,12 @@
-import type {
-  AnswerOption,
-  ConditionalLogicRule,
-  QuestionValueTag,
-  Survey,
-  SurveyQuestion,
-  SurveyQuestionType,
-  SurveyStatus
+import {
+  getOrderedQuestions,
+  type AnswerOption,
+  type ConditionalLogicRule,
+  type QuestionValueTag,
+  type Survey,
+  type SurveyQuestion,
+  type SurveyQuestionType,
+  type SurveyStatus
 } from "@survey-portal/shared";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -137,6 +138,7 @@ export function QuestionEditor({
   onSaveQuestion,
   onSaveTag,
   question,
+  questionLocator,
   tagPresets
 }: {
   isFirst: boolean;
@@ -180,6 +182,7 @@ export function QuestionEditor({
     tagId: number
   ) => Promise<void>;
   question: SurveyQuestion;
+  questionLocator: string;
   tagPresets: TagPreset[];
 }) {
   const [selectedQuestionType, setSelectedQuestionType] = useState(question.questionType);
@@ -195,9 +198,13 @@ export function QuestionEditor({
       <form onSubmit={(event) => void onSaveQuestion(event, question)}>
         <div className="builder-section-heading">
           <div>
-            <p className="eyebrow">Question {question.displayOrder}</p>
+            <p className="eyebrow">{questionLocator}</p>
             <h3>{question.questionText}</h3>
-            <QuestionMetaStrip isPublished={isPublished} question={question} />
+            <QuestionMetaStrip
+              isPublished={isPublished}
+              question={question}
+              questionLocator={questionLocator}
+            />
           </div>
           <div className="inline-actions">
             <button
@@ -522,13 +529,15 @@ export function QuestionEditor({
 
 function QuestionMetaStrip({
   isPublished,
-  question
+  question,
+  questionLocator
 }: {
   isPublished: boolean;
   question: SurveyQuestion;
+  questionLocator: string;
 }) {
   return (
-    <div className="question-meta-strip" aria-label={`Question ${question.displayOrder} details`}>
+    <div className="question-meta-strip" aria-label={`${questionLocator} details`}>
       <span>{formatQuestionType(question.questionType)}</span>
       <span>{question.isRequired ? "Required" : "Optional"}</span>
       {isSelectionQuestion(question) ? (
@@ -582,9 +591,7 @@ export function ScaleRangeFields({
 }
 
 export function SurveyPreviewPanel({ survey }: { survey: Survey }) {
-  const orderedQuestions = [...survey.questions].sort(
-    (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
-  );
+  const orderedQuestions = getOrderedQuestions(survey);
 
   return (
     <section className="builder-form preview-panel" id="survey-preview">
@@ -618,7 +625,7 @@ export function SurveyPreviewPanel({ survey }: { survey: Survey }) {
           {orderedQuestions.map((question) => (
             <article className="preview-question" key={question.id}>
               <div className="preview-question-heading">
-                <p className="option-subheading">Question {question.displayOrder}</p>
+                <p className="option-subheading">{formatQuestionLocator(survey, question)}</p>
                 <span>{question.isRequired ? "Required" : "Optional"}</span>
               </div>
               <h5>{question.questionText}</h5>
@@ -864,7 +871,8 @@ export function RuleEditor({
   survey: Survey;
 }) {
   const [actionType, setActionType] = useState(rule.actionType);
-  const sourceQuestions = survey.questions.filter(
+  const orderedQuestions = getOrderedQuestions(survey);
+  const sourceQuestions = orderedQuestions.filter(
     (question) => isSelectionQuestion(question) || question.questionType === "text"
   );
   const [sourceQuestionId, setSourceQuestionId] = useState(rule.sourceQuestionId);
@@ -878,6 +886,7 @@ export function RuleEditor({
   }, [rule.actionType]);
 
   const isSkipRule = actionType === "HIDE_QUESTION";
+  const isPageJumpRule = actionType === "JUMP_TO_PAGE";
 
   const sourceQuestion =
     sourceQuestions.find((question) => question.id === sourceQuestionId) ??
@@ -885,13 +894,22 @@ export function RuleEditor({
     null;
   const isBlankTextRule = sourceQuestion?.questionType === "text";
   const targetQuestions = sourceQuestion
-    ? survey.questions.filter(
-        (question) => question.displayOrder > sourceQuestion.displayOrder
+    ? orderedQuestions.filter(
+        (question) =>
+          orderedQuestions.findIndex((item) => item.id === question.id) >
+          orderedQuestions.findIndex((item) => item.id === sourceQuestion.id)
       )
+    : [];
+  const sourcePage = sourceQuestion
+    ? survey.pages.find((page) => page.id === sourceQuestion.pageId) ?? null
+    : null;
+  const targetPages = sourcePage
+    ? survey.pages.filter((page) => page.displayOrder > sourcePage.displayOrder)
     : [];
 
   return (
     <form className="rule-form rule-row" onSubmit={(event) => void onSaveRule(event, rule)}>
+      <input name="sourcePageId" type="hidden" value={sourceQuestion?.pageId ?? ""} />
       <label>
         Source question
         <select
@@ -910,7 +928,7 @@ export function RuleEditor({
         >
           {sourceQuestions.map((question) => (
             <option key={question.id} value={question.id}>
-              {question.displayOrder}. {question.questionText}
+              {formatQuestionOptionLabel(survey, question)}
             </option>
           ))}
         </select>
@@ -950,31 +968,53 @@ export function RuleEditor({
             name="actionType"
             onChange={(event) => {
               setActionType(
-                event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
+                event.target.value === "HIDE_QUESTION"
+                  ? "HIDE_QUESTION"
+                  : event.target.value === "JUMP_TO_PAGE"
+                    ? "JUMP_TO_PAGE"
+                    : "JUMP_TO_QUESTION"
               );
             }}
-            value={isSkipRule ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"}
+            value={isSkipRule ? "HIDE_QUESTION" : isPageJumpRule ? "JUMP_TO_PAGE" : "JUMP_TO_QUESTION"}
           >
-            <option value="JUMP_TO_QUESTION">Jump to question</option>
+            <option value="JUMP_TO_PAGE">Jump to page</option>
+            <option value="JUMP_TO_QUESTION">Jump to question (legacy)</option>
             <option value="HIDE_QUESTION">Skip question</option>
           </select>
         )}
       </label>
-      <label>
-        {isSkipRule ? "Question to skip" : "Target question"}
-        <select
-          defaultValue={rule.targetQuestionId ?? ""}
-          key={sourceQuestion?.id ?? "target-question"}
-          name="targetQuestionId"
-        >
-          {targetQuestions.map((question) => (
-            <option key={question.id} value={question.id}>
-              {question.displayOrder}. {question.questionText}
-            </option>
-          ))}
-        </select>
-      </label>
-      {isSkipRule ? (
+      {isPageJumpRule ? (
+        <label>
+          Target page
+          <select
+            defaultValue={rule.targetPageId ?? ""}
+            key={sourceQuestion?.id ?? "target-page"}
+            name="targetPageId"
+          >
+            {targetPages.map((page) => (
+              <option key={page.id} value={page.id}>
+                {page.displayOrder}. {page.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label>
+          {isSkipRule ? "Question to skip" : "Target question (lands on containing page)"}
+          <select
+            defaultValue={rule.targetQuestionId ?? ""}
+            key={sourceQuestion?.id ?? "target-question"}
+            name="targetQuestionId"
+          >
+            {targetQuestions.map((question) => (
+              <option key={question.id} value={question.id}>
+                {formatQuestionOptionLabel(survey, question)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {isSkipRule || isPageJumpRule ? (
         // Occupies the normal-flow checkbox cell so Save/Delete land in the
         // same grid column for both rule kinds.
         <span aria-hidden="true" className="rule-flow-spacer" />
@@ -1011,6 +1051,17 @@ export function RuleEditor({
 
 export function isSelectionQuestion(question: SurveyQuestion): boolean {
   return question.questionType === "single_select" || question.questionType === "multi_select";
+}
+
+export function formatQuestionLocator(survey: Survey, question: SurveyQuestion): string {
+  const page = survey.pages.find((candidate) => candidate.id === question.pageId);
+  const pageOrder = page?.displayOrder ?? question.pageId;
+
+  return `P${pageOrder}-Q${question.displayOrder}`;
+}
+
+export function formatQuestionOptionLabel(survey: Survey, question: SurveyQuestion): string {
+  return `${formatQuestionLocator(survey, question)} ${question.questionText}`;
 }
 
 export function formatQuestionType(type: SurveyQuestionType): string {

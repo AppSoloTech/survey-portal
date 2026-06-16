@@ -1,0 +1,101 @@
+Claude Review Handoff — Phase 11 Page-Based Survey Flow
+
+Claude Code instructions:
+- Read this handoff and the reference documents before reviewing.
+- Review the current diff only.
+- Write the full review to `notes/claude_review_phase_11A.txt`.
+- Then summarize the result in chat. Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Goal
+
+Please review this phase for:
+
+- page-based survey data-model correctness
+- compatibility with existing one-question-per-page surveys
+- admin builder UX and API contract safety
+- participant page runner correctness
+- conditional logic and page jump correctness
+- hidden-tag/data exposure boundaries
+- migration safety and publish-time validation
+- test gaps
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `notes/page_logic_addition.txt`
+- `prompts/prompt_11A.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+
+## Implemented Scope
+
+- Added `database/migrations/0013_survey_pages.sql`.
+- Added `SurveyPage`, `Survey.pages`, `SurveyQuestion.pageId`, and `currentPage` response fields.
+- Added page-aware shared helpers: `getOrderedPages`, `getOrderedQuestions`, `getQuestionsForPage`, `resolveNextPage`, and `resolveAttemptPagePath`.
+- Updated survey structure loading, record mapping, duplication, publish validation, rule validation, and attempt completion validation.
+- Added admin page CRUD/reorder, page-scoped question reorder, and question move endpoints.
+- Added participant page batch answer endpoint: `POST /api/surveys/:id/pages/:pageId/answer`.
+- Updated admin Questions UI to manage page panels.
+- Updated admin Logic UI and flow map for `JUMP_TO_PAGE`.
+- Updated participant runner to show and submit one page at a time.
+- Kept legacy `Survey.questions`, `currentQuestion`, and `/api/surveys/:id/answer` for compatibility.
+
+## Non-Goals
+
+- No sections separate from pages.
+- No backward or same-page page jumps.
+- No `SHOW_QUESTION`, `END_SURVEY`, or page-level hide actions.
+- No removal of the legacy single-question answer endpoint.
+- No public anonymous survey links.
+
+## Known Tradeoffs / Review Hot Spots
+
+- The flow map still visualizes question nodes; page jumps point to the first question on the target page.
+- `Survey.questions` remains flattened for compatibility, sorted by page order then question order.
+- Participant page batch submit saves blank rows for unanswered optional questions on the visible page, matching the existing optional-question flow.
+- API tests were not run because the harness drops/recreates the local PostgreSQL test schema and sandbox escalation was rejected pending explicit user approval.
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run build
+npm run lint
+npm run test -w packages/shared
+npm run test -w apps/web
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck
+- Passed: build
+- Passed: lint
+- Passed: shared tests, 29 tests
+- Passed: web tests, 32 tests
+- Passed: `git diff --check`
+- Blocked: `npm run test -w apps/api` could not run in sandbox (`EPERM 127.0.0.1:5432`); escalated rerun was rejected because the test harness performs a destructive schema reset.
+
+Manual testing:
+
+- Not run. `markdown/FOLLOW_UPS.md` tracks a manual browser pass for page CRUD/reorder, question moves, page runner navigation, and page-jump rules.
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_11A.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

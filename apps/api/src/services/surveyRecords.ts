@@ -7,6 +7,7 @@ import type {
   ConditionalLogicRule,
   QuestionValueTag,
   Survey,
+  SurveyPage,
   SurveyAttempt,
   SurveyAttemptStatus,
   SurveyQuestion,
@@ -33,6 +34,7 @@ export interface SurveyRecord {
 export interface SurveyQuestionRecord {
   id: number;
   survey_id: number;
+  page_id: number;
   question_text: string;
   question_type: SurveyQuestionType;
   display_order: number;
@@ -74,6 +76,7 @@ export interface QuestionValueTagRecord {
 export interface ConditionalLogicRuleRecord {
   id: number;
   survey_id: number;
+  source_page_id: number | null;
   source_question_id: number;
   source_answer_option_id: number | null;
   condition_operator: ConditionalLogicConditionOperator;
@@ -81,6 +84,16 @@ export interface ConditionalLogicRuleRecord {
   target_question_id: number | null;
   target_page_id: number | null;
   skip_target_in_normal_flow: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface SurveyPageRecord {
+  id: number;
+  survey_id: number;
+  title: string;
+  description: string | null;
+  display_order: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -118,6 +131,7 @@ export interface Queryable {
 
 export function mapSurveyRecord(
   record: SurveyRecord,
+  pages: SurveyPage[],
   questions: SurveyQuestion[],
   conditionalLogicRules: ConditionalLogicRule[]
 ): Survey {
@@ -134,6 +148,7 @@ export function mapSurveyRecord(
     publishedAt: record.published_at?.toISOString() ?? null,
     retiredAt: record.retired_at?.toISOString() ?? null,
     deletedAt: record.deleted_at?.toISOString() ?? null,
+    pages,
     questions,
     conditionalLogicRules
   };
@@ -148,6 +163,7 @@ export function mapSurveyQuestionRecord(
   return {
     id: record.id,
     surveyId: record.survey_id,
+    pageId: record.page_id,
     questionText: record.question_text,
     questionType: record.question_type,
     scaleMin: scaleRange?.min ?? null,
@@ -158,6 +174,18 @@ export function mapSurveyQuestionRecord(
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString(),
     answerOptions
+  };
+}
+
+export function mapSurveyPageRecord(record: SurveyPageRecord): SurveyPage {
+  return {
+    id: record.id,
+    surveyId: record.survey_id,
+    title: record.title,
+    description: record.description,
+    displayOrder: record.display_order,
+    createdAt: record.created_at.toISOString(),
+    updatedAt: record.updated_at.toISOString()
   };
 }
 
@@ -222,6 +250,7 @@ export function mapConditionalLogicRuleRecord(record: ConditionalLogicRuleRecord
   return {
     id: record.id,
     surveyId: record.survey_id,
+    sourcePageId: record.source_page_id,
     sourceQuestionId: record.source_question_id,
     sourceAnswerOptionId: record.source_answer_option_id,
     conditionOperator: record.condition_operator,
@@ -355,12 +384,14 @@ export async function fetchConditionalRuleForSurvey(
     `select
        id,
        survey_id,
+       source_page_id,
        source_question_id,
        source_answer_option_id,
        condition_operator,
        action_type,
        target_question_id,
        target_page_id,
+       skip_target_in_normal_flow,
        created_at,
        updated_at
      from conditional_logic_rules
@@ -378,9 +409,10 @@ export async function fetchQuestionForSurvey(
   surveyId: number
 ): Promise<SurveyQuestionRecord | null> {
   const result = await queryable.query<SurveyQuestionRecord>(
-    `select
+      `select
        id,
        survey_id,
+       page_id,
        question_text,
        question_type,
        display_order,

@@ -4,17 +4,26 @@ import { pool } from "../db.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import {
   categoryExists,
+  countPagesForSurvey,
   duplicateSurveyTree,
+  fetchFirstPageForSurvey,
   fetchNextOptionDisplayOrder,
+  fetchNextPageDisplayOrder,
   fetchNextQuestionDisplayOrder,
+  fetchPageForSurvey,
   isAnswerTagUniqueViolation,
+  moveQuestionToPage,
   optionHasSavedSelections,
+  pageHasQuestions,
   questionHasSavedResponses,
   registerTagDefinition,
   reorderOptions,
+  reorderPages,
   reorderQuestions,
+  shiftPageDisplayOrdersForInsert,
   shiftOptionDisplayOrdersForInsert,
   shiftQuestionDisplayOrdersForInsert,
+  validatePageReorderIds,
   syncScaleAnswerOptions,
   validateConditionalRuleReferences,
   validateOptionReorderIds,
@@ -40,6 +49,7 @@ import {
   validateQuestionValueTagBody,
   validateQuestionBody,
   validateReorderBody,
+  validateSurveyPageBody,
   validateSurveyBody,
   validateSurveyStatusBody
 } from "../services/validation.js";
@@ -176,6 +186,11 @@ surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res
         validation.value.categoryId,
         user.id
       ]
+    );
+    await pool.query(
+      `insert into survey_pages (survey_id, title, description, display_order)
+       values ($1, 'Page 1', null, 1)`,
+      [result.rows[0].id]
     );
 
     const [survey] = await fetchSurveyStructures({
@@ -455,6 +470,278 @@ surveyBuilderRouter.post("/:id/duplicate", requireAuth, requireRole("admin"), re
   }
 });
 
+surveyBuilderRouter.post(
+  "/:id/pages",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+
+    if (!surveyId) {
+      res.status(400).json({ error: "Survey id must be a positive integer" });
+      return;
+    }
+
+    const validation = validateSurveyPageBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const survey = await fetchSurveyRecord(client, surveyId);
+
+      if (!survey) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
+
+      const displayOrder =
+        validation.value.displayOrder ?? (await fetchNextPageDisplayOrder(client, surveyId));
+
+      await shiftPageDisplayOrdersForInsert(client, surveyId, displayOrder);
+      await client.query(
+        `insert into survey_pages (survey_id, title, description, display_order)
+         values ($1, $2, $3, $4)`,
+        [surveyId, validation.value.title, validation.value.description, displayOrder]
+      );
+      await client.query("commit");
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      await client.query("rollback");
+      next(error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+surveyBuilderRouter.patch(
+  "/:id/pages/reorder",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+
+    if (!surveyId) {
+      res.status(400).json({ error: "Survey id must be a positive integer" });
+      return;
+    }
+
+    const validation = validateReorderBody(req.body, "pageIds");
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const orderValidation = await validatePageReorderIds(pool, surveyId, validation.value.ids);
+
+      if (!orderValidation.ok) {
+        res.status(400).json({ error: orderValidation.error });
+        return;
+      }
+
+      await reorderPages(pool, surveyId, validation.value.ids);
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.put(
+  "/:id/pages/:pageId",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const pageId = readPositiveIntegerParam(req.params.pageId);
+
+    if (!surveyId || !pageId) {
+      res.status(400).json({ error: "Survey id and page id must be positive integers" });
+      return;
+    }
+
+    const validation = validateSurveyPageBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const page = await fetchPageForSurvey(pool, pageId, surveyId);
+
+      if (!page) {
+        res.status(404).json({ error: "Page not found" });
+        return;
+      }
+
+      await pool.query(
+        `update survey_pages
+         set title = $3,
+             description = $4,
+             updated_at = now()
+         where survey_id = $1
+           and id = $2`,
+        [surveyId, pageId, validation.value.title, validation.value.description]
+      );
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.delete(
+  "/:id/pages/:pageId",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const pageId = readPositiveIntegerParam(req.params.pageId);
+
+    if (!surveyId || !pageId) {
+      res.status(400).json({ error: "Survey id and page id must be positive integers" });
+      return;
+    }
+
+    try {
+      const page = await fetchPageForSurvey(pool, pageId, surveyId);
+
+      if (!page) {
+        res.status(404).json({ error: "Page not found" });
+        return;
+      }
+
+      if ((await countPagesForSurvey(pool, surveyId)) <= 1) {
+        res.status(409).json({ error: "A survey must keep at least one page" });
+        return;
+      }
+
+      if (await pageHasQuestions(pool, pageId)) {
+        res.status(409).json({ error: "Only empty pages can be deleted" });
+        return;
+      }
+
+      await pool.query(
+        `delete from survey_pages
+         where survey_id = $1
+           and id = $2`,
+        [surveyId, pageId]
+      );
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.patch(
+  "/:id/pages/:pageId/questions/reorder",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const pageId = readPositiveIntegerParam(req.params.pageId);
+
+    if (!surveyId || !pageId) {
+      res.status(400).json({ error: "Survey id and page id must be positive integers" });
+      return;
+    }
+
+    const validation = validateReorderBody(req.body, "questionIds");
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const page = await fetchPageForSurvey(client, pageId, surveyId);
+
+      if (!page) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Page not found" });
+        return;
+      }
+
+      const orderValidation = await validateQuestionReorderIds(
+        client,
+        pageId,
+        validation.value.ids
+      );
+
+      if (!orderValidation.ok) {
+        await client.query("rollback");
+        res.status(400).json({ error: orderValidation.error });
+        return;
+      }
+
+      await reorderQuestions(client, pageId, validation.value.ids);
+      await client.query("commit");
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      await client.query("rollback");
+      next(error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
 surveyBuilderRouter.post("/:id/questions", requireAuth, requireRole("admin"), rejectStructurallyLockedSurvey, async (req, res, next) => {
   const surveyId = readPositiveIntegerParam(req.params.id);
 
@@ -483,24 +770,37 @@ surveyBuilderRouter.post("/:id/questions", requireAuth, requireRole("admin"), re
       return;
     }
 
+    const page =
+      validation.value.pageId !== null
+        ? await fetchPageForSurvey(client, validation.value.pageId, surveyId)
+        : await fetchFirstPageForSurvey(client, surveyId);
+
+    if (!page) {
+      await client.query("rollback");
+      res.status(400).json({ error: "Page must belong to this survey" });
+      return;
+    }
+
     const displayOrder =
       validation.value.displayOrder ??
-      (await fetchNextQuestionDisplayOrder(client, surveyId));
+      (await fetchNextQuestionDisplayOrder(client, page.id));
 
-    await shiftQuestionDisplayOrdersForInsert(client, surveyId, displayOrder);
+    await shiftQuestionDisplayOrdersForInsert(client, page.id, displayOrder);
     const questionResult = await client.query<{ id: number }>(
       `insert into survey_questions (
          survey_id,
+         page_id,
          question_text,
          question_type,
          display_order,
          is_required,
          help_text
        )
-       values ($1, $2, $3, $4, $5, $6)
+       values ($1, $2, $3, $4, $5, $6, $7)
        returning id`,
       [
         surveyId,
+        page.id,
         validation.value.questionText,
         validation.value.questionType,
         displayOrder,
@@ -566,9 +866,20 @@ surveyBuilderRouter.patch(
         return;
       }
 
+      // Legacy compatibility route from the one-question-per-page builder.
+      // New callers should use /pages/:pageId/questions/reorder; this path
+      // only reorders questions on the first page.
+      const firstPage = await fetchFirstPageForSurvey(client, surveyId);
+
+      if (!firstPage) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Page not found" });
+        return;
+      }
+
       const orderValidation = await validateQuestionReorderIds(
         client,
-        surveyId,
+        firstPage.id,
         validation.value.ids
       );
 
@@ -578,7 +889,7 @@ surveyBuilderRouter.patch(
         return;
       }
 
-      await reorderQuestions(client, surveyId, validation.value.ids);
+      await reorderQuestions(client, firstPage.id, validation.value.ids);
       await client.query("commit");
 
       const [updatedSurvey] = await fetchSurveyStructures({
@@ -660,6 +971,84 @@ surveyBuilderRouter.put(
 
       if (question.question_type === "scale" && validation.value.questionType !== "scale") {
         await deleteAnswerOptionsForQuestion(client, questionId);
+      }
+
+      await client.query("commit");
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      await client.query("rollback");
+      next(error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+surveyBuilderRouter.patch(
+  "/:id/questions/:questionId/page",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey id and question id must be positive integers" });
+      return;
+    }
+
+    const pageId =
+      typeof req.body === "object" && req.body !== null
+        ? readPositiveIntegerParam(String((req.body as { pageId?: unknown }).pageId ?? ""))
+        : null;
+    const displayOrder =
+      typeof req.body === "object" && req.body !== null
+        ? readPositiveIntegerParam(String((req.body as { displayOrder?: unknown }).displayOrder ?? ""))
+        : null;
+
+    if (!pageId) {
+      res.status(400).json({ error: "pageId must be a positive integer" });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const question = await fetchQuestionForSurvey(client, questionId, surveyId);
+      const page = await fetchPageForSurvey(client, pageId, surveyId);
+
+      if (!question || !page) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Question or page not found" });
+        return;
+      }
+
+      const nextDisplayOrder =
+        displayOrder ?? (await fetchNextQuestionDisplayOrder(client, pageId));
+
+      if (question.page_id === pageId) {
+        const orderResult = await client.query<{ id: number }>(
+          `select id
+           from survey_questions
+           where page_id = $1
+           order by display_order, id`,
+          [pageId]
+        );
+        const ids = orderResult.rows.map((row) => row.id).filter((id) => id !== questionId);
+        ids.splice(Math.min(nextDisplayOrder - 1, ids.length), 0, questionId);
+        await reorderQuestions(client, pageId, ids);
+      } else {
+        await moveQuestionToPage(client, questionId, question.page_id, pageId, nextDisplayOrder);
       }
 
       await client.query("commit");
@@ -1332,21 +1721,25 @@ surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), reject
     await pool.query(
       `insert into conditional_logic_rules (
          survey_id,
+         source_page_id,
          source_question_id,
          source_answer_option_id,
          condition_operator,
          action_type,
          target_question_id,
+         target_page_id,
          skip_target_in_normal_flow
        )
-       values ($1, $2, $3, $4, $5, $6, $7)`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         surveyId,
+        validation.value.sourcePageId,
         validation.value.sourceQuestionId,
         validation.value.sourceAnswerOptionId,
         validation.value.conditionOperator,
         validation.value.actionType,
         validation.value.targetQuestionId,
+        validation.value.targetPageId,
         validation.value.skipTargetInNormalFlow
       ]
     );
@@ -1406,12 +1799,13 @@ surveyBuilderRouter.put(
       await pool.query(
         `update conditional_logic_rules
          set source_question_id = $3,
-             source_answer_option_id = $4,
-             condition_operator = $5,
-             action_type = $6,
-             target_question_id = $7,
-             skip_target_in_normal_flow = $8,
-             target_page_id = null,
+             source_page_id = $4,
+             source_answer_option_id = $5,
+             condition_operator = $6,
+             action_type = $7,
+             target_question_id = $8,
+             target_page_id = $9,
+             skip_target_in_normal_flow = $10,
              updated_at = now()
          where survey_id = $1
            and id = $2`,
@@ -1419,10 +1813,12 @@ surveyBuilderRouter.put(
           surveyId,
           ruleId,
           validation.value.sourceQuestionId,
+          validation.value.sourcePageId,
           validation.value.sourceAnswerOptionId,
           validation.value.conditionOperator,
           validation.value.actionType,
           validation.value.targetQuestionId,
+          validation.value.targetPageId,
           validation.value.skipTargetInNormalFlow
         ]
       );

@@ -14,6 +14,7 @@ const dataTables = [
   "question_value_tags",
   "answer_options",
   "survey_questions",
+  "survey_pages",
   "tag_definitions",
   "surveys",
   "survey_categories",

@@ -13,14 +13,17 @@ import {
   fetchAttemptWithResponses,
   insertSurveyAttemptOrFetchActive,
   saveAnswer,
+  savePageAnswers,
   validateAnswerForQuestion,
   validateReachedRequiredQuestions
 } from "../services/surveyAttempts.js";
 import { fetchQuestionForSurvey, type SurveyAttemptRecord } from "../services/surveyRecords.js";
+import { fetchSurveyStructures } from "../services/surveyStructure.js";
 import {
   readPositiveIntegerParam,
   validateAnswerBody,
-  validateCompleteBody
+  validateCompleteBody,
+  validatePageAnswerBody
 } from "../services/validation.js";
 
 export const surveyAttemptRouter = express.Router();
@@ -156,6 +159,106 @@ surveyAttemptRouter.post("/:id/answer", requireAuth, async (req, res, next) => {
     }
 
     await saveAnswer(client, attempt.id, question, answerValidation.value);
+    await client.query(
+      `update survey_attempts
+       set last_activity_at = now(),
+           updated_at = now()
+       where id = $1`,
+      [attempt.id]
+    );
+    await client.query("commit");
+
+    const response = await buildAnswerSurveyResponse(attempt.id, user.id);
+    res.json(response);
+  } catch (error) {
+    await client.query("rollback");
+    next(error);
+  } finally {
+    client.release();
+  }
+});
+
+surveyAttemptRouter.post("/:id/pages/:pageId/answer", requireAuth, async (req, res, next) => {
+  const surveyId = readPositiveIntegerParam(req.params.id);
+  const pageId = readPositiveIntegerParam(req.params.pageId);
+
+  if (!surveyId || !pageId) {
+    res.status(400).json({ error: "Survey id and page id must be positive integers" });
+    return;
+  }
+
+  const validation = validatePageAnswerBody(req.body);
+
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const user = (req as AuthenticatedRequest).user;
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const surveyRow = await client.query<{ deleted_at: Date | null }>(
+      `select deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+
+    if (surveyRow.rows[0]?.deleted_at) {
+      await client.query("rollback");
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
+
+    const attempt = await fetchAttemptForUser(client, validation.value.attemptId, user.id, surveyId);
+
+    if (!attempt) {
+      await client.query("rollback");
+      res.status(404).json({ error: "Survey attempt not found" });
+      return;
+    }
+
+    if (attempt.status === "completed") {
+      await client.query("rollback");
+      res.status(409).json({ error: "Completed attempts cannot accept new answers" });
+      return;
+    }
+
+    if (attempt.status === "abandoned") {
+      await client.query("rollback");
+      res.status(409).json({ error: "Abandoned attempts cannot accept new answers" });
+      return;
+    }
+
+    const [survey] = await fetchSurveyStructures({
+      surveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: false
+    });
+
+    if (!survey) {
+      await client.query("rollback");
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    const saveValidation = await savePageAnswers(
+      client,
+      survey,
+      pageId,
+      attempt.id,
+      validation.value
+    );
+
+    if (!saveValidation.ok) {
+      await client.query("rollback");
+      res.status(400).json({ error: saveValidation.error });
+      return;
+    }
+
     await client.query(
       `update survey_attempts
        set last_activity_at = now(),

@@ -1,4 +1,5 @@
 import {
+  getOrderedQuestions,
   resolveNextQuestion,
   type ConditionalLogicRule,
   type Survey,
@@ -28,7 +29,11 @@ export interface SurveyFlowIssue {
 
 export interface SurveyFlowNode {
   questionId: number;
-  displayOrder: number;
+  flowOrder: number;
+  pageId: number;
+  pageDisplayOrder: number;
+  pageTitle: string;
+  questionDisplayOrder: number;
   questionText: string;
   questionType: SurveyQuestionType;
   isRequired: boolean;
@@ -55,11 +60,13 @@ export interface SurveyFlowGraph {
   nodes: SurveyFlowNode[];
   conditionalEdges: SurveyFlowConditionalEdge[];
   issues: SurveyFlowIssue[];
+  pageNavigationNotes: string[];
 }
 
 export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
-  const orderedQuestions = sortQuestions(survey.questions);
+  const orderedQuestions = getOrderedQuestions(survey);
   const questionsById = new Map(orderedQuestions.map((question) => [question.id, question]));
+  const pagesById = new Map(survey.pages.map((page) => [page.id, page]));
   const startQuestion = orderedQuestions[0] ?? null;
 
   // Mirrors the static skip set in resolveNextQuestion: only JUMP rules with
@@ -74,6 +81,7 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
 
   const conditionalEdges = buildConditionalEdges(survey, questionsById);
   const issues: SurveyFlowIssue[] = conditionalEdges.flatMap((edge) => edge.issues);
+  const pageNavigationNotes = buildPageNavigationNotes(survey, questionsById, conditionalEdges);
 
   const adjacency = buildAdjacency(survey, orderedQuestions, questionsById, conditionalEdges);
   const reachableQuestionIds = collectReachableQuestionIds(startQuestion, adjacency);
@@ -83,7 +91,7 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
       issues.push({
         code: "unreachable_question",
         questionId: question.id,
-        message: `Question ${question.displayOrder} ("${truncateText(question.questionText)}") cannot be reached from the first question by normal or conditional flow.`
+        message: `${formatQuestionLabel(survey, question)} ("${truncateText(question.questionText)}") cannot be reached from the first question by normal or conditional flow.`
       });
     }
   }
@@ -92,7 +100,7 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
 
   if (cyclePath) {
     const cycleLabel = cyclePath
-      .map((questionId) => formatQuestionLabel(questionsById.get(questionId)))
+      .map((questionId) => formatQuestionLabel(survey, questionsById.get(questionId)))
       .join(" -> ");
 
     issues.push({
@@ -102,19 +110,27 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
     });
   }
 
-  const nodes: SurveyFlowNode[] = orderedQuestions.map((question) => ({
-    questionId: question.id,
-    displayOrder: question.displayOrder,
-    questionText: question.questionText,
-    questionType: question.questionType,
-    isRequired: question.isRequired,
-    isStart: question.id === startQuestion?.id,
-    isConditionalOnly: skipTargetQuestionIds.has(question.id),
-    isReachable: reachableQuestionIds.has(question.id),
-    normalNextQuestionId: resolveNextQuestion(survey, question, undefined)?.id ?? null
-  }));
+  const nodes: SurveyFlowNode[] = orderedQuestions.map((question, index) => {
+    const page = pagesById.get(question.pageId);
 
-  return { nodes, conditionalEdges, issues };
+    return {
+      questionId: question.id,
+      flowOrder: index + 1,
+      pageId: question.pageId,
+      pageDisplayOrder: page?.displayOrder ?? question.pageId,
+      pageTitle: page?.title ?? `Page ${question.pageId}`,
+      questionDisplayOrder: question.displayOrder,
+      questionText: question.questionText,
+      questionType: question.questionType,
+      isRequired: question.isRequired,
+      isStart: question.id === startQuestion?.id,
+      isConditionalOnly: skipTargetQuestionIds.has(question.id),
+      isReachable: reachableQuestionIds.has(question.id),
+      normalNextQuestionId: resolveNextQuestion(survey, question, undefined)?.id ?? null
+    };
+  });
+
+  return { nodes, conditionalEdges, issues, pageNavigationNotes };
 }
 
 function buildConditionalEdges(
@@ -122,7 +138,6 @@ function buildConditionalEdges(
   questionsById: Map<number, SurveyQuestion>
 ): SurveyFlowConditionalEdge[] {
   const orderedRules = [...survey.conditionalLogicRules].sort((left, right) => left.id - right.id);
-  const firstRuleIdBySourceOption = new Map<string, number>();
   const firstSkipRuleIdByKey = new Map<string, number>();
   const edges: SurveyFlowConditionalEdge[] = [];
 
@@ -135,7 +150,11 @@ function buildConditionalEdges(
         : sourceQuestion?.answerOptions.find((option) => option.id === rule.sourceAnswerOptionId) ??
           null;
     const targetQuestion =
-      rule.targetQuestionId !== null ? questionsById.get(rule.targetQuestionId) ?? null : null;
+      rule.actionType === "JUMP_TO_PAGE" && rule.targetPageId !== null
+        ? firstQuestionOnPage(survey, rule.targetPageId)
+        : rule.targetQuestionId !== null
+          ? questionsById.get(rule.targetQuestionId) ?? null
+          : null;
 
     if (!sourceQuestion) {
       edgeIssues.push({
@@ -148,7 +167,7 @@ function buildConditionalEdges(
         code: "invalid_source_question_type",
         ruleId: rule.id,
         questionId: sourceQuestion.id,
-        message: `Rule ${rule.id}: source ${formatQuestionLabel(sourceQuestion)} is a ${sourceQuestion.questionType} question; equals rules require single_select or multi_select sources, and blank rules require text sources.`
+        message: `Rule ${rule.id}: source ${formatQuestionLabel(survey, sourceQuestion)} is a ${sourceQuestion.questionType} question; equals rules require single_select or multi_select sources, and blank rules require text sources.`
       });
     }
 
@@ -157,7 +176,7 @@ function buildConditionalEdges(
         code: "missing_source_option",
         ruleId: rule.id,
         questionId: sourceQuestion.id,
-        message: `Rule ${rule.id}: source answer option (id ${rule.sourceAnswerOptionId}) does not belong to ${formatQuestionLabel(sourceQuestion)}, so the rule can never trigger.`
+        message: `Rule ${rule.id}: source answer option (id ${rule.sourceAnswerOptionId}) does not belong to ${formatQuestionLabel(survey, sourceQuestion)}, so the rule can never trigger.`
       });
     }
 
@@ -181,7 +200,11 @@ function buildConditionalEdges(
       });
     }
 
-    if (rule.actionType !== "JUMP_TO_QUESTION" && rule.actionType !== "HIDE_QUESTION") {
+    if (
+      rule.actionType !== "JUMP_TO_QUESTION" &&
+      rule.actionType !== "HIDE_QUESTION" &&
+      rule.actionType !== "JUMP_TO_PAGE"
+    ) {
       edgeIssues.push({
         code: "unsupported_action_type",
         ruleId: rule.id,
@@ -189,7 +212,10 @@ function buildConditionalEdges(
       });
     }
 
-    if (rule.targetQuestionId === null || !targetQuestion) {
+    if (
+      (rule.actionType === "JUMP_TO_PAGE" ? rule.targetPageId === null : rule.targetQuestionId === null) ||
+      !targetQuestion
+    ) {
       edgeIssues.push({
         code: "missing_target_question",
         ruleId: rule.id,
@@ -203,39 +229,17 @@ function buildConditionalEdges(
           code: "backward_or_self_target",
           ruleId: rule.id,
           questionId: sourceQuestion.id,
-          message: `Rule ${rule.id}: ${formatQuestionLabel(sourceQuestion)} targets itself, which can trap participants. Valid admin-created jump and skip rules are forward-only.`
+          message: `Rule ${rule.id}: ${formatQuestionLabel(survey, sourceQuestion)} targets itself, which can trap participants. Valid admin-created jump and skip rules are forward-only.`
         });
-      } else if (targetQuestion.displayOrder <= sourceQuestion.displayOrder) {
+      } else if (
+        getOrderedQuestions(survey).findIndex((question) => question.id === targetQuestion.id) <=
+        getOrderedQuestions(survey).findIndex((question) => question.id === sourceQuestion.id)
+      ) {
         edgeIssues.push({
           code: "backward_or_self_target",
           ruleId: rule.id,
           questionId: sourceQuestion.id,
-          message: `Rule ${rule.id}: target ${formatQuestionLabel(targetQuestion)} comes before source ${formatQuestionLabel(sourceQuestion)}. Valid admin-created jump and skip rules are forward-only.`
-        });
-      }
-    }
-
-    // The runtime matches jump rules with Array.find over the id-ordered rule
-    // list, so a later jump rule for the same source question and answer
-    // option is shadowed by the first one and can never execute.
-    let isShadowedDuplicate = false;
-
-    if (
-      rule.conditionOperator === "equals" &&
-      rule.actionType === "JUMP_TO_QUESTION" &&
-      rule.targetQuestionId !== null
-    ) {
-      const sourceOptionKey = `${rule.sourceQuestionId}:${rule.conditionOperator}:${rule.sourceAnswerOptionId}`;
-      const firstRuleId = firstRuleIdBySourceOption.get(sourceOptionKey);
-
-      if (firstRuleId === undefined) {
-        firstRuleIdBySourceOption.set(sourceOptionKey, rule.id);
-      } else {
-        isShadowedDuplicate = true;
-        edgeIssues.push({
-          code: "duplicate_rule_for_option",
-          ruleId: rule.id,
-          message: `Rule ${rule.id}: duplicates rule ${firstRuleId} for the same source answer option. The runtime evaluates rule ${firstRuleId} first, so rule ${rule.id} never triggers.`
+          message: `Rule ${rule.id}: target ${formatQuestionLabel(survey, targetQuestion)} comes before source ${formatQuestionLabel(survey, sourceQuestion)}. Valid admin-created jump and skip rules are forward-only.`
         });
       }
     }
@@ -267,17 +271,60 @@ function buildConditionalEdges(
       sourceAnswerOptionId: rule.sourceAnswerOptionId,
       sourceOptionText: sourceOption?.optionText ?? null,
       conditionOperator: rule.conditionOperator,
-      targetQuestionId: rule.targetQuestionId,
+      targetQuestionId: targetQuestion?.id ?? rule.targetQuestionId,
       actionType: rule.actionType,
       skipTargetInNormalFlow: rule.skipTargetInNormalFlow,
-      canFireAtRuntime:
-        !isShadowedDuplicate &&
-        canRuleFireAtRuntime(rule, sourceQuestion, sourceOption !== null),
+      canFireAtRuntime: canRuleFireAtRuntime(rule, sourceQuestion, sourceOption !== null),
       issues: edgeIssues
     });
   }
 
   return edges;
+}
+
+function buildPageNavigationNotes(
+  survey: Survey,
+  questionsById: Map<number, SurveyQuestion>,
+  conditionalEdges: SurveyFlowConditionalEdge[]
+): string[] {
+  const navigationEdgesByPageId = new Map<number, SurveyFlowConditionalEdge[]>();
+
+  for (const edge of conditionalEdges) {
+    if (
+      !edge.canFireAtRuntime ||
+      (edge.actionType !== "JUMP_TO_PAGE" && edge.actionType !== "JUMP_TO_QUESTION")
+    ) {
+      continue;
+    }
+
+    const sourceQuestion = questionsById.get(edge.sourceQuestionId);
+
+    if (!sourceQuestion) {
+      continue;
+    }
+
+    const edges = navigationEdgesByPageId.get(sourceQuestion.pageId) ?? [];
+    edges.push(edge);
+    navigationEdgesByPageId.set(sourceQuestion.pageId, edges);
+  }
+
+  return [...navigationEdgesByPageId.entries()]
+    .filter(([, edges]) => edges.length > 1)
+    .sort(([leftPageId], [rightPageId]) => {
+      const leftPage = survey.pages.find((page) => page.id === leftPageId);
+      const rightPage = survey.pages.find((page) => page.id === rightPageId);
+
+      return (
+        (leftPage?.displayOrder ?? Number.MAX_SAFE_INTEGER) -
+        (rightPage?.displayOrder ?? Number.MAX_SAFE_INTEGER)
+      );
+    })
+    .map(([pageId]) => {
+      const page = survey.pages.find((candidate) => candidate.id === pageId);
+      const pageLabel = page ? `Page ${page.displayOrder}` : `page id ${pageId}`;
+
+      return `${pageLabel} has multiple navigation rules. If more than one triggers on this page, the farthest target page wins.`;
+    });
 }
 
 // A rule can trigger at runtime when the attempt engine can match it. Option
@@ -295,8 +342,11 @@ function canRuleFireAtRuntime(
     (rule.conditionOperator === "equals"
       ? sourceOptionBelongsToSource
       : rule.sourceAnswerOptionId === null) &&
-    (rule.actionType === "JUMP_TO_QUESTION" || rule.actionType === "HIDE_QUESTION") &&
-    rule.targetQuestionId !== null
+    (
+      (rule.actionType === "JUMP_TO_QUESTION" && rule.targetQuestionId !== null) ||
+      (rule.actionType === "HIDE_QUESTION" && rule.targetQuestionId !== null) ||
+      (rule.actionType === "JUMP_TO_PAGE" && rule.targetPageId !== null)
+    )
   );
 }
 
@@ -320,7 +370,7 @@ function buildAdjacency(
       // Skip edges remove a question from a path; they never navigate to
       // their target, so only jump edges contribute reachability.
       if (
-        edge.actionType === "JUMP_TO_QUESTION" &&
+        (edge.actionType === "JUMP_TO_QUESTION" || edge.actionType === "JUMP_TO_PAGE") &&
         edge.sourceQuestionId === question.id &&
         edge.canFireAtRuntime &&
         edge.targetQuestionId !== null &&
@@ -335,6 +385,10 @@ function buildAdjacency(
   }
 
   return adjacency;
+}
+
+function firstQuestionOnPage(survey: Survey, pageId: number): SurveyQuestion | null {
+  return getOrderedQuestions(survey).find((question) => question.pageId === pageId) ?? null;
 }
 
 function collectReachableQuestionIds(
@@ -414,12 +468,6 @@ function findNavigationCycle(
   return null;
 }
 
-function sortQuestions(questions: SurveyQuestion[]): SurveyQuestion[] {
-  return [...questions].sort(
-    (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
-  );
-}
-
 function isAllowedRuleSource(
   rule: ConditionalLogicRule,
   sourceQuestion: SurveyQuestion
@@ -435,8 +483,15 @@ function isAllowedRuleSource(
   );
 }
 
-function formatQuestionLabel(question: SurveyQuestion | undefined): string {
-  return question ? `question ${question.displayOrder}` : "an unknown question";
+function formatQuestionLabel(survey: Survey, question: SurveyQuestion | undefined): string {
+  if (!question) {
+    return "an unknown question";
+  }
+
+  const page = survey.pages.find((candidate) => candidate.id === question.pageId);
+  const pageLabel = page ? `page ${page.displayOrder}` : `page ${question.pageId}`;
+
+  return `${pageLabel} question ${question.displayOrder}`;
 }
 
 export function truncateText(text: string, maxLength = 60): string {

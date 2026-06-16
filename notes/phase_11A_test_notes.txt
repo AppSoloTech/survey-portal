@@ -1,0 +1,125 @@
+Survey flow map
+1) Does not seem to account for page number in the current flow. There are two "Question 1" that belong to page 1 and page 2 respectivly. However, the current flow treats them as sequential questions and procudes this warning that seems to short circuit Page 1's questions 2 and 3 screenshot/flow_1.png
+2) The implimented page skip rules appear to work from the user end. Ex: Page 1 Question one answer "No" skips to Page 3 Question 1.
+Phase 11A Manual Test Notes
+
+Date:
+2026-06-16
+
+Survey Flow Map
+
+Finding:
+- The flow map did not account for page-scoped question numbers. A survey with
+  Page 1 Question 1, Page 1 Question 2, Page 1 Question 3, and Page 2 Question 1
+  was displayed as if the two "Question 1" items were globally sequential.
+- This produced false "unreachable question" warnings for Page 1 Questions 2
+  and 3.
+- Screenshot reference: `screenshot/flow_1.png`
+
+Resolution:
+- Fixed shared `resolveNextQuestion` so normal advancement preserves the
+  page-aware order from `getOrderedQuestions` instead of re-sorting candidates
+  by page-scoped question display order.
+- Updated the admin flow graph to use `getOrderedQuestions` and page-aware
+  labels.
+- Flow map nodes now show a global flow sequence marker plus `Page N` and
+  `Question N` badges.
+- Added shared and web regression tests for the duplicate page-scoped
+  question-number case.
+
+Validation:
+- `npm run build -w packages/shared`
+- `npm run test -w packages/shared`
+- `npm run test -w apps/web`
+- `npm run typecheck`
+
+Participant Page Skip Rules
+
+Finding:
+- Implemented page skip rules appear to work from the user end.
+- Example: Page 1 Question 1 answer "No" skips to Page 3 Question 1.
+
+Status:
+- Accepted in this pass.
+
+Round 2
+Workplace Satisfaction Survey (copy)
+1) Q1: Answer Sales = skip rest of page 1, all of page 2 and land on last Q of page 3.
+2) Q1: Answer Engineering = skip to page 3
+3) Q2: Answer Less than 1 year = Jump to question P2-Q2
+
+Logic rules
+1) Source questions dropdown orders (Target question dropdown and others as well) questions by question number. To have clear and meaningful distinctions between question numbers the belong to a page, normalization format such as P1-Q1 to represent page 1 question 1.
+2) Right now, if there are more than 1 skip rules on a page, the rule with the lowest question number (or it could be the first rule triggered) gets applied and the remaining become non-funtional.
+3) Brainstorm and consider a reconsiliation of current skip tooling to reduce redundency and improve user usability. Right now, certain paradigms don't work due to now rendering multiple questions per page so a triggered skip logic on question 1 to jump to page 3 question 2 does not quite work as intended because the user will still see question 1.
+
+Resolution for item 1:
+- Added a shared admin label format for question references: `P{page}-Q{question}`.
+- Updated logic rule source question dropdowns, target question dropdowns, skip target checkboxes, existing rule editors, and grouped rule headings to use `P1-Q1 Question text` style labels.
+- Updated the Questions page editor/preview labels and related question toasts/confirmations to use the same locator format where page context matters.
+- Kept page dropdowns as page labels, since those are already page-scoped.
+
+Resolution for items 2 and 3:
+- Page navigation rules now reconcile at page-submit time instead of stopping at
+  the first triggered source question.
+- All matching `JUMP_TO_PAGE` and `JUMP_TO_QUESTION` rules from visible
+  questions on the submitted page are evaluated together.
+- `JUMP_TO_QUESTION` remains supported, but it behaves as a jump to the page
+  containing that question; same-page question jumps remain no-ops.
+- When multiple navigation rules trigger on one page, the farthest valid later
+  visible page wins.
+- `HIDE_QUESTION` rules continue to union together, so multiple matching hide
+  rules from one page can all hide their targets.
+- The add-rule UI now defaults to `Jump to page`, keeps `Jump to question
+  (legacy)` editable, and explains the farthest-page-wins behavior in the flow
+  map notes.
+
+Round 3
+1) P1-Q2 -- Less than 1 year -- Jump Page to P2 (Question should be: P2-Q1 Which benefits do you use regularly?)
+2) P2-Q1 -- Health insurance -- Skip question -- P2-Q2 & P2-Q3 (Question should be: P3-Q1 What one change would most improve your day-to-day work?)
+## Above audit/test passes
+
+1) Non-jump path continues within the same page
+P1-Q2 = “1+ years”
+Expected: stay on Page 1 and reveal the next Page 1 question, instead of jumping to P2.
+
+2) Jump skips unrevealed same-page questions
+Put P1-Q3 after P1-Q2.
+P1-Q2 = “Less than 1 year” → Jump to P2.
+Expected: P1-Q3 never appears.
+
+3) Edit earlier answer changes path
+First answer P1-Q2 = “Less than 1 year” and confirm jump to P2.
+Go back/edit P1-Q2 = “1+ years”.
+Expected: runner recalculates and shows the normal Page 1 follow-up path.
+
+4) Multiple hide rules on one revealed page
+P2-Q1 = “Health insurance” hides P2-Q2 and P2-Q3.
+Another option on P2-Q1 hides P2-Q4.
+Select both if multi-select.
+Expected: all matching hide targets are skipped, not just the first.
+
+5) Hide rule does not affect unselected path
+P2-Q1 = “Retirement plan” instead of “Health insurance”.
+Expected: P2-Q2 and P2-Q3 still appear.
+
+6) Legacy jump-to-question lands on page, not specific question
+P1-Q2 → Jump to Question P3-Q2.
+Expected: runner lands on Page 3 and starts with P3-Q1 if visible.
+
+7) Optional trailing question must be visited
+Last question on a page is optional.
+Answer prior required questions.
+Expected: optional question still appears; saving it blank allows completion.
+
+8) Page batch compatibility sanity check
+Submit a whole page via API or old path if available.
+Expected: required blanks reject; valid page answers advance to the next page.
+
+9) Target page with hidden first question
+Jump to P3, but P3-Q1 is hidden by an earlier rule.
+Expected: runner lands on the first visible question on P3, or skips P3 if none visible.
+
+1) Back/Previous behavior
+Complete P1, go to P2, press Previous.
+Expected: prior page shows answered questions; updating one recalculates the path cleanly.

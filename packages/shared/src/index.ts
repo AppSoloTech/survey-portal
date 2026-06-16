@@ -103,6 +103,7 @@ export interface AnswerOption {
 export interface SurveyQuestion {
   id: number;
   surveyId: number;
+  pageId: number;
   questionText: string;
   questionType: SurveyQuestionType;
   scaleMin: number | null;
@@ -120,6 +121,7 @@ export interface SurveyQuestion {
 export interface ConditionalLogicRule {
   id: number;
   surveyId: number;
+  sourcePageId: number | null;
   sourceQuestionId: number;
   sourceAnswerOptionId: number | null;
   conditionOperator: ConditionalLogicConditionOperator;
@@ -127,6 +129,16 @@ export interface ConditionalLogicRule {
   targetQuestionId: number | null;
   targetPageId: number | null;
   skipTargetInNormalFlow: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SurveyPage {
+  id: number;
+  surveyId: number;
+  title: string;
+  description: string | null;
+  displayOrder: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -144,6 +156,8 @@ export interface Survey {
   publishedAt: string | null;
   retiredAt: string | null;
   deletedAt: string | null;
+  pages: SurveyPage[];
+  // Flattened compatibility list sorted by page order, then question order.
   questions: SurveyQuestion[];
   conditionalLogicRules: ConditionalLogicRule[];
 }
@@ -240,6 +254,8 @@ export interface SurveyAttemptDetail {
   attempt: SurveyAttempt;
   survey: Survey;
   currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
 }
 
 export interface MySurveysResponse {
@@ -250,17 +266,23 @@ export interface MySurveyResponse {
   attempt: SurveyAttempt;
   survey: Survey;
   currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
 }
 
 export interface StartSurveyResponse {
   attempt: SurveyAttempt;
   survey: Survey;
   currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
 }
 
 export interface AnswerSurveyResponse {
   attempt: SurveyAttempt;
   currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
   isCompleteReady: boolean;
 }
 
@@ -396,6 +418,7 @@ export function resolveNextQuestion(
   // Only jump targets are statically excluded from the normal flow.
   // HIDE_QUESTION targets stay in the normal flow and are excluded per
   // attempt via hiddenQuestionIds once their trigger answer is given.
+  const orderedQuestions = getOrderedQuestions(survey);
   const conditionalTargetQuestionIds = new Set(
     survey.conditionalLogicRules
       .filter((rule) => rule.actionType === "JUMP_TO_QUESTION" && rule.skipTargetInNormalFlow)
@@ -411,15 +434,13 @@ export function resolveNextQuestion(
   );
 
   const advanceFrom = (fromQuestion: SurveyQuestion): SurveyQuestion | null =>
-    survey.questions
+    orderedQuestions
       .filter(
         (candidate) =>
-          candidate.displayOrder > fromQuestion.displayOrder &&
+          compareQuestionOrder(survey, candidate, fromQuestion) > 0 &&
           !conditionalTargetQuestionIds.has(candidate.id) &&
           !hiddenQuestionIds.has(candidate.id)
-      )
-      .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)[0] ??
-    null;
+      )[0] ?? null;
 
   if (matchingRule?.targetQuestionId) {
     const target =
@@ -504,10 +525,7 @@ export function resolveAttemptPath(
   // questions the walk never visits (stale off-path data) hide nothing, and
   // a hide can only ever affect questions after its source.
   const activeHiddenQuestionIds = new Set<number>();
-  let question: SurveyQuestion | null =
-    [...survey.questions].sort(
-      (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
-    )[0] ?? null;
+  let question: SurveyQuestion | null = getOrderedQuestions(survey)[0] ?? null;
 
   while (question) {
     if (visitedQuestionIds.has(question.id)) {
@@ -527,4 +545,383 @@ export function resolveAttemptPath(
   }
 
   return { path, hasLoop: false };
+}
+
+export interface AttemptPagePathResult {
+  path: SurveyPage[];
+  visibleQuestionIdsByPageId: Record<number, number[]>;
+  hasLoop: boolean;
+}
+
+export interface ProgressivePageState extends AttemptPagePathResult {
+  currentPage: SurveyPage | null;
+  currentQuestion: SurveyQuestion | null;
+  currentPageQuestionIds: number[];
+}
+
+export function resolveAttemptPagePath(
+  survey: Survey,
+  responses: SurveyResponseAnswer[]
+): AttemptPagePathResult {
+  const state = resolveProgressivePageState(survey, responses);
+
+  return {
+    path: state.path,
+    visibleQuestionIdsByPageId: state.visibleQuestionIdsByPageId,
+    hasLoop: state.hasLoop
+  };
+}
+
+export function resolveProgressivePageState(
+  survey: Survey,
+  responses: SurveyResponseAnswer[]
+): ProgressivePageState {
+  const responsesByQuestionId = new Map(
+    responses.map((response) => [response.questionId, response])
+  );
+  const path: SurveyPage[] = [];
+  const visibleQuestionIdsByPageId: Record<number, number[]> = {};
+  const visitedPageIds = new Set<number>();
+  const activeHiddenQuestionIds = new Set<number>();
+  const normalFlowExcludedQuestionIds = getNormalFlowExcludedQuestionIds(survey);
+  const jumpedToPageIds = new Set<number>();
+  let page: SurveyPage | null = getOrderedPages(survey)[0] ?? null;
+
+  pageLoop:
+  while (page) {
+    if (visitedPageIds.has(page.id)) {
+      return {
+        path,
+        visibleQuestionIdsByPageId,
+        currentPage: null,
+        currentQuestion: null,
+        currentPageQuestionIds: [],
+        hasLoop: true
+      };
+    }
+
+    visitedPageIds.add(page.id);
+    path.push(page);
+
+    const revealedQuestionIds: number[] = [];
+    const wasReachedByJump = jumpedToPageIds.has(page.id);
+
+    for (const question of getQuestionsForPage(survey, page.id)) {
+      if (
+        activeHiddenQuestionIds.has(question.id) ||
+        (!wasReachedByJump && normalFlowExcludedQuestionIds.has(question.id))
+      ) {
+        continue;
+      }
+
+      revealedQuestionIds.push(question.id);
+      const response = responsesByQuestionId.get(question.id);
+
+      if (!hasProgressiveResponseForQuestion(question, response)) {
+        visibleQuestionIdsByPageId[page.id] = revealedQuestionIds;
+        appendProjectedPagePath(
+          survey,
+          page,
+          activeHiddenQuestionIds,
+          visitedPageIds,
+          path,
+          visibleQuestionIdsByPageId
+        );
+
+        return {
+          path,
+          visibleQuestionIdsByPageId,
+          currentPage: page,
+          currentQuestion: question,
+          currentPageQuestionIds: revealedQuestionIds,
+          hasLoop: false
+        };
+      }
+
+      for (const hiddenQuestionId of collectActivatedHiddenQuestionIds(survey, question, response)) {
+        activeHiddenQuestionIds.add(hiddenQuestionId);
+      }
+
+      const navigationTarget = resolveTriggeredNavigationPage(
+        survey,
+        page,
+        responsesByQuestionId,
+        activeHiddenQuestionIds,
+        revealedQuestionIds
+      );
+
+      if (navigationTarget) {
+        visibleQuestionIdsByPageId[page.id] = revealedQuestionIds;
+        jumpedToPageIds.add(navigationTarget.id);
+        page = navigationTarget;
+        continue pageLoop;
+      }
+    }
+
+    visibleQuestionIdsByPageId[page.id] = revealedQuestionIds;
+    page = getNextVisiblePage(survey, page, activeHiddenQuestionIds);
+  }
+
+  return {
+    path,
+    visibleQuestionIdsByPageId,
+    currentPage: null,
+    currentQuestion: null,
+    currentPageQuestionIds: [],
+    hasLoop: false
+  };
+}
+
+export function getOrderedPages(survey: Survey): SurveyPage[] {
+  return [...survey.pages].sort(
+    (left, right) => left.displayOrder - right.displayOrder || left.id - right.id
+  );
+}
+
+export function getOrderedQuestions(survey: Survey): SurveyQuestion[] {
+  const pageOrderById = new Map(
+    getOrderedPages(survey).map((page, index) => [page.id, index])
+  );
+
+  return [...survey.questions].sort((left, right) => {
+    const pageOrder =
+      (pageOrderById.get(left.pageId) ?? Number.MAX_SAFE_INTEGER) -
+      (pageOrderById.get(right.pageId) ?? Number.MAX_SAFE_INTEGER);
+
+    return pageOrder || left.displayOrder - right.displayOrder || left.id - right.id;
+  });
+}
+
+export function getQuestionsForPage(survey: Survey, pageId: number): SurveyQuestion[] {
+  return getOrderedQuestions(survey).filter((question) => question.pageId === pageId);
+}
+
+function compareQuestionOrder(
+  survey: Survey,
+  left: SurveyQuestion,
+  right: SurveyQuestion
+): number {
+  const orderedIds = getOrderedQuestions(survey).map((question) => question.id);
+
+  return orderedIds.indexOf(left.id) - orderedIds.indexOf(right.id);
+}
+
+function getNextVisiblePage(
+  survey: Survey,
+  page: SurveyPage,
+  hiddenQuestionIds: ReadonlySet<number>
+): SurveyPage | null {
+  const orderedPages = getOrderedPages(survey);
+  const currentIndex = orderedPages.findIndex((candidate) => candidate.id === page.id);
+  const normalFlowExcludedPageIds = getNormalFlowExcludedPageIds(survey);
+  const normalFlowExcludedQuestionIds = getNormalFlowExcludedQuestionIds(survey);
+
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  return (
+    orderedPages.slice(currentIndex + 1).find((candidate) =>
+      !normalFlowExcludedPageIds.has(candidate.id) &&
+      getQuestionsForPage(survey, candidate.id).some(
+        (question) =>
+          !hiddenQuestionIds.has(question.id) &&
+          !normalFlowExcludedQuestionIds.has(question.id)
+      )
+    ) ?? null
+  );
+}
+
+function getVisibleTargetPage(
+  survey: Survey,
+  page: SurveyPage,
+  hiddenQuestionIds: ReadonlySet<number>
+): SurveyPage | null {
+  const hasVisibleQuestion = getQuestionsForPage(survey, page.id).some(
+    (question) => !hiddenQuestionIds.has(question.id)
+  );
+
+  return hasVisibleQuestion ? page : getNextVisiblePage(survey, page, hiddenQuestionIds);
+}
+
+function resolveTriggeredNavigationPage(
+  survey: Survey,
+  page: SurveyPage,
+  responsesByQuestionId: ReadonlyMap<number, SurveyResponseAnswer>,
+  hiddenQuestionIds: ReadonlySet<number>,
+  sourceQuestionIds: readonly number[]
+): SurveyPage | null {
+  const orderedPages = getOrderedPages(survey);
+  const currentPageIndex = orderedPages.findIndex((candidate) => candidate.id === page.id);
+  const sourceQuestionIdSet = new Set(sourceQuestionIds);
+  const candidatePages: SurveyPage[] = [];
+
+  for (const rule of survey.conditionalLogicRules) {
+    if (
+      !sourceQuestionIdSet.has(rule.sourceQuestionId) ||
+      !(
+        (rule.actionType === "JUMP_TO_PAGE" && rule.targetPageId !== null) ||
+        (rule.actionType === "JUMP_TO_QUESTION" && rule.targetQuestionId !== null)
+      )
+    ) {
+      continue;
+    }
+
+    const sourceQuestion = survey.questions.find(
+      (candidate) => candidate.id === rule.sourceQuestionId
+    );
+
+    if (!sourceQuestion || hiddenQuestionIds.has(sourceQuestion.id)) {
+      continue;
+    }
+
+    const response = responsesByQuestionId.get(rule.sourceQuestionId);
+
+    if (!doesRuleMatchResponse(rule, response)) {
+      continue;
+    }
+
+    const targetPage = resolveRuleTargetPage(survey, rule);
+
+    if (!targetPage || targetPage.id === page.id) {
+      continue;
+    }
+
+    const visibleTargetPage = getVisibleTargetPage(survey, targetPage, hiddenQuestionIds);
+    const visibleTargetPageIndex = visibleTargetPage
+      ? orderedPages.findIndex((candidate) => candidate.id === visibleTargetPage.id)
+      : -1;
+
+    if (visibleTargetPage && visibleTargetPageIndex > currentPageIndex) {
+      candidatePages.push(visibleTargetPage);
+    }
+  }
+
+  return (
+    candidatePages.sort(
+      (left, right) =>
+        orderedPages.findIndex((candidate) => candidate.id === right.id) -
+        orderedPages.findIndex((candidate) => candidate.id === left.id)
+    )[0] ?? null
+  );
+}
+
+function resolveRuleTargetPage(
+  survey: Survey,
+  rule: ConditionalLogicRule
+): SurveyPage | null {
+  if (rule.targetPageId) {
+    return survey.pages.find((candidate) => candidate.id === rule.targetPageId) ?? null;
+  }
+
+  if (rule.targetQuestionId) {
+    const targetQuestion = survey.questions.find(
+      (candidate) => candidate.id === rule.targetQuestionId
+    );
+
+    return targetQuestion
+      ? survey.pages.find((candidate) => candidate.id === targetQuestion.pageId) ?? null
+      : null;
+  }
+
+  return null;
+}
+
+function appendProjectedPagePath(
+  survey: Survey,
+  currentPage: SurveyPage,
+  hiddenQuestionIds: ReadonlySet<number>,
+  visitedPageIds: Set<number>,
+  path: SurveyPage[],
+  visibleQuestionIdsByPageId: Record<number, number[]>
+) {
+  const orderedPages = getOrderedPages(survey);
+  const currentPageIndex = orderedPages.findIndex((page) => page.id === currentPage.id);
+  const normalFlowExcludedPageIds = getNormalFlowExcludedPageIds(survey);
+  const normalFlowExcludedQuestionIds = getNormalFlowExcludedQuestionIds(survey);
+
+  for (const page of orderedPages.slice(currentPageIndex + 1)) {
+    if (visitedPageIds.has(page.id) || normalFlowExcludedPageIds.has(page.id)) {
+      continue;
+    }
+
+    const visibleQuestionIds = getQuestionsForPage(survey, page.id)
+      .filter(
+        (question) =>
+          !hiddenQuestionIds.has(question.id) &&
+          !normalFlowExcludedQuestionIds.has(question.id)
+      )
+      .map((question) => question.id);
+
+    if (visibleQuestionIds.length === 0) {
+      continue;
+    }
+
+    visitedPageIds.add(page.id);
+    path.push(page);
+    visibleQuestionIdsByPageId[page.id] = visibleQuestionIds;
+  }
+}
+
+function getNormalFlowExcludedQuestionIds(survey: Survey): Set<number> {
+  return new Set(
+    survey.conditionalLogicRules
+      .filter(
+        (rule) =>
+          rule.skipTargetInNormalFlow &&
+          rule.actionType === "JUMP_TO_QUESTION" &&
+          rule.targetQuestionId !== null
+      )
+      .map((rule) => rule.targetQuestionId)
+      .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null)
+  );
+}
+
+function getNormalFlowExcludedPageIds(survey: Survey): Set<number> {
+  const pageIds = new Set<number>();
+
+  for (const rule of survey.conditionalLogicRules) {
+    if (
+      !rule.skipTargetInNormalFlow ||
+      rule.actionType !== "JUMP_TO_PAGE" ||
+      rule.targetPageId === null
+    ) {
+      continue;
+    }
+
+    pageIds.add(rule.targetPageId);
+  }
+
+  return pageIds;
+}
+
+function hasProgressiveResponseForQuestion(
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer | undefined
+): boolean {
+  if (!response) {
+    return false;
+  }
+
+  if (!question.isRequired) {
+    return true;
+  }
+
+  if (question.questionType === "text") {
+    return Boolean(response.answerText?.trim());
+  }
+
+  if (question.questionType === "integer") {
+    return Number.isInteger(response.answerInteger);
+  }
+
+  if (question.questionType === "single_select") {
+    return response.selectedAnswerOptionIds.length === 1;
+  }
+
+  if (question.questionType === "scale") {
+    return response.selectedAnswerOptionIds.length === 1 && Number.isInteger(response.answerInteger);
+  }
+
+  return response.selectedAnswerOptionIds.length > 0;
 }

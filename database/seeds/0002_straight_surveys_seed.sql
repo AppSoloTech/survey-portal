@@ -35,6 +35,38 @@ seed_survey as (
   union
   select id from surveys where title = 'Employee Onboarding Experience'
 ),
+page_rows (display_order, title) as (
+  values
+    (1, 'Page 1'),
+    (2, 'Page 2'),
+    (3, 'Page 3'),
+    (4, 'Page 4'),
+    (5, 'Page 5'),
+    (6, 'Page 6'),
+    (7, 'Page 7'),
+    (8, 'Page 8')
+)
+insert into survey_pages (
+  survey_id,
+  title,
+  display_order
+)
+select
+  seed_survey.id,
+  page_rows.title,
+  page_rows.display_order
+from seed_survey
+cross join page_rows
+where not exists (
+  select 1
+  from survey_pages existing
+  where existing.survey_id = seed_survey.id
+    and existing.display_order = page_rows.display_order
+);
+
+with seed_survey as (
+  select id from surveys where title = 'Employee Onboarding Experience'
+),
 question_rows (display_order, question_text, question_type, is_required, help_text) as (
   values
     (1, 'How would you describe your overall onboarding experience?', 'single_select', true, null),
@@ -48,6 +80,7 @@ question_rows (display_order, question_text, question_type, is_required, help_te
 )
 insert into survey_questions (
   survey_id,
+  page_id,
   display_order,
   question_text,
   question_type,
@@ -56,6 +89,7 @@ insert into survey_questions (
 )
 select
   seed_survey.id,
+  survey_pages.id,
   question_rows.display_order,
   question_rows.question_text,
   question_rows.question_type,
@@ -63,10 +97,14 @@ select
   question_rows.help_text
 from seed_survey
 cross join question_rows
+join survey_pages
+  on survey_pages.survey_id = seed_survey.id
+  and survey_pages.display_order = question_rows.display_order
 where not exists (
   select 1
   from survey_questions existing
   where existing.survey_id = seed_survey.id
+    and existing.page_id = survey_pages.id
     and existing.display_order = question_rows.display_order
 );
 
@@ -146,6 +184,40 @@ seed_survey as (
   union
   select id from surveys where title = 'Workplace Satisfaction Survey'
 ),
+page_rows (display_order, title) as (
+  values
+    (1, 'Page 1'),
+    (2, 'Page 2'),
+    (3, 'Page 3'),
+    (4, 'Page 4'),
+    (5, 'Page 5'),
+    (6, 'Page 6'),
+    (7, 'Page 7'),
+    (8, 'Page 8'),
+    (9, 'Page 9'),
+    (10, 'Page 10')
+)
+insert into survey_pages (
+  survey_id,
+  title,
+  display_order
+)
+select
+  seed_survey.id,
+  page_rows.title,
+  page_rows.display_order
+from seed_survey
+cross join page_rows
+where not exists (
+  select 1
+  from survey_pages existing
+  where existing.survey_id = seed_survey.id
+    and existing.display_order = page_rows.display_order
+);
+
+with seed_survey as (
+  select id from surveys where title = 'Workplace Satisfaction Survey'
+),
 question_rows (display_order, question_text, question_type, is_required, help_text) as (
   values
     (1, 'Which department do you work in?', 'single_select', true, null),
@@ -161,6 +233,7 @@ question_rows (display_order, question_text, question_type, is_required, help_te
 )
 insert into survey_questions (
   survey_id,
+  page_id,
   display_order,
   question_text,
   question_type,
@@ -169,6 +242,7 @@ insert into survey_questions (
 )
 select
   seed_survey.id,
+  survey_pages.id,
   question_rows.display_order,
   question_rows.question_text,
   question_rows.question_type,
@@ -176,10 +250,14 @@ select
   question_rows.help_text
 from seed_survey
 cross join question_rows
+join survey_pages
+  on survey_pages.survey_id = seed_survey.id
+  and survey_pages.display_order = question_rows.display_order
 where not exists (
   select 1
   from survey_questions existing
   where existing.survey_id = seed_survey.id
+    and existing.page_id = survey_pages.id
     and existing.display_order = question_rows.display_order
 );
 

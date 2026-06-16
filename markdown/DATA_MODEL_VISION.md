@@ -12,17 +12,23 @@ The actual schema may evolve during implementation, but changes should preserve 
 
 ---
 
-# MVP Survey Experience Decision
+# Survey Experience Decision
 
-The MVP survey-taking experience should use:
+The survey-taking experience now supports page-based surveys:
 
 ```txt
-one question per page
+one survey page per screen
 ```
 
-This means the participant sees one question at a time and navigates forward through the survey.
+Each page may contain one or more questions. The participant answers all visible
+questions on the current page, then advances to the next page selected by
+database-defined navigation rules or normal page order.
 
-This simplifies:
+Earlier MVP phases used one question per page. Phase 11 migrates existing
+surveys into one page per existing question to preserve behavior, then allows
+admins to place multiple questions on a page.
+
+This supports:
 
 * survey rendering
 * conditional logic
@@ -32,7 +38,8 @@ This simplifies:
 * mobile responsiveness
 * user focus
 
-The system may still support survey pages or sections later, but the MVP should not require multiple questions per page.
+The system may still support sections later, but pages are the primary
+participant-facing unit.
 
 ---
 
@@ -40,18 +47,18 @@ The system may still support survey pages or sections later, but the MVP should 
 
 The data model should support both question-level and page-level navigation concepts.
 
-However, the MVP should only implement:
+The page-based MVP supports:
 
 ```txt
 JUMP_TO_QUESTION
+HIDE_QUESTION
+JUMP_TO_PAGE
 ```
 
 Future-supported rule actions may include:
 
 ```txt
 SHOW_QUESTION
-HIDE_QUESTION
-JUMP_TO_PAGE
 END_SURVEY
 ```
 
@@ -133,13 +140,15 @@ Notes:
 
 Represents a single question in a survey.
 
-Because the MVP uses one question per page, question order controls survey flow.
+Questions belong to a survey page. Page order controls participant flow, and
+question order controls display inside a page.
 
 Suggested fields:
 
 ```txt
 id
 survey_id
+page_id
 question_text
 question_type
 display_order
@@ -160,9 +169,33 @@ multi_select
 
 Notes:
 
-* `display_order` determines default progression.
+* `display_order` determines order within the owning page.
 * The MVP should avoid hardcoded survey-specific questions.
 * All survey questions should be database-driven.
+
+---
+
+## Survey Page
+
+Represents a participant-facing page in a survey.
+
+Suggested fields:
+
+```txt
+id
+survey_id
+title
+description
+display_order
+created_at
+updated_at
+```
+
+Notes:
+
+* `display_order` determines default page progression.
+* A page contains one or more questions when a survey is publishable.
+* Existing one-question flow is represented as one page per question.
 
 ---
 

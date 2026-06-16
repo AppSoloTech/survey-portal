@@ -2553,3 +2553,103 @@ locking, duplication, catalog registration, participant isolation
 (collectObjectKeys sweep), and reporting integration (rollup, detail,
 CSV). Totals: 27 shared + 31 web + 135 api = 193 passing; typecheck,
 lint, build, git diff --check green.
+
+## Phase 11 — Page-Based Survey Flow
+
+Date:
+2026-06-16
+
+Status:
+Implemented; Claude review C1 resolved
+
+Prompt:
+`prompts/prompt_11A.txt`
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_11A.txt`
+- Claude review: `notes/claude_review_phase_11A.txt`
+
+## Goals
+
+- Replace the old one-question-per-page MVP decision with page-based surveys.
+- Preserve existing survey behavior by migrating one existing question into one page.
+- Add admin page construction, participant page navigation, and page-level jump rules.
+
+## Built
+
+- Added `survey_pages`, `survey_questions.page_id`, page constraints, one-page-per-question backfill, and real `conditional_logic_rules.target_page_id`/`source_page_id` references.
+- Added shared `SurveyPage`, `Survey.pages`, `SurveyQuestion.pageId`, `currentPage` response fields, and page-aware path helpers.
+- Added page CRUD/reorder endpoints, page-scoped question reorder, question movement, page-aware duplication, and page-aware rule validation.
+- Updated the admin Questions workspace to manage page panels and move questions between pages.
+- Updated the participant runner to render one page at a time and submit page answers in a batch endpoint.
+- Updated conditional logic UI and flow map support for `JUMP_TO_PAGE`.
+
+## Important Decisions
+
+- Existing surveys migrate to one page per existing question; empty surveys receive `Page 1`.
+- Page-level logic v1 supports forward-only `JUMP_TO_PAGE`.
+- Legacy `Survey.questions`, `currentQuestion`, and `/api/surveys/:id/answer` remain for compatibility.
+- Page deletes are draft-only, empty-only, and cannot remove the last page.
+- Same-page `JUMP_TO_QUESTION` is a page-navigation no-op because all visible questions on that page render together.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run build
+npm run lint
+npm run test -w packages/shared
+npm run test -w apps/web
+git diff --check
+```
+
+Results:
+
+- Passed before Claude review: typecheck, build, lint, shared tests (29), web tests (32), diff check.
+- Passed after Claude review fix: typecheck, build, lint, shared tests (37), web tests (32), diff check.
+- Passed after manual flow-map fix: typecheck, shared tests (38), web tests (33).
+- Passed after seed fix: `npm run db:reset`; local seeds now create one page per seeded question before inserting questions.
+- Passed after logic-label clarity fix: typecheck, web tests (33).
+- Passed after logic reconciliation fix: typecheck, shared tests (41), web tests (34).
+- Blocked: `npm run test -w apps/api` needs local PostgreSQL access and drops/recreates the test schema; sandbox escalation was rejected pending explicit user approval.
+- In progress: manual browser pass over the page-based builder/runner.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_11A.txt`
+
+Status:
+
+- C1 resolved: same-page `JUMP_TO_QUESTION` no longer creates a page loop.
+- Added shared tests for multi-question pages, ordering helpers, `JUMP_TO_PAGE`, page-loop detection, hidden-page skipping, hidden jump targets, and stale answers on hidden questions.
+- Also addressed low-risk review suggestions by skipping hidden source questions during page-jump resolution, bypassing page-jump targets with no visible questions, avoiding an unnecessary target-question lookup for `JUMP_TO_PAGE`, and documenting the legacy reorder/page-answer compatibility behavior.
+- Remaining non-blocking suggested improvements are tracked as future code-quality/manual-validation work unless product review elevates them.
+
+## Manual Test Notes
+
+- `notes/phase_11A_test_notes.txt` records a flow-map defect found during manual testing.
+- Resolved: flow map and shared normal-question advancement now respect page order before page-scoped question order, so duplicate "Question 1" values across pages do not create false unreachable warnings.
+- Resolved: admin logic question references now use `P{page}-Q{question}` labels in source/target dropdowns, skip target controls, existing rule editors, and rule group headings.
+- Resolved: page navigation rules now evaluate together after the page is submitted; if multiple navigation rules trigger, the farthest valid later visible page wins.
+- Resolved: new admin navigation rules default to page jumps, while question jumps remain editable as legacy compatibility rules that land on the containing page.
+- Accepted in this pass: participant page skip rule from Page 1 Question 1 to Page 3 Question 1 worked from the user side.
+
+## Follow-Up Tasks
+
+- Run API tests after explicit approval for the destructive local test DB reset.
+- Run manual browser validation for page CRUD/reorder, question moves, page runner navigation, and page-jump rules.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes; `DATA_MODEL_VISION.md` updated for page-based flow.
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude review found no hidden-tag or authorization regression.
+- Review findings addressed or deferred: Yes; C1 fixed, test gap reduced with shared helper coverage, API/manual validation remain tracked.
+- Manual testing complete: No; follow-up tracked
+- Ready to commit: After API test approval/run and manual browser pass, or with those explicitly accepted as carried follow-ups

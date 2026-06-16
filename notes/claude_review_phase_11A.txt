@@ -1,0 +1,196 @@
+Claude Review — Phase 11A-D Page-Based Survey Flow
+
+Scope reviewed: current working-tree diff only (git diff HEAD + untracked
+migration 0013). Reference docs read: page_logic_addition.txt, prompt_11A.txt,
+DATA_MODEL_VISION.md, REVIEW_CHECKLIST.md, plus the changed FLOW/PHASE_LOG/
+FOLLOW_UPS markdown.
+
+Overall: the data model, migration, and service refactor are coherent and
+compatibility-first. Hidden-tag boundaries, authorization, and forward-only
+publish validation are preserved. There is one reachable correctness defect
+(same-page JUMP_TO_QUESTION), and automated coverage for all of the new core
+logic is missing. Details below.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+C1. Same-page JUMP_TO_QUESTION blocks survey completion (false loop).
+    Trigger: a published survey with two or more questions on one page, plus a
+    JUMP_TO_QUESTION rule whose source and target are both on that page (target
+    later in question order).
+
+    - validateConditionalRuleReferences (surveyBuilder.ts) and
+      validateSurveyCanPublish accept this rule: for JUMP_TO_QUESTION they only
+      reject when target page order < source page order, OR same page order AND
+      target question display_order <= source question display_order. A forward
+      same-page target is therefore valid and publishable.
+    - At runtime resolveNextPage (packages/shared/src/index.ts) resolves the
+      target question's page, which is the *current* page, and returns it.
+    - resolveAttemptPagePath then sees the page already in visitedPageIds and
+      returns hasLoop = true.
+    - validateReachedRequiredQuestions (surveyAttempts.ts) converts hasLoop into
+      a hard error: "Survey navigation contains a loop". The participant can
+      never complete the attempt, and determineCurrentPage truncates the path.
+
+    Recommended fix (pick one):
+    - In resolveNextPage, when a matching JUMP_TO_QUESTION target resolves to the
+      current page, ignore it and fall through to getNextVisiblePage (a jump to a
+      question already visible on the same page is a no-op in a page model); or
+    - Reject same-page JUMP_TO_QUESTION at validation time (both
+      validateConditionalRuleReferences and validateSurveyCanPublish), forcing
+      such intent to be expressed as JUMP_TO_PAGE.
+
+    Migrated legacy surveys are unaffected (one page per question makes every
+    existing JUMP_TO_QUESTION cross-page), so this only bites newly authored
+    multi-question pages — but it is silent and total when it does.
+
+C2. No automated coverage for any new behavior.
+    The new pure helpers (resolveNextPage, resolveAttemptPagePath,
+    getOrderedPages, getOrderedQuestions, getQuestionsForPage) and the new
+    endpoints (page CRUD/reorder, question move, page batch answer) have no
+    tests. The existing shared tests were only edited to add a one-page-per-
+    question `pages` field so they keep compiling; no case exercises multiple
+    questions per page, JUMP_TO_PAGE, page-jump loop detection, or hidden-question
+    page skipping. The shared helpers are DB-free and trivially unit-testable, so
+    their absence is the most important gap. The API suite was also never run
+    (documented sandbox blocker). At minimum, add shared unit tests before commit;
+    C1 in particular would be caught by a single resolveAttemptPagePath test.
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+S1. JUMP_TO_PAGE to a page with no visible questions. resolveNextPage returns a
+    JUMP_TO_PAGE target unconditionally, without the visible-question check that
+    getNextVisiblePage applies to normal progression. Such a page is pushed onto
+    the path (inflating "Pages on your path") and, if it is the only remaining
+    page, would be a zero-question screen. Consider routing jump targets through
+    the same "has a visible question, else advance" logic.
+
+S2. Repeated re-sorting / O(n^2) ordering. getOrderedQuestions sorts the whole
+    question list on every call; getQuestionsForPage calls it then filters; and
+    compareQuestionOrder rebuilds the ordered id list and does indexOf inside the
+    advanceFrom filter (resolveNextQuestion), making that path roughly O(n^2 log n).
+    resolveAttemptPagePath also re-derives ordering per page in its loop.
+    Negligible at MVP survey sizes, but cheap to fix by computing the ordered
+    list / index map once and passing it down.
+
+S3. determineCurrentPage depends on an undocumented invariant: that
+    savePageAnswers writes a row for *every* question on a submitted page
+    (including blank optional ones). If the legacy single-question /answer
+    endpoint is used against a multi-question page, only one row is written and
+    determineCurrentPage will keep returning that page. Add a comment stating the
+    invariant, and note that the legacy endpoint is not page-aware.
+
+S4. validateConditionalRuleReferences runs fetchQuestionForSurvey(..,
+    value.targetQuestionId ?? 0, ..) even for JUMP_TO_PAGE, then returns before
+    using it. Move that lookup below the JUMP_TO_PAGE early-return to avoid the
+    wasted query.
+
+S5. Legacy /:id/questions/reorder is now silently scoped to the first page
+    (firstPage.id). A caller still posting a full-survey question id list will get
+    a 400 from validateQuestionReorderIds. Acceptable since the UI uses the
+    page-scoped route, but worth a deprecation note or an explicit error message.
+
+S6. resolveNextPage page-jump precedence: when several questions on a page each
+    have a matching jump rule, only the first question (in question order) wins.
+    This is a reasonable deterministic rule but should be documented, since the
+    product brief lists "question-level then page-level" precedence and this
+    implementation collapses both into question-order-first.
+
+S7. Migration: document the rollback/recovery story for 0013 (drops constraints,
+    backfills, sets page_id NOT NULL). The `alter column page_id set not null`
+    will abort the whole migration if any question failed to map to a page — make
+    the precondition (unique display_order per survey, see Q1) explicit.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+- Flow map remains question-centric; JUMP_TO_PAGE edges point at the first
+  question on the target page (surveyFlowGraph.ts firstQuestionOnPage). Matches
+  the documented hot spot.
+- Survey.questions kept as a flattened compatibility list, sorted by page order
+  then question order (getOrderedQuestions). Reasonable for not breaking existing
+  consumers; the ordering helper centralizes it.
+- Page batch submit saves blank rows for unanswered optional questions, matching
+  the pre-existing optional-question behavior.
+- Page-level rules are modeled as question-conditioned rules carrying a
+  sourcePageId, rather than a distinct page-rule entity. Consistent with the
+  stated assumption and keeps one rule table.
+- Off-path stale answers (after a re-answer changes the branch) are left in the
+  DB and ignored by resolveAttemptPagePath. Same approach as the existing
+  resolveAttemptPath; acceptable.
+- API tests not executed due to the destructive local schema reset; documented
+  in the handoff and FOLLOW_UPS.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS
+================================================================================
+
+Q1. Migration assumes survey_questions.display_order is unique per survey
+    pre-migration (one page per question depends on it, and the page->question
+    remap matches on equal display_order). Confirm the prior
+    survey_questions_display_order_unique constraint guaranteed this; otherwise
+    the backfill can mis-map or the NOT NULL step can abort.
+
+Q2. Are same-page JUMP_TO_QUESTION rules intended to be allowed at all? The
+    answer determines the C1 fix direction (normalize at runtime vs reject at
+    validation).
+
+Q3. Should a JUMP_TO_PAGE be allowed to land on a page whose questions are all
+    hidden at runtime (S1)? Today it lands there and shows an empty page.
+
+Q4. In-flight attempts started before the migration: it is acceptable that
+    determineCurrentPage resets the participant to the first not-fully-answered
+    page, which may re-show questions they already answered individually?
+
+Q5. Backward and same-page *page* jumps are a non-goal and are enforced
+    (target_page.display_order > source). Confirm there is no near-term need for
+    same-page page rules.
+
+================================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================================
+
+- Matches page_logic_addition.txt: page CRUD, multiple questions per page, page
+  and question reorder, question move between pages, and page-level JUMP_TO_PAGE
+  are all present and data-driven (no hard-coded flow in the frontend).
+- Hidden-tag boundary intact: every participant-facing fetch
+  (buildMySurveyResponse, the page-answer route) uses includeHiddenTags: false;
+  admin builder fetches use true. No tag leakage in the page runner.
+- Authorization intact: page/question endpoints require admin +
+  rejectStructurallyLockedSurvey; the page-answer endpoint requires auth and
+  scopes the attempt to the user, with deleted/completed/abandoned guards.
+- Runner copy now reads "Page X of N" and shows page title/description; required
+  validation is enforced server-side in savePageAnswers (frontend required
+  attributes are not relied on for correctness). Good.
+- Question types unchanged (text/integer/single/multi/scale). Good.
+- The intra-page positioning of JUMP_TO_QUESTION is lost (jump lands on the page,
+  not a specific question) — acceptable for a SurveyMonkey-style page flow and
+  documented, but worth confirming with the client.
+- Manual responsive pass still pending (FOLLOW_UPS lists 375/768/1280). Note the
+  project's established 767.98px breakpoint when verifying the multi-question page
+  layout.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+Conditional — not ready as-is.
+
+Recommended before commit:
+  1. Resolve C1 (same-page JUMP_TO_QUESTION loop). This is a silent
+     completion-blocking defect on a publishable configuration.
+  2. Add shared unit tests for resolveNextPage / resolveAttemptPagePath covering
+     multi-question pages, JUMP_TO_PAGE, page-jump loop, and hidden-question page
+     skipping (these need no DB and would have caught C1).
+  3. Run the API suite once schema-reset approval is granted, or explicitly carry
+     it as a blocked validation item in PHASE_LOG.
+
+Nice-to-have but not blocking: S1-S7, and the documented manual browser pass.
+
+The migration, compatibility backfill, hidden-tag boundaries, and authorization
+are sound; with C1 fixed and at least the shared-helper tests added, this phase
+is ready to commit.

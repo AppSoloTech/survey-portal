@@ -1,0 +1,234 @@
+Claude Review — Progressive Page Runner Refactor
+
+Scope reviewed: current working-tree diff only (git diff HEAD + untracked
+migration 0013 and notes). Everything is still uncommitted, so the diff contains
+Phase 11 plus this refactor; per the handoff I focused on the progressive layer
+(packages/shared/src/index.ts, surveyAttempts.ts, SurveyAttemptPage.tsx, and the
+new/updated tests) and cross-checked against my prior review,
+notes/claude_review_phase_11A.txt, and notes/phase_11A_test_notes.txt.
+
+Headline: this is a solid, well-tested refactor. The two findings from the prior
+review are resolved and verified:
+
+- Phase-11 C1 (same-page JUMP_TO_QUESTION produced a false loop and blocked
+  completion) is FIXED. resolveTriggeredNavigationPage / resolveRuleTargetPage
+  skip any target whose resolved page equals the current page, so same-page
+  question jumps are page-navigation no-ops. Covered by
+  "treats a same-page JUMP_TO_QUESTION as a page-navigation no-op".
+- Phase-11 C2 (no tests for the new core logic) is largely resolved:
+  packages/shared/test/resolveAttemptPagePath.test.ts adds 13 focused tests
+  (progressive reveal, farthest-jump, stale off-path answers, hide unions,
+  all-hidden page skipping, backward-jump rejection).
+
+The test_notes round-2 items 2 and 3 are addressed correctly: because questions
+reveal one at a time, a jump triggered on Q1 routes away before Q2/Q3 are ever
+shown, and each page-navigation rule now fires when its source question is
+reached rather than only the lowest-numbered one short-circuiting the rest.
+
+No blocking correctness defects were found in the progressive layer. The items
+below are quality/clarity decisions to settle before merge.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+None blocking. The prior same-page-jump completion defect is fixed and covered
+by a regression test, and forward-only jump selection (visibleTargetPageIndex >
+currentPageIndex) plus visitedPageIds make a runtime navigation loop effectively
+unreachable from validated rules.
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+S1 (high) Remove the now-dead, divergent resolveNextPage.
+   The exported resolveNextPage (packages/shared/src/index.ts ~line 562) is no
+   longer referenced by any code path — resolveAttemptPagePath now delegates to
+   resolveProgressivePageState, which navigates via resolveTriggeredNavigationPage
+   + getNextVisiblePage. resolveNextPage is a second, subtly different
+   implementation of the same concept: it does not honor
+   getNormalFlowExcludedPageIds (skipTargetInNormalFlow for JUMP_TO_PAGE) and is
+   not jump-aware in the same way. Leaving it exported invites a future caller to
+   pick up the wrong semantics. Delete it (and its dist/.d.ts surface) or collapse
+   it into the progressive helpers so there is a single navigation source of truth.
+
+S2 (medium) Completion error conflates "current question" with "required
+   unanswered", and can be an optional question.
+   validateReachedRequiredQuestions now returns
+   `Required question ${state.currentQuestion.displayOrder} is unanswered`
+   whenever state.currentQuestion is non-null. But currentQuestion is simply the
+   first question lacking a *progressive* response, which for an optional question
+   means "no row saved yet" (hasProgressiveResponseForQuestion returns false for
+   an optional question with no response row). So:
+   - The message can name an optional question as "required".
+   - Semantically, completion is gated on every optional question having been
+     explicitly Continue'd (row created), not just required ones.
+   The UI prevents reaching Complete until currentPage is null, so this only
+   surfaces on out-of-order API calls — but the message is misleading and the
+   gating intent should be confirmed (see Q1). At minimum, only emit the
+   "required" message when state.currentQuestion.isRequired.
+
+S3 (medium) The page-batch endpoint is retained, unused, and untested.
+   POST /api/surveys/:id/pages/:pageId/answer -> savePageAnswers is kept "for
+   compatibility", but the web runner now saves through the single-question
+   /answer endpoint, and no test exercises the batch path. savePageAnswers also
+   writes a row for *every* question on the page, so it can persist off-path
+   answers when an earlier answer on the page branches away (progressive reveal
+   would never have shown those questions). Either add coverage and a comment
+   marking it compatibility-only, or drop it (removal is a stated non-goal, so a
+   test + comment is the safer choice).
+
+S4 (medium) Add HTTP-layer tests for the genuinely new behavior.
+   Shared unit coverage is good, but the API integration tests still model only
+   one-question-per-page surveys (createPublishedJumpSurvey / createPublishedSkip
+   Survey were migrated to one page per question, which keeps attemptLifecycle
+   passing). There is no API test for: a multi-question page revealing
+   progressively through /answer, the currentPageQuestionIds contract field,
+   editing an earlier answer to flip a branch and dropping later same-page
+   answers, or the batch endpoint. factories.addPage + the pageId option make
+   these straightforward to add now.
+
+S5 (low) Previous-page navigation has no forward affordance.
+   onPrevious sets currentQuestion: null, so the prior page renders every question
+   with an "Update" button and none as the active "Continue" step. The only way
+   back forward is to press Update on an already-answered question, which
+   re-saves it and (via recompute) jumps the participant all the way to their
+   furthest unanswered point rather than to the next page. Consider an explicit
+   Next/Resume control, or restoring the active step on the returned page.
+
+S6 (low) Repeated re-sorting. getOrderedQuestions/getOrderedPages re-sort on every
+   getQuestionsForPage call, which runs inside the per-page/per-question loops of
+   resolveProgressivePageState and again per answered question in
+   resolveTriggeredNavigationPage; the web page also calls resolveAttemptPagePath
+   three times per render. Negligible at MVP sizes; memoize the ordered lists if
+   surveys grow.
+
+S7 (low) "Farthest later page wins" across multiple questions is largely
+   unreachable. Because reveal is single-step, the first revealed question that
+   triggers a jump exits the page before later questions are revealed, so
+   resolveTriggeredNavigationPage almost always reconciles rules from a single
+   question. The cross-question candidate gathering is effectively dead except for
+   multiple matching rules on one question. Worth a comment, or simplify.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+- Legacy jump/skip fixtures rewritten as one-question-per-page surveys — a clean
+  way to keep existing attemptLifecycle assertions valid under the page model and
+  representative of migrated legacy surveys.
+- JUMP_TO_QUESTION resolves only to its containing page (no intra-page focus);
+  same-page jumps are no-ops. Matches the stated non-goals.
+- Stale off-path answers are kept in the DB and excluded from the active path
+  (resolveProgressivePageState walks only reachable pages). Consistent with the
+  existing resolveAttemptPath approach.
+- "Pages on your path" is a normal-order projection (appendProjectedPagePath) and
+  may shift as jumps fire on later answers. Acceptable estimate while in progress;
+  at completion the path contains only actually-walked pages (the terminal,
+  all-answered return does not project).
+- Optional questions require an explicit Continue (row creation) to advance.
+  Reasonable for a one-at-a-time runner; see S2/Q1 for the completion-gating angle.
+- Progressive save reuses the single-question /answer endpoint; no new migration.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS
+================================================================================
+
+Q1. Should an un-answered *optional* question block Complete? Today it does
+    (currentQuestion is set until a row exists), and the UI enforces clicking
+    through every optional question. Confirm this is intended; if not, treat
+    optional questions as satisfied for completion (S2).
+
+Q2. Is the Previous-page interaction intended to require re-submitting an answer
+    to move forward, and to jump to the furthest point rather than the next page
+    (S5)?
+
+Q3. Keep the unused page-batch endpoint as compatibility surface, or retire it?
+    (S3 — removal is currently a non-goal.)
+
+Q4. First-page edge: if a survey's first page consists entirely of
+    normal-flow-excluded questions (skipTargetInNormalFlow JUMP_TO_QUESTION
+    targets), the main loop pushes that empty first page onto the path with no
+    revealed questions. Can publish validation produce such a survey? If so, it
+    inflates the page count and shows an empty first screen until a jump fills it.
+
+Q5. Hidden-tag boundary unchanged — participant fetches still use
+    includeHiddenTags: false (buildMySurveyResponse and both answer routes), so
+    currentPageQuestionIds / currentPage carry no tag data. Assumption confirmed
+    in code; flagging only so it stays a checked invariant.
+
+================================================================================
+5. PRODUCT UX ALIGNMENT NOTES
+================================================================================
+
+- Directly resolves phase_11A_test_notes round-2 items 2 and 3: progressive
+  reveal means a triggered jump on Q1 navigates away before Q2/Q3 appear (the
+  "user still sees question 1" problem is gone), and multiple page rules each
+  fire when their source question is reached instead of the lowest-numbered rule
+  silently winning.
+- Item 1 (P1-Q1 locator labels) is implemented in the admin logic page and flow
+  graph in the same working tree. Per the handoff's progressive-runner scope I
+  did not deep-audit those label changes; they appear internally consistent
+  (getOrderedQuestions-based ordering, P{page}-Q{question} format) and are
+  cosmetic/admin-only.
+- Pages remain the participant-facing unit; the runner shows "Page X of N", the
+  page title/description, and reveals questions one at a time with Continue. This
+  matches DATA_MODEL_VISION and the page_logic_addition brief.
+- Completion readiness (isCompleteReady = currentPage === null) is consistent
+  with the progressive path resolution.
+- Manual responsive pass at 375 / 768 / 1280 is still outstanding (FOLLOW_UPS).
+  Note the project's established 767.98px breakpoint when checking the
+  multi-question page and the new .question-step active/answered styling.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+Ready to commit after settling S1-S4; no blocking correctness defects.
+
+Recommended before merge:
+  1. Remove the dead, divergent resolveNextPage so progressive navigation is the
+     single source of truth (S1).
+  2. Add a few API integration tests for multi-question progressive pages and the
+     currentPageQuestionIds contract, and either cover or comment-mark the batch
+     endpoint (S3, S4).
+  3. Fix the optional-vs-required completion message and confirm the optional
+     completion-gating intent (S2, Q1).
+
+Nice-to-have: Previous-page forward affordance (S5), memoization (S6), and the
+documented responsive manual pass.
+
+The shared flow logic is the strongest part of this change: progressive reveal,
+forward-only jump selection, stale off-path exclusion, hide-rule unioning, and
+all-hidden page skipping are each covered by a targeted test, and the prior
+completion-blocking defect is gone.
+
+================================================================================
+7. POST-REVIEW RESOLUTION NOTE
+================================================================================
+
+Resolution recorded 2026-06-16 after follow-up implementation and Codex
+verification.
+
+Resolved:
+- S1 resolved: removed dead exported `resolveNextPage`; progressive navigation
+  now flows through `resolveProgressivePageState` / `resolveAttemptPagePath`.
+- S2 resolved: completion validation now distinguishes required unanswered
+  questions from optional questions that must be visited before completion.
+- S3/S4 resolved: added API integration coverage for progressive reveal,
+  mid-page navigation, branch recomputation, page-batch compatibility, off-page
+  batch rejection, missing-required batch rejection, and optional-question
+  completion messaging.
+
+Validation rerun by Codex:
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm test` passed: shared 43, web 34, API 148.
+- `git diff --check` passed.
+
+Remaining non-blocking follow-ups:
+- Manual responsive/browser pass at 375 / 768 / 1280px.
+- Previous-page forward affordance can be revisited if user testing shows
+  friction.
+- Ordering/memoization cleanup can wait until survey size makes it worthwhile.

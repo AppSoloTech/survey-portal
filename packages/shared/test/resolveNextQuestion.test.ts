@@ -13,6 +13,7 @@ const timestamp = "2026-01-01T00:00:00.000Z";
 function makeQuestion(overrides: Partial<SurveyQuestion> & { id: number }): SurveyQuestion {
   return {
     surveyId: 1,
+    pageId: overrides.id,
     questionText: `Question ${overrides.id}`,
     questionType: "single_select",
     scaleMin: null,
@@ -32,6 +33,7 @@ function makeRule(
 ): ConditionalLogicRule {
   return {
     surveyId: 1,
+    sourcePageId: 1,
     sourceQuestionId: 1,
     sourceAnswerOptionId: 11,
     conditionOperator: "equals",
@@ -49,6 +51,10 @@ function makeSurvey(
   questions: SurveyQuestion[],
   conditionalLogicRules: ConditionalLogicRule[] = []
 ): Survey {
+  const pageIds = [...new Set(questions.map((question) => question.pageId))].sort(
+    (left, right) => left - right
+  );
+
   return {
     id: 1,
     title: "Test survey",
@@ -62,6 +68,15 @@ function makeSurvey(
     publishedAt: timestamp,
     retiredAt: null,
     deletedAt: null,
+    pages: pageIds.map((pageId) => ({
+      id: pageId,
+      surveyId: 1,
+      title: `Page ${pageId}`,
+      description: null,
+      displayOrder: pageId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    })),
     questions,
     conditionalLogicRules
   };
@@ -90,6 +105,23 @@ describe("resolveNextQuestion", () => {
     const survey = makeSurvey([q1, q2]);
 
     expect(resolveNextQuestion(survey, q1, undefined)?.id).toBe(2);
+  });
+
+  it("advances by page order before page-scoped question order", () => {
+    const page1Question1 = makeQuestion({ id: 101, pageId: 1, displayOrder: 1 });
+    const page1Question2 = makeQuestion({ id: 102, pageId: 1, displayOrder: 2 });
+    const page1Question3 = makeQuestion({ id: 103, pageId: 1, displayOrder: 3 });
+    const page2Question1 = makeQuestion({ id: 201, pageId: 2, displayOrder: 1 });
+    const survey = makeSurvey([
+      page2Question1,
+      page1Question2,
+      page1Question1,
+      page1Question3
+    ]);
+
+    expect(resolveNextQuestion(survey, page1Question1, undefined)?.id).toBe(102);
+    expect(resolveNextQuestion(survey, page1Question2, undefined)?.id).toBe(103);
+    expect(resolveNextQuestion(survey, page1Question3, undefined)?.id).toBe(201);
   });
 
   it("returns null at the end of the survey", () => {

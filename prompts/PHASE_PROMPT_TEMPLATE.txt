@@ -1,0 +1,168 @@
+# Phase X — Short Phase Name
+
+## Purpose
+
+Describe why this phase exists and what outcome it should produce.
+
+Source feedback or planning note:
+
+```txt
+notes/client_review_YYYY-MM-DD.txt
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_X.txt`
+* Claude review: `notes/claude_review_phase_X.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* The source feedback or planning note in full.
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Relevant source files, tests, docs, and prior phase prompts.
+
+---
+
+# Received Feedback
+
+Paste or summarize the feedback items this phase owns.
+
+1. Item one.
+2. Item two.
+3. Item three.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Before writing code, classify each item as one of:
+
+* bug or regression
+* security, privacy, or data-visibility risk
+* broken workflow
+* feature request
+* UX polish
+* reporting or data question
+* deployment/setup issue
+* unclear item needing confirmation
+
+Call out whether any item changes:
+
+* database schema or migrations
+* API contracts
+* participant-facing survey behavior
+* hidden-tag visibility
+* authentication or authorization
+* deployment or secret handling
+* validation/test expectations
+
+Ask for clarification only when a safe implementation cannot be inferred.
+
+---
+
+# Scope
+
+Implement:
+
+* Item 1.
+* Item 2.
+* Item 3.
+
+## Non-Goals
+
+Do not implement:
+
+* Related future feature.
+* Broad redesign.
+* Unrelated cleanup.
+
+## Assumptions
+
+* Assumption 1.
+* Assumption 2.
+
+## Open Questions
+
+* Question 1, or `None`.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Security, authorization, hidden-tag isolation, data loss, or production safety.
+2. Broken user/admin workflows.
+3. Test failures or missing regression coverage.
+4. Documentation/setup issues that block reliable use.
+5. UX polish and minor layout/copy refinements.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Criterion 1.
+* Criterion 2.
+* Criterion 3.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update automated tests for changed behavior when practical.
+
+Manual checks to perform or document:
+
+* Workflow 1.
+* Workflow 2.
+
+If a command cannot run, document why and what narrower validation was completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/FOLLOW_UPS.md` for deferred or newly discovered follow-ups.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and commit readiness.
+* README, `.env.example`, or database docs if setup/operator behavior changes.
+* `notes/claude_handoff_phase_X.txt` before marking implementation complete.
+

@@ -80,11 +80,25 @@ export async function optionHasSavedSelections(queryable: Queryable, optionId: n
 
 export async function fetchNextQuestionDisplayOrder(
   queryable: Queryable,
-  surveyId: number
+  pageId: number
 ): Promise<number> {
   const result = await queryable.query<{ next_display_order: number }>(
     `select coalesce(max(display_order), 0) + 1 as next_display_order
      from survey_questions
+     where page_id = $1`,
+    [pageId]
+  );
+
+  return result.rows[0]?.next_display_order ?? 1;
+}
+
+export async function fetchNextPageDisplayOrder(
+  queryable: Queryable,
+  surveyId: number
+): Promise<number> {
+  const result = await queryable.query<{ next_display_order: number }>(
+    `select coalesce(max(display_order), 0) + 1 as next_display_order
+     from survey_pages
      where survey_id = $1`,
     [surveyId]
   );
@@ -108,26 +122,58 @@ export async function fetchNextOptionDisplayOrder(
 
 export async function shiftQuestionDisplayOrdersForInsert(
   queryable: Queryable,
-  surveyId: number,
+  pageId: number,
   displayOrder: number
 ): Promise<void> {
   const offsetResult = await queryable.query<{ offset: number }>(
     `select coalesce(max(display_order), 0) + 1000 as offset
      from survey_questions
-     where survey_id = $1`,
-    [surveyId]
+     where page_id = $1`,
+    [pageId]
   );
   const offset = offsetResult.rows[0]?.offset ?? 1000;
 
   await queryable.query(
     `update survey_questions
      set display_order = display_order + $2
+     where page_id = $1`,
+    [pageId, offset]
+  );
+
+  await queryable.query(
+    `update survey_questions
+     set display_order = case
+           when display_order - $3 >= $2 then display_order - $3 + 1
+           else display_order - $3
+         end,
+         updated_at = now()
+     where page_id = $1`,
+    [pageId, displayOrder, offset]
+  );
+}
+
+export async function shiftPageDisplayOrdersForInsert(
+  queryable: Queryable,
+  surveyId: number,
+  displayOrder: number
+): Promise<void> {
+  const offsetResult = await queryable.query<{ offset: number }>(
+    `select coalesce(max(display_order), 0) + 1000 as offset
+     from survey_pages
+     where survey_id = $1`,
+    [surveyId]
+  );
+  const offset = offsetResult.rows[0]?.offset ?? 1000;
+
+  await queryable.query(
+    `update survey_pages
+     set display_order = display_order + $2
      where survey_id = $1`,
     [surveyId, offset]
   );
 
   await queryable.query(
-    `update survey_questions
+    `update survey_pages
      set display_order = case
            when display_order - $3 >= $2 then display_order - $3 + 1
            else display_order - $3
@@ -172,15 +218,15 @@ export async function shiftOptionDisplayOrdersForInsert(
 
 export async function validateQuestionReorderIds(
   queryable: Queryable,
-  surveyId: number,
+  pageId: number,
   questionIds: number[]
 ): Promise<ValidationResult<undefined>> {
   const result = await queryable.query<{ id: number }>(
     `select id
      from survey_questions
-     where survey_id = $1
+     where page_id = $1
      order by display_order, id`,
-    [surveyId]
+    [pageId]
   );
 
   const existingIds = result.rows.map((row) => row.id);
@@ -214,31 +260,80 @@ export async function validateOptionReorderIds(
   return { ok: true, value: undefined };
 }
 
-export async function reorderQuestions(
+export async function validatePageReorderIds(
   queryable: Queryable,
   surveyId: number,
+  pageIds: number[]
+): Promise<ValidationResult<undefined>> {
+  const result = await queryable.query<{ id: number }>(
+    `select id
+     from survey_pages
+     where survey_id = $1
+     order by display_order, id`,
+    [surveyId]
+  );
+  const existingIds = result.rows.map((row) => row.id);
+
+  if (!sameIdSet(existingIds, pageIds)) {
+    return { ok: false, error: "pageIds must include every page in this survey exactly once" };
+  }
+
+  return { ok: true, value: undefined };
+}
+
+export async function reorderQuestions(
+  queryable: Queryable,
+  pageId: number,
   questionIds: number[]
 ): Promise<void> {
   const offsetResult = await queryable.query<{ offset: number }>(
     `select coalesce(max(display_order), 0) + 1000 as offset
      from survey_questions
-     where survey_id = $1`,
-    [surveyId]
+     where page_id = $1`,
+    [pageId]
   );
   const offset = offsetResult.rows[0]?.offset ?? 1000;
 
   await queryable.query(
     `update survey_questions
      set display_order = display_order + $2
+     where page_id = $1`,
+    [pageId, offset]
+  );
+
+  await applyDisplayOrderValues(queryable, {
+    tableName: "survey_questions",
+    parentColumn: "page_id",
+    parentId: pageId,
+    ids: questionIds
+  });
+}
+
+export async function reorderPages(
+  queryable: Queryable,
+  surveyId: number,
+  pageIds: number[]
+): Promise<void> {
+  const offsetResult = await queryable.query<{ offset: number }>(
+    `select coalesce(max(display_order), 0) + 1000 as offset
+     from survey_pages
+     where survey_id = $1`,
+    [surveyId]
+  );
+  const offset = offsetResult.rows[0]?.offset ?? 1000;
+
+  await queryable.query(
+    `update survey_pages
+     set display_order = display_order + $2
      where survey_id = $1`,
     [surveyId, offset]
   );
 
   await applyDisplayOrderValues(queryable, {
-    tableName: "survey_questions",
+    tableName: "survey_pages",
     parentColumn: "survey_id",
     parentId: surveyId,
-    ids: questionIds
+    ids: pageIds
   });
 }
 
@@ -350,8 +445,8 @@ export async function syncScaleAnswerOptions(
 async function applyDisplayOrderValues(
   queryable: Queryable,
   options: {
-    tableName: "survey_questions" | "answer_options";
-    parentColumn: "survey_id" | "question_id";
+    tableName: "survey_pages" | "survey_questions" | "answer_options";
+    parentColumn: "survey_id" | "page_id" | "question_id";
     parentId: number;
     ids: number[];
   }
@@ -433,17 +528,44 @@ export async function validateSurveyCanPublish(
      left join survey_questions source_question
        on source_question.id = conditional_logic_rules.source_question_id
       and source_question.survey_id = conditional_logic_rules.survey_id
+     left join survey_pages source_page
+       on source_page.id = coalesce(conditional_logic_rules.source_page_id, source_question.page_id)
+      and source_page.survey_id = conditional_logic_rules.survey_id
        left join answer_options source_option
        on source_option.id = conditional_logic_rules.source_answer_option_id
       and source_option.question_id = conditional_logic_rules.source_question_id
      left join survey_questions target_question
        on target_question.id = conditional_logic_rules.target_question_id
       and target_question.survey_id = conditional_logic_rules.survey_id
+     left join survey_pages target_question_page
+       on target_question_page.id = target_question.page_id
+      and target_question_page.survey_id = conditional_logic_rules.survey_id
+     left join survey_pages target_page
+       on target_page.id = conditional_logic_rules.target_page_id
+      and target_page.survey_id = conditional_logic_rules.survey_id
      where conditional_logic_rules.survey_id = $1
        and (
          source_question.id is null
-         or target_question.id is null
-         or target_question.display_order <= source_question.display_order
+         or source_page.id is null
+         or (
+           conditional_logic_rules.action_type in ('JUMP_TO_QUESTION', 'HIDE_QUESTION')
+           and (
+             target_question.id is null
+             or target_question_page.id is null
+             or target_question_page.display_order < source_page.display_order
+             or (
+               target_question_page.display_order = source_page.display_order
+               and target_question.display_order <= source_question.display_order
+             )
+           )
+         )
+         or (
+           conditional_logic_rules.action_type = 'JUMP_TO_PAGE'
+           and (
+             target_page.id is null
+             or target_page.display_order <= source_page.display_order
+           )
+         )
          or conditional_logic_rules.condition_operator not in ('equals', 'is_blank')
          or (
            conditional_logic_rules.condition_operator = 'equals'
@@ -460,7 +582,7 @@ export async function validateSurveyCanPublish(
              or conditional_logic_rules.action_type <> 'HIDE_QUESTION'
            )
          )
-         or conditional_logic_rules.action_type not in ('JUMP_TO_QUESTION', 'HIDE_QUESTION')
+         or conditional_logic_rules.action_type not in ('JUMP_TO_QUESTION', 'HIDE_QUESTION', 'JUMP_TO_PAGE')
          or (
            conditional_logic_rules.action_type = 'HIDE_QUESTION'
            and conditional_logic_rules.skip_target_in_normal_flow
@@ -475,6 +597,93 @@ export async function validateSurveyCanPublish(
   }
 
   return { ok: true, value: undefined };
+}
+
+export async function fetchPageForSurvey(
+  queryable: Queryable,
+  pageId: number,
+  surveyId: number
+): Promise<{ id: number; display_order: number } | null> {
+  const result = await queryable.query<{ id: number; display_order: number }>(
+    `select id, display_order
+     from survey_pages
+     where id = $1
+       and survey_id = $2`,
+    [pageId, surveyId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function fetchFirstPageForSurvey(
+  queryable: Queryable,
+  surveyId: number
+): Promise<{ id: number; display_order: number } | null> {
+  const result = await queryable.query<{ id: number; display_order: number }>(
+    `select id, display_order
+     from survey_pages
+     where survey_id = $1
+     order by display_order, id
+     limit 1`,
+    [surveyId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function pageHasQuestions(queryable: Queryable, pageId: number): Promise<boolean> {
+  const result = await queryable.query<{ exists: boolean }>(
+    `select exists (
+       select 1
+       from survey_questions
+       where page_id = $1
+     ) as exists`,
+    [pageId]
+  );
+
+  return result.rows[0]?.exists ?? false;
+}
+
+export async function countPagesForSurvey(queryable: Queryable, surveyId: number): Promise<number> {
+  const result = await queryable.query<{ count: string }>(
+    `select count(*)::text as count
+     from survey_pages
+     where survey_id = $1`,
+    [surveyId]
+  );
+
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function moveQuestionToPage(
+  queryable: Queryable,
+  questionId: number,
+  fromPageId: number,
+  toPageId: number,
+  displayOrder: number
+): Promise<void> {
+  await shiftQuestionDisplayOrdersForInsert(queryable, toPageId, displayOrder);
+  await queryable.query(
+    `update survey_questions
+     set page_id = $2,
+         display_order = $3,
+         updated_at = now()
+     where id = $1`,
+    [questionId, toPageId, displayOrder]
+  );
+  await normalizeQuestionOrders(queryable, fromPageId);
+}
+
+export async function normalizeQuestionOrders(queryable: Queryable, pageId: number): Promise<void> {
+  const result = await queryable.query<{ id: number }>(
+    `select id
+     from survey_questions
+     where page_id = $1
+     order by display_order, id`,
+    [pageId]
+  );
+
+  await reorderQuestions(queryable, pageId, result.rows.map((row) => row.id));
 }
 
 export async function validateConditionalRuleReferences(
@@ -524,9 +733,37 @@ export async function validateConditionalRuleReferences(
     }
   }
 
+  const sourcePage = await fetchPageForSurvey(queryable, sourceQuestion.page_id, surveyId);
+
+  if (!sourcePage) {
+    return { ok: false, error: "Source page must belong to this survey" };
+  }
+
+  if (value.sourcePageId !== null && value.sourcePageId !== sourceQuestion.page_id) {
+    return { ok: false, error: "Source question must belong to the source page" };
+  }
+
+  if (value.actionType === "JUMP_TO_PAGE") {
+    if (value.targetPageId === null) {
+      return { ok: false, error: "Target page is required for page jumps" };
+    }
+
+    const targetPage = await fetchPageForSurvey(queryable, value.targetPageId, surveyId);
+
+    if (!targetPage) {
+      return { ok: false, error: "Target page must belong to this survey" };
+    }
+
+    if (targetPage.display_order <= sourcePage.display_order) {
+      return { ok: false, error: "Target page must come after the source page" };
+    }
+
+    return { ok: true, value: undefined };
+  }
+
   const targetQuestion = await fetchQuestionForSurvey(
     queryable,
-    value.targetQuestionId,
+    value.targetQuestionId ?? 0,
     surveyId
   );
 
@@ -534,7 +771,14 @@ export async function validateConditionalRuleReferences(
     return { ok: false, error: "Target question must belong to this survey" };
   }
 
-  if (targetQuestion.display_order <= sourceQuestion.display_order) {
+  const targetPage = await fetchPageForSurvey(queryable, targetQuestion.page_id, surveyId);
+
+  if (
+    !targetPage ||
+    targetPage.display_order < sourcePage.display_order ||
+    (targetPage.display_order === sourcePage.display_order &&
+      targetQuestion.display_order <= sourceQuestion.display_order)
+  ) {
     return { ok: false, error: "Target question must come after the source question" };
   }
 
@@ -621,34 +865,67 @@ export async function duplicateSurveyTree(
 
   const questionsResult = await queryable.query<{
     id: number;
+    page_id: number;
     question_text: string;
     question_type: string;
     display_order: number;
     is_required: boolean;
     help_text: string | null;
   }>(
-    `select id, question_text, question_type, display_order, is_required, help_text
+    `select id, page_id, question_text, question_type, display_order, is_required, help_text
      from survey_questions
+     where survey_id = $1
+     order by page_id, display_order, id`,
+    [surveyId]
+  );
+  const pagesResult = await queryable.query<{
+    id: number;
+    title: string;
+    description: string | null;
+    display_order: number;
+  }>(
+    `select id, title, description, display_order
+     from survey_pages
      where survey_id = $1
      order by display_order, id`,
     [surveyId]
   );
+  const pageIdMap = new Map<number, number>();
+
+  for (const page of pagesResult.rows) {
+    const inserted = await queryable.query<{ id: number }>(
+      `insert into survey_pages (survey_id, title, description, display_order)
+       values ($1, $2, $3, $4)
+       returning id`,
+      [newSurveyId, page.title, page.description, page.display_order]
+    );
+    pageIdMap.set(page.id, inserted.rows[0].id);
+  }
+
   const questionIdMap = new Map<number, number>();
 
   for (const question of questionsResult.rows) {
+    const newPageId = pageIdMap.get(question.page_id);
+
+    if (!newPageId) {
+      throw new Error("Survey duplicate failed to remap a page reference");
+    }
+
     const inserted = await queryable.query<{ id: number }>(
       `insert into survey_questions (
          survey_id,
+         page_id,
          question_text,
          question_type,
          display_order,
          is_required,
          help_text
        )
-       values ($1, $2, $3, $4, $5, $6)
+       values ($1, $2, $3, $4, $5, $6, $7)
        returning id`,
       [
         newSurveyId,
+        newPageId,
         question.question_text,
         question.question_type,
         question.display_order,
@@ -748,19 +1025,23 @@ export async function duplicateSurveyTree(
   }
 
   const rulesResult = await queryable.query<{
+    source_page_id: number | null;
     source_question_id: number;
     source_answer_option_id: number | null;
     condition_operator: string;
     action_type: string;
     target_question_id: number | null;
+    target_page_id: number | null;
     skip_target_in_normal_flow: boolean;
   }>(
     `select
+       source_page_id,
        source_question_id,
        source_answer_option_id,
        condition_operator,
        action_type,
        target_question_id,
+       target_page_id,
        skip_target_in_normal_flow
      from conditional_logic_rules
      where survey_id = $1
@@ -770,15 +1051,21 @@ export async function duplicateSurveyTree(
 
   for (const rule of rulesResult.rows) {
     const newSourceQuestionId = questionIdMap.get(rule.source_question_id);
+    const newSourcePageId =
+      rule.source_page_id === null ? null : pageIdMap.get(rule.source_page_id);
     const newSourceOptionId =
       rule.source_answer_option_id === null ? null : optionIdMap.get(rule.source_answer_option_id);
     const newTargetQuestionId =
       rule.target_question_id === null ? null : questionIdMap.get(rule.target_question_id);
+    const newTargetPageId =
+      rule.target_page_id === null ? null : pageIdMap.get(rule.target_page_id);
 
     if (
       !newSourceQuestionId ||
+      newSourcePageId === undefined ||
       newSourceOptionId === undefined ||
-      (rule.target_question_id !== null && !newTargetQuestionId)
+      (rule.target_question_id !== null && !newTargetQuestionId) ||
+      (rule.target_page_id !== null && !newTargetPageId)
     ) {
       throw new Error("Survey duplicate failed to remap a conditional rule reference");
     }
@@ -786,21 +1073,25 @@ export async function duplicateSurveyTree(
     await queryable.query(
       `insert into conditional_logic_rules (
          survey_id,
+         source_page_id,
          source_question_id,
          source_answer_option_id,
          condition_operator,
          action_type,
          target_question_id,
+         target_page_id,
          skip_target_in_normal_flow
        )
-       values ($1, $2, $3, $4, $5, $6, $7)`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         newSurveyId,
+        newSourcePageId,
         newSourceQuestionId,
         newSourceOptionId,
         rule.condition_operator,
         rule.action_type,
         newTargetQuestionId ?? null,
+        newTargetPageId ?? null,
         rule.skip_target_in_normal_flow
       ]
     );

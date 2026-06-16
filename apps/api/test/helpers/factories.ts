@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   Survey,
+  SurveyPage,
   SurveyQuestion,
   SurveyQuestionType,
   SurveyStatus
@@ -98,6 +99,7 @@ export async function addQuestion(
     questionText: string;
     questionType?: SurveyQuestionType;
     isRequired?: boolean;
+    pageId?: number;
     displayOrder?: number;
     scaleMin?: number;
     scaleMax?: number;
@@ -110,6 +112,28 @@ export async function addQuestion(
       .send({
         questionType: "text",
         isRequired: true,
+        ...options
+      }),
+    201
+  );
+}
+
+export async function addPage(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  options: {
+    title: string;
+    description?: string | null;
+    displayOrder?: number;
+  }
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .post(`/api/surveys/${surveyId}/pages`)
+      .set("Cookie", admin.cookie)
+      .send({
+        description: null,
         ...options
       }),
     201
@@ -177,10 +201,12 @@ export async function addRule(
   surveyId: number,
   rule: {
     sourceQuestionId: number;
+    sourcePageId?: number | null;
     sourceAnswerOptionId?: number | null;
-    targetQuestionId: number;
+    targetQuestionId?: number | null;
+    targetPageId?: number | null;
     conditionOperator?: "equals" | "is_blank";
-    actionType?: "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+    actionType?: "JUMP_TO_QUESTION" | "JUMP_TO_PAGE" | "HIDE_QUESTION";
     skipTargetInNormalFlow?: boolean;
   }
 ): Promise<Survey> {
@@ -288,17 +314,30 @@ export async function createPublishedJumpSurvey(
   targetQuestion: SurveyQuestion;
 }> {
   let survey = await createDraftSurvey(app, admin, "Jump survey");
+  const routePage = survey.pages[0];
+  survey = await addPage(app, admin, survey.id, { title: "Middle page" });
+  const middlePage = survey.pages.find((page) => page.title === "Middle page");
+  survey = await addPage(app, admin, survey.id, { title: "Target page" });
+  const targetPage = survey.pages.find((page) => page.title === "Target page");
+
+  if (!routePage || !middlePage || !targetPage) {
+    throw new Error("Jump survey pages were not created");
+  }
+
   survey = await addQuestion(app, admin, survey.id, {
     questionText: "Route",
-    questionType: "single_select"
+    questionType: "single_select",
+    pageId: routePage.id
   });
   survey = await addQuestion(app, admin, survey.id, {
     questionText: "Middle",
-    isRequired: false
+    isRequired: false,
+    pageId: middlePage.id
   });
   survey = await addQuestion(app, admin, survey.id, {
     questionText: "Target",
-    isRequired: false
+    isRequired: false,
+    pageId: targetPage.id
   });
 
   const routeQuestionId = findQuestion(survey, "Route").id;
@@ -347,15 +386,35 @@ export async function createPublishedSkipSurvey(
   finalQuestion: SurveyQuestion;
 }> {
   let survey = await createDraftSurvey(app, admin, "Skip survey");
+  const triggerPage = survey.pages[0];
+  survey = await addPage(app, admin, survey.id, { title: "Hidden A page" });
+  const hiddenAPage = survey.pages.find((page) => page.title === "Hidden A page");
+  survey = await addPage(app, admin, survey.id, { title: "Hidden B page" });
+  const hiddenBPage = survey.pages.find((page) => page.title === "Hidden B page");
+  survey = await addPage(app, admin, survey.id, { title: "Final page" });
+  const finalPage = survey.pages.find((page) => page.title === "Final page");
+
+  if (!triggerPage || !hiddenAPage || !hiddenBPage || !finalPage) {
+    throw new Error("Skip survey pages were not created");
+  }
+
   survey = await addQuestion(app, admin, survey.id, {
     questionText: "Trigger",
-    questionType: "single_select"
+    questionType: "single_select",
+    pageId: triggerPage.id
   });
-  survey = await addQuestion(app, admin, survey.id, { questionText: "Hidden A" });
-  survey = await addQuestion(app, admin, survey.id, { questionText: "Hidden B" });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Hidden A",
+    pageId: hiddenAPage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Hidden B",
+    pageId: hiddenBPage.id
+  });
   survey = await addQuestion(app, admin, survey.id, {
     questionText: "Final",
-    isRequired: false
+    isRequired: false,
+    pageId: finalPage.id
   });
 
   const triggerQuestionId = findQuestion(survey, "Trigger").id;
@@ -411,6 +470,8 @@ export async function startAttempt(
     attempt: { id: number; status: string };
     survey: Survey;
     currentQuestion: SurveyQuestion | null;
+    currentPage: SurveyPage | null;
+    currentPageQuestionIds: number[];
   };
 }
 
@@ -439,6 +500,42 @@ export async function submitAnswer(
   return response.body as {
     attempt: { id: number; status: string };
     currentQuestion: SurveyQuestion | null;
+    currentPage: SurveyPage | null;
+    currentPageQuestionIds: number[];
+    isCompleteReady: boolean;
+  };
+}
+
+export async function submitPageAnswers(
+  app: Express,
+  session: TestSession,
+  surveyId: number,
+  pageId: number,
+  body: {
+    attemptId: number;
+    answers: {
+      questionId: number;
+      answerText?: string | null;
+      answerInteger?: number | null;
+      selectedAnswerOptionIds?: number[];
+    }[];
+  },
+  expectedStatus = 200
+) {
+  const response = await request(app)
+    .post(`/api/surveys/${surveyId}/pages/${pageId}/answer`)
+    .set("Cookie", session.cookie)
+    .send(body);
+
+  if (response.status !== expectedStatus) {
+    throw new Error(`Page answer failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body as {
+    attempt: { id: number; status: string };
+    currentQuestion: SurveyQuestion | null;
+    currentPage: SurveyPage | null;
+    currentPageQuestionIds: number[];
     isCompleteReady: boolean;
   };
 }

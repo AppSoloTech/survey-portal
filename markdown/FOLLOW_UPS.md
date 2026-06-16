@@ -21,6 +21,12 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Active Follow-Ups
 
+### Phase 11 Page-Based Flow
+
+- Run the API test suite after explicit approval to reset the local PostgreSQL test schema; sandbox escalation was rejected because the harness drops/recreates `public`.
+- Run a manual browser pass over the page-based admin builder and participant runner at 375/768/1280px: page CRUD/reorder, question movement, page batch answer save, previous/next navigation, question jump to a target page, page jump rules, and flow-map labels.
+- Optional-question completion gating: the progressive runner blocks completion until every question — including optional ones — has been explicitly visited (a response row exists), because `resolveProgressivePageState` reports an optional question with no saved row as the `currentQuestion`. Decided 2026-06-16 to keep this behavior. Implications to revisit if it becomes a friction point: a participant cannot "Finish early" leaving trailing optional questions un-visited; there is no page-level "skip remaining optional" control; and an optional question whose row is later removed/never created would re-gate completion. If we later want true optional skipping, treat optional questions as satisfied for completion in `validateReachedRequiredQuestions`/`resolveProgressivePageState` rather than gating on row existence.
+
 ### Auth And Security
 
 - Replace the in-memory auth rate-limit store with a shared store if the API ever scales horizontally.

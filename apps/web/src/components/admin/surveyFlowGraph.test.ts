@@ -23,6 +23,7 @@ function makeOption(overrides: Partial<AnswerOption> & { id: number; questionId:
 function makeQuestion(overrides: Partial<SurveyQuestion> & { id: number }): SurveyQuestion {
   return {
     surveyId: 1,
+    pageId: overrides.id,
     questionText: `Question ${overrides.id}`,
     questionType: "single_select",
     scaleMin: null,
@@ -42,6 +43,7 @@ function makeRule(
 ): ConditionalLogicRule {
   return {
     surveyId: 1,
+    sourcePageId: 1,
     sourceQuestionId: 1,
     sourceAnswerOptionId: 11,
     conditionOperator: "equals",
@@ -59,6 +61,10 @@ function makeSurvey(
   questions: SurveyQuestion[],
   conditionalLogicRules: ConditionalLogicRule[] = []
 ): Survey {
+  const pageIds = [...new Set(questions.map((question) => question.pageId))].sort(
+    (left, right) => left - right
+  );
+
   return {
     id: 1,
     title: "Flow survey",
@@ -72,6 +78,15 @@ function makeSurvey(
     publishedAt: null,
     retiredAt: null,
     deletedAt: null,
+    pages: pageIds.map((pageId) => ({
+      id: pageId,
+      surveyId: 1,
+      title: `Page ${pageId}`,
+      description: null,
+      displayOrder: pageId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    })),
     questions,
     conditionalLogicRules
   };
@@ -106,6 +121,27 @@ describe("buildSurveyFlowGraph nodes", () => {
     expect(graph.nodes.map((node) => node.questionId)).toEqual([1, 2]);
     expect(graph.nodes[0].isStart).toBe(true);
     expect(graph.nodes[1].isStart).toBe(false);
+  });
+
+  it("orders questions by page before page-scoped question order", () => {
+    const survey = makeSurvey([
+      makeQuestion({ id: 201, pageId: 2, displayOrder: 1 }),
+      makeQuestion({ id: 102, pageId: 1, displayOrder: 2 }),
+      makeQuestion({ id: 101, pageId: 1, displayOrder: 1 }),
+      makeQuestion({ id: 103, pageId: 1, displayOrder: 3 })
+    ]);
+    const graph = buildSurveyFlowGraph(survey);
+
+    expect(graph.nodes.map((node) => node.questionId)).toEqual([101, 102, 103, 201]);
+    expect(graph.nodes.map((node) => node.flowOrder)).toEqual([1, 2, 3, 4]);
+    expect(graph.nodes.map((node) => [node.pageDisplayOrder, node.questionDisplayOrder])).toEqual([
+      [1, 1],
+      [1, 2],
+      [1, 3],
+      [2, 1]
+    ]);
+    expect(graph.nodes.map((node) => node.normalNextQuestionId)).toEqual([102, 103, 201, null]);
+    expect(graph.issues).toHaveLength(0);
   });
 
   it("labels skip-flow jump targets as conditional only", () => {
@@ -352,7 +388,7 @@ describe("buildSurveyFlowGraph validation issues", () => {
     expect(issueCodes(backward)).toContain("backward_or_self_target");
   });
 
-  it("flags duplicate rules for the same source answer option", () => {
+  it("allows multiple navigation rules for the same source answer option", () => {
     const survey = makeSurvey(
       [sourceWithOption(), makeQuestion({ id: 2 }), makeQuestion({ id: 3 })],
       [
@@ -361,7 +397,45 @@ describe("buildSurveyFlowGraph validation issues", () => {
       ]
     );
 
-    expect(issueCodes(survey)).toContain("duplicate_rule_for_option");
+    expect(issueCodes(survey)).not.toContain("duplicate_rule_for_option");
+  });
+
+  it("adds a page navigation note when multiple navigation rules can fire on one page", () => {
+    const survey = makeSurvey(
+      [
+        sourceWithOption(),
+        makeQuestion({
+          id: 2,
+          pageId: 1,
+          displayOrder: 2,
+          answerOptions: [makeOption({ id: 21, questionId: 2 })]
+        }),
+        makeQuestion({ id: 3, pageId: 2, displayOrder: 1 }),
+        makeQuestion({ id: 4, pageId: 3, displayOrder: 1 })
+      ],
+      [
+        makeRule({
+          id: 1,
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: 11,
+          targetQuestionId: null,
+          targetPageId: 2,
+          actionType: "JUMP_TO_PAGE"
+        }),
+        makeRule({
+          id: 2,
+          sourceQuestionId: 2,
+          sourceAnswerOptionId: 21,
+          targetQuestionId: null,
+          targetPageId: 3,
+          actionType: "JUMP_TO_PAGE"
+        })
+      ]
+    );
+
+    expect(buildSurveyFlowGraph(survey).pageNavigationNotes).toEqual([
+      "Page 1 has multiple navigation rules. If more than one triggers on this page, the farthest target page wins."
+    ]);
   });
 
   it("flags questions unreachable by normal or conditional flow", () => {

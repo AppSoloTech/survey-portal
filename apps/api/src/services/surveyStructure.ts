@@ -13,12 +13,14 @@ import {
   mapAnswerTagRecord,
   mapConditionalLogicRuleRecord,
   mapQuestionValueTagRecord,
+  mapSurveyPageRecord,
   mapSurveyQuestionRecord,
   mapSurveyRecord,
   type AnswerOptionRecord,
   type AnswerTagRecord,
   type ConditionalLogicRuleRecord,
   type QuestionValueTagRecord,
+  type SurveyPageRecord,
   type SurveyQuestionRecord,
   type SurveyRecord
 } from "./surveyRecords.js";
@@ -84,20 +86,41 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     return [];
   }
 
-  const questionsResult = await pool.query<SurveyQuestionRecord>(
+  const pagesResult = await pool.query<SurveyPageRecord>(
     `select
        id,
        survey_id,
-       question_text,
-       question_type,
+       title,
+       description,
        display_order,
-       is_required,
-       help_text,
        created_at,
        updated_at
-     from survey_questions
+     from survey_pages
      where survey_id = any($1::int[])
      order by survey_id, display_order, id`,
+    [surveyIds]
+  );
+
+  const questionsResult = await pool.query<SurveyQuestionRecord>(
+    `select
+       survey_questions.id,
+       survey_questions.survey_id,
+       survey_questions.page_id,
+       question_text,
+       question_type,
+       survey_questions.display_order,
+       is_required,
+       help_text,
+       survey_questions.created_at,
+       survey_questions.updated_at
+     from survey_questions
+     join survey_pages on survey_pages.id = survey_questions.page_id
+     where survey_questions.survey_id = any($1::int[])
+     order by
+       survey_questions.survey_id,
+       survey_pages.display_order,
+       survey_questions.display_order,
+       survey_questions.id`,
     [surveyIds]
   );
 
@@ -160,6 +183,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     `select
        id,
        survey_id,
+       source_page_id,
        source_question_id,
        source_answer_option_id,
        condition_operator,
@@ -233,9 +257,18 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     rulesBySurveyId.set(rule.survey_id, rulesForSurvey);
   }
 
+  const pagesBySurveyId = new Map<number, ReturnType<typeof mapSurveyPageRecord>[]>();
+
+  for (const page of pagesResult.rows) {
+    const pagesForSurvey = pagesBySurveyId.get(page.survey_id) ?? [];
+    pagesForSurvey.push(mapSurveyPageRecord(page));
+    pagesBySurveyId.set(page.survey_id, pagesForSurvey);
+  }
+
   return surveysResult.rows.map((survey) =>
     mapSurveyRecord(
       survey,
+      pagesBySurveyId.get(survey.id) ?? [],
       questionsBySurveyId.get(survey.id) ?? [],
       rulesBySurveyId.get(survey.id) ?? []
     )

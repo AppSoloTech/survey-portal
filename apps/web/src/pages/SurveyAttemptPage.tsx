@@ -1,8 +1,11 @@
 import {
-  resolveAttemptPath,
+  getQuestionsForPage,
+  resolveAttemptPagePath,
+  resolveProgressivePageState,
   type Survey,
   type SurveyAttempt,
   type SurveyAttemptStatus,
+  type SurveyPage,
   type SurveyQuestion,
   type SurveyResponseAnswer
 } from "@survey-portal/shared";
@@ -31,6 +34,8 @@ interface ActiveSurveyState {
   survey: Survey;
   attempt: SurveyAttempt;
   currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
 }
 
 type DraftAnswerMap<T> = Record<number, T>;
@@ -128,21 +133,16 @@ export function SurveyAttemptPage() {
     );
   }, [activeSurvey?.attempt]);
 
-  const currentQuestionId = activeSurvey?.currentQuestion?.id ?? null;
-  const answerText = currentQuestionId ? answerTextByQuestionId[currentQuestionId] ?? "" : "";
-  const answerInteger = currentQuestionId ? answerIntegerByQuestionId[currentQuestionId] ?? "" : "";
-  const selectedAnswerOptionIds = currentQuestionId
-    ? selectedAnswerOptionIdsByQuestionId[currentQuestionId] ?? []
-    : [];
-
-  async function handleSubmitAnswer(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmitAnswer(question: SurveyQuestion, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!activeSurvey?.currentQuestion) {
+    if (!activeSurvey?.currentPage) {
       return;
     }
 
-    const question = activeSurvey.currentQuestion;
+    const answerText = answerTextByQuestionId[question.id] ?? "";
+    const answerInteger = answerIntegerByQuestionId[question.id] ?? "";
+    const selectedAnswerOptionIds = selectedAnswerOptionIdsByQuestionId[question.id] ?? [];
     const integerValue = answerInteger.trim() ? Number(answerInteger) : null;
 
     if (
@@ -167,6 +167,7 @@ export function SurveyAttemptPage() {
     setIsSubmitting(true);
 
     try {
+      const isUpdatingReviewedQuestion = question.id !== activeSurvey.currentQuestion?.id;
       const response = await answerSurvey({
         surveyId: activeSurvey.survey.id,
         attemptId: activeSurvey.attempt.id,
@@ -184,7 +185,18 @@ export function SurveyAttemptPage() {
       setActiveSurvey({
         survey: activeSurvey.survey,
         attempt: response.attempt,
-        currentQuestion: response.currentQuestion
+        currentQuestion:
+          isUpdatingReviewedQuestion && response.currentPage === null
+            ? activeSurvey.currentQuestion
+            : response.currentQuestion,
+        currentPage:
+          isUpdatingReviewedQuestion && response.currentPage === null
+            ? activeSurvey.currentPage
+            : response.currentPage,
+        currentPageQuestionIds:
+          isUpdatingReviewedQuestion && response.currentPage === null
+            ? activeSurvey.currentPageQuestionIds
+            : response.currentPageQuestionIds
       });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not save answer");
@@ -209,7 +221,9 @@ export function SurveyAttemptPage() {
       setActiveSurvey({
         survey: activeSurvey.survey,
         attempt: response.attempt,
-        currentQuestion: null
+        currentQuestion: null,
+        currentPage: null,
+        currentPageQuestionIds: []
       });
     } catch (completeError) {
       setError(completeError instanceof Error ? completeError.message : "Could not submit survey");
@@ -223,28 +237,50 @@ export function SurveyAttemptPage() {
       return;
     }
 
-    const { path } = resolveAttemptPath(activeSurvey.survey, activeSurvey.attempt.responses);
-    const currentIndex = activeSurvey.currentQuestion
-      ? path.findIndex((question) => question.id === activeSurvey.currentQuestion?.id)
+    const { path } = resolveAttemptPagePath(activeSurvey.survey, activeSurvey.attempt.responses);
+    const currentIndex = activeSurvey.currentPage
+      ? path.findIndex((page) => page.id === activeSurvey.currentPage?.id)
       : path.length;
-    const previousQuestion = currentIndex > 0 ? path[currentIndex - 1] ?? null : null;
+    const previousPage = currentIndex > 0 ? path[currentIndex - 1] ?? null : null;
 
-    if (previousQuestion) {
+    if (previousPage) {
+      const { visibleQuestionIdsByPageId } = resolveAttemptPagePath(
+        activeSurvey.survey,
+        activeSurvey.attempt.responses
+      );
+
       setActiveSurvey({
         ...activeSurvey,
-        currentQuestion: previousQuestion
+        currentPage: previousPage,
+        currentQuestion: null,
+        currentPageQuestionIds:
+          visibleQuestionIdsByPageId[previousPage.id] ??
+          getQuestionsForPage(activeSurvey.survey, previousPage.id).map((question) => question.id)
       });
       setError(null);
     }
   }
 
-  function handleSelection(optionId: number, checked: boolean) {
-    const question = activeSurvey?.currentQuestion;
-
-    if (!question) {
+  function handleResume() {
+    if (!activeSurvey) {
       return;
     }
 
+    const state = resolveProgressivePageState(
+      activeSurvey.survey,
+      activeSurvey.attempt.responses
+    );
+
+    setActiveSurvey({
+      ...activeSurvey,
+      currentPage: state.currentPage,
+      currentQuestion: state.currentQuestion,
+      currentPageQuestionIds: state.currentPageQuestionIds
+    });
+    setError(null);
+  }
+
+  function handleSelection(question: SurveyQuestion, optionId: number, checked: boolean) {
     if (question.questionType === "single_select" || question.questionType === "scale") {
       setSelectedAnswerOptionIdsByQuestionId((current) => ({
         ...current,
@@ -265,20 +301,12 @@ export function SurveyAttemptPage() {
     });
   }
 
-  function handleTextChange(value: string) {
-    if (!activeSurvey?.currentQuestion) {
-      return;
-    }
-
-    setDraftAnswer(setAnswerTextByQuestionId, activeSurvey.currentQuestion.id, value);
+  function handleTextChange(questionId: number, value: string) {
+    setDraftAnswer(setAnswerTextByQuestionId, questionId, value);
   }
 
-  function handleIntegerChange(value: string) {
-    if (!activeSurvey?.currentQuestion) {
-      return;
-    }
-
-    setDraftAnswer(setAnswerIntegerByQuestionId, activeSurvey.currentQuestion.id, value);
+  function handleIntegerChange(questionId: number, value: string) {
+    setDraftAnswer(setAnswerIntegerByQuestionId, questionId, value);
   }
 
   function handleClose() {
@@ -314,17 +342,18 @@ export function SurveyAttemptPage() {
         <div className="attempt-surface">
           <SurveyRunner
             activeSurvey={activeSurvey}
-            answerInteger={answerInteger}
-            answerText={answerText}
+            answerIntegerByQuestionId={answerIntegerByQuestionId}
+            answerTextByQuestionId={answerTextByQuestionId}
             isSubmitting={isSubmitting}
             onClose={handleClose}
             onComplete={() => void handleComplete()}
             onIntegerChange={handleIntegerChange}
             onPrevious={handlePrevious}
+            onResume={handleResume}
             onSelectionChange={handleSelection}
             onSubmit={handleSubmitAnswer}
             onTextChange={handleTextChange}
-            selectedAnswerOptionIds={selectedAnswerOptionIds}
+            selectedAnswerOptionIdsByQuestionId={selectedAnswerOptionIdsByQuestionId}
           />
         </div>
       ) : null}
@@ -334,47 +363,49 @@ export function SurveyAttemptPage() {
 
 function SurveyRunner({
   activeSurvey,
-  answerInteger,
-  answerText,
+  answerIntegerByQuestionId,
+  answerTextByQuestionId,
   isSubmitting,
   onClose,
   onComplete,
   onIntegerChange,
   onPrevious,
+  onResume,
   onSelectionChange,
   onSubmit,
   onTextChange,
-  selectedAnswerOptionIds
+  selectedAnswerOptionIdsByQuestionId
 }: {
   activeSurvey: ActiveSurveyState;
-  answerInteger: string;
-  answerText: string;
+  answerIntegerByQuestionId: DraftAnswerMap<string>;
+  answerTextByQuestionId: DraftAnswerMap<string>;
   isSubmitting: boolean;
   onClose: () => void;
   onComplete: () => void;
-  onIntegerChange: (value: string) => void;
+  onIntegerChange: (questionId: number, value: string) => void;
   onPrevious: () => void;
-  onSelectionChange: (optionId: number, checked: boolean) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onTextChange: (value: string) => void;
-  selectedAnswerOptionIds: number[];
+  onResume: () => void;
+  onSelectionChange: (question: SurveyQuestion, optionId: number, checked: boolean) => void;
+  onSubmit: (question: SurveyQuestion, event: FormEvent<HTMLFormElement>) => void;
+  onTextChange: (questionId: number, value: string) => void;
+  selectedAnswerOptionIdsByQuestionId: DraftAnswerMap<number[]>;
 }) {
-  const { survey, attempt, currentQuestion } = activeSurvey;
+  const { survey, attempt, currentPage, currentQuestion, currentPageQuestionIds } = activeSurvey;
   // Each question (and the completion panel) cascades in as it appears.
   // Two refs because the runner renders either a <form> or a <div> panel.
-  const revealRef = useReveal<HTMLDivElement>([currentQuestion?.id ?? null, attempt.status]);
-  const formRevealRef = useReveal<HTMLFormElement>([currentQuestion?.id ?? null]);
+  const revealRef = useReveal<HTMLDivElement>([currentPage?.id ?? null, attempt.status]);
+  const formRevealRef = useReveal<HTMLDivElement>([currentPage?.id ?? null]);
   // The resolved path counts only questions the participant actually visits:
   // skip-logic targets excluded from the normal flow are not part of the
   // total unless an answer jumps to them.
-  const { path } = resolveAttemptPath(survey, attempt.responses);
-  const currentIndex = currentQuestion
-    ? path.findIndex((question) => question.id === currentQuestion.id)
+  const { path } = resolveAttemptPagePath(survey, attempt.responses);
+  const currentIndex = currentPage
+    ? path.findIndex((page) => page.id === currentPage.id)
     : path.length;
-  const previousQuestion = currentIndex > 0 ? path[currentIndex - 1] ?? null : null;
+  const previousPage = currentIndex > 0 ? path[currentIndex - 1] ?? null : null;
 
-  if (!currentQuestion) {
-    const savedAnswerCount = countSavedAnswers(attempt, path);
+  if (!currentPage) {
+    const savedAnswerCount = countSavedAnswers(survey, attempt, path);
     const isCompleted = attempt.status === "completed";
 
     return (
@@ -395,7 +426,7 @@ function SurveyRunner({
             </dd>
           </div>
           <div>
-            <dt>Questions on your path</dt>
+            <dt>Pages on your path</dt>
             <dd>
               <AnimatedNumber value={path.length} />
             </dd>
@@ -413,7 +444,7 @@ function SurveyRunner({
         <div className="survey-actions">
           <button
             className="button-link secondary-button"
-            disabled={!previousQuestion || isSubmitting || attempt.status === "completed"}
+            disabled={!previousPage || isSubmitting || attempt.status === "completed"}
             onClick={onPrevious}
             type="button"
           >
@@ -441,20 +472,26 @@ function SurveyRunner({
   }
 
   const progressValue = currentIndex >= 0 ? currentIndex + 1 : 1;
+  const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
+  const pageQuestions = currentPageQuestionIds
+    .map((questionId) => questionsById.get(questionId))
+    .filter((question): question is SurveyQuestion => Boolean(question));
+  const activeQuestionId = currentQuestion?.id ?? null;
+  const isReviewingPreviousPage = activeQuestionId === null;
 
   return (
-    <form
+    <div
       className="question-form"
-      key={currentQuestion.id}
-      onSubmit={onSubmit}
+      key={currentPage.id}
       ref={formRevealRef}
     >
       <div className="question-progress" data-reveal>
         <div>
           <p className="eyebrow">{survey.title}</p>
           <h3>
-            Question {progressValue} of {path.length}
+            Page {progressValue} of {path.length}
           </h3>
+          <p className="muted">{currentPage.title}</p>
         </div>
         <div
           aria-valuemax={path.length}
@@ -470,35 +507,77 @@ function SurveyRunner({
         </div>
       </div>
 
-      <fieldset data-reveal>
-        <legend className="visually-hidden">{currentQuestion.questionText}</legend>
-        <h4 aria-hidden="true" className="question-prompt">
-          {currentQuestion.questionText}
-        </h4>
-        {currentQuestion.helpText ? <p className="muted">{currentQuestion.helpText}</p> : null}
-        {renderQuestionControl({
-          answerInteger,
-          answerText,
-          currentQuestion,
-          onIntegerChange,
-          onSelectionChange,
-          onTextChange,
-          selectedAnswerOptionIds
-        })}
-      </fieldset>
+      {currentPage.description ? <p className="muted">{currentPage.description}</p> : null}
+
+      {pageQuestions.map((question) => {
+        const isActiveQuestion = question.id === activeQuestionId;
+
+        return (
+        <form
+          className={isActiveQuestion ? "question-step active" : "question-step answered"}
+          id={`question-form-${question.id}`}
+          key={question.id}
+          onSubmit={(event) => onSubmit(question, event)}
+        >
+          <fieldset>
+            <legend className="visually-hidden">{question.questionText}</legend>
+            <h4 aria-hidden="true" className="question-prompt">
+              {question.questionText}
+            </h4>
+            {question.helpText ? <p className="muted">{question.helpText}</p> : null}
+            {renderQuestionControl({
+              answerInteger: answerIntegerByQuestionId[question.id] ?? "",
+              answerText: answerTextByQuestionId[question.id] ?? "",
+              currentQuestion: question,
+              onIntegerChange,
+              onSelectionChange,
+              onTextChange,
+              selectedAnswerOptionIds: selectedAnswerOptionIdsByQuestionId[question.id] ?? []
+            })}
+            {!isActiveQuestion ? (
+              <div className="question-step-actions">
+                <button
+                  className="button-link secondary-button compact-button"
+                  disabled={isSubmitting}
+                  type="submit"
+                >
+                  {isSubmitting ? "Saving..." : "Update answer"}
+                </button>
+              </div>
+            ) : null}
+          </fieldset>
+        </form>
+        );
+      })}
 
       <div className="survey-actions" data-reveal>
         <button
           className="button-link secondary-button"
-          disabled={!previousQuestion || isSubmitting}
+          disabled={!previousPage || isSubmitting}
           onClick={onPrevious}
           type="button"
         >
           Previous
         </button>
-        <button className="button-link primary-button" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Saving..." : "Next"}
-        </button>
+        {currentQuestion ? (
+          <button
+            className="button-link primary-button"
+            disabled={isSubmitting}
+            form={`question-form-${currentQuestion.id}`}
+            type="submit"
+          >
+            {isSubmitting ? "Saving..." : "Continue"}
+          </button>
+        ) : isReviewingPreviousPage ? (
+          <button
+            className="button-link primary-button"
+            disabled={isSubmitting}
+            onClick={onResume}
+            type="button"
+          >
+            Resume
+          </button>
+        ) : null}
         <button
           className="button-link ghost-button"
           disabled={isSubmitting}
@@ -508,7 +587,7 @@ function SurveyRunner({
           Back to surveys
         </button>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -524,16 +603,16 @@ function renderQuestionControl({
   answerInteger: string;
   answerText: string;
   currentQuestion: SurveyQuestion;
-  onIntegerChange: (value: string) => void;
-  onSelectionChange: (optionId: number, checked: boolean) => void;
-  onTextChange: (value: string) => void;
+  onIntegerChange: (questionId: number, value: string) => void;
+  onSelectionChange: (question: SurveyQuestion, optionId: number, checked: boolean) => void;
+  onTextChange: (questionId: number, value: string) => void;
   selectedAnswerOptionIds: number[];
 }) {
   if (currentQuestion.questionType === "text") {
     return (
       <textarea
         key={currentQuestion.id}
-        onChange={(event) => onTextChange(event.target.value)}
+        onChange={(event) => onTextChange(currentQuestion.id, event.target.value)}
         required={currentQuestion.isRequired}
         value={answerText}
       />
@@ -544,7 +623,7 @@ function renderQuestionControl({
     return (
       <IntegerStepperControl
         key={currentQuestion.id}
-        onChange={onIntegerChange}
+        onChange={(value) => onIntegerChange(currentQuestion.id, value)}
         question={currentQuestion}
         value={answerInteger}
       />
@@ -555,7 +634,7 @@ function renderQuestionControl({
     return (
       <ScaleSliderControl
         key={currentQuestion.id}
-        onSelect={(optionId) => onSelectionChange(optionId, true)}
+        onSelect={(optionId) => onSelectionChange(currentQuestion, optionId, true)}
         question={currentQuestion}
         selectedAnswerOptionIds={selectedAnswerOptionIds}
       />
@@ -569,7 +648,9 @@ function renderQuestionControl({
           <input
             checked={selectedAnswerOptionIds.includes(option.id)}
             name={`question-${currentQuestion.id}`}
-            onChange={(event) => onSelectionChange(option.id, event.target.checked)}
+            onChange={(event) =>
+              onSelectionChange(currentQuestion, option.id, event.target.checked)
+            }
             required={
               currentQuestion.questionType === "single_select" &&
               currentQuestion.isRequired &&
@@ -759,8 +840,14 @@ function setDraftAnswer<T>(
 
 // Counts saved answers that sit on the resolved path so the summary numbers
 // always reconcile with "Questions on your path".
-function countSavedAnswers(attempt: SurveyAttempt, path: SurveyQuestion[]): number {
-  const pathQuestionIds = new Set(path.map((question) => question.id));
+function countSavedAnswers(
+  survey: Survey,
+  attempt: SurveyAttempt,
+  path: SurveyPage[]
+): number {
+  const pathQuestionIds = new Set(
+    path.flatMap((page) => getQuestionsForPage(survey, page.id).map((question) => question.id))
+  );
 
   return new Set(
     attempt.responses

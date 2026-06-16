@@ -1,0 +1,86 @@
+# Phase 11A-D — Page-Based Survey Flow
+
+## Purpose
+
+Implement page-based survey construction and participant navigation from
+`notes/page_logic_addition.txt`.
+
+This phase intentionally replaces the original one-question-per-page MVP
+decision with a compatibility-first page model:
+
+* existing surveys migrate to one page per existing question
+* new surveys have pages
+* survey runners show one page at a time
+* page-level skip logic v1 supports `JUMP_TO_PAGE`
+
+## Required Reading
+
+Read before implementation:
+
+* `notes/page_logic_addition.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+
+## Scope
+
+Implement:
+
+* survey page schema and compatibility backfill
+* shared page types and page-aware navigation helpers
+* admin page CRUD, page reorder, question placement, and page-scoped reorder
+* participant page runner with batch page answer save
+* page-level `JUMP_TO_PAGE` rules
+* tests and closeout artifacts
+
+## Non-Goals
+
+Do not implement:
+
+* sections separate from pages
+* backward or same-page page jumps
+* `SHOW_QUESTION`, `END_SURVEY`, or page-level hide actions
+* removal of the legacy single-question answer endpoint
+* public anonymous survey links
+
+## Assumptions
+
+* Existing surveys migrate as one page per question.
+* Empty surveys receive a default `Page 1`.
+* Page deletes are draft-only and allowed only for empty non-last pages.
+* Existing `Survey.questions` remains as a flattened compatibility field.
+* Page-level rules are answer-conditioned by a question on that same page.
+
+## Validation Gate
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+If the full gate cannot run, document the blocker and narrower validation.
+
+## Closeout
+
+Create:
+
+```txt
+notes/claude_handoff_phase_11A.txt
+```
+
+Update:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/FOLLOW_UPS.md` if anything is deferred

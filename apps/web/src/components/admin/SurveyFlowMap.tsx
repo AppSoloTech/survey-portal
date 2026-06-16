@@ -40,6 +40,7 @@ export function SurveyFlowMap({ survey }: { survey: Survey }) {
       </div>
 
       <FlowIssueSummary graph={graph} />
+      <FlowNavigationNotes graph={graph} />
 
       {graph.nodes.length === 0 ? (
         <div className="builder-empty-state compact">
@@ -100,6 +101,26 @@ function FlowIssueSummary({ graph }: { graph: SurveyFlowGraph }) {
   );
 }
 
+function FlowNavigationNotes({ graph }: { graph: SurveyFlowGraph }) {
+  if (graph.pageNavigationNotes.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flow-issue-panel">
+      <strong>Page navigation notes</strong>
+      <span className="flow-issue-panel-note">
+        Page rules are evaluated after the full page is submitted.
+      </span>
+      <ul>
+        {graph.pageNavigationNotes.map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function FlowQuestionNode({
   graph,
   node,
@@ -116,11 +137,14 @@ function FlowQuestionNode({
     (edge) => edge.targetQuestionId === node.questionId
   );
   const incomingJumpEdges = incomingEdges.filter(
-    (edge) => edge.actionType === "JUMP_TO_QUESTION"
+    (edge) => edge.actionType === "JUMP_TO_QUESTION" || edge.actionType === "JUMP_TO_PAGE"
   );
   const incomingSkipEdges = incomingEdges.filter((edge) => edge.actionType === "HIDE_QUESTION");
   const incomingNonExecutedEdges = incomingEdges.filter(
-    (edge) => edge.actionType !== "JUMP_TO_QUESTION" && edge.actionType !== "HIDE_QUESTION"
+    (edge) =>
+      edge.actionType !== "JUMP_TO_QUESTION" &&
+      edge.actionType !== "JUMP_TO_PAGE" &&
+      edge.actionType !== "HIDE_QUESTION"
   );
   const nodeClassNames = [
     "flow-node",
@@ -134,11 +158,12 @@ function FlowQuestionNode({
     <li className={nodeClassNames}>
       <div className="flow-node-header">
         <span className="flow-node-order" aria-hidden="true">
-          {node.displayOrder}
+          {node.flowOrder}
         </span>
         <div>
           <div className="question-meta-strip flow-node-badges">
-            <span>Question {node.displayOrder}</span>
+            <span>Page {node.pageDisplayOrder}</span>
+            <span>Question {node.questionDisplayOrder}</span>
             <span>{formatQuestionType(node.questionType)}</span>
             <span>{node.isRequired ? "Required" : "Optional"}</span>
             {node.isStart ? <span className="flow-badge start">Start</span> : null}
@@ -233,6 +258,10 @@ function describeOutgoingEdge(
     return `If ${conditionLabel}, skip ${targetLabel}.`;
   }
 
+  if (edge.actionType === "JUMP_TO_PAGE") {
+    return `If ${conditionLabel}, jump to page containing ${targetLabel}.`;
+  }
+
   if (edge.actionType !== "JUMP_TO_QUESTION") {
     return `If ${conditionLabel}: rule action ${edge.actionType} targets ${targetLabel} but is not executed by the runtime.`;
   }
@@ -241,7 +270,7 @@ function describeOutgoingEdge(
     ? " Target is skipped in normal flow."
     : " Target also stays in normal flow.";
 
-  return `If ${conditionLabel}, jump to ${targetLabel}.${skipLabel}`;
+  return `If ${conditionLabel}, jump to page containing ${targetLabel}.${skipLabel}`;
 }
 
 function describeIncomingEdge(
@@ -279,5 +308,8 @@ function formatNodeReference(node: SurveyFlowNode | undefined): string {
     return "a missing question";
   }
 
-  return `question ${node.displayOrder} ("${truncateText(node.questionText, 48)}")`;
+  return `page ${node.pageDisplayOrder} question ${node.questionDisplayOrder} ("${truncateText(
+    node.questionText,
+    48
+  )}")`;
 }

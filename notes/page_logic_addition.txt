@@ -1,0 +1,111 @@
+# Survey Builder Page-Based Flow Enhancement
+
+## Context
+
+The survey portal currently presents survey questions one at a time during survey completion.
+
+Admins can already define skip logic while constructing a survey. Existing skip logic works at the question/answer level: when a user answers a specific question with a specific answer, the survey jumps to a target question.
+
+The client now wants functionality closer to SurveyMonkey, where surveys are organized into pages, and each page can contain one or more questions.
+
+## Goal
+
+Enhance the survey builder and survey-taking flow to support page-based survey construction and navigation.
+
+Admins should be able to:
+
+1. Create survey pages.
+2. Add any number of questions to each page.
+3. Reorder pages.
+4. Reorder questions within a page.
+5. Move questions between pages.
+6. Apply skip logic to individual questions.
+7. Apply skip logic to pages.
+
+Survey takers should experience the survey as a sequence of pages, where each page displays all questions assigned to that page.
+
+## Required Behavior
+
+### Admin Survey Builder
+
+The survey builder should support a page/question hierarchy:
+
+* A survey contains many pages.
+* A page contains many questions.
+* Questions belong to a specific page.
+* Pages have an explicit display order.
+* Questions within a page have an explicit display order.
+
+Admins should be able to create, edit, delete, and reorder pages.
+
+Admins should be able to add questions to a specific page, reorder questions within that page, and move questions from one page to another.
+
+### Survey Taking Flow
+
+Instead of showing exactly one question at a time, the survey-taking UI should show one page at a time.
+
+Each page should display all questions assigned to that page.
+
+The user completes the questions on the current page and clicks Next.
+
+The system then determines the next page based on:
+
+1. Any applicable skip logic triggered by answers on the current page.
+2. Page-level skip logic.
+3. Normal page order if no skip logic applies.
+
+### Skip Logic
+
+The system should support both question-level and page-level skip logic.
+
+Question-level skip logic:
+
+* Triggered when a specific question receives a specific answer.
+* Can jump to a target question or target page.
+* If jumping to a target question, the system should navigate to the page containing that question and position the flow appropriately.
+
+Page-level skip logic:
+
+* Applied at the page level.
+* Can determine which page should be shown next.
+* May be based on answers given to questions on that page.
+* Can jump to another page, skip over pages, or continue normally.
+
+### Important Design Considerations
+
+The implementation should avoid hard-coding flow behavior into the frontend.
+
+Survey flow should be driven by database-defined survey structure and logic rules.
+
+The data model should clearly support:
+
+* Survey pages
+* Page order
+* Question order within pages
+* Question-to-page relationships
+* Logic rules that can target either a question or a page
+* Logic rules that can be scoped to either a question or a page
+
+The implementation should preserve existing question-level skip logic where possible, but refactor it as needed to fit the new page-based model cleanly.
+
+Before implementation, review the existing survey schema, current skip logic implementation, and survey-taking flow. Propose the required data model changes and flow engine changes before modifying code.
+
+## Desired Outcome
+
+The finished system should allow admins to build surveys made up of multiple pages, place multiple questions on each page, and define branching logic at both the question and page level.
+
+The survey taker should move through pages, not individual questions, while still respecting skip logic rules defined by the admin.
+
+## Survey Taker Flow Refinement
+
+The survey-taking experience should change from a one-question-at-a-time flow to a page-based flow.
+
+Instead of rendering a single question per screen, the application should render one survey page at a time.
+
+Each survey page may contain one or more questions, and all questions assigned to that page should be displayed together.
+
+The user completes all required questions on the current page, then clicks Next.
+
+At that point, the system evaluates any applicable skip logic and determines which page should be shown next.
+
+The survey taker should not manually see or manage the underlying question/page logic. They should simply experience a clean page-by-page survey flow.

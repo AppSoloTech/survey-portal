@@ -13,6 +13,7 @@ const timestamp = "2026-01-01T00:00:00.000Z";
 function makeQuestion(overrides: Partial<SurveyQuestion> & { id: number }): SurveyQuestion {
   return {
     surveyId: 1,
+    pageId: overrides.id,
     questionText: `Question ${overrides.id}`,
     questionType: "single_select",
     scaleMin: null,
@@ -32,6 +33,7 @@ function makeRule(
 ): ConditionalLogicRule {
   return {
     surveyId: 1,
+    sourcePageId: 1,
     sourceQuestionId: 1,
     sourceAnswerOptionId: 11,
     conditionOperator: "equals",
@@ -62,6 +64,15 @@ function makeSurvey(
     publishedAt: timestamp,
     retiredAt: null,
     deletedAt: null,
+    pages: questions.map((question) => ({
+      id: question.pageId,
+      surveyId: 1,
+      title: `Page ${question.pageId}`,
+      description: null,
+      displayOrder: question.pageId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    })),
     questions,
     conditionalLogicRules
   };

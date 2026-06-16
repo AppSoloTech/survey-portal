@@ -9,6 +9,8 @@ const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
 const scaleRangeMaxValueCount = 21;
 const categoryNameMaxLength = 120;
+const surveyPageTitleMaxLength = 180;
+const surveyPageDescriptionMaxLength = 600;
 
 export function validateSurveyBody(body: unknown): ValidationResult<{
   title: string;
@@ -96,6 +98,7 @@ export interface QuestionBodyValue {
   questionType: SurveyQuestionType;
   scaleMin: number | null;
   scaleMax: number | null;
+  pageId: number | null;
   displayOrder: number | null;
   isRequired: boolean;
   helpText: string | null;
@@ -110,6 +113,7 @@ export function validateQuestionBody(body: unknown): ValidationResult<QuestionBo
   const questionType = readTextField(body, "questionType");
   const helpText = readOptionalTextField(body, "helpText");
   const displayOrder = readOptionalPositiveIntegerField(body, "displayOrder");
+  const pageId = readOptionalPositiveIntegerField(body, "pageId");
   const scaleMin = readOptionalIntegerField(body, "scaleMin");
   const scaleMax = readOptionalIntegerField(body, "scaleMax");
   const isRequired = body.isRequired === undefined ? true : body.isRequired;
@@ -132,6 +136,10 @@ export function validateQuestionBody(body: unknown): ValidationResult<QuestionBo
 
   if (displayOrder === false) {
     return { ok: false, error: "Display order must be a positive integer" };
+  }
+
+  if (pageId === false) {
+    return { ok: false, error: "pageId must be a positive integer" };
   }
 
   if (scaleMin === false || scaleMax === false) {
@@ -163,11 +171,47 @@ export function validateQuestionBody(body: unknown): ValidationResult<QuestionBo
       questionType,
       scaleMin: questionType === "scale" ? scaleMin : null,
       scaleMax: questionType === "scale" ? scaleMax : null,
+      pageId,
       displayOrder,
       isRequired,
       helpText
     }
   };
+}
+
+export function validateSurveyPageBody(body: unknown): ValidationResult<{
+  title: string;
+  description: string | null;
+  displayOrder: number | null;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const title = readTextField(body, "title");
+  const description = readOptionalTextField(body, "description");
+  const displayOrder = readOptionalPositiveIntegerField(body, "displayOrder");
+
+  if (!title) {
+    return { ok: false, error: "Page title is required" };
+  }
+
+  if (title.length > surveyPageTitleMaxLength) {
+    return { ok: false, error: `Page title must be ${surveyPageTitleMaxLength} characters or fewer` };
+  }
+
+  if (description && description.length > surveyPageDescriptionMaxLength) {
+    return {
+      ok: false,
+      error: `Page description must be ${surveyPageDescriptionMaxLength} characters or fewer`
+    };
+  }
+
+  if (displayOrder === false) {
+    return { ok: false, error: "Display order must be a positive integer" };
+  }
+
+  return { ok: true, value: { title, description, displayOrder } };
 }
 
 export function validateAnswerOptionBody(body: unknown): ValidationResult<{
@@ -307,13 +351,15 @@ export function validateAttemptDateRange(query: {
   return { ok: true, value: range };
 }
 
-export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION" | "JUMP_TO_PAGE";
 export type ConditionalRuleConditionOperator = "equals" | "is_blank";
 
 export interface ConditionalRuleBodyValue {
+  sourcePageId: number | null;
   sourceQuestionId: number;
   sourceAnswerOptionId: number | null;
-  targetQuestionId: number;
+  targetQuestionId: number | null;
+  targetPageId: number | null;
   conditionOperator: ConditionalRuleConditionOperator;
   actionType: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
@@ -327,25 +373,43 @@ export function validateConditionalRuleBody(
   }
 
   const sourceQuestionId = readPositiveIntegerField(body, "sourceQuestionId");
+  const sourcePageId = readOptionalPositiveIntegerField(body, "sourcePageId");
   const sourceAnswerOptionId = readPositiveIntegerField(body, "sourceAnswerOptionId");
-  const targetQuestionId = readPositiveIntegerField(body, "targetQuestionId");
+  const targetQuestionId = readOptionalPositiveIntegerField(body, "targetQuestionId");
+  const targetPageId = readOptionalPositiveIntegerField(body, "targetPageId");
   const skipTargetInNormalFlowValue = body.skipTargetInNormalFlow;
   const conditionOperator = readTextField(body, "conditionOperator") || "equals";
   const actionType = readTextField(body, "actionType") || "JUMP_TO_QUESTION";
 
-  if (!sourceQuestionId || !targetQuestionId) {
+  if (!sourceQuestionId) {
     return {
       ok: false,
-      error: "Source question and target question are required"
+      error: "Source question is required"
     };
+  }
+
+  if (sourcePageId === false) {
+    return { ok: false, error: "sourcePageId must be a positive integer" };
+  }
+
+  if (targetQuestionId === false) {
+    return { ok: false, error: "targetQuestionId must be a positive integer" };
+  }
+
+  if (targetPageId === false) {
+    return { ok: false, error: "targetPageId must be a positive integer" };
   }
 
   if (conditionOperator !== "equals" && conditionOperator !== "is_blank") {
     return { ok: false, error: "Condition operator must be equals or is_blank" };
   }
 
-  if (actionType !== "JUMP_TO_QUESTION" && actionType !== "HIDE_QUESTION") {
-    return { ok: false, error: "Action type must be JUMP_TO_QUESTION or HIDE_QUESTION" };
+  if (
+    actionType !== "JUMP_TO_QUESTION" &&
+    actionType !== "HIDE_QUESTION" &&
+    actionType !== "JUMP_TO_PAGE"
+  ) {
+    return { ok: false, error: "Action type must be JUMP_TO_QUESTION, JUMP_TO_PAGE, or HIDE_QUESTION" };
   }
 
   if (conditionOperator === "equals" && !sourceAnswerOptionId) {
@@ -368,6 +432,18 @@ export function validateConditionalRuleBody(
     }
   }
 
+  if (actionType === "JUMP_TO_PAGE") {
+    if (targetPageId === null) {
+      return { ok: false, error: "Target page is required for page jumps" };
+    }
+
+    if (targetQuestionId !== null) {
+      return { ok: false, error: "Page jumps cannot include a target question" };
+    }
+  } else if (targetQuestionId === null) {
+    return { ok: false, error: "Target question is required" };
+  }
+
   if (
     skipTargetInNormalFlowValue !== undefined &&
     typeof skipTargetInNormalFlowValue !== "boolean"
@@ -379,7 +455,9 @@ export function validateConditionalRuleBody(
     ok: true,
     value: {
       sourceQuestionId,
+      sourcePageId,
       sourceAnswerOptionId: conditionOperator === "is_blank" ? null : sourceAnswerOptionId,
+      targetPageId: actionType === "JUMP_TO_PAGE" ? targetPageId : null,
       targetQuestionId,
       conditionOperator,
       actionType,
@@ -398,7 +476,7 @@ export function validateConditionalRuleBody(
 
 export function validateReorderBody(
   body: unknown,
-  field: "questionIds" | "optionIds"
+  field: "pageIds" | "questionIds" | "optionIds"
 ): ValidationResult<{ ids: number[] }> {
   if (!isRecord(body)) {
     return { ok: false, error: "Request body is required" };
@@ -423,6 +501,11 @@ export interface AnswerRequestValue {
   answerText: string | null;
   answerInteger: number | null;
   selectedAnswerOptionIds: number[];
+}
+
+export interface PageAnswerRequestValue {
+  attemptId: number;
+  answers: AnswerRequestValue[];
 }
 
 export interface NormalizedAnswerValue {
@@ -485,6 +568,42 @@ export function validateAnswerBody(body: unknown): ValidationResult<AnswerReques
       selectedAnswerOptionIds: selectedAnswerOptionIds.value
     }
   };
+}
+
+export function validatePageAnswerBody(body: unknown): ValidationResult<PageAnswerRequestValue> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const attemptId = readPositiveIntegerField(body, "attemptId");
+
+  if (!attemptId) {
+    return { ok: false, error: "Attempt id is required" };
+  }
+
+  if (!Array.isArray(body.answers)) {
+    return { ok: false, error: "answers must be an array" };
+  }
+
+  const answers: AnswerRequestValue[] = [];
+  const seenQuestionIds = new Set<number>();
+
+  for (const answer of body.answers) {
+    const validation = validateAnswerBody({ ...(isRecord(answer) ? answer : {}), attemptId });
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    if (seenQuestionIds.has(validation.value.questionId)) {
+      return { ok: false, error: "Each question can be answered only once per page submit" };
+    }
+
+    seenQuestionIds.add(validation.value.questionId);
+    answers.push(validation.value);
+  }
+
+  return { ok: true, value: { attemptId, answers } };
 }
 
 export function validateCompleteBody(body: unknown): ValidationResult<{ attemptId: number }> {

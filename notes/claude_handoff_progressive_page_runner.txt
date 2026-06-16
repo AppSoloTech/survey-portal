@@ -1,0 +1,167 @@
+Claude Review Handoff — Progressive Page Runner Refactor
+
+Claude Code instructions:
+- Read this handoff and the reference documents before reviewing.
+- Review the current working-tree diff only.
+- Focus especially on the progressive page runner changes layered on top of
+  Phase 11 page-based survey flow.
+- Write the full review to `notes/claude_review_progressive_page_runner.txt`.
+- Then summarize the result in chat. Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly
+  asks for fixes.
+
+## Review Goal
+
+Please review this refactor for:
+
+- progressive page runner correctness
+- page/question path resolution correctness
+- skip logic behavior when only some questions on a page have been revealed
+- stale/off-path answer handling after earlier answers are edited
+- compatibility with existing one-question-per-page surveys
+- compatibility with `skipTargetInNormalFlow`
+- `JUMP_TO_QUESTION` compatibility behavior in a page-based runner
+- participant API response contract safety
+- completion validation correctness
+- web runner UX and form behavior
+- test coverage gaps
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `notes/page_logic_addition.txt`
+- `notes/phase_11A_test_notes.txt`
+- `notes/claude_review_phase_11A.txt`
+- `prompts/prompt_11A.txt`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+
+## Implemented Scope
+
+- Added progressive page state resolution in shared code:
+  - resolves current page
+  - resolves active current question
+  - exposes `currentPageQuestionIds`
+  - tracks revealed question IDs per page
+  - handles stale off-path answers by excluding them from the active path
+  - preserves `skipTargetInNormalFlow` for normal page progression
+- Updated start/resume/answer responses to include `currentPageQuestionIds`.
+- Reused the existing single-question answer endpoint as the progressive runner
+  save path.
+- Kept the page batch answer endpoint available for compatibility.
+- Updated participant web runner:
+  - initially renders only the first visible question on the page
+  - appends the next visible question after Continue
+  - keeps answered on-path questions visible and editable
+  - recalculates the path after Update
+  - routes immediately when a triggered jump moves to a later page
+- Updated shared tests for progressive reveal, stale answer behavior,
+  `JUMP_TO_PAGE`, `JUMP_TO_QUESTION`, hide rules, and page path projection.
+- Updated API test fixtures so legacy jump/skip scenarios are represented as
+  one-question-per-page surveys, matching migrated legacy survey behavior.
+
+## Intended Runtime Behavior
+
+- Pages remain the organizing unit.
+- The participant runner reveals questions progressively within a page.
+- A saved answer can either:
+  - reveal the next visible question on the same page, or
+  - route immediately to a later visible page if navigation rules trigger.
+- If an earlier answer on a page is edited and now branches away, later saved
+  answers on that page remain stored but disappear from the active runner path.
+- `HIDE_QUESTION` rules work as progressive visibility rules; hidden questions
+  are never appended.
+- `JUMP_TO_PAGE` is the preferred navigation rule.
+- `JUMP_TO_QUESTION` remains compatibility behavior and resolves to the page
+  containing the target question.
+- Same-page `JUMP_TO_QUESTION` is a page-navigation no-op.
+- `skipTargetInNormalFlow` still excludes jump targets from normal progression
+  unless explicitly reached by a jump.
+
+## Non-Goals
+
+- No new database migration.
+- No new rule priority controls.
+- No deletion of stale/off-path answers.
+- No removal of page batch answer endpoint.
+- No attempt to focus a target question after `JUMP_TO_QUESTION`; the target is
+  used only to determine its containing page.
+- No backward or same-page page jumps.
+
+## Review Hot Spots
+
+- `packages/shared/src/index.ts`
+  - `resolveProgressivePageState`
+  - `resolveAttemptPagePath`
+  - `resolveNextPage`
+  - `getNextVisiblePage`
+  - `skipTargetInNormalFlow` handling
+- `apps/api/src/services/surveyAttempts.ts`
+  - `buildStartSurveyResponse`
+  - `buildAnswerSurveyResponse`
+  - `buildMySurveyResponse`
+  - `validateReachedRequiredQuestions`
+  - `determineCurrentPage`
+  - `determineCurrentQuestion`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+  - one-question submit behavior
+  - previous-page behavior
+  - editing previously answered questions
+  - completion panel readiness
+- Tests:
+  - `packages/shared/test/resolveAttemptPagePath.test.ts`
+  - `apps/api/test/attemptLifecycle.test.ts`
+  - API fixture updates in `apps/api/test/helpers/factories.ts`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck
+- Passed: lint
+- Passed: build
+- Passed: shared tests, 43 tests
+- Passed: web tests, 34 tests
+- Passed: API tests, 140 tests
+- Passed: top-level `npm test`
+- Passed: `git diff --check`
+
+Note: API tests require local PostgreSQL access and reset the test schema.
+
+## Manual Testing Still Recommended
+
+- Create a page with multiple questions and confirm only the first question
+  appears initially.
+- Answer a non-branching question and confirm the next question appends.
+- Answer a branching question and confirm later same-page questions never show.
+- Edit a previous answer so the branch changes and confirm stale later answers
+  disappear from the current path.
+- Confirm `JUMP_TO_PAGE` Page 1 -> Page 3 works.
+- Confirm legacy `JUMP_TO_QUESTION` lands on the containing page.
+- Confirm hide rules from multiple revealed questions union together.
+- Check responsive runner layout at 375px, 768px, and 1280px.
+
+## Requested Output Format
+
+Write `notes/claude_review_progressive_page_runner.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

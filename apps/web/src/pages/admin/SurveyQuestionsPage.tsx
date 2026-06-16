@@ -1,5 +1,6 @@
 import type {
   AnswerOption,
+  SurveyPage,
   SurveyQuestion,
   SurveyQuestionType,
   TagDefinition
@@ -12,15 +13,20 @@ import {
   createAnswerTag,
   createQuestionValueTag,
   createQuestion,
+  createSurveyPage,
   deleteAnswerOption,
   deleteAnswerTag,
   deleteQuestionValueTag,
   deleteQuestion,
+  deleteSurveyPage,
+  moveQuestionToPage,
   reorderAnswerOptions,
   reorderQuestions,
+  reorderSurveyPages,
   updateAnswerOption,
   updateAnswerTag,
-  updateQuestion
+  updateQuestion,
+  updateSurveyPage
 } from "../../api/surveys.js";
 import { fetchTagDefinitions } from "../../api/tags.js";
 import {
@@ -33,6 +39,7 @@ import {
 import {
   QuestionEditor,
   ScaleRangeFields,
+  formatQuestionLocator,
   formatQuestionType,
   questionTypes
 } from "../../components/admin/SurveyBuilderComponents.js";
@@ -42,7 +49,18 @@ import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 export function SurveyQuestionsPage() {
   const { isSubmitting, runSurveyMutation, setFeedback, survey } = useSurveyWorkspace();
   const [newQuestionType, setNewQuestionType] = useState<SurveyQuestionType>("text");
+  const [newQuestionPageId, setNewQuestionPageId] = useState<number | null>(
+    survey.pages[0]?.id ?? null
+  );
   const [catalogTags, setCatalogTags] = useState<TagDefinition[]>([]);
+
+  useEffect(() => {
+    setNewQuestionPageId((current) =>
+      current && survey.pages.some((page) => page.id === current)
+        ? current
+        : survey.pages[0]?.id ?? null
+    );
+  }, [survey.pages]);
 
   // Tag suggestions come from the persistent tag catalog plus the current
   // survey's live tags. Tags saved here register in the catalog server-side.
@@ -88,11 +106,18 @@ export function SurveyQuestionsPage() {
     const form = event.currentTarget;
     const data = new FormData(form);
     const questionType = readQuestionType(data, "questionType");
+    const pageId = readFormInteger(data, "pageId") ?? newQuestionPageId;
+
+    if (!pageId) {
+      setFeedback({ error: "Choose a page before adding a question", notice: null });
+      return;
+    }
 
     const didSave = await runSurveyMutation(
       () =>
         createQuestion({
           surveyId: survey.id,
+          pageId,
           questionText: readFormText(data, "questionText"),
           questionType,
           scaleMin: questionType === "scale" ? readFormInteger(data, "scaleMin") : null,
@@ -106,7 +131,73 @@ export function SurveyQuestionsPage() {
     if (didSave) {
       form.reset();
       setNewQuestionType("text");
+      setNewQuestionPageId(pageId);
     }
+  }
+
+  async function handleAddPage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const didSave = await runSurveyMutation(
+      () =>
+        createSurveyPage({
+          surveyId: survey.id,
+          title: readFormText(data, "title"),
+          description: readNullableFormText(data, "description")
+        }),
+      "Page added"
+    );
+
+    if (didSave) {
+      form.reset();
+    }
+  }
+
+  async function handleSavePage(event: FormEvent<HTMLFormElement>, page: SurveyPage) {
+    event.preventDefault();
+
+    const data = new FormData(event.currentTarget);
+    await runSurveyMutation(
+      () =>
+        updateSurveyPage({
+          surveyId: survey.id,
+          pageId: page.id,
+          title: readFormText(data, "title"),
+          description: readNullableFormText(data, "description")
+        }),
+      `Page ${page.displayOrder} saved`
+    );
+  }
+
+  async function handleMovePage(pageId: number, direction: -1 | 1) {
+    const ids = survey.pages.map((page) => page.id);
+    const index = ids.indexOf(pageId);
+    const nextIndex = index + direction;
+
+    if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) {
+      return;
+    }
+
+    const reordered = [...ids];
+    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+
+    await runSurveyMutation(
+      () => reorderSurveyPages({ surveyId: survey.id, pageIds: reordered }),
+      "Page order saved"
+    );
+  }
+
+  async function handleDeletePage(page: SurveyPage) {
+    if (!confirmAdminAction(`Delete "${page.title}"? Only empty pages can be deleted.`)) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () => deleteSurveyPage({ surveyId: survey.id, pageId: page.id }),
+      "Page deleted"
+    );
   }
 
   async function handleSaveQuestion(
@@ -130,12 +221,19 @@ export function SurveyQuestionsPage() {
           isRequired: data.get("isRequired") === "on",
           helpText: readNullableFormText(data, "helpText")
         }),
-      `Question ${question.displayOrder} saved`
+      `${formatQuestionLocator(survey, question)} saved`
     );
   }
 
   async function handleMoveQuestion(questionId: number, direction: -1 | 1) {
-    const ids = survey.questions.map((question) => question.id);
+    const question = survey.questions.find((item) => item.id === questionId);
+
+    if (!question) {
+      return;
+    }
+
+    const pageQuestions = survey.questions.filter((item) => item.pageId === question.pageId);
+    const ids = pageQuestions.map((item) => item.id);
     const index = ids.indexOf(questionId);
     const nextIndex = index + direction;
 
@@ -150,18 +248,36 @@ export function SurveyQuestionsPage() {
       () =>
         reorderQuestions({
           surveyId: survey.id,
+          pageId: question.pageId,
           questionIds: reordered
         }),
       "Question order saved"
     );
   }
 
+  async function handleChangeQuestionPage(question: SurveyQuestion, pageId: number) {
+    if (pageId === question.pageId) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        moveQuestionToPage({
+          surveyId: survey.id,
+          questionId: question.id,
+          pageId
+        }),
+      "Question moved"
+    );
+  }
+
   async function handleDeleteQuestion(questionId: number) {
     const question = survey.questions.find((item) => item.id === questionId);
+    const questionLabel = question ? formatQuestionLocator(survey, question) : "";
 
     if (
       !confirmAdminAction(
-        `Delete question ${question?.displayOrder ?? ""}? This also removes its options, tags, and related rules.`
+        `Delete question ${questionLabel}? This also removes its options, tags, and related rules.`
       )
     ) {
       return;
@@ -193,7 +309,7 @@ export function SurveyQuestionsPage() {
           questionId: question.id,
           optionText: readFormText(data, "optionText")
         }),
-      `Option added to question ${question.displayOrder}`
+      `Option added to ${formatQuestionLocator(survey, question)}`
     );
 
     if (didSave) {
@@ -400,6 +516,41 @@ export function SurveyQuestionsPage() {
     <div className="builder-workspace">
       <form
         className="builder-form"
+        key={`add-page-${survey.id}`}
+        onSubmit={handleAddPage}
+      >
+        <div className="builder-section-heading">
+          <div>
+            <p className="eyebrow">Pages</p>
+            <h3>Add page</h3>
+            {survey.status !== "draft" ? (
+              <p className="builder-heading-note">
+                New pages can only be added while the survey is a draft.
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="builder-grid two-columns">
+          <label>
+            Page title
+            <input disabled={survey.status !== "draft"} name="title" required />
+          </label>
+          <label>
+            Description
+            <input disabled={survey.status !== "draft"} name="description" />
+          </label>
+        </div>
+        <button
+          className="button-link compact-button primary-button"
+          disabled={isSubmitting || survey.status !== "draft"}
+          type="submit"
+        >
+          Add page
+        </button>
+      </form>
+
+      <form
+        className="builder-form"
         key={`add-question-${survey.id}`}
         onSubmit={handleAddQuestion}
       >
@@ -416,9 +567,26 @@ export function SurveyQuestionsPage() {
         </div>
         <div className="builder-grid two-columns">
           <label>
+            Page
+            <select
+              disabled={survey.status !== "draft"}
+              name="pageId"
+              onChange={(event) => setNewQuestionPageId(Number(event.target.value))}
+              value={newQuestionPageId ?? ""}
+            >
+              {survey.pages.map((page) => (
+                <option key={page.id} value={page.id}>
+                  {page.displayOrder}. {page.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Question text
             <input disabled={survey.status !== "draft"} name="questionText" required />
           </label>
+        </div>
+        <div className="builder-grid two-columns">
           <label>
             Type
             <select
@@ -463,38 +631,144 @@ export function SurveyQuestionsPage() {
       </form>
 
       <div className="builder-stack">
-        {survey.questions.length === 0 ? (
+        {survey.pages.length === 0 ? (
           <div className="builder-empty-state">
-            <strong>No questions yet</strong>
+            <strong>No pages yet</strong>
             <span>
-              Add the first question above. Published surveys need at least one question
-              before they make sense for users.
+              Add the first page above. Published surveys need at least one page and
+              one question before they make sense for users.
             </span>
           </div>
         ) : null}
-        {survey.questions.map((question, index) => (
-          <QuestionEditor
-            isFirst={index === 0}
-            isLast={index === survey.questions.length - 1}
-            isPublished={survey.status !== "draft"}
-            isSubmitting={isSubmitting}
-            key={question.id}
-            onAddOption={handleAddOption}
-            onAddTag={handleAddTag}
-            onAddValueTag={handleAddValueTag}
-            onDeleteValueTag={handleDeleteValueTag}
-            onDeleteOption={handleDeleteOption}
-            onDeleteQuestion={handleDeleteQuestion}
-            onDeleteTag={handleDeleteTag}
-            onMoveOption={handleMoveOption}
-            onMoveQuestion={handleMoveQuestion}
-            onSaveOption={handleSaveOption}
-            onSaveQuestion={handleSaveQuestion}
-            onSaveTag={handleSaveTag}
-            question={question}
-            tagPresets={tagPresets}
-          />
-        ))}
+        {survey.pages.map((page, pageIndex) => {
+          const pageQuestions = survey.questions.filter((question) => question.pageId === page.id);
+
+          return (
+            <section className="builder-form page-builder-panel" key={page.id}>
+              <form onSubmit={(event) => void handleSavePage(event, page)}>
+                <div className="builder-section-heading">
+                  <div>
+                    <p className="eyebrow">Page {page.displayOrder}</p>
+                    <h3>{page.title}</h3>
+                    {page.description ? (
+                      <p className="builder-heading-note">{page.description}</p>
+                    ) : null}
+                  </div>
+                  <div className="inline-actions">
+                    <button
+                      className="button-link compact-button secondary-button"
+                      disabled={pageIndex === 0 || isSubmitting || survey.status !== "draft"}
+                      onClick={() => void handleMovePage(page.id, -1)}
+                      type="button"
+                    >
+                      Move up
+                    </button>
+                    <button
+                      className="button-link compact-button secondary-button"
+                      disabled={
+                        pageIndex === survey.pages.length - 1 ||
+                        isSubmitting ||
+                        survey.status !== "draft"
+                      }
+                      onClick={() => void handleMovePage(page.id, 1)}
+                      type="button"
+                    >
+                      Move down
+                    </button>
+                    <button
+                      className="button-link compact-button danger-button"
+                      disabled={
+                        pageQuestions.length > 0 ||
+                        survey.pages.length <= 1 ||
+                        isSubmitting ||
+                        survey.status !== "draft"
+                      }
+                      onClick={() => void handleDeletePage(page)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <div className="builder-grid two-columns">
+                  <label>
+                    Page title
+                    <input
+                      defaultValue={page.title}
+                      disabled={survey.status !== "draft"}
+                      name="title"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <input
+                      defaultValue={page.description ?? ""}
+                      disabled={survey.status !== "draft"}
+                      name="description"
+                    />
+                  </label>
+                </div>
+                <button
+                  className="button-link compact-button primary-button"
+                  disabled={isSubmitting || survey.status !== "draft"}
+                  type="submit"
+                >
+                  Save page
+                </button>
+              </form>
+
+              {pageQuestions.length === 0 ? (
+                <div className="builder-empty-state">
+                  <strong>No questions on this page</strong>
+                  <span>Add a question above and choose this page.</span>
+                </div>
+              ) : null}
+
+              {pageQuestions.map((question, index) => (
+                <div className="page-question-shell" key={question.id}>
+                  <QuestionEditor
+                    isFirst={index === 0}
+                    isLast={index === pageQuestions.length - 1}
+                    isPublished={survey.status !== "draft"}
+                    isSubmitting={isSubmitting}
+                    onAddOption={handleAddOption}
+                    onAddTag={handleAddTag}
+                    onAddValueTag={handleAddValueTag}
+                    onDeleteValueTag={handleDeleteValueTag}
+                    onDeleteOption={handleDeleteOption}
+                    onDeleteQuestion={handleDeleteQuestion}
+                    onDeleteTag={handleDeleteTag}
+                    onMoveOption={handleMoveOption}
+                    onMoveQuestion={handleMoveQuestion}
+                    onSaveOption={handleSaveOption}
+                    onSaveQuestion={handleSaveQuestion}
+                    onSaveTag={handleSaveTag}
+                    question={question}
+                    questionLocator={formatQuestionLocator(survey, question)}
+                    tagPresets={tagPresets}
+                  />
+                  <label className="question-page-move-control">
+                    Move to page
+                    <select
+                      disabled={isSubmitting || survey.status !== "draft"}
+                      onChange={(event) =>
+                        void handleChangeQuestionPage(question, Number(event.target.value))
+                      }
+                      value={question.pageId}
+                    >
+                      {survey.pages.map((targetPage) => (
+                        <option key={targetPage.id} value={targetPage.id}>
+                          {targetPage.displayOrder}. {targetPage.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ))}
+            </section>
+          );
+        })}
       </div>
 
       <div className="builder-form tag-catalog-link-panel">

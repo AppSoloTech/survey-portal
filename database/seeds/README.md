@@ -25,6 +25,7 @@ The Phase 2 seed creates:
 - admin account: `admin@example.test`
 - local password: `AdminPass123!`
 - published test survey with text, integer, single-select, and multi-select questions
+- one generated page per seeded question, matching the Phase 11 compatibility model
 - sample hidden answer tags
 - one sample `JUMP_TO_QUESTION` conditional rule
 
@@ -35,5 +36,6 @@ published surveys with linear flows for dashboard and long-attempt testing:
 
 - "Employee Onboarding Experience" — 8 questions
 - "Workplace Satisfaction Survey" — 10 questions
+- one generated page per seeded question
 - mixed question types (single/multi select, scale, integer, text)
 - no conditional rules and no hidden tags

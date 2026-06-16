@@ -15,11 +15,13 @@ The goal is to keep implementation phases small, reviewable, secure, and aligned
 | `markdown/DATA_MODEL_VISION.md` | Data model vision and MVP schema guardrails |
 | `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt` | Local and deployment environment assumptions |
 | `markdown/FLOW.md` | Phase workflow and AI-assisted development process |
+| `markdown/CLIENT_REVIEW_INTAKE.md` | Client feedback intake and phase prompt drafting workflow |
 | `markdown/REVIEW_CHECKLIST.md` | Quality gate for implementation and review |
 | `markdown/PHASE_TEMPLATE.md` | Reusable phase log entry template |
 | `markdown/PHASE_LOG.md` | Durable project memory and phase decisions |
 | `markdown/FOLLOW_UPS.md` | Active deferred work and loose ends to revisit before future phases |
 | `markdown/CLAUDE_REVIEW_TEMPLATE.md` | Per-phase review handoff template |
+| `prompts/PHASE_PROMPT_TEMPLATE.txt` | Reusable template for drafting new phase prompts |
 | `prompts/prompt_X.txt` | Phase-specific implementation prompt |
 | `notes/claude_handoff_phase_X.txt` | Per-phase review handoff artifact |
 | `notes/claude_review_phase_X.txt` | Per-phase review output artifact |
@@ -44,6 +46,22 @@ When documents conflict, resolve them in this order:
 10. Older entries in `markdown/PHASE_LOG.md`
 
 If a conflict changes product direction, architecture, security posture, or deployment assumptions, update the durable reference document and record the decision in `markdown/PHASE_LOG.md`.
+
+---
+
+## Client Review Intake
+
+When new feedback arrives from a client review, demo, manual QA session, or exploratory test pass, use `markdown/CLIENT_REVIEW_INTAKE.md` before implementation.
+
+Recommended flow:
+
+1. Capture raw feedback in `notes/client_review_YYYY-MM-DD.txt` when the feedback is more than a short chat message.
+2. Triage each item by risk, product area, and implementation surface.
+3. Split unrelated or high-risk work into separate phases.
+4. Draft the next `prompts/prompt_X.txt` from `prompts/PHASE_PROMPT_TEMPLATE.txt`.
+5. Freeze the prompt before implementation begins.
+
+During brainstorming, keep work in notes and draft prompts. Begin source-code implementation only after the human developer starts the phase or confirms the active phase scope.
 
 ---
 
@@ -127,10 +145,13 @@ Before implementation, read:
 - `markdown/DATA_MODEL_VISION.md`
 - `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
 - `markdown/FLOW.md`
+- `markdown/CLIENT_REVIEW_INTAKE.md` when the phase comes from client feedback
 - `markdown/REVIEW_CHECKLIST.md`
 - `markdown/FOLLOW_UPS.md`
 - current `prompts/prompt_X.txt`
 - recent entries in `markdown/PHASE_LOG.md`
+- for page-based survey phases, confirm whether the work changes the durable
+  survey experience decision in `markdown/DATA_MODEL_VISION.md`
 
 Confirm:
 
@@ -411,6 +432,12 @@ Prompt files live in:
 
 ```txt
 prompts/
+```
+
+Use this template for new phase prompts:
+
+```txt
+prompts/PHASE_PROMPT_TEMPLATE.txt
 ```
 
 Naming convention:

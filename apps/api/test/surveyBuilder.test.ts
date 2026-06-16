@@ -327,7 +327,9 @@ describe("conditional rule validation", () => {
       });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe("Action type must be JUMP_TO_QUESTION or HIDE_QUESTION");
+    expect(response.body.error).toBe(
+      "Action type must be JUMP_TO_QUESTION, JUMP_TO_PAGE, or HIDE_QUESTION"
+    );
   });
 
   it("rejects skip rules targeting the source question or earlier", async () => {

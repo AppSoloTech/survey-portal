@@ -7,6 +7,8 @@ Use this checklist before committing a phase and when preparing Claude review ha
 ## Scope
 
 - The implementation matches the current phase prompt.
+- Client-review phases identify the source feedback note or pasted issue list.
+- Every received feedback item is fixed, explicitly deferred, blocked by a documented question, or marked out of scope.
 - Non-goals were not implemented accidentally.
 - Any intentional scope change is documented in `markdown/PHASE_LOG.md`.
 - No unrelated refactors or dependency churn were included.

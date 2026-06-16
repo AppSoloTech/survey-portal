@@ -1,4 +1,8 @@
-import type { ConditionalLogicRule, SurveyQuestion } from "@survey-portal/shared";
+import {
+  getOrderedQuestions,
+  type ConditionalLogicRule,
+  type SurveyQuestion
+} from "@survey-portal/shared";
 import { useState, type FormEvent } from "react";
 
 import {
@@ -11,6 +15,7 @@ import {
 import { confirmAdminAction, readFormNumber } from "../../components/admin/builderForm.js";
 import {
   RuleEditor,
+  formatQuestionOptionLabel,
   isSelectionQuestion
 } from "../../components/admin/SurveyBuilderComponents.js";
 import { SurveyFlowMap } from "../../components/admin/SurveyFlowMap.js";
@@ -20,13 +25,15 @@ export function SurveyLogicPage() {
   const { isSubmitting, reloadSurvey, runSurveyMutation, survey } = useSurveyWorkspace();
   const [ruleSourceQuestionId, setRuleSourceQuestionId] = useState<number | null>(null);
   const [ruleActionType, setRuleActionType] =
-    useState<ConditionalRuleActionType>("JUMP_TO_QUESTION");
+    useState<ConditionalRuleActionType>("JUMP_TO_PAGE");
   const [skipTargetIds, setSkipTargetIds] = useState<number[]>([]);
   // Structural changes are draft-only; the API rejects them after publish.
   const isLocked = survey.status !== "draft";
   const isSkipAction = ruleActionType === "HIDE_QUESTION";
+  const isPageJumpAction = ruleActionType === "JUMP_TO_PAGE";
 
-  const ruleSourceQuestions = survey.questions.filter(
+  const orderedQuestions = getOrderedQuestions(survey);
+  const ruleSourceQuestions = orderedQuestions.filter(
     (question) => isSelectionQuestion(question) || question.questionType === "text"
   );
   const activeRuleSourceQuestion =
@@ -34,9 +41,17 @@ export function SurveyLogicPage() {
   const isBlankTextRule = activeRuleSourceQuestion?.questionType === "text";
   const activeRuleSourceAnswerOptionCount = activeRuleSourceQuestion?.answerOptions.length ?? 0;
   const activeRuleTargetQuestions = activeRuleSourceQuestion
-    ? survey.questions.filter(
-        (question) => question.displayOrder > activeRuleSourceQuestion.displayOrder
+    ? orderedQuestions.filter(
+        (question) =>
+          orderedQuestions.findIndex((item) => item.id === question.id) >
+          orderedQuestions.findIndex((item) => item.id === activeRuleSourceQuestion.id)
       )
+    : [];
+  const activeRuleSourcePage = activeRuleSourceQuestion
+    ? survey.pages.find((page) => page.id === activeRuleSourceQuestion.pageId) ?? null
+    : null;
+  const activeRuleTargetPages = activeRuleSourcePage
+    ? survey.pages.filter((page) => page.displayOrder > activeRuleSourcePage.displayOrder)
     : [];
 
   async function handleAddRule(event: FormEvent<HTMLFormElement>) {
@@ -75,6 +90,7 @@ export function SurveyLogicPage() {
         for (const targetQuestionId of validTargetIds) {
           response = await createConditionalRule({
             surveyId: survey.id,
+            sourcePageId: activeRuleSourceQuestion?.pageId ?? null,
             sourceQuestionId,
             sourceAnswerOptionId,
             conditionOperator,
@@ -98,23 +114,29 @@ export function SurveyLogicPage() {
         await reloadSurvey();
       }
     } else {
+      const actionType = isPageJumpAction ? "JUMP_TO_PAGE" : "JUMP_TO_QUESTION";
       didSave = await runSurveyMutation(
         () =>
           createConditionalRule({
             surveyId: survey.id,
+            sourcePageId: activeRuleSourceQuestion?.pageId ?? null,
             sourceQuestionId,
             sourceAnswerOptionId,
             conditionOperator,
-            targetQuestionId: readFormNumber(data, "targetQuestionId"),
-            actionType: "JUMP_TO_QUESTION",
+            targetQuestionId:
+              actionType === "JUMP_TO_QUESTION" ? readFormNumber(data, "targetQuestionId") : null,
+            targetPageId:
+              actionType === "JUMP_TO_PAGE" ? readFormNumber(data, "targetPageId") : null,
+            actionType,
             skipTargetInNormalFlow: data.get("skipTargetInNormalFlow") === "on"
           }),
-        "Jump rule added"
+        isPageJumpAction ? "Page jump rule added" : "Jump rule added"
       );
     }
 
     if (didSave) {
       setRuleSourceQuestionId(null);
+      setRuleActionType("JUMP_TO_PAGE");
       setSkipTargetIds([]);
       form.reset();
     }
@@ -128,7 +150,11 @@ export function SurveyLogicPage() {
 
     const data = new FormData(event.currentTarget);
     const actionType: ConditionalRuleActionType =
-      data.get("actionType") === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION";
+      data.get("actionType") === "HIDE_QUESTION"
+        ? "HIDE_QUESTION"
+        : data.get("actionType") === "JUMP_TO_PAGE"
+          ? "JUMP_TO_PAGE"
+          : "JUMP_TO_QUESTION";
     const conditionOperator: ConditionalRuleConditionOperator =
       data.get("conditionOperator") === "is_blank" ? "is_blank" : "equals";
     const sourceAnswerOptionId =
@@ -139,9 +165,13 @@ export function SurveyLogicPage() {
         updateConditionalRule({
           surveyId: survey.id,
           ruleId: rule.id,
+          sourcePageId: readFormNumber(data, "sourcePageId") || null,
           sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
           sourceAnswerOptionId,
-          targetQuestionId: readFormNumber(data, "targetQuestionId"),
+          targetQuestionId:
+            actionType === "JUMP_TO_PAGE" ? null : readFormNumber(data, "targetQuestionId"),
+          targetPageId:
+            actionType === "JUMP_TO_PAGE" ? readFormNumber(data, "targetPageId") : null,
           conditionOperator,
           actionType,
           skipTargetInNormalFlow:
@@ -176,7 +206,7 @@ export function SurveyLogicPage() {
             <p className="builder-heading-note">
               {isLocked
                 ? "Logic rules are locked after publishing. Create an editable draft copy to change conditional logic."
-                : "Configure answer-conditional logic for selection questions, or skip later questions when an optional text answer is blank."}
+                : "Use page jumps for navigation. Rules are evaluated after the whole page is submitted; if multiple page jumps trigger, the farthest target page wins."}
             </p>
           </div>
         </div>
@@ -208,7 +238,7 @@ export function SurveyLogicPage() {
               <option value="">Choose source question</option>
               {ruleSourceQuestions.map((question) => (
                 <option key={question.id} value={question.id}>
-                  {question.displayOrder}. {question.questionText}
+                  {formatQuestionOptionLabel(survey, question)}
                 </option>
               ))}
             </select>
@@ -250,13 +280,18 @@ export function SurveyLogicPage() {
                 name="actionType"
                 onChange={(event) => {
                   setRuleActionType(
-                    event.target.value === "HIDE_QUESTION" ? "HIDE_QUESTION" : "JUMP_TO_QUESTION"
+                    event.target.value === "HIDE_QUESTION"
+                      ? "HIDE_QUESTION"
+                      : event.target.value === "JUMP_TO_PAGE"
+                        ? "JUMP_TO_PAGE"
+                        : "JUMP_TO_QUESTION"
                   );
                   setSkipTargetIds([]);
                 }}
                 value={ruleActionType}
               >
-                <option value="JUMP_TO_QUESTION">Jump to question</option>
+                <option value="JUMP_TO_PAGE">Jump to page</option>
+                <option value="JUMP_TO_QUESTION">Jump to question (legacy)</option>
                 <option value="HIDE_QUESTION">Skip questions</option>
               </select>
             )}
@@ -277,14 +312,31 @@ export function SurveyLogicPage() {
                     }
                     type="checkbox"
                   />
-                  {question.displayOrder}. {question.questionText}
+                  {formatQuestionOptionLabel(survey, question)}
                 </label>
               ))}
             </fieldset>
+          ) : isPageJumpAction ? (
+            <label>
+              Target page
+              <select
+                disabled={!activeRuleSourceQuestion}
+                key={`rule-target-page-${activeRuleSourceQuestion?.id ?? "empty"}`}
+                name="targetPageId"
+                required
+              >
+                <option value="">Choose target page</option>
+                {activeRuleTargetPages.map((page) => (
+                  <option key={page.id} value={page.id}>
+                    {page.displayOrder}. {page.title}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : (
             <>
               <label>
-                Target question
+                Target question (lands on containing page)
                 <select
                   disabled={!activeRuleSourceQuestion}
                   key={`rule-target-question-${activeRuleSourceQuestion?.id ?? "empty"}`}
@@ -294,7 +346,7 @@ export function SurveyLogicPage() {
                   <option value="">Choose target question</option>
                   {activeRuleTargetQuestions.map((question) => (
                     <option key={question.id} value={question.id}>
-                      {question.displayOrder}. {question.questionText}
+                      {formatQuestionOptionLabel(survey, question)}
                     </option>
                   ))}
                 </select>
@@ -312,7 +364,8 @@ export function SurveyLogicPage() {
               isLocked ||
               !activeRuleSourceQuestion ||
               (!isBlankTextRule && activeRuleSourceAnswerOptionCount === 0) ||
-              activeRuleTargetQuestions.length === 0 ||
+              (!isPageJumpAction && activeRuleTargetQuestions.length === 0) ||
+              (isPageJumpAction && activeRuleTargetPages.length === 0) ||
               (isSkipAction && skipTargetIds.length === 0)
             }
             type="submit"
@@ -325,8 +378,9 @@ export function SurveyLogicPage() {
           activeRuleSourceAnswerOptionCount={activeRuleSourceAnswerOptionCount}
           activeRuleSourceQuestion={activeRuleSourceQuestion}
           isBlankTextRule={isBlankTextRule}
+          isPageJumpAction={isPageJumpAction}
           selectableQuestionCount={ruleSourceQuestions.length}
-          targetQuestionCount={activeRuleTargetQuestions.length}
+          targetCount={isPageJumpAction ? activeRuleTargetPages.length : activeRuleTargetQuestions.length}
         />
 
         <div className="rule-list">
@@ -338,7 +392,7 @@ export function SurveyLogicPage() {
               <summary>
                 <span className="rule-group-title">
                   {question
-                    ? `${question.displayOrder}. ${question.questionText}`
+                    ? formatQuestionOptionLabel(survey, question)
                     : "Rules with a missing source question"}
                 </span>
                 <span className="rule-group-count">
@@ -370,7 +424,11 @@ export function SurveyLogicPage() {
 // Rules grouped by source question in survey order; rules whose source
 // question was deleted (legacy data) collect under a trailing group.
 function groupRulesBySource(survey: ReturnType<typeof useSurveyWorkspace>["survey"]) {
-  const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
+  const orderedQuestions = getOrderedQuestions(survey);
+  const questionOrderById = new Map(
+    orderedQuestions.map((question, index) => [question.id, index])
+  );
+  const questionsById = new Map(orderedQuestions.map((question) => [question.id, question]));
   const groups = new Map<number | null, ConditionalLogicRule[]>();
 
   for (const rule of survey.conditionalLogicRules) {
@@ -394,7 +452,10 @@ function groupRulesBySource(survey: ReturnType<typeof useSurveyWorkspace>["surve
         return -1;
       }
 
-      return left.question.displayOrder - right.question.displayOrder;
+      return (
+        (questionOrderById.get(left.question.id) ?? Number.MAX_SAFE_INTEGER) -
+        (questionOrderById.get(right.question.id) ?? Number.MAX_SAFE_INTEGER)
+      );
     });
 }
 
@@ -402,14 +463,16 @@ function RuleBuilderEmptyState({
   activeRuleSourceAnswerOptionCount,
   activeRuleSourceQuestion,
   isBlankTextRule,
+  isPageJumpAction,
   selectableQuestionCount,
-  targetQuestionCount
+  targetCount
 }: {
   activeRuleSourceAnswerOptionCount: number;
   activeRuleSourceQuestion: SurveyQuestion | null;
   isBlankTextRule: boolean;
+  isPageJumpAction: boolean;
   selectableQuestionCount: number;
-  targetQuestionCount: number;
+  targetCount: number;
 }) {
   if (selectableQuestionCount === 0) {
     return (
@@ -434,13 +497,14 @@ function RuleBuilderEmptyState({
     );
   }
 
-  if (activeRuleSourceQuestion && targetQuestionCount === 0) {
+  if (activeRuleSourceQuestion && targetCount === 0) {
     return (
       <div className="builder-empty-state compact">
-        <strong>No later target questions</strong>
+        <strong>{isPageJumpAction ? "No later target pages" : "No later target questions"}</strong>
         <span>
-          Choose an earlier source question or add another question after this one so the
-          jump has somewhere to send users.
+          Choose an earlier source question or add another{" "}
+          {isPageJumpAction ? "page" : "question"} after this one so the jump has
+          somewhere to send users.
         </span>
       </div>
     );

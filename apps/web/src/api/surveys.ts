@@ -49,6 +49,29 @@ export async function answerSurvey(input: {
   });
 }
 
+export async function answerSurveyPage(input: {
+  surveyId: number;
+  attemptId: number;
+  pageId: number;
+  answers: {
+    questionId: number;
+    answerText: string | null;
+    answerInteger: number | null;
+    selectedAnswerOptionIds: number[];
+  }[];
+}): Promise<AnswerSurveyResponse> {
+  return apiRequest<AnswerSurveyResponse>(
+    `/api/surveys/${input.surveyId}/pages/${input.pageId}/answer`,
+    {
+      body: JSON.stringify({
+        attemptId: input.attemptId,
+        answers: input.answers
+      }),
+      method: "POST"
+    }
+  );
+}
+
 export async function completeSurvey(input: {
   surveyId: number;
   attemptId: number;
@@ -126,8 +149,59 @@ export async function updateSurveyStatus(input: {
   });
 }
 
+export async function createSurveyPage(input: {
+  surveyId: number;
+  title: string;
+  description: string | null;
+  displayOrder?: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/pages`, {
+    body: JSON.stringify({
+      title: input.title,
+      description: input.description,
+      displayOrder: input.displayOrder ?? null
+    }),
+    method: "POST"
+  });
+}
+
+export async function updateSurveyPage(input: {
+  surveyId: number;
+  pageId: number;
+  title: string;
+  description: string | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/pages/${input.pageId}`, {
+    body: JSON.stringify({
+      title: input.title,
+      description: input.description
+    }),
+    method: "PUT"
+  });
+}
+
+export async function deleteSurveyPage(input: {
+  surveyId: number;
+  pageId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/pages/${input.pageId}`, {
+    method: "DELETE"
+  });
+}
+
+export async function reorderSurveyPages(input: {
+  surveyId: number;
+  pageIds: number[];
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/pages/reorder`, {
+    body: JSON.stringify({ pageIds: input.pageIds }),
+    method: "PATCH"
+  });
+}
+
 export async function createQuestion(input: {
   surveyId: number;
+  pageId?: number | null;
   questionText: string;
   questionType: SurveyQuestionType;
   scaleMin?: number | null;
@@ -139,6 +213,7 @@ export async function createQuestion(input: {
     body: JSON.stringify({
       questionText: input.questionText,
       questionType: input.questionType,
+      pageId: input.pageId ?? null,
       scaleMin: input.scaleMin ?? null,
       scaleMax: input.scaleMax ?? null,
       isRequired: input.isRequired,
@@ -186,12 +261,35 @@ export async function deleteQuestion(input: {
 
 export async function reorderQuestions(input: {
   surveyId: number;
+  pageId?: number | null;
   questionIds: number[];
 }): Promise<SurveyResponse> {
-  return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/questions/reorder`, {
+  const path = input.pageId
+    ? `/api/surveys/${input.surveyId}/pages/${input.pageId}/questions/reorder`
+    : `/api/surveys/${input.surveyId}/questions/reorder`;
+
+  return apiRequest<SurveyResponse>(path, {
     body: JSON.stringify({ questionIds: input.questionIds }),
     method: "PATCH"
   });
+}
+
+export async function moveQuestionToPage(input: {
+  surveyId: number;
+  questionId: number;
+  pageId: number;
+  displayOrder?: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/page`,
+    {
+      body: JSON.stringify({
+        pageId: input.pageId,
+        displayOrder: input.displayOrder ?? null
+      }),
+      method: "PATCH"
+    }
+  );
 }
 
 export async function createAnswerOption(input: {
@@ -293,7 +391,7 @@ export async function deleteAnswerTag(input: {
   );
 }
 
-export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION";
+export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "JUMP_TO_PAGE" | "HIDE_QUESTION";
 export type ConditionalRuleConditionOperator = "equals" | "is_blank";
 
 export async function createQuestionValueTag(input: {
@@ -331,18 +429,22 @@ export async function deleteQuestionValueTag(input: {
 
 export async function createConditionalRule(input: {
   surveyId: number;
+  sourcePageId?: number | null;
   sourceQuestionId: number;
   sourceAnswerOptionId: number | null;
-  targetQuestionId: number;
+  targetQuestionId?: number | null;
+  targetPageId?: number | null;
   conditionOperator?: ConditionalRuleConditionOperator;
   actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules`, {
     body: JSON.stringify({
+      sourcePageId: input.sourcePageId ?? null,
       sourceQuestionId: input.sourceQuestionId,
       sourceAnswerOptionId: input.sourceAnswerOptionId,
-      targetQuestionId: input.targetQuestionId,
+      targetQuestionId: input.targetQuestionId ?? null,
+      targetPageId: input.targetPageId ?? null,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
       conditionOperator: input.conditionOperator ?? "equals",
       actionType: input.actionType ?? "JUMP_TO_QUESTION"
@@ -354,18 +456,22 @@ export async function createConditionalRule(input: {
 export async function updateConditionalRule(input: {
   surveyId: number;
   ruleId: number;
+  sourcePageId?: number | null;
   sourceQuestionId: number;
   sourceAnswerOptionId: number | null;
-  targetQuestionId: number;
+  targetQuestionId?: number | null;
+  targetPageId?: number | null;
   conditionOperator?: ConditionalRuleConditionOperator;
   actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
     body: JSON.stringify({
+      sourcePageId: input.sourcePageId ?? null,
       sourceQuestionId: input.sourceQuestionId,
       sourceAnswerOptionId: input.sourceAnswerOptionId,
-      targetQuestionId: input.targetQuestionId,
+      targetQuestionId: input.targetQuestionId ?? null,
+      targetPageId: input.targetPageId ?? null,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
       conditionOperator: input.conditionOperator ?? "equals",
       actionType: input.actionType ?? "JUMP_TO_QUESTION"
