@@ -1,0 +1,146 @@
+Phase 15 (follow-up) — "Advance on trigger" lever for Skip page — for Codex
+===========================================================================
+
+Roles reversed (Claude implemented, Codex reviews). This is a follow-up to the
+already-reviewed base HIDE_PAGE work (notes/codex_handoff_phase_15.txt +
+notes/codex_review_phase_15.txt, finding fixed). Review ONLY the advance-on-
+trigger change described here. Record findings in
+notes/codex_review_phase_15_advance.txt and summarize in chat. Do not modify
+source unless the developer asks for fixes.
+
+Source of the request
+---------------------
+Developer, after manually testing Skip page:
+  "The skip page seems to work, but the action does not trigger until the rest of
+   the questions on the page are answered. I would like the skip to occur once the
+   trigger question and answer are submitted."
+Clarified follow-up (developer's words): give the admin a toggle/lever to choose
+  "skip remaining questions upon trigger" vs "only skip over the selected pages."
+
+Decision settled before implementing
+------------------------------------
+- Make it an admin-controlled, per-rule boolean, NOT a global behavior change.
+- Default OFF preserves the existing semantics (finish the trigger's page, then
+  the targeted page is skipped at page transition).
+- Lever applies to HIDE_PAGE only (it is meaningless for jumps and for
+  HIDE_QUESTION); it is forced false for every other action type.
+
+Behavior
+--------
+When a HIDE_PAGE rule has advance_on_trigger = true and its trigger answer is
+submitted, the runtime stops revealing the rest of the trigger's (source) page
+and advances to the next visible page, which skips the just-hidden target page(s).
+This is the SAME immediate mid-page navigation that JUMP rules already perform
+(progressivePageRunner "routes to a later page ... leaving later same-page
+questions unrevealed"). The remaining same-page questions after the trigger become
+off-path and are pruned by the existing pruneOffPathAnswers pipeline, exactly like
+a jump-abandoned branch.
+
+When advance_on_trigger = false (default), nothing changes: the trigger marks the
+target page hidden, the source page is completed normally, and the target page is
+skipped by getNextVisiblePage at the page transition.
+
+Core design — where the runtime actually changes
+------------------------------------------------
+packages/shared/src/index.ts
+  - ConditionalLogicRule gains `advanceOnTrigger: boolean`.
+  - New exported helper hasActivatedAdvancingPageSkip(survey, question, response):
+    true when answering `question` matches a HIDE_PAGE rule with advanceOnTrigger
+    and a non-null targetPageId (reuses doesRuleMatchResponse, so equals + is_blank
+    both work).
+  - resolveProgressivePageState: after collecting the activated hidden question
+    ids and AFTER the existing JUMP navigation check, a new branch:
+        if (hasActivatedAdvancingPageSkip(survey, question, response)) {
+          visibleQuestionIdsByPageId[page.id] = revealedQuestionIds;
+          page = getNextVisiblePage(survey, page, activeHiddenQuestionIds);
+          continue pageLoop;
+        }
+    Ordering matters: JUMP wins if both fire on the same question (jump is checked
+    first and continues the loop). getNextVisiblePage already skips pages whose
+    questions are all hidden, so the just-hidden target page is skipped.
+
+KEY POINTS to scrutinize
+------------------------
+1. resolveProgressivePageState is the single resolver behind the live runner,
+   the reporting keep-set (collectFinalPathQuestionIds), and pruneOffPathAnswers.
+   So advancing also (correctly) prunes the now-off-path same-page questions after
+   the trigger. Confirm that is the intended/acceptable data outcome (it mirrors
+   jump-abandoned answers, which are already pruned).
+2. The advance decision is OR-ed across a source question's HIDE_PAGE rules: if any
+   matching advancing rule fires on the answered question, the page advances.
+   Confirm that is sensible when a source has mixed advancing/non-advancing page
+   skips (advancing wins).
+3. resolveAttemptPath (the question-level walker) is intentionally NOT changed —
+   advance-on-trigger is a page-flow concept and that walker does not model page
+   navigation. Confirm nothing depends on it for HIDE_PAGE advance behavior.
+4. Loop safety: advancing uses getNextVisiblePage + visitedPageIds, so the
+   existing has-loop guard still applies.
+
+Everything else is plumbing for the new boolean
+-----------------------------------------------
+DB
+  database/migrations/0015_hide_page_advance_on_trigger.sql (NEW)
+    - add column advance_on_trigger boolean not null default false
+    - constraint: (not advance_on_trigger or action_type = 'HIDE_PAGE')
+
+API persistence (apps/api/src/...)
+  services/surveyRecords.ts   — ConditionalLogicRuleRecord field + mapper
+                                (advanceOnTrigger) + the fetch-one SELECT column
+  services/surveyStructure.ts — bulk rules SELECT column
+  services/surveyBuilder.ts   — survey-duplicate path: row type + SELECT + INSERT
+                                column ($10) + value (rule.advance_on_trigger)
+  routes/surveyBuilderRoutes.ts — POST insert ($10) and PUT update ($11) columns
+  services/validation.ts      — ConditionalRuleBodyValue.advanceOnTrigger; parse
+                                body.advanceOnTrigger; type guard (must be boolean
+                                if present); value forced to
+                                (actionType === 'HIDE_PAGE' && value === true)
+
+Web (apps/web/src/...)
+  api/surveys.ts — createConditionalRule / updateConditionalRule accept
+                   advanceOnTrigger?: boolean (defaults to false in the body)
+  components/admin/RuleCreateForm.tsx — checkbox under "Pages to skip"
+        (name="advanceOnTrigger"); read once per batch and applied to every
+        HIDE_PAGE rule created for the selected pages
+  components/admin/SurveyBuilderComponents.tsx (RuleEditor) — for HIDE_PAGE rules,
+        the flow-toggle grid cell now renders an "Advance immediately when
+        triggered" checkbox (defaultChecked from rule.advanceOnTrigger) instead of
+        the spacer; HIDE_QUESTION still gets the spacer
+  components/admin/RuleList.tsx — handleSaveRule persists
+        advanceOnTrigger = (actionType === 'HIDE_PAGE' && checkbox on)
+  components/admin/surveyFlowGraph.ts — SurveyFlowConditionalEdge gains
+        advanceOnTrigger; edge populated from the rule
+  components/admin/SurveyFlowMap.tsx — describeOutgoingEdge appends
+        " Advances immediately, skipping the rest of the source page." for an
+        advancing HIDE_PAGE edge
+
+Tests added / changed
+---------------------
+packages/shared/test/resolveAttemptPagePath.test.ts
+  - "advances past the rest of the source page when a HIDE_PAGE rule sets
+     advanceOnTrigger" (Q2 on the source page never revealed; lands on page 3)
+  - "finishes the source page before skipping when advanceOnTrigger is off"
+     (same survey, flag off: still reveals Q2 on the source page)
+  - makeRule default extended with advanceOnTrigger: false (also in
+    resolveAttemptPath.test.ts and resolveNextQuestion.test.ts base helpers)
+apps/api/test/surveyBuilder.test.ts
+  - accept-HIDE_PAGE test now also asserts advanceOnTrigger: false
+  - "persists advanceOnTrigger for HIDE_PAGE and forces it off for other actions"
+apps/api/test/progressivePageRunner.test.ts
+  - createAdvancePageSkipSurvey helper + e2e: trigger on a multi-question source
+    page skips AfterRoute (same page) and the Middle page, landing on Final
+apps/api/test/helpers/factories.ts — addRule param union gains advanceOnTrigger?
+apps/web/src/components/admin/surveyFlowGraph.test.ts — makeRule default
+
+Validation
+----------
+npm run typecheck -> green
+npm run lint      -> green
+npm run build     -> green
+npm test          -> shared 47, web 52, api 157 (16 files) all green; migrations
+                     0014 + 0015 applied by the API test globalSetup
+git diff --check  -> clean
+
+Not done (developer's call before commit)
+-----------------------------------------
+- Manual browser pass exercising the lever on a real multi-question source page.
+- Nothing is committed yet (Phase 15 remains "Git Commit: Pending").

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   addOption,
+  addPage,
   addQuestion,
   addRule,
   createDraftSurvey,
@@ -239,7 +240,7 @@ describe("conditional rule validation", () => {
       });
 
     expect(jumpResponse.status).toBe(400);
-    expect(jumpResponse.body.error).toBe("Blank text rules can only skip questions");
+    expect(jumpResponse.body.error).toBe("Blank text rules can only skip questions or pages");
 
     const selectionSourceResponse = await request(app)
       .post(`/api/surveys/${survey.id}/rules`)
@@ -328,7 +329,7 @@ describe("conditional rule validation", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe(
-      "Action type must be JUMP_TO_QUESTION, JUMP_TO_PAGE, or HIDE_QUESTION"
+      "Action type must be JUMP_TO_QUESTION, JUMP_TO_PAGE, HIDE_QUESTION, or HIDE_PAGE"
     );
   });
 
@@ -349,6 +350,135 @@ describe("conditional rule validation", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("Target question must come after the source question");
+  });
+
+  async function surveyWithSourceAndLaterPage(
+    admin: Awaited<ReturnType<typeof registerAdmin>>
+  ) {
+    let survey = await createDraftSurvey(app, admin);
+    const firstPage = survey.pages[0];
+
+    if (!firstPage) {
+      throw new Error("Default first page was not created");
+    }
+
+    survey = await addPage(app, admin, survey.id, { title: "Later page" });
+    const laterPage = survey.pages.find((page) => page.title === "Later page");
+
+    if (!laterPage) {
+      throw new Error("Later page was not created");
+    }
+
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Source",
+      questionType: "single_select",
+      pageId: firstPage.id
+    });
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Later question",
+      pageId: laterPage.id
+    });
+
+    const sourceId = findQuestion(survey, "Source").id;
+    survey = await addOption(app, admin, survey.id, sourceId, "Yes");
+
+    return { survey, firstPage, laterPage };
+  }
+
+  it("accepts a HIDE_PAGE rule and forces skipTargetInNormalFlow off", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, laterPage } = await surveyWithSourceAndLaterPage(admin);
+    const source = findQuestion(survey, "Source");
+
+    const withRule = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: source.answerOptions[0].id,
+      actionType: "HIDE_PAGE",
+      targetPageId: laterPage.id,
+      // Skip rules are per-attempt; the API forces the static flag off.
+      skipTargetInNormalFlow: true
+    });
+
+    expect(withRule.conditionalLogicRules[0]).toMatchObject({
+      actionType: "HIDE_PAGE",
+      targetPageId: laterPage.id,
+      targetQuestionId: null,
+      skipTargetInNormalFlow: false,
+      advanceOnTrigger: false
+    });
+  });
+
+  it("persists advanceOnTrigger for HIDE_PAGE and forces it off for other actions", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, laterPage } = await surveyWithSourceAndLaterPage(admin);
+    const source = findQuestion(survey, "Source");
+
+    const withPageSkip = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: source.answerOptions[0].id,
+      actionType: "HIDE_PAGE",
+      targetPageId: laterPage.id,
+      advanceOnTrigger: true
+    });
+
+    expect(withPageSkip.conditionalLogicRules[0]).toMatchObject({
+      actionType: "HIDE_PAGE",
+      advanceOnTrigger: true
+    });
+
+    // advanceOnTrigger is meaningless for a page jump and must be forced off.
+    const withJump = await addRule(app, admin, survey.id, {
+      sourceQuestionId: source.id,
+      sourceAnswerOptionId: source.answerOptions[0].id,
+      actionType: "JUMP_TO_PAGE",
+      targetPageId: laterPage.id,
+      advanceOnTrigger: true
+    });
+
+    const jumpRule = withJump.conditionalLogicRules.find(
+      (rule) => rule.actionType === "JUMP_TO_PAGE"
+    );
+
+    expect(jumpRule?.advanceOnTrigger).toBe(false);
+  });
+
+  it("rejects HIDE_PAGE rules that also carry a target question", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, laterPage } = await surveyWithSourceAndLaterPage(admin);
+    const source = findQuestion(survey, "Source");
+
+    const response = await request(app)
+      .post(`/api/surveys/${survey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: source.answerOptions[0].id,
+        actionType: "HIDE_PAGE",
+        targetPageId: laterPage.id,
+        targetQuestionId: findQuestion(survey, "Later question").id
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Page rules cannot include a target question");
+  });
+
+  it("rejects HIDE_PAGE rules whose target page is not after the source page", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, firstPage } = await surveyWithSourceAndLaterPage(admin);
+    const source = findQuestion(survey, "Source");
+
+    const response = await request(app)
+      .post(`/api/surveys/${survey.id}/rules`)
+      .set("Cookie", admin.cookie)
+      .send({
+        sourceQuestionId: source.id,
+        sourceAnswerOptionId: source.answerOptions[0].id,
+        actionType: "HIDE_PAGE",
+        targetPageId: firstPage.id
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Target page must come after the source page");
   });
 });
 

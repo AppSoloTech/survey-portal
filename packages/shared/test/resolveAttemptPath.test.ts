@@ -41,6 +41,7 @@ function makeRule(
     targetQuestionId: null,
     targetPageId: null,
     skipTargetInNormalFlow: true,
+    advanceOnTrigger: false,
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides

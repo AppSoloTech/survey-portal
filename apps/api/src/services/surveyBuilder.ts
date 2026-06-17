@@ -560,7 +560,7 @@ export async function validateSurveyCanPublish(
            )
          )
          or (
-           conditional_logic_rules.action_type = 'JUMP_TO_PAGE'
+           conditional_logic_rules.action_type in ('JUMP_TO_PAGE', 'HIDE_PAGE')
            and (
              target_page.id is null
              or target_page.display_order <= source_page.display_order
@@ -579,12 +579,12 @@ export async function validateSurveyCanPublish(
            and (
              conditional_logic_rules.source_answer_option_id is not null
              or source_question.question_type <> 'text'
-             or conditional_logic_rules.action_type <> 'HIDE_QUESTION'
+             or conditional_logic_rules.action_type not in ('HIDE_QUESTION', 'HIDE_PAGE')
            )
          )
-         or conditional_logic_rules.action_type not in ('JUMP_TO_QUESTION', 'HIDE_QUESTION', 'JUMP_TO_PAGE')
+         or conditional_logic_rules.action_type not in ('JUMP_TO_QUESTION', 'HIDE_QUESTION', 'JUMP_TO_PAGE', 'HIDE_PAGE')
          or (
-           conditional_logic_rules.action_type = 'HIDE_QUESTION'
+           conditional_logic_rules.action_type in ('HIDE_QUESTION', 'HIDE_PAGE')
            and conditional_logic_rules.skip_target_in_normal_flow
          )
        )
@@ -728,8 +728,8 @@ export async function validateConditionalRuleReferences(
       return { ok: false, error: "Blank text rules must use a text source question" };
     }
 
-    if (value.actionType !== "HIDE_QUESTION") {
-      return { ok: false, error: "Blank text rules can only skip questions" };
+    if (value.actionType !== "HIDE_QUESTION" && value.actionType !== "HIDE_PAGE") {
+      return { ok: false, error: "Blank text rules can only skip questions or pages" };
     }
   }
 
@@ -743,9 +743,9 @@ export async function validateConditionalRuleReferences(
     return { ok: false, error: "Source question must belong to the source page" };
   }
 
-  if (value.actionType === "JUMP_TO_PAGE") {
+  if (value.actionType === "JUMP_TO_PAGE" || value.actionType === "HIDE_PAGE") {
     if (value.targetPageId === null) {
-      return { ok: false, error: "Target page is required for page jumps" };
+      return { ok: false, error: "Target page is required for page rules" };
     }
 
     const targetPage = await fetchPageForSurvey(queryable, value.targetPageId, surveyId);
@@ -1033,6 +1033,7 @@ export async function duplicateSurveyTree(
     target_question_id: number | null;
     target_page_id: number | null;
     skip_target_in_normal_flow: boolean;
+    advance_on_trigger: boolean;
   }>(
     `select
        source_page_id,
@@ -1042,7 +1043,8 @@ export async function duplicateSurveyTree(
        action_type,
        target_question_id,
        target_page_id,
-       skip_target_in_normal_flow
+       skip_target_in_normal_flow,
+       advance_on_trigger
      from conditional_logic_rules
      where survey_id = $1
      order by id`,
@@ -1080,9 +1082,10 @@ export async function duplicateSurveyTree(
          action_type,
          target_question_id,
          target_page_id,
-         skip_target_in_normal_flow
+         skip_target_in_normal_flow,
+         advance_on_trigger
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         newSurveyId,
         newSourcePageId,
@@ -1092,7 +1095,8 @@ export async function duplicateSurveyTree(
         rule.action_type,
         newTargetQuestionId ?? null,
         newTargetPageId ?? null,
-        rule.skip_target_in_normal_flow
+        rule.skip_target_in_normal_flow,
+        rule.advance_on_trigger
       ]
     );
   }

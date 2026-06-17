@@ -1,0 +1,76 @@
+Phase 15 Codex Review — Skip Page Conditional Logic
+===================================================
+
+Review scope
+------------
+- Read: `prompts/prompt_15.txt`, `notes/codex_handoff_phase_15.txt`
+- Reviewed changed implementation areas for `HIDE_PAGE`: migration, shared runtime,
+  API validation/reference checks, web Logic UI, flow map, and tests.
+
+Findings
+--------
+
+1. Low/Medium — Flow map reports a valid HIDE_PAGE rule targeting an empty page as
+   a missing target question.
+
+   File: `apps/web/src/components/admin/surveyFlowGraph.ts`
+   Lines: 195-264
+
+   `HIDE_PAGE` is treated as a page-target action, but `buildConditionalEdges`
+   resolves page targets through `firstQuestionOnPage(...)` and then records
+   `missing_target_question` when no first question exists. That means an admin
+   can create a `HIDE_PAGE` rule for a later empty page (the backend allows it,
+   and the runtime treats it as a no-op because there are zero question ids to
+   hide), but the flow map will mark the rule as if its target were invalid and
+   say the survey would end at the source question. The handoff explicitly calls
+   out empty target pages as acceptable, so the graph should either treat empty
+   page targets as valid no-op page rules or issue a page-specific informational
+   warning instead of a missing-question runtime error.
+
+Notes
+-----
+- Runtime behavior for non-empty pages looks aligned with the intended design:
+  `HIDE_PAGE` expands dynamically into the target page's current questions and
+  feeds the existing hidden-question machinery.
+- API validation and reference checks correctly require a later target page,
+  reject target-question payloads, allow blank-text sources, and force
+  `skipTargetInNormalFlow` off for per-attempt skips.
+- The Logic create/edit UI sends page-target payloads for `HIDE_PAGE` and keeps
+  static normal-flow skipping disabled for skip actions.
+- I did not find a blocker in participant runtime, reporting/pruning integration,
+  or the migration.
+
+Verification run
+----------------
+```bash
+npm run test -w packages/shared
+npm run test -w apps/web -- surveyFlowGraph
+git diff --check
+npm run test -w apps/api -- test/surveyBuilder.test.ts test/progressivePageRunner.test.ts
+```
+
+Results:
+- Shared tests passed: 45 tests.
+- Web flow-graph tests passed: 31 tests.
+- `git diff --check` passed.
+- API targeted tests passed after running outside the sandbox to reach the local
+  Postgres test database: 38 tests, with migration `0014_hide_page_action_type.sql`
+  applied.
+
+Developer resolution (applied this session)
+-------------------------------------------
+Finding 1 (empty-page HIDE_PAGE) fixed in
+apps/web/src/components/admin/surveyFlowGraph.ts:
+- buildConditionalEdges now resolves the target page and computes isEmptyPageSkip
+  (HIDE_PAGE + existing target page + no first question). An empty-page skip is
+  no longer flagged missing_target_question; forward-only is enforced by page
+  display order instead (backward_or_self_target only when the target page is not
+  after the source page).
+- SurveyFlowMap.describeOutgoingEdge: empty-page HIDE_PAGE now reads
+  "If <condition>, skip the target page." instead of "...the page containing a
+  missing target."
+Tests added (apps/web/src/components/admin/surveyFlowGraph.test.ts):
+- "treats a HIDE_PAGE rule targeting an empty later page as a valid no-op"
+- "flags a HIDE_PAGE rule whose target page comes before the source page"
+Re-validated: npm run typecheck, npm run lint green; web tests 52 passed;
+git diff --check clean. (API/shared/migration untouched by this fix.)

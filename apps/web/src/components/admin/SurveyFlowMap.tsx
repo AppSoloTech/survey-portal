@@ -157,12 +157,15 @@ function FlowQuestionNode({
   const incomingJumpEdges = incomingEdges.filter(
     (edge) => edge.actionType === "JUMP_TO_QUESTION" || edge.actionType === "JUMP_TO_PAGE"
   );
-  const incomingSkipEdges = incomingEdges.filter((edge) => edge.actionType === "HIDE_QUESTION");
+  const incomingSkipEdges = incomingEdges.filter(
+    (edge) => edge.actionType === "HIDE_QUESTION" || edge.actionType === "HIDE_PAGE"
+  );
   const incomingNonExecutedEdges = incomingEdges.filter(
     (edge) =>
       edge.actionType !== "JUMP_TO_QUESTION" &&
       edge.actionType !== "JUMP_TO_PAGE" &&
-      edge.actionType !== "HIDE_QUESTION"
+      edge.actionType !== "HIDE_QUESTION" &&
+      edge.actionType !== "HIDE_PAGE"
   );
   const nodeClassNames = [
     "flow-node",
@@ -283,6 +286,17 @@ function describeOutgoingEdge(
 
   if (edge.actionType === "HIDE_QUESTION") {
     return `If ${conditionLabel}, skip ${targetLabel}.`;
+  }
+
+  if (edge.actionType === "HIDE_PAGE") {
+    const advanceLabel = edge.advanceOnTrigger
+      ? " Advances immediately, skipping the rest of the source page."
+      : "";
+    const base = targetNode
+      ? `If ${conditionLabel}, skip the page containing ${targetLabel}.`
+      : `If ${conditionLabel}, skip the target page.`;
+
+    return `${base}${advanceLabel}`;
   }
 
   if (edge.actionType === "JUMP_TO_PAGE") {

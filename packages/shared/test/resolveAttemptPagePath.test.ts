@@ -62,6 +62,7 @@ function makeRule(overrides: Partial<ConditionalLogicRule> & { id: number }): Co
     targetQuestionId: null,
     targetPageId: null,
     skipTargetInNormalFlow: true,
+    advanceOnTrigger: false,
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides
@@ -467,6 +468,132 @@ describe("page-based survey path helpers", () => {
 
     expect(result.hasLoop).toBe(false);
     expect(result.path.map((page) => page.id)).toEqual([1, 3]);
+  });
+
+  it("removes every question on a page hidden by a matching HIDE_PAGE rule", () => {
+    const survey = makeSurvey(
+      [makePage(1), makePage(2), makePage(3)],
+      [
+        makeQuestion(1, 1, 1),
+        makeQuestion(2, 2, 1),
+        makeQuestion(3, 2, 2),
+        makeQuestion(4, 3, 1)
+      ],
+      [
+        makeRule({
+          id: 1,
+          actionType: "HIDE_PAGE",
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: 11,
+          targetQuestionId: null,
+          targetPageId: 2,
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    const result = resolveAttemptPagePath(survey, [makeResponse(1, [11])]);
+
+    expect(result.hasLoop).toBe(false);
+    expect(result.path.map((page) => page.id)).toEqual([1, 3]);
+    expect(result.visibleQuestionIdsByPageId).toEqual({ 1: [1], 3: [4] });
+  });
+
+  it("keeps a HIDE_PAGE target visible when the source answer does not match", () => {
+    const survey = makeSurvey(
+      [makePage(1), makePage(2), makePage(3)],
+      [
+        makeQuestion(1, 1, 1),
+        makeQuestion(2, 2, 1),
+        makeQuestion(3, 3, 1)
+      ],
+      [
+        makeRule({
+          id: 1,
+          actionType: "HIDE_PAGE",
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: 11,
+          targetQuestionId: null,
+          targetPageId: 2,
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+
+    const result = resolveAttemptPagePath(survey, [makeResponse(1, [12])]);
+
+    expect(result.hasLoop).toBe(false);
+    expect(result.path.map((page) => page.id)).toEqual([1, 2, 3]);
+    expect(result.visibleQuestionIdsByPageId[2]).toEqual([2]);
+  });
+
+  it("advances past the rest of the source page when a HIDE_PAGE rule sets advanceOnTrigger", () => {
+    const survey = makeSurvey(
+      [makePage(1), makePage(2), makePage(3)],
+      [
+        makeQuestion(1, 1, 1),
+        makeQuestion(2, 1, 2),
+        makeQuestion(3, 2, 1),
+        makeQuestion(4, 3, 1)
+      ],
+      [
+        makeRule({
+          id: 1,
+          actionType: "HIDE_PAGE",
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: 11,
+          targetQuestionId: null,
+          targetPageId: 2,
+          skipTargetInNormalFlow: false,
+          advanceOnTrigger: true
+        })
+      ]
+    );
+
+    const state = resolveProgressivePageState(survey, [makeResponse(1, [11])]);
+
+    // Q2 (same page, after the trigger) is never revealed; the runner jumps
+    // straight to page 3, skipping the hidden page 2.
+    expect(state.currentPage?.id).toBe(3);
+    expect(state.currentQuestion?.id).toBe(4);
+    expect(state.visibleQuestionIdsByPageId[1]).toEqual([1]);
+
+    const result = resolveAttemptPagePath(survey, [makeResponse(1, [11])]);
+
+    expect(result.hasLoop).toBe(false);
+    expect(result.path.map((page) => page.id)).toEqual([1, 3]);
+  });
+
+  it("finishes the source page before skipping when advanceOnTrigger is off", () => {
+    const survey = makeSurvey(
+      [makePage(1), makePage(2), makePage(3)],
+      [
+        makeQuestion(1, 1, 1),
+        makeQuestion(2, 1, 2),
+        makeQuestion(3, 2, 1),
+        makeQuestion(4, 3, 1)
+      ],
+      [
+        makeRule({
+          id: 1,
+          actionType: "HIDE_PAGE",
+          sourceQuestionId: 1,
+          sourceAnswerOptionId: 11,
+          targetQuestionId: null,
+          targetPageId: 2,
+          skipTargetInNormalFlow: false,
+          advanceOnTrigger: false
+        })
+      ]
+    );
+
+    const state = resolveProgressivePageState(survey, [makeResponse(1, [11])]);
+
+    // The trigger fired, but the remaining same-page question is still revealed;
+    // page 2 is only skipped once page 1 is complete.
+    expect(state.currentPage?.id).toBe(1);
+    expect(state.currentQuestion?.id).toBe(2);
+    expect(state.visibleQuestionIdsByPageId[1]).toEqual([1, 2]);
   });
 
   it("ignores stale jump answers on hidden questions", () => {

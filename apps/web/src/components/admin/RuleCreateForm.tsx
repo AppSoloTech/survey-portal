@@ -36,7 +36,13 @@ export function RuleCreateForm({
 }) {
   const [skipTargetIds, setSkipTargetIds] = useState<number[]>([]);
   const isSkipAction = ruleActionType === "HIDE_QUESTION";
+  const isPageHideAction = ruleActionType === "HIDE_PAGE";
   const isPageJumpAction = ruleActionType === "JUMP_TO_PAGE";
+  // HIDE_QUESTION and HIDE_PAGE share the multi-select "create one rule per
+  // target" flow; only the target list (questions vs pages) differs.
+  const isMultiSkipAction = isSkipAction || isPageHideAction;
+  // Actions whose target is a page rather than a question.
+  const isPageTargetAction = isPageJumpAction || isPageHideAction;
 
   const orderedQuestions = getOrderedQuestions(survey);
   const ruleSourceQuestions = orderedQuestions.filter(
@@ -75,40 +81,52 @@ export function RuleCreateForm({
 
     let didSave = false;
 
-    if (isSkipAction) {
-      // Only target questions that are valid for the currently selected
-      // source — selections made under a previous source are dropped.
-      const validTargetIds = skipTargetIds.filter((targetId) =>
-        activeRuleTargetQuestions.some((question) => question.id === targetId)
-      );
+    if (isMultiSkipAction) {
+      // Only targets that are valid for the currently selected source —
+      // selections made under a previous source are dropped.
+      const validTargetIds = isPageHideAction
+        ? skipTargetIds.filter((targetId) =>
+            activeRuleTargetPages.some((page) => page.id === targetId)
+          )
+        : skipTargetIds.filter((targetId) =>
+            activeRuleTargetQuestions.some((question) => question.id === targetId)
+          );
 
       if (validTargetIds.length === 0) {
         return;
       }
 
-      // Each skipped question is its own rule row; create them sequentially
-      // so the toast and refreshed survey reflect the final state.
+      // Page skips can advance immediately when their trigger fires; the toggle
+      // applies to every page chosen in this batch.
+      const advanceOnTrigger = isPageHideAction && data.get("advanceOnTrigger") === "on";
+
+      // Each skipped question/page is its own rule row; create them
+      // sequentially so the toast and refreshed survey reflect the final state.
       let savedCount = 0;
 
       didSave = await runSurveyMutation(async () => {
         let response: Awaited<ReturnType<typeof createConditionalRule>> | null = null;
 
-        for (const targetQuestionId of validTargetIds) {
+        for (const targetId of validTargetIds) {
           response = await createConditionalRule({
             surveyId: survey.id,
             sourcePageId: activeRuleSourceQuestion?.pageId ?? null,
             sourceQuestionId,
             sourceAnswerOptionId,
             conditionOperator,
-            targetQuestionId,
-            actionType: "HIDE_QUESTION",
-            skipTargetInNormalFlow: false
+            targetQuestionId: isPageHideAction ? null : targetId,
+            targetPageId: isPageHideAction ? targetId : null,
+            actionType: isPageHideAction ? "HIDE_PAGE" : "HIDE_QUESTION",
+            skipTargetInNormalFlow: false,
+            advanceOnTrigger
           });
           savedCount += 1;
         }
 
         if (!response) {
-          throw new Error("Choose at least one question to skip");
+          throw new Error(
+            isPageHideAction ? "Choose at least one page to skip" : "Choose at least one question to skip"
+          );
         }
 
         return response;
@@ -201,21 +219,22 @@ export function RuleCreateForm({
         <label>
           Action
           {isBlankTextRule ? (
-            <>
-              <input readOnly value="Skip questions" />
-              <input name="actionType" type="hidden" value="HIDE_QUESTION" />
-            </>
+            <select
+              name="actionType"
+              onChange={(event) => {
+                setRuleActionType(event.target.value === "HIDE_PAGE" ? "HIDE_PAGE" : "HIDE_QUESTION");
+                setSkipTargetIds([]);
+              }}
+              value={isPageHideAction ? "HIDE_PAGE" : "HIDE_QUESTION"}
+            >
+              <option value="HIDE_QUESTION">Skip questions</option>
+              <option value="HIDE_PAGE">Skip page</option>
+            </select>
           ) : (
             <select
               name="actionType"
               onChange={(event) => {
-                setRuleActionType(
-                  event.target.value === "HIDE_QUESTION"
-                    ? "HIDE_QUESTION"
-                    : event.target.value === "JUMP_TO_PAGE"
-                      ? "JUMP_TO_PAGE"
-                      : "JUMP_TO_QUESTION"
-                );
+                setRuleActionType(toRuleActionType(event.target.value));
                 setSkipTargetIds([]);
               }}
               value={ruleActionType}
@@ -223,6 +242,7 @@ export function RuleCreateForm({
               <option value="JUMP_TO_PAGE">Jump to page</option>
               <option value="JUMP_TO_QUESTION">Jump to question (legacy)</option>
               <option value="HIDE_QUESTION">Skip questions</option>
+              <option value="HIDE_PAGE">Skip page</option>
             </select>
           )}
         </label>
@@ -246,6 +266,32 @@ export function RuleCreateForm({
               </label>
             ))}
           </fieldset>
+        ) : isPageHideAction ? (
+          <>
+            <fieldset className="skip-target-fieldset" disabled={!activeRuleSourceQuestion}>
+              <legend>Pages to skip</legend>
+              {activeRuleTargetPages.map((page) => (
+                <label className="checkbox-label" key={page.id}>
+                  <input
+                    checked={skipTargetIds.includes(page.id)}
+                    onChange={(event) =>
+                      setSkipTargetIds((current) =>
+                        event.target.checked
+                          ? [...current, page.id]
+                          : current.filter((id) => id !== page.id)
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  {page.displayOrder}. {page.title}
+                </label>
+              ))}
+            </fieldset>
+            <label className="checkbox-label rule-flow-toggle">
+              <input name="advanceOnTrigger" type="checkbox" />
+              Advance immediately when triggered (skip the rest of the source page)
+            </label>
+          </>
         ) : isPageJumpAction ? (
           <>
             <label>
@@ -300,13 +346,13 @@ export function RuleCreateForm({
             isLocked ||
             !activeRuleSourceQuestion ||
             (!isBlankTextRule && activeRuleSourceAnswerOptionCount === 0) ||
-            (!isPageJumpAction && activeRuleTargetQuestions.length === 0) ||
-            (isPageJumpAction && activeRuleTargetPages.length === 0) ||
-            (isSkipAction && skipTargetIds.length === 0)
+            (!isPageTargetAction && activeRuleTargetQuestions.length === 0) ||
+            (isPageTargetAction && activeRuleTargetPages.length === 0) ||
+            (isMultiSkipAction && skipTargetIds.length === 0)
           }
           type="submit"
         >
-          {isSkipAction ? "Add skip rules" : "Add rule"}
+          {isMultiSkipAction ? "Add skip rules" : "Add rule"}
         </button>
       </form>
 
@@ -314,26 +360,41 @@ export function RuleCreateForm({
         activeRuleSourceAnswerOptionCount={activeRuleSourceAnswerOptionCount}
         activeRuleSourceQuestion={activeRuleSourceQuestion}
         isBlankTextRule={isBlankTextRule}
-        isPageJumpAction={isPageJumpAction}
+        isPageTargetAction={isPageTargetAction}
         selectableQuestionCount={ruleSourceQuestions.length}
-        targetCount={isPageJumpAction ? activeRuleTargetPages.length : activeRuleTargetQuestions.length}
+        targetCount={isPageTargetAction ? activeRuleTargetPages.length : activeRuleTargetQuestions.length}
       />
     </>
   );
+}
+
+// Maps an action <select> value to the ConditionalRuleActionType union,
+// defaulting unrecognized values to the legacy jump-to-question action.
+function toRuleActionType(value: string): ConditionalRuleActionType {
+  if (
+    value === "HIDE_QUESTION" ||
+    value === "HIDE_PAGE" ||
+    value === "JUMP_TO_PAGE" ||
+    value === "JUMP_TO_QUESTION"
+  ) {
+    return value;
+  }
+
+  return "JUMP_TO_QUESTION";
 }
 
 function RuleBuilderEmptyState({
   activeRuleSourceAnswerOptionCount,
   activeRuleSourceQuestion,
   isBlankTextRule,
-  isPageJumpAction,
+  isPageTargetAction,
   selectableQuestionCount,
   targetCount
 }: {
   activeRuleSourceAnswerOptionCount: number;
   activeRuleSourceQuestion: SurveyQuestion | null;
   isBlankTextRule: boolean;
-  isPageJumpAction: boolean;
+  isPageTargetAction: boolean;
   selectableQuestionCount: number;
   targetCount: number;
 }) {
@@ -361,11 +422,11 @@ function RuleBuilderEmptyState({
   if (activeRuleSourceQuestion && targetCount === 0) {
     return (
       <div className="builder-empty-state compact">
-        <strong>{isPageJumpAction ? "No later target pages" : "No later target questions"}</strong>
+        <strong>{isPageTargetAction ? "No later target pages" : "No later target questions"}</strong>
         <span>
           Choose an earlier source question or add another{" "}
-          {isPageJumpAction ? "page" : "question"} after this one so the jump has
-          somewhere to send users.
+          {isPageTargetAction ? "page" : "question"} after this one so the rule has
+          somewhere to point.
         </span>
       </div>
     );

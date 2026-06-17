@@ -391,7 +391,11 @@ export async function deleteAnswerTag(input: {
   );
 }
 
-export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "JUMP_TO_PAGE" | "HIDE_QUESTION";
+export type ConditionalRuleActionType =
+  | "JUMP_TO_QUESTION"
+  | "JUMP_TO_PAGE"
+  | "HIDE_QUESTION"
+  | "HIDE_PAGE";
 export type ConditionalRuleConditionOperator = "equals" | "is_blank";
 
 export async function createQuestionValueTag(input: {
@@ -437,6 +441,7 @@ export async function createConditionalRule(input: {
   conditionOperator?: ConditionalRuleConditionOperator;
   actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
+  advanceOnTrigger?: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules`, {
     body: JSON.stringify({
@@ -446,6 +451,7 @@ export async function createConditionalRule(input: {
       targetQuestionId: input.targetQuestionId ?? null,
       targetPageId: input.targetPageId ?? null,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
+      advanceOnTrigger: input.advanceOnTrigger ?? false,
       conditionOperator: input.conditionOperator ?? "equals",
       actionType: input.actionType ?? "JUMP_TO_QUESTION"
     }),
@@ -464,6 +470,7 @@ export async function updateConditionalRule(input: {
   conditionOperator?: ConditionalRuleConditionOperator;
   actionType?: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
+  advanceOnTrigger?: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/rules/${input.ruleId}`, {
     body: JSON.stringify({
@@ -473,6 +480,7 @@ export async function updateConditionalRule(input: {
       targetQuestionId: input.targetQuestionId ?? null,
       targetPageId: input.targetPageId ?? null,
       skipTargetInNormalFlow: input.skipTargetInNormalFlow,
+      advanceOnTrigger: input.advanceOnTrigger ?? false,
       conditionOperator: input.conditionOperator ?? "equals",
       actionType: input.actionType ?? "JUMP_TO_QUESTION"
     }),

@@ -864,6 +864,21 @@ function isDuplicateTagPair(
   );
 }
 
+// Maps an action <select> value to a runtime-executed action type, defaulting
+// unrecognized values to the legacy jump-to-question action.
+function toRuleActionType(value: string): ConditionalLogicRule["actionType"] {
+  if (
+    value === "HIDE_QUESTION" ||
+    value === "HIDE_PAGE" ||
+    value === "JUMP_TO_PAGE" ||
+    value === "JUMP_TO_QUESTION"
+  ) {
+    return value;
+  }
+
+  return "JUMP_TO_QUESTION";
+}
+
 export function RuleEditor({
   isSubmitting,
   onDeleteRule,
@@ -896,7 +911,12 @@ export function RuleEditor({
   }, [rule.actionType]);
 
   const isSkipRule = actionType === "HIDE_QUESTION";
+  const isPageHideRule = actionType === "HIDE_PAGE";
   const isPageJumpRule = actionType === "JUMP_TO_PAGE";
+  // Rules whose target is a page, and rules that never carry the static
+  // normal-flow skip flag (both per-attempt skips).
+  const isPageTargetRule = isPageJumpRule || isPageHideRule;
+  const isAttemptSkipRule = isSkipRule || isPageHideRule;
 
   const sourceQuestion =
     sourceQuestions.find((question) => question.id === sourceQuestionId) ??
@@ -969,33 +989,34 @@ export function RuleEditor({
       <label>
         Action
         {isBlankTextRule ? (
-          <>
-            <input readOnly value="Skip question" />
-            <input name="actionType" type="hidden" value="HIDE_QUESTION" />
-          </>
+          <select
+            name="actionType"
+            onChange={(event) => {
+              setActionType(event.target.value === "HIDE_PAGE" ? "HIDE_PAGE" : "HIDE_QUESTION");
+            }}
+            value={isPageHideRule ? "HIDE_PAGE" : "HIDE_QUESTION"}
+          >
+            <option value="HIDE_QUESTION">Skip question</option>
+            <option value="HIDE_PAGE">Skip page</option>
+          </select>
         ) : (
           <select
             name="actionType"
             onChange={(event) => {
-              setActionType(
-                event.target.value === "HIDE_QUESTION"
-                  ? "HIDE_QUESTION"
-                  : event.target.value === "JUMP_TO_PAGE"
-                    ? "JUMP_TO_PAGE"
-                    : "JUMP_TO_QUESTION"
-              );
+              setActionType(toRuleActionType(event.target.value));
             }}
-            value={isSkipRule ? "HIDE_QUESTION" : isPageJumpRule ? "JUMP_TO_PAGE" : "JUMP_TO_QUESTION"}
+            value={actionType}
           >
             <option value="JUMP_TO_PAGE">Jump to page</option>
             <option value="JUMP_TO_QUESTION">Jump to question (legacy)</option>
             <option value="HIDE_QUESTION">Skip question</option>
+            <option value="HIDE_PAGE">Skip page</option>
           </select>
         )}
       </label>
-      {isPageJumpRule ? (
+      {isPageTargetRule ? (
         <label>
-          Target page
+          {isPageHideRule ? "Page to skip" : "Target page"}
           <select
             defaultValue={rule.targetPageId ?? ""}
             key={sourceQuestion?.id ?? "target-page"}
@@ -1024,7 +1045,16 @@ export function RuleEditor({
           </select>
         </label>
       )}
-      {isSkipRule ? (
+      {isPageHideRule ? (
+        <label className="checkbox-label rule-flow-toggle">
+          <input
+            defaultChecked={rule.advanceOnTrigger}
+            name="advanceOnTrigger"
+            type="checkbox"
+          />
+          Advance immediately when triggered
+        </label>
+      ) : isAttemptSkipRule ? (
         // Occupies the normal-flow checkbox cell so Save/Delete land in the
         // same grid column for skip rules, which never carry the flag.
         <span aria-hidden="true" className="rule-flow-spacer" />

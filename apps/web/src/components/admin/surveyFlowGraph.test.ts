@@ -51,6 +51,7 @@ function makeRule(
     targetQuestionId: null,
     targetPageId: null,
     skipTargetInNormalFlow: true,
+    advanceOnTrigger: false,
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides
@@ -389,6 +390,76 @@ describe("buildSurveyFlowGraph validation issues", () => {
     );
 
     expect(issueCodes(survey)).toContain("missing_target_question");
+  });
+
+  it("treats a HIDE_PAGE rule targeting an empty later page as a valid no-op", () => {
+    const survey = makeSurvey(
+      [sourceWithOption()],
+      [
+        makeRule({
+          id: 1,
+          actionType: "HIDE_PAGE",
+          targetQuestionId: null,
+          targetPageId: 2,
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+    // Page 2 exists but holds no questions (source is the only question, on page 1).
+    survey.pages.push({
+      id: 2,
+      surveyId: 1,
+      title: "Page 2",
+      description: null,
+      displayOrder: 2,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const graph = buildSurveyFlowGraph(survey);
+    const edge = graph.conditionalEdges.find((candidate) => candidate.ruleId === 1);
+
+    expect(graph.issues.map((issue) => issue.code)).not.toContain("missing_target_question");
+    expect(edge?.issues).toEqual([]);
+    expect(edge?.canFireAtRuntime).toBe(true);
+  });
+
+  it("flags a HIDE_PAGE rule whose target page comes before the source page", () => {
+    const survey = makeSurvey(
+      [
+        makeQuestion({ id: 1, pageId: 1, displayOrder: 1 }),
+        makeQuestion({
+          id: 2,
+          pageId: 2,
+          displayOrder: 1,
+          answerOptions: [makeOption({ id: 21, questionId: 2 })]
+        })
+      ],
+      [
+        makeRule({
+          id: 1,
+          sourceQuestionId: 2,
+          sourcePageId: 2,
+          sourceAnswerOptionId: 21,
+          actionType: "HIDE_PAGE",
+          targetQuestionId: null,
+          targetPageId: 3,
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+    // Page 3 exists but is empty AND ordered before the source page (legacy data).
+    survey.pages.push({
+      id: 3,
+      surveyId: 1,
+      title: "Page 3",
+      description: null,
+      displayOrder: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    expect(issueCodes(survey)).toContain("backward_or_self_target");
   });
 
   it("flags unsupported condition operators", () => {

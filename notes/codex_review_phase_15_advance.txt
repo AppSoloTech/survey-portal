@@ -1,0 +1,56 @@
+Phase 15 Advance-on-Trigger Codex Review
+========================================
+
+Review scope
+------------
+- Read: `notes/codex_handoff_phase_15_advance.txt`
+- Reviewed only the follow-up advance-on-trigger lever for `HIDE_PAGE`, not the
+  already-reviewed base `HIDE_PAGE` implementation except where needed for
+  context.
+- Areas checked: shared page resolver, API validation/persistence/duplication,
+  migration `0015`, web create/edit payloads, flow-map metadata/copy, and tests.
+
+Findings
+--------
+
+No findings.
+
+Notes
+-----
+- `resolveProgressivePageState` applies the new advance branch after hidden page
+  ids are collected and after jump navigation is resolved, so jump-style
+  navigation still wins before the page-skip advance branch.
+- Advancing is intentionally OR-ed across matching `HIDE_PAGE` rules for the
+  answered source question via `hasActivatedAdvancingPageSkip`; this matches the
+  handoff's intended "advancing wins" mixed-rule behavior.
+- Keeping `resolveAttemptPath` unchanged looks acceptable: the behavior is
+  page-flow-specific, while reporting and pruning use `resolveProgressivePageState`.
+- Persistence appears complete: create/update, survey structure reads, single-rule
+  reads, duplication, API validation, and web payloads all carry or force
+  `advanceOnTrigger` as expected.
+- Migration `0015_hide_page_advance_on_trigger.sql` adds the default-false column
+  and constrains true values to `HIDE_PAGE`.
+
+Verification run
+----------------
+```bash
+npm run test -w packages/shared
+npm run test -w apps/web -- surveyFlowGraph
+git diff --check
+npm run test -w apps/api -- test/surveyBuilder.test.ts test/progressivePageRunner.test.ts
+npm run typecheck
+```
+
+Results:
+- Shared tests passed: 47 tests.
+- Web flow-graph tests passed: 33 tests.
+- `git diff --check` passed.
+- Targeted API tests passed after running outside the sandbox to reach the local
+  Postgres test database: 40 tests, with migrations `0014_hide_page_action_type.sql`
+  and `0015_hide_page_advance_on_trigger.sql` applied.
+- Typecheck passed for shared, web, and API workspaces.
+
+Residual risk
+-------------
+- Manual browser verification of the new checkbox remains pending, as noted in
+  the handoff.

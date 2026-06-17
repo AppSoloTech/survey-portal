@@ -1,0 +1,155 @@
+Phase 15 — Skip Page conditional logic — for Codex
+==================================================
+
+Roles reversed (Claude implemented, Codex reviews). Record findings in
+notes/codex_review_phase_15.txt and summarize in chat. Do not modify source
+unless the developer asks for fixes.
+
+Source of the request
+---------------------
+Developer: "On the logic page, I would like to include a new 'Skip page' option
+that is similar to the 'Skip questions' use case. I would like users to have the
+option to skip entire pages conditional to the results of the Source question's
+answer."
+
+Decisions settled before implementing (confirmed with the requester)
+--------------------------------------------------------------------
+1. Source parity with Skip questions: BOTH selection sources (equals) AND text
+   "answer is blank" sources (is_blank) can drive a Skip page rule.
+2. Skip scope: WHOLE PAGE, DYNAMIC — hide every question currently on the target
+   page at evaluation time (so a question added to that page later is also
+   skipped). Chosen over snapshotting questions at create time.
+
+Core design — why this is small and low-risk
+--------------------------------------------
+New first-class action type HIDE_PAGE (target_page_id set, target_question_id
+null, skip_target_in_normal_flow forced false — exactly like HIDE_QUESTION but
+page-targeted, paralleling JUMP_TO_PAGE vs JUMP_TO_QUESTION).
+
+At runtime a HIDE_PAGE rule is reduced to "all questions on the target page are
+hidden": the ONLY runtime change is in
+packages/shared/src/index.ts > collectActivatedHiddenQuestionIds — for a matching
+HIDE_PAGE rule it pushes getQuestionsForPage(survey, targetPageId) ids into the
+SAME activeHiddenQuestionIds set that HIDE_QUESTION already feeds. Because both
+path walkers (resolveProgressivePageState, resolveAttemptPath), the reporting
+keep-set (collectFinalPathQuestionIds), and pruneOffPathAnswers all key off that
+hidden-question set, page-skip, reporting "not_reached", and off-path pruning all
+work with NO further change. getNextVisiblePage already advances past a page once
+all its questions are hidden.
+
+KEY POINT to scrutinize: an empty target page contributes zero hidden ids. That
+is fine — an empty page already renders nothing and getNextVisiblePage skips it in
+normal flow — but confirm you agree there's no edge case where an admin expects an
+empty page to be "marked skipped".
+
+What changed
+------------
+database/migrations/0014_hide_page_action_type.sql (NEW)
+  - Drops/recreates conditional_logic_rules_action_type_check to add 'HIDE_PAGE'.
+  - Drops/recreates conditional_logic_rules_target_check (from 0013) so
+    HIDE_PAGE joins JUMP_TO_PAGE in the "target_page_id not null AND
+    target_question_id null" branch.
+
+packages/shared/src/index.ts
+  - "HIDE_PAGE" added to ConditionalLogicActionType.
+  - collectActivatedHiddenQuestionIds rewritten (loop) to expand HIDE_PAGE rules
+    to their page's question ids. doesRuleMatchResponse gate unchanged, so
+    equals + is_blank both work.
+
+apps/api/src/services/validation.ts
+  - "HIDE_PAGE" added to ConditionalRuleActionType and the allowed-type check.
+  - is_blank now permits HIDE_QUESTION OR HIDE_PAGE.
+  - Page-target branch now covers JUMP_TO_PAGE OR HIDE_PAGE (require targetPageId,
+    forbid targetQuestionId; targetPageId persisted for both).
+  - skipTargetInNormalFlow forced false for HIDE_QUESTION OR HIDE_PAGE.
+
+apps/api/src/services/surveyBuilder.ts
+  - validateConditionalRuleReferences: HIDE_PAGE shares the JUMP_TO_PAGE branch
+    (target page belongs to survey; display_order > source page); is_blank guard
+    allows HIDE_PAGE.
+  - invalidRule detector SQL: page-target group, is_blank guard, allowed-types
+    guard, and the "skip flag must be off" guard all extended to HIDE_PAGE.
+  - POST/PUT route SQL unchanged (already column-generic).
+
+apps/web (Logic page)
+  - api/surveys.ts: "HIDE_PAGE" added to ConditionalRuleActionType.
+  - RuleCreateForm.tsx: new "Skip page" action; reuses the multi-select skip flow
+    (skipTargetIds) over later pages, creating one HIDE_PAGE rule per page; blank-
+    text source now offers Skip questions / Skip page; helper toRuleActionType;
+    submit/empty-state generalized to page-target actions.
+  - SurveyBuilderComponents.tsx (RuleEditor): Skip page option + target-page
+    dropdown for HIDE_PAGE; flow-flag spacer covers HIDE_PAGE; toRuleActionType.
+  - RuleList.tsx: parse/persist HIDE_PAGE (page target, flag off).
+  - surveyFlowGraph.ts + SurveyFlowMap.tsx: HIDE_PAGE is a recognized runtime
+    skip (not flagged "not executed"), described as "skip the page containing
+    <first question>", duplicate-skip detection keyed by page, canFireAtRuntime
+    covers HIDE_PAGE. HIDE_PAGE never contributes navigation/adjacency (it is a
+    skip, like HIDE_QUESTION).
+
+Tests changed / added
+---------------------
+packages/shared/test/resolveAttemptPagePath.test.ts
+  - "removes every question on a page hidden by a matching HIDE_PAGE rule"
+  - "keeps a HIDE_PAGE target visible when the source answer does not match"
+apps/api/test/surveyBuilder.test.ts
+  - Updated two message assertions (allowed-types list; blank-rule message).
+  - surveyWithSourceAndLaterPage helper + 3 cases: accept HIDE_PAGE (flag forced
+    off), reject target question, reject target page not after source.
+apps/api/test/progressivePageRunner.test.ts
+  - createPageSkipSurvey + e2e: trigger answer skips the whole Middle page and
+    lands on Final; non-trigger reveals Middle.
+apps/api/test/helpers/factories.ts
+  - addRule actionType union includes HIDE_PAGE.
+
+Validation
+----------
+npm run typecheck  -> green
+npm run lint       -> green
+npm run test (shared 45, web 50, api 155) -> all green; 0014 migration applied by
+the API test globalSetup (drops public schema, runs all migrations).
+git diff --check   -> run before commit.
+
+Open follow-ups / things to look at
+-----------------------------------
+- Empty target page (above).
+- Flow map represents a HIDE_PAGE edge via the page's FIRST question as the
+  target node; incoming "Skipped by" appears only on that first question's node,
+  not every question on the page. Confirm that reads acceptably.
+- Manual browser pass on the Logic page + respondent flow still to do.
+
+Addendum — "Advance on trigger" lever for Skip page (same session)
+------------------------------------------------------------------
+Request: the page-skip only takes effect after the trigger question's whole page
+is completed. The developer asked for an admin-controlled lever to instead skip
+the rest of the source page and jump past the skipped page(s) the moment the
+trigger answer is submitted.
+
+Design: new per-rule boolean `advance_on_trigger` (HIDE_PAGE only; forced false
+elsewhere). Default false preserves the prior "finish the page, then skip"
+behavior. When true and the trigger fires, the page walker stops revealing the
+current page and advances to getNextVisiblePage (which skips the just-hidden
+target page) — the same immediate-navigation path JUMP rules already use.
+
+Changes:
+- DB: database/migrations/0015_hide_page_advance_on_trigger.sql (column + check
+  constraint: only HIDE_PAGE may set it).
+- Shared: ConditionalLogicRule.advanceOnTrigger; new helper
+  hasActivatedAdvancingPageSkip; resolveProgressivePageState advances when it
+  returns true (after the JUMP check, before continuing to the next same-page
+  question).
+- API: surveyRecords (record + mapper + select), surveyStructure (select),
+  surveyBuilder duplication (type + select + insert), routes (insert/update
+  $10/$11), validation (parse + force false unless HIDE_PAGE).
+- Web: api/surveys.ts (create/update bodies), RuleCreateForm (checkbox under
+  "Pages to skip", applies to all pages in the batch), RuleEditor (checkbox in
+  the flow-toggle cell for HIDE_PAGE), RuleList (persist on save), flow map
+  (edge field + "Advances immediately..." note).
+- Tests: shared (advance vs. finish-page), API (validation force-off + e2e:
+  AfterRoute never revealed, lands on Final), web flow-graph makeRule default.
+
+Validation: typecheck/lint green; shared 47, web 52, api 157; migrations 0014 +
+0015 applied by the API test globalSetup.
+
+Scrutinize: advance is OR-ed across a source's HIDE_PAGE rules (any advancing
+rule that matches on the answered question advances). The remaining same-page
+questions after the trigger become off-path and are pruned, exactly like a jump.

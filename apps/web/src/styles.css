@@ -2773,7 +2773,13 @@ main {
   overflow-y: auto;
   padding: 0.5rem;
   position: absolute;
-  right: 0;
+  /* Grow past the narrow trigger column so long question labels are readable:
+     at least as wide as the trigger, sized to the longest option, capped so it
+     never runs off-screen. Anchored to the left (not stretched right). */
+  right: auto;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(560px, 90vw);
   top: 100%;
   z-index: 30;
 }
@@ -2807,9 +2813,8 @@ main {
 
 .grouped-select-group-title {
   flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .grouped-select-group-count {
@@ -2839,8 +2844,12 @@ main {
   display: block;
   font: inherit;
   font-size: 0.9375rem;
+  /* Wrap long labels onto multiple lines rather than clipping them, so the full
+     question text is always readable even past the panel's max width. */
+  overflow-wrap: anywhere;
   padding: 0.4rem 0.5rem;
   text-align: left;
+  white-space: normal;
   width: 100%;
 }
 

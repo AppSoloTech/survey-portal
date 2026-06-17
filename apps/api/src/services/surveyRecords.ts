@@ -84,6 +84,7 @@ export interface ConditionalLogicRuleRecord {
   target_question_id: number | null;
   target_page_id: number | null;
   skip_target_in_normal_flow: boolean;
+  advance_on_trigger: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -258,6 +259,7 @@ export function mapConditionalLogicRuleRecord(record: ConditionalLogicRuleRecord
     targetQuestionId: record.target_question_id,
     targetPageId: record.target_page_id,
     skipTargetInNormalFlow: record.skip_target_in_normal_flow,
+    advanceOnTrigger: record.advance_on_trigger,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -392,6 +394,7 @@ export async function fetchConditionalRuleForSurvey(
        target_question_id,
        target_page_id,
        skip_target_in_normal_flow,
+       advance_on_trigger,
        created_at,
        updated_at
      from conditional_logic_rules

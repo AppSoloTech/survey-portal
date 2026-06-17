@@ -206,8 +206,9 @@ export async function addRule(
     targetQuestionId?: number | null;
     targetPageId?: number | null;
     conditionOperator?: "equals" | "is_blank";
-    actionType?: "JUMP_TO_QUESTION" | "JUMP_TO_PAGE" | "HIDE_QUESTION";
+    actionType?: "JUMP_TO_QUESTION" | "JUMP_TO_PAGE" | "HIDE_QUESTION" | "HIDE_PAGE";
     skipTargetInNormalFlow?: boolean;
+    advanceOnTrigger?: boolean;
   }
 ): Promise<Survey> {
   return expectSurveyResponse(

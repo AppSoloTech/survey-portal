@@ -51,6 +51,7 @@ export interface SurveyFlowConditionalEdge {
   targetQuestionId: number | null;
   actionType: ConditionalLogicRule["actionType"];
   skipTargetInNormalFlow: boolean;
+  advanceOnTrigger: boolean;
   canFireAtRuntime: boolean;
   issues: SurveyFlowIssue[];
 }
@@ -192,12 +193,25 @@ function buildConditionalEdges(
         ? null
         : sourceQuestion?.answerOptions.find((option) => option.id === rule.sourceAnswerOptionId) ??
           null;
+    const targetsPage = rule.actionType === "JUMP_TO_PAGE" || rule.actionType === "HIDE_PAGE";
+    const sourcePage = sourceQuestion
+      ? survey.pages.find((page) => page.id === sourceQuestion.pageId) ?? null
+      : null;
+    const targetPage =
+      targetsPage && rule.targetPageId !== null
+        ? survey.pages.find((page) => page.id === rule.targetPageId) ?? null
+        : null;
     const targetQuestion =
-      rule.actionType === "JUMP_TO_PAGE" && rule.targetPageId !== null
+      targetsPage && rule.targetPageId !== null
         ? firstQuestionOnPage(survey, rule.targetPageId)
         : rule.targetQuestionId !== null
           ? questionsById.get(rule.targetQuestionId) ?? null
           : null;
+    // A HIDE_PAGE rule targeting an existing later page that has no questions is
+    // a valid runtime no-op (zero questions to hide), so it must not be flagged
+    // as a missing target. Forward-only is still enforced by page order below.
+    const isEmptyPageSkip =
+      rule.actionType === "HIDE_PAGE" && targetPage !== null && targetQuestion === null;
 
     if (!sourceQuestion) {
       edgeIssues.push({
@@ -233,20 +247,22 @@ function buildConditionalEdges(
 
     if (
       rule.conditionOperator === "is_blank" &&
-      (rule.sourceAnswerOptionId !== null || rule.actionType !== "HIDE_QUESTION")
+      (rule.sourceAnswerOptionId !== null ||
+        (rule.actionType !== "HIDE_QUESTION" && rule.actionType !== "HIDE_PAGE"))
     ) {
       edgeIssues.push({
         code: "unsupported_condition_operator",
         ruleId: rule.id,
         questionId: sourceQuestion?.id,
-        message: `Rule ${rule.id}: blank text conditions can only skip questions and cannot reference a source answer option.`
+        message: `Rule ${rule.id}: blank text conditions can only skip questions or pages and cannot reference a source answer option.`
       });
     }
 
     if (
       rule.actionType !== "JUMP_TO_QUESTION" &&
       rule.actionType !== "HIDE_QUESTION" &&
-      rule.actionType !== "JUMP_TO_PAGE"
+      rule.actionType !== "JUMP_TO_PAGE" &&
+      rule.actionType !== "HIDE_PAGE"
     ) {
       edgeIssues.push({
         code: "unsupported_action_type",
@@ -256,8 +272,8 @@ function buildConditionalEdges(
     }
 
     if (
-      (rule.actionType === "JUMP_TO_PAGE" ? rule.targetPageId === null : rule.targetQuestionId === null) ||
-      !targetQuestion
+      !isEmptyPageSkip &&
+      ((targetsPage ? rule.targetPageId === null : rule.targetQuestionId === null) || !targetQuestion)
     ) {
       edgeIssues.push({
         code: "missing_target_question",
@@ -266,7 +282,17 @@ function buildConditionalEdges(
           rule.targetQuestionId !== null ? ` (id ${rule.targetQuestionId})` : ""
         } does not exist in this survey. If this rule triggered, the survey would end at the source question.`
       });
-    } else if (sourceQuestion) {
+    } else if (sourceQuestion && isEmptyPageSkip) {
+      // Empty-page skip: no first question to order against, so check page order.
+      if (sourcePage && targetPage && targetPage.displayOrder <= sourcePage.displayOrder) {
+        edgeIssues.push({
+          code: "backward_or_self_target",
+          ruleId: rule.id,
+          questionId: sourceQuestion.id,
+          message: `Rule ${rule.id}: target page ${targetPage.displayOrder} comes before source ${formatQuestionLabel(survey, sourceQuestion)}. Valid admin-created jump and skip rules are forward-only.`
+        });
+      }
+    } else if (sourceQuestion && targetQuestion) {
       if (targetQuestion.id === sourceQuestion.id) {
         edgeIssues.push({
           code: "backward_or_self_target",
@@ -289,12 +315,15 @@ function buildConditionalEdges(
 
     // Skip rules union their targets at runtime, so an identical second skip
     // rule is harmless but redundant — flag it for cleanup.
-    if (
-      rule.conditionOperator === "equals" &&
-      rule.actionType === "HIDE_QUESTION" &&
-      rule.targetQuestionId !== null
-    ) {
-      const skipKey = `${rule.sourceQuestionId}:${rule.conditionOperator}:${rule.sourceAnswerOptionId ?? "blank"}:${rule.targetQuestionId}`;
+    const skipTargetKey =
+      rule.actionType === "HIDE_QUESTION" && rule.targetQuestionId !== null
+        ? `q${rule.targetQuestionId}`
+        : rule.actionType === "HIDE_PAGE" && rule.targetPageId !== null
+          ? `p${rule.targetPageId}`
+          : null;
+
+    if (rule.conditionOperator === "equals" && skipTargetKey !== null) {
+      const skipKey = `${rule.sourceQuestionId}:${rule.conditionOperator}:${rule.sourceAnswerOptionId ?? "blank"}:${skipTargetKey}`;
       const firstSkipRuleId = firstSkipRuleIdByKey.get(skipKey);
 
       if (firstSkipRuleId === undefined) {
@@ -303,7 +332,7 @@ function buildConditionalEdges(
         edgeIssues.push({
           code: "duplicate_skip_rule",
           ruleId: rule.id,
-          message: `Rule ${rule.id}: repeats skip rule ${firstSkipRuleId} for the same answer and target question. It is redundant and can be deleted.`
+          message: `Rule ${rule.id}: repeats skip rule ${firstSkipRuleId} for the same answer and target. It is redundant and can be deleted.`
         });
       }
     }
@@ -317,6 +346,7 @@ function buildConditionalEdges(
       targetQuestionId: targetQuestion?.id ?? rule.targetQuestionId,
       actionType: rule.actionType,
       skipTargetInNormalFlow: rule.skipTargetInNormalFlow,
+      advanceOnTrigger: rule.advanceOnTrigger,
       canFireAtRuntime: canRuleFireAtRuntime(rule, sourceQuestion, sourceOption !== null),
       issues: edgeIssues
     });
@@ -388,7 +418,8 @@ function canRuleFireAtRuntime(
     (
       (rule.actionType === "JUMP_TO_QUESTION" && rule.targetQuestionId !== null) ||
       (rule.actionType === "HIDE_QUESTION" && rule.targetQuestionId !== null) ||
-      (rule.actionType === "JUMP_TO_PAGE" && rule.targetPageId !== null)
+      (rule.actionType === "JUMP_TO_PAGE" && rule.targetPageId !== null) ||
+      (rule.actionType === "HIDE_PAGE" && rule.targetPageId !== null)
     )
   );
 }
@@ -573,7 +604,7 @@ function isAllowedRuleSource(
   return (
     rule.conditionOperator === "is_blank" &&
     sourceQuestion.questionType === "text" &&
-    rule.actionType === "HIDE_QUESTION"
+    (rule.actionType === "HIDE_QUESTION" || rule.actionType === "HIDE_PAGE")
   );
 }
 

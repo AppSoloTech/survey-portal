@@ -1728,9 +1728,10 @@ surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), reject
          action_type,
          target_question_id,
          target_page_id,
-         skip_target_in_normal_flow
+         skip_target_in_normal_flow,
+         advance_on_trigger
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         surveyId,
         validation.value.sourcePageId,
@@ -1740,7 +1741,8 @@ surveyBuilderRouter.post("/:id/rules", requireAuth, requireRole("admin"), reject
         validation.value.actionType,
         validation.value.targetQuestionId,
         validation.value.targetPageId,
-        validation.value.skipTargetInNormalFlow
+        validation.value.skipTargetInNormalFlow,
+        validation.value.advanceOnTrigger
       ]
     );
 
@@ -1806,6 +1808,7 @@ surveyBuilderRouter.put(
              target_question_id = $8,
              target_page_id = $9,
              skip_target_in_normal_flow = $10,
+             advance_on_trigger = $11,
              updated_at = now()
          where survey_id = $1
            and id = $2`,
@@ -1819,7 +1822,8 @@ surveyBuilderRouter.put(
           validation.value.actionType,
           validation.value.targetQuestionId,
           validation.value.targetPageId,
-          validation.value.skipTargetInNormalFlow
+          validation.value.skipTargetInNormalFlow,
+          validation.value.advanceOnTrigger
         ]
       );
 

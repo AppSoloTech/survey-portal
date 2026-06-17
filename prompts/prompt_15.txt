@@ -1,0 +1,108 @@
+# Phase 15 — Skip Page Conditional Logic
+
+## Purpose
+
+Add a "Skip page" option to the Logic page so admins can skip an entire later
+page conditional on a source question's answer — the page-level analogue of the
+existing "Skip questions" (HIDE_QUESTION) action.
+
+Source feedback or planning note:
+
+```txt
+Client/developer request: "On the logic page, I would like to include a new
+'Skip page' option that is similar to the 'Skip questions' use case. I would
+like users to have the option to skip entire pages conditional to the results
+of the Source question's answer."
+```
+
+## Role Note
+
+Roles reversed (precedent: Phases 12–14): Claude Code implemented, Codex reviews.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/codex_handoff_phase_15.txt`
+* Codex review: `notes/codex_review_phase_15.txt`
+
+---
+
+# Received Feedback
+
+1. New "Skip page" action on the Logic page, conditional on a source question's
+   answer, mirroring "Skip questions".
+
+Confirmed with the requester before implementing:
+
+* Source parity with Skip questions: selection sources (`equals`) AND text
+  "answer is blank" sources (`is_blank`).
+* Skip scope: hide every question currently on the target page at evaluation
+  time (dynamic), so later-added questions are covered automatically.
+
+---
+
+# Intake Classification
+
+* feature request.
+* Changes: database schema/migration (new action type + target constraint),
+  participant-facing survey behavior (a whole page can be skipped per attempt),
+  validation/test expectations. No auth/hidden-tag/secret changes.
+
+---
+
+# Scope
+
+Implement a first-class `HIDE_PAGE` action type:
+
+* DB migration `0014_hide_page_action_type.sql`: allow `HIDE_PAGE` and require it
+  to carry a target page (no target question), mirroring `JUMP_TO_PAGE`.
+* Runtime (`packages/shared`): a `HIDE_PAGE` rule expands to "every question on
+  the target page" inside `collectActivatedHiddenQuestionIds`, reusing the
+  existing hidden-question machinery (page-skip, reporting, off-path pruning).
+* API validation + reference checks accept `HIDE_PAGE` (target page after the
+  source page; `skipTargetInNormalFlow` forced off).
+* Logic-page UI: "Skip page" action with a multi-select "Pages to skip" (one
+  rule per page), editable in the rule list, recognized by the flow map.
+
+## Non-Goals
+
+* Backfilling or migrating existing rules.
+* Any redesign of the jump/skip model beyond adding `HIDE_PAGE`.
+
+## Assumptions
+
+* Target pages must come strictly after the source question's page (same forward-
+  only constraint as Skip questions / Jump to page).
+
+---
+
+# Acceptance Criteria
+
+* Admins can create, edit, and delete "Skip page" rules from selection and blank-
+  text sources; the flow map shows them without an "unsupported action" warning.
+* Selecting the trigger answer hides the entire target page at runtime; a non-
+  trigger answer leaves it visible. Off-path answers for a skipped page are pruned
+  and the attempt report marks those questions `not_reached`.
+* Full validation gate green.
+
+---
+
+# Testing Requirements
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+* Shared: `HIDE_PAGE` removes the whole target page from
+  `resolveProgressivePageState`; non-matching answer keeps it.
+* API: accept a valid `HIDE_PAGE` rule (flag forced off), reject a target
+  question, reject a target page not after the source; end-to-end runner test.
+
+Manual checks:
+
+* Logic page: create a Skip page rule (selection + blank-text source), edit it,
+  confirm the flow map description.
+* Respondent: trigger answer skips the page; non-trigger shows it.

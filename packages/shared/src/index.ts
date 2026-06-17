@@ -35,6 +35,7 @@ export type ConditionalLogicActionType =
   | "JUMP_TO_PAGE"
   | "SHOW_QUESTION"
   | "HIDE_QUESTION"
+  | "HIDE_PAGE"
   | "END_SURVEY";
 
 export interface AnswerTag {
@@ -129,6 +130,9 @@ export interface ConditionalLogicRule {
   targetQuestionId: number | null;
   targetPageId: number | null;
   skipTargetInNormalFlow: boolean;
+  // HIDE_PAGE only: when true, firing the trigger advances immediately to the
+  // next visible page, leaving the rest of the trigger's page unanswered.
+  advanceOnTrigger: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -459,23 +463,50 @@ export function resolveNextQuestion(
   return advanceFrom(question);
 }
 
-// Collects the questions hidden by HIDE_QUESTION rules whose source question
-// was just answered with the rule's trigger option.
+// Collects the questions hidden when the source question was just answered with
+// the rule's trigger option: HIDE_QUESTION rules contribute their target
+// question, while HIDE_PAGE rules expand to every question currently on the
+// target page so a whole page is skipped through the same hidden-question set.
 export function collectActivatedHiddenQuestionIds(
   survey: Survey,
   question: SurveyQuestion,
   response: SurveyResponseAnswer | undefined
 ): number[] {
-  return survey.conditionalLogicRules
-    .filter(
-      (rule) =>
-        rule.actionType === "HIDE_QUESTION" &&
-        rule.targetQuestionId !== null &&
-        rule.sourceQuestionId === question.id &&
-        doesRuleMatchResponse(rule, response)
-    )
-    .map((rule) => rule.targetQuestionId)
-    .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null);
+  const hiddenQuestionIds: number[] = [];
+
+  for (const rule of survey.conditionalLogicRules) {
+    if (rule.sourceQuestionId !== question.id || !doesRuleMatchResponse(rule, response)) {
+      continue;
+    }
+
+    if (rule.actionType === "HIDE_QUESTION" && rule.targetQuestionId !== null) {
+      hiddenQuestionIds.push(rule.targetQuestionId);
+    } else if (rule.actionType === "HIDE_PAGE" && rule.targetPageId !== null) {
+      for (const pageQuestion of getQuestionsForPage(survey, rule.targetPageId)) {
+        hiddenQuestionIds.push(pageQuestion.id);
+      }
+    }
+  }
+
+  return hiddenQuestionIds;
+}
+
+// True when answering this question triggers a HIDE_PAGE rule marked
+// advanceOnTrigger, meaning the runtime should leave the rest of the current
+// page and jump straight to the next visible page.
+export function hasActivatedAdvancingPageSkip(
+  survey: Survey,
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer | undefined
+): boolean {
+  return survey.conditionalLogicRules.some(
+    (rule) =>
+      rule.actionType === "HIDE_PAGE" &&
+      rule.advanceOnTrigger &&
+      rule.targetPageId !== null &&
+      rule.sourceQuestionId === question.id &&
+      doesRuleMatchResponse(rule, response)
+  );
 }
 
 export function doesRuleMatchResponse(
@@ -655,6 +686,15 @@ export function resolveProgressivePageState(
         visibleQuestionIdsByPageId[page.id] = revealedQuestionIds;
         jumpedToPageIds.add(navigationTarget.id);
         page = navigationTarget;
+        continue pageLoop;
+      }
+
+      // An "advance on trigger" HIDE_PAGE rule behaves like a jump: stop
+      // revealing the rest of this page and move to the next visible page,
+      // which getNextVisiblePage skips past the just-hidden target page(s).
+      if (hasActivatedAdvancingPageSkip(survey, question, response)) {
+        visibleQuestionIdsByPageId[page.id] = revealedQuestionIds;
+        page = getNextVisiblePage(survey, page, activeHiddenQuestionIds);
         continue pageLoop;
       }
     }

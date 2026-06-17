@@ -33,12 +33,17 @@ export function RuleList({
     event.preventDefault();
 
     const data = new FormData(event.currentTarget);
+    const rawActionType = data.get("actionType");
     const actionType: ConditionalRuleActionType =
-      data.get("actionType") === "HIDE_QUESTION"
+      rawActionType === "HIDE_QUESTION"
         ? "HIDE_QUESTION"
-        : data.get("actionType") === "JUMP_TO_PAGE"
-          ? "JUMP_TO_PAGE"
-          : "JUMP_TO_QUESTION";
+        : rawActionType === "HIDE_PAGE"
+          ? "HIDE_PAGE"
+          : rawActionType === "JUMP_TO_PAGE"
+            ? "JUMP_TO_PAGE"
+            : "JUMP_TO_QUESTION";
+    const isPageTargetAction = actionType === "JUMP_TO_PAGE" || actionType === "HIDE_PAGE";
+    const isAttemptSkipAction = actionType === "HIDE_QUESTION" || actionType === "HIDE_PAGE";
     const conditionOperator: ConditionalRuleConditionOperator =
       data.get("conditionOperator") === "is_blank" ? "is_blank" : "equals";
     const sourceAnswerOptionId =
@@ -52,14 +57,15 @@ export function RuleList({
           sourcePageId: readFormNumber(data, "sourcePageId") || null,
           sourceQuestionId: readFormNumber(data, "sourceQuestionId"),
           sourceAnswerOptionId,
-          targetQuestionId:
-            actionType === "JUMP_TO_PAGE" ? null : readFormNumber(data, "targetQuestionId"),
-          targetPageId:
-            actionType === "JUMP_TO_PAGE" ? readFormNumber(data, "targetPageId") : null,
+          targetQuestionId: isPageTargetAction ? null : readFormNumber(data, "targetQuestionId"),
+          targetPageId: isPageTargetAction ? readFormNumber(data, "targetPageId") : null,
           conditionOperator,
           actionType,
-          skipTargetInNormalFlow:
-            actionType === "HIDE_QUESTION" ? false : data.get("skipTargetInNormalFlow") === "on"
+          skipTargetInNormalFlow: isAttemptSkipAction
+            ? false
+            : data.get("skipTargetInNormalFlow") === "on",
+          // Only HIDE_PAGE rules carry the advance-on-trigger lever.
+          advanceOnTrigger: actionType === "HIDE_PAGE" && data.get("advanceOnTrigger") === "on"
         }),
       "Rule saved"
     );

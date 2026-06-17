@@ -135,6 +135,116 @@ async function createMidPageJumpSurvey(admin: TestSession) {
   };
 }
 
+// Page 1 holds a routing select; a HIDE_PAGE rule hides the whole Middle page
+// per attempt when "Skip" is selected, so the runner lands on the Final page.
+async function createPageSkipSurvey(admin: TestSession) {
+  let survey = await createDraftSurvey(app, admin, "Page skip survey");
+  const routePage = survey.pages[0];
+
+  if (!routePage) {
+    throw new Error("Default first page was not created");
+  }
+
+  survey = await addPage(app, admin, survey.id, { title: "Middle page" });
+  const middlePage = pageByTitle(survey, "Middle page");
+  survey = await addPage(app, admin, survey.id, { title: "Final page" });
+  const finalPage = pageByTitle(survey, "Final page");
+
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Route",
+    questionType: "single_select",
+    pageId: routePage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Middle",
+    pageId: middlePage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Final",
+    pageId: finalPage.id
+  });
+
+  const routeQuestion = findQuestion(survey, "Route");
+  survey = await addOption(app, admin, survey.id, routeQuestion.id, "Skip");
+  survey = await addOption(app, admin, survey.id, routeQuestion.id, "Stay");
+
+  survey = await addRule(app, admin, survey.id, {
+    sourceQuestionId: routeQuestion.id,
+    sourceAnswerOptionId: optionId(survey, "Route", "Skip"),
+    actionType: "HIDE_PAGE",
+    targetPageId: middlePage.id
+  });
+  await setSurveyStatus(app, admin, survey.id, "published");
+
+  return {
+    survey,
+    middlePage,
+    finalPage,
+    route: findQuestion(survey, "Route"),
+    middle: findQuestion(survey, "Middle"),
+    final: findQuestion(survey, "Final"),
+    skipOptionId: optionId(survey, "Route", "Skip"),
+    stayOptionId: optionId(survey, "Route", "Stay")
+  };
+}
+
+// Like createPageSkipSurvey, but the routing question is followed by another
+// question on the same page and the HIDE_PAGE rule sets advanceOnTrigger, so the
+// trigger should immediately leave the source page and skip the Middle page.
+async function createAdvancePageSkipSurvey(admin: TestSession) {
+  let survey = await createDraftSurvey(app, admin, "Advance page skip survey");
+  const routePage = survey.pages[0];
+
+  if (!routePage) {
+    throw new Error("Default first page was not created");
+  }
+
+  survey = await addPage(app, admin, survey.id, { title: "Middle page" });
+  const middlePage = pageByTitle(survey, "Middle page");
+  survey = await addPage(app, admin, survey.id, { title: "Final page" });
+  const finalPage = pageByTitle(survey, "Final page");
+
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Route",
+    questionType: "single_select",
+    pageId: routePage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "AfterRoute",
+    pageId: routePage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Middle",
+    pageId: middlePage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Final",
+    pageId: finalPage.id
+  });
+
+  const routeQuestion = findQuestion(survey, "Route");
+  survey = await addOption(app, admin, survey.id, routeQuestion.id, "Skip");
+  survey = await addOption(app, admin, survey.id, routeQuestion.id, "Stay");
+
+  survey = await addRule(app, admin, survey.id, {
+    sourceQuestionId: routeQuestion.id,
+    sourceAnswerOptionId: optionId(survey, "Route", "Skip"),
+    actionType: "HIDE_PAGE",
+    targetPageId: middlePage.id,
+    advanceOnTrigger: true
+  });
+  await setSurveyStatus(app, admin, survey.id, "published");
+
+  return {
+    survey,
+    finalPage,
+    route: findQuestion(survey, "Route"),
+    afterRoute: findQuestion(survey, "AfterRoute"),
+    final: findQuestion(survey, "Final"),
+    skipOptionId: optionId(survey, "Route", "Skip")
+  };
+}
+
 describe("progressive page reveal", () => {
   it("reveals one question at a time on a multi-question page", async () => {
     const admin = await registerAdmin(app);
@@ -215,6 +325,56 @@ describe("mid-page navigation", () => {
     expect(afterRouteAnswer.currentPage?.id).toBe(routePage.id);
     expect(afterRouteAnswer.currentQuestion?.id).toBe(afterRoute.id);
     expect(afterRouteAnswer.currentPageQuestionIds).toEqual([route.id, afterRoute.id]);
+  });
+
+  it("skips a whole page hidden by a HIDE_PAGE rule and reveals it otherwise", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, middlePage, finalPage, route, final, skipOptionId, stayOptionId } =
+      await createPageSkipSurvey(admin);
+
+    // Trigger answer hides the Middle page: the runner lands on the Final page.
+    const skipUser = await registerUser(app);
+    const skipAttempt = await startAttempt(app, skipUser, survey.id);
+    const afterSkip = await submitAnswer(app, skipUser, survey.id, {
+      attemptId: skipAttempt.attempt.id,
+      questionId: route.id,
+      selectedAnswerOptionIds: [skipOptionId]
+    });
+    expect(afterSkip.currentPage?.id).toBe(finalPage.id);
+    expect(afterSkip.currentQuestion?.id).toBe(final.id);
+
+    // A non-trigger answer keeps the Middle page in the flow. A fresh user
+    // gets a new attempt rather than resuming the first one.
+    const stayUser = await registerUser(app);
+    const stayAttempt = await startAttempt(app, stayUser, survey.id);
+    const afterStay = await submitAnswer(app, stayUser, survey.id, {
+      attemptId: stayAttempt.attempt.id,
+      questionId: route.id,
+      selectedAnswerOptionIds: [stayOptionId]
+    });
+    expect(afterStay.currentPage?.id).toBe(middlePage.id);
+  });
+
+  it("advances immediately past the source page when advanceOnTrigger is set", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const { survey, finalPage, route, afterRoute, final, skipOptionId } =
+      await createAdvancePageSkipSurvey(admin);
+
+    const started = await startAttempt(app, user, survey.id);
+    expect(started.currentQuestion?.id).toBe(route.id);
+
+    const afterRouteAnswer = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: route.id,
+      selectedAnswerOptionIds: [skipOptionId]
+    });
+
+    // The trigger fires on Route: AfterRoute (same page) is never revealed and
+    // the Middle page is skipped, landing directly on the Final page.
+    expect(afterRouteAnswer.currentPage?.id).toBe(finalPage.id);
+    expect(afterRouteAnswer.currentQuestion?.id).toBe(final.id);
+    expect(afterRouteAnswer.currentPageQuestionIds).not.toContain(afterRoute.id);
   });
 
   it("recomputes the current position when an earlier answer changes branch", async () => {

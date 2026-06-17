@@ -191,6 +191,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
        target_question_id,
        target_page_id,
        skip_target_in_normal_flow,
+       advance_on_trigger,
        created_at,
        updated_at
      from conditional_logic_rules

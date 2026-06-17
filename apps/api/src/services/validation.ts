@@ -351,7 +351,11 @@ export function validateAttemptDateRange(query: {
   return { ok: true, value: range };
 }
 
-export type ConditionalRuleActionType = "JUMP_TO_QUESTION" | "HIDE_QUESTION" | "JUMP_TO_PAGE";
+export type ConditionalRuleActionType =
+  | "JUMP_TO_QUESTION"
+  | "HIDE_QUESTION"
+  | "JUMP_TO_PAGE"
+  | "HIDE_PAGE";
 export type ConditionalRuleConditionOperator = "equals" | "is_blank";
 
 export interface ConditionalRuleBodyValue {
@@ -363,6 +367,7 @@ export interface ConditionalRuleBodyValue {
   conditionOperator: ConditionalRuleConditionOperator;
   actionType: ConditionalRuleActionType;
   skipTargetInNormalFlow: boolean;
+  advanceOnTrigger: boolean;
 }
 
 export function validateConditionalRuleBody(
@@ -378,6 +383,7 @@ export function validateConditionalRuleBody(
   const targetQuestionId = readOptionalPositiveIntegerField(body, "targetQuestionId");
   const targetPageId = readOptionalPositiveIntegerField(body, "targetPageId");
   const skipTargetInNormalFlowValue = body.skipTargetInNormalFlow;
+  const advanceOnTriggerValue = body.advanceOnTrigger;
   const conditionOperator = readTextField(body, "conditionOperator") || "equals";
   const actionType = readTextField(body, "actionType") || "JUMP_TO_QUESTION";
 
@@ -407,9 +413,13 @@ export function validateConditionalRuleBody(
   if (
     actionType !== "JUMP_TO_QUESTION" &&
     actionType !== "HIDE_QUESTION" &&
-    actionType !== "JUMP_TO_PAGE"
+    actionType !== "JUMP_TO_PAGE" &&
+    actionType !== "HIDE_PAGE"
   ) {
-    return { ok: false, error: "Action type must be JUMP_TO_QUESTION, JUMP_TO_PAGE, or HIDE_QUESTION" };
+    return {
+      ok: false,
+      error: "Action type must be JUMP_TO_QUESTION, JUMP_TO_PAGE, HIDE_QUESTION, or HIDE_PAGE"
+    };
   }
 
   if (conditionOperator === "equals" && !sourceAnswerOptionId) {
@@ -427,18 +437,18 @@ export function validateConditionalRuleBody(
       };
     }
 
-    if (actionType !== "HIDE_QUESTION") {
-      return { ok: false, error: "Blank text rules can only skip questions" };
+    if (actionType !== "HIDE_QUESTION" && actionType !== "HIDE_PAGE") {
+      return { ok: false, error: "Blank text rules can only skip questions or pages" };
     }
   }
 
-  if (actionType === "JUMP_TO_PAGE") {
+  if (actionType === "JUMP_TO_PAGE" || actionType === "HIDE_PAGE") {
     if (targetPageId === null) {
-      return { ok: false, error: "Target page is required for page jumps" };
+      return { ok: false, error: "Target page is required for page rules" };
     }
 
     if (targetQuestionId !== null) {
-      return { ok: false, error: "Page jumps cannot include a target question" };
+      return { ok: false, error: "Page rules cannot include a target question" };
     }
   } else if (targetQuestionId === null) {
     return { ok: false, error: "Target question is required" };
@@ -451,25 +461,34 @@ export function validateConditionalRuleBody(
     return { ok: false, error: "skipTargetInNormalFlow must be true or false" };
   }
 
+  if (advanceOnTriggerValue !== undefined && typeof advanceOnTriggerValue !== "boolean") {
+    return { ok: false, error: "advanceOnTrigger must be true or false" };
+  }
+
   return {
     ok: true,
     value: {
       sourceQuestionId,
       sourcePageId,
       sourceAnswerOptionId: conditionOperator === "is_blank" ? null : sourceAnswerOptionId,
-      targetPageId: actionType === "JUMP_TO_PAGE" ? targetPageId : null,
+      targetPageId:
+        actionType === "JUMP_TO_PAGE" || actionType === "HIDE_PAGE" ? targetPageId : null,
       targetQuestionId,
       conditionOperator,
       actionType,
-      // A HIDE_QUESTION target must stay in the normal flow — it is only
-      // skipped per attempt when its trigger answer is selected. The static
+      // HIDE_QUESTION/HIDE_PAGE targets must stay in the normal flow — they are
+      // only skipped per attempt when the trigger answer is selected. The static
       // skip flag is a jump-rule concept, so it is forced off for skips.
       skipTargetInNormalFlow:
-        actionType === "HIDE_QUESTION"
+        actionType === "HIDE_QUESTION" || actionType === "HIDE_PAGE"
           ? false
           : typeof skipTargetInNormalFlowValue === "boolean"
             ? skipTargetInNormalFlowValue
-            : true
+            : true,
+      // "Advance on trigger" only applies to HIDE_PAGE; it is meaningless (and
+      // forced off) for every other action type.
+      advanceOnTrigger:
+        actionType === "HIDE_PAGE" && advanceOnTriggerValue === true
     }
   };
 }

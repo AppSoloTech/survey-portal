@@ -3057,3 +3057,185 @@ Phase closeout artifacts:
   badge-simplification carried as explicit follow-ups.
 - Manual testing complete: Yes; developer verified the repro survey works (above).
 - Ready to commit: Yes, at the developer's discretion.
+
+---
+
+# Phase 15 — Skip Page Conditional Logic
+
+Date:
+2026-06-17
+
+Status:
+Completed (manual browser pass green; ready to commit)
+
+Prompt:
+`prompts/prompt_15.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/codex_handoff_phase_15.txt`
+- Codex review: `notes/codex_review_phase_15.txt` (completed — one Low/Medium
+  finding, fixed this session)
+
+## Codex Review Outcome
+
+Codex review: no blocking findings. One Low/Medium — the flow map flagged a valid
+`HIDE_PAGE` rule whose target page is empty as `missing_target_question` ("survey
+would end at the source"), even though an empty target page is an accepted no-op.
+
+Fix applied (this session), web-only (`surveyFlowGraph.ts` + `SurveyFlowMap.tsx`):
+an existing-but-empty `HIDE_PAGE` target is now a valid no-op (no
+`missing_target_question`); forward-only is enforced by page display order, and
+the outgoing edge reads "skip the target page." Added two flow-map tests;
+`JUMP_TO_PAGE` behavior unchanged. Re-validated: `npm run typecheck`,
+`npm run lint` green; web tests 52 passed; `git diff --check` clean
+(API/shared/migration untouched).
+
+## Goals
+
+- Add a "Skip page" option to the Logic page that skips an entire later page
+  conditional on a source question's answer — the page-level analogue of the
+  existing "Skip questions" (HIDE_QUESTION) action.
+- Match Skip questions on source parity (selection `equals` + text `is_blank`)
+  and behave dynamically (hide whatever questions are on the target page at
+  evaluation time).
+- Cover the new behavior with tests before commit.
+
+## Built
+
+- New action type `HIDE_PAGE` (target page set, no target question,
+  `skip_target_in_normal_flow` forced off), mirroring `JUMP_TO_PAGE` vs
+  `JUMP_TO_QUESTION`.
+- `database/migrations/0014_hide_page_action_type.sql`: extends the action-type
+  IN-list and the target-shape check so `HIDE_PAGE` joins `JUMP_TO_PAGE` in the
+  page-target branch.
+- Runtime: single change in `packages/shared/src/index.ts`
+  `collectActivatedHiddenQuestionIds` — a matching `HIDE_PAGE` rule expands to
+  every question on the target page and feeds the existing
+  `activeHiddenQuestionIds` set. Page-skip, reporting (`collectFinalPathQuestionIds`),
+  and `pruneOffPathAnswers` all reuse that set, so they needed no change.
+- API: `validation.ts` and `surveyBuilder.ts` (reference checks + invalid-rule
+  detector SQL) accept `HIDE_PAGE` (target page after source page; blank-text
+  allowed; flag forced off). Route SQL unchanged.
+- Logic-page UI: "Skip page" action with a multi-select "Pages to skip" (one
+  `HIDE_PAGE` rule per page), editable in the rule list, and recognized/described
+  by the flow map.
+- Tests: shared runtime (page hidden / not hidden), API validation (accept +
+  two rejects), and an end-to-end progressive-runner page-skip test; `addRule`
+  factory union extended.
+
+## Important Decisions
+
+### First-class HIDE_PAGE action vs. expanding to HIDE_QUESTION rows
+
+Decision: Add a dedicated `HIDE_PAGE` action type rather than creating N
+`HIDE_QUESTION` rules at save time.
+
+Reason: Keeps the rule a single editable row, and is dynamic — questions added
+to the target page later are skipped automatically because expansion happens at
+evaluation time.
+
+Tradeoff: One new action type to thread through validation, the flow map, and the
+schema constraint; offset by reusing the entire hidden-question runtime so no new
+page-skip/reporting/pruning code was needed.
+
+### Reduce page-hide to question-hide at runtime
+
+Decision: Represent a hidden page as "all its questions hidden" via the existing
+`activeHiddenQuestionIds` set instead of adding a parallel hidden-page set.
+
+Reason: The page walker, both path resolvers, reporting, and off-path pruning
+already key off hidden question ids, so the feature rides on proven machinery.
+
+Tradeoff: An empty target page contributes no hidden ids (acceptable — an empty
+page renders nothing and is already skipped in normal flow).
+
+## Architecture Notes
+
+- Database/schema impact: new migration `0014`; two constraints recreated; no new
+  columns (reuses `target_page_id`).
+- API contract impact: `actionType` now accepts `HIDE_PAGE`; error copy for
+  allowed-types and blank-text rules updated.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: none (skipped-page answers are pruned/marked
+  `not_reached` by the existing pipeline).
+- Frontend UX impact: "Skip page" action on the Logic page (create + edit) and a
+  flow-map description.
+- Environment or deployment impact: run migration `0014` on deploy.
+
+## Validation
+
+Commands run:
+```bash
+npm run typecheck
+npm run lint
+npm run test
+```
+
+Results:
+- Passed: typecheck, lint; shared 45, web 50, api 155 (16 files). Migration
+  `0014` applied by the API test globalSetup.
+- Failed: none.
+- Not run: `git diff --check` (run before commit); manual browser pass.
+
+Manual tests:
+- Pending developer browser pass: create/edit a Skip page rule (selection + blank
+  source); respondent trigger vs non-trigger answer.
+
+Phase closeout artifacts:
+- Codex handoff created: Yes — `notes/codex_handoff_phase_15.txt` (base) +
+  `notes/codex_handoff_phase_15_advance.txt` (advance-on-trigger lever)
+- Codex review status: Completed for both — base review found one Low/Medium
+  finding (empty-page HIDE_PAGE flow-map false error), fixed this session; the
+  advance-on-trigger follow-up review found no findings
+
+## Advance-On-Trigger Lever (same-session follow-up)
+
+Developer feedback after testing: a `HIDE_PAGE` skip only takes effect once the
+trigger question's whole page is finished. Added an admin-controlled per-rule
+lever so the skip can instead fire the moment the trigger answer is submitted.
+
+- New boolean `advance_on_trigger` (`HIDE_PAGE` only; forced off elsewhere) via
+  `database/migrations/0015_hide_page_advance_on_trigger.sql`. Default false keeps
+  the "finish the page, then skip" behavior.
+- Runtime: `hasActivatedAdvancingPageSkip` + a branch in
+  `resolveProgressivePageState` that, when the trigger fires an advancing rule,
+  stops revealing the current page and advances to `getNextVisiblePage` (skipping
+  the just-hidden target page) — reusing the immediate-navigation path jumps use.
+  Remaining same-page questions become off-path and are pruned, like a jump.
+- Threaded through persistence (records/structure/duplication/routes), validation
+  (forced off unless `HIDE_PAGE`), the web client, and the rule builder/editor as
+  an "Advance immediately when triggered" checkbox; flow map annotates it.
+- Tests: shared advance-vs-finish-page, API force-off + e2e (AfterRoute never
+  revealed, lands on Final). Re-validated green (shared 47, web 52, api 157;
+  migrations 0014 + 0015 applied by the API test setup).
+- Codex review (`notes/codex_handoff_phase_15_advance.txt` →
+  `notes/codex_review_phase_15_advance.txt`): **no findings**. Confirmed jump wins
+  before the advance branch, OR-across-rules is intended, `resolveAttemptPath`
+  left unchanged is acceptable, and persistence is complete. Residual risk: manual
+  browser pass of the checkbox still pending.
+
+## Follow-Up Tasks
+
+- Consider whether the flow map should annotate every question on a skipped page
+  (currently the incoming "Skipped by" note attaches to the page's first question
+  only).
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes (reuses the canonical hidden-question
+  runtime; minimal new surface)
+- Security review complete: Yes — Codex review found no auth/visibility surface
+  change
+- Review findings addressed or deferred: Yes — the single Low/Medium flow-map
+  finding was fixed this session; the advance-on-trigger review had no findings
+- Manual testing complete: Yes — developer browser pass of Skip page (selection +
+  blank-text sources, the advance-on-trigger lever, and respondent flow) looks
+  good
+- Ready to commit: Yes — all gates green (tests, both Codex reviews, manual pass);
+  commit at the developer's discretion
