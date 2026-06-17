@@ -1,0 +1,48 @@
+Phase 13 fix review - Codex
+===========================
+
+Findings
+--------
+
+1. P3 - Same-page normal flow still skips question-level jump targets after a page jump.
+
+   The new resolveGraphNormalNext() correctly bypasses later branch pages while
+   allowing normal flow to continue within the current skipped page. However, it
+   still skips normalFlowExcludedQuestionIds before checking whether the candidate
+   is on the same page as the source question (apps/web/src/components/admin/
+   surveyFlowGraph.ts, lines ~451-454).
+
+   The runtime treats a jumped-to page differently: resolveProgressivePageState()
+   sets wasReachedByJump for the page, and its question loop only suppresses
+   normalFlowExcludedQuestionIds when !wasReachedByJump. That means a page reached
+   by JUMP_TO_PAGE reveals all remaining questions on that page, including
+   questions that are also JUMP_TO_QUESTION skip targets. The graph would still
+   skip those same-page question targets and point to a later question/page.
+
+   Example: Department jumps to Engineering page with questions Eng A, Eng B, and
+   Final. If Eng B is also a skip-in-normal-flow JUMP_TO_QUESTION target from
+   another rule, the participant path after a Department -> Engineering page jump
+   reveals Eng A -> Eng B -> Final, but the flow map reports Eng A -> Final.
+
+   Suggested fix: apply the same-page exception to question-level exclusions too,
+   or otherwise model "question is on a page reached by page jump" when computing
+   normalNextQuestionId for conditional-only page nodes. Add a regression test
+   where a skipped page-jump target page contains a same-page JUMP_TO_QUESTION
+   skip target, and assert the graph walks through it.
+
+Reviewed With No Additional Findings
+------------------------------------
+
+- The original P2 branch-page issue is addressed for the common requested shape:
+  normal-next and reachability now bypass Sales/Operations after Engineering and
+  use the same precomputed successor map for nodes and adjacency.
+- The new branch-page test covers no-rule-firing normal flow, within-branch
+  walking, bypassing later branch pages, and reachability through firable page
+  jumps.
+- Unfirable branch-page jumps should now surface unreachable branch nodes because
+  non-firing conditional edges no longer make skipped branch pages reachable.
+
+Validation
+----------
+
+Review only. I did not modify source files or rerun the full validation suite.

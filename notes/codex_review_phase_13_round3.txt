@@ -1,0 +1,36 @@
+Phase 13 round 3 review - Codex
+===============================
+
+Findings
+--------
+
+No findings.
+
+Review Notes
+------------
+
+- PageGroupedQuestionSelect preserves the create-rule FormData path through the
+  hidden sourceQuestionId input, and RuleCreateForm still gates submission on
+  activeRuleSourceQuestion, answer options, target availability, and selected
+  skip targets.
+- The grouped picker closes on outside mousedown and Escape, toggles page groups
+  independently, and selecting a question updates the controlled source id before
+  closing the panel. The post-save setRuleSourceQuestionId(null) reset clears the
+  trigger back to the placeholder.
+- The flow-map Add rule focus selector now skips hidden inputs, so focus lands on
+  the grouped-select trigger instead of the FormData carrier input.
+- Results question stats and attempt detail answers now sort by getOrderedQuestions
+  order and label with the builder's P#-Q# locator. Missing questions sort last
+  and keep a fallback Q# label.
+
+Known Boundaries
+----------------
+
+- The custom source picker is a pragmatic button/listbox implementation rather
+  than a full combobox with arrow-key roving.
+- CSV export ordering remains server-side and unchanged, as noted in the handoff.
+
+Validation
+----------
+
+Review only. I did not modify source files or rerun the full validation suite.

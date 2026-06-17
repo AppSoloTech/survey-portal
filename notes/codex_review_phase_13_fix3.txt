@@ -1,0 +1,27 @@
+Phase 13 fix #3 review - Codex
+==============================
+
+Findings
+--------
+
+No findings.
+
+Review Notes
+------------
+
+- The prior P3 finding is addressed: resolveGraphNormalNext() now keys the
+  same-page post-jump behavior off conditionalOnlyQuestionIds, so
+  JUMP_TO_QUESTION skip targets and JUMP_TO_PAGE branch-page questions both get
+  the runtime-style same-page reveal behavior.
+- The added "page reached by a question jump" regression covers the specific
+  missed case from notes/codex_review_phase_13_fix2.txt: Q2 is
+  conditional-only, Q2.normalNextQuestionId walks to same-page Q3, and Q3
+  remains reachable.
+- The known one-successor boundary is reasonable for this graph model: normally
+  reached nodes show normal-entry successors, while conditional-only nodes show
+  the post-jump successor described by the "After a jump lands here" copy.
+
+Validation
+----------
+
+Review only. I did not modify source files or rerun the full validation suite.

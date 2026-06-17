@@ -167,6 +167,191 @@ describe("buildSurveyFlowGraph nodes", () => {
 
     expect(graph.nodes[1].isConditionalOnly).toBe(false);
   });
+
+  it("labels every question on a skip-flow page-jump target page as conditional only", () => {
+    const survey = makeSurvey(
+      [
+        sourceWithOption(),
+        makeQuestion({ id: 2, pageId: 2, displayOrder: 1 }),
+        makeQuestion({ id: 3, pageId: 2, displayOrder: 2 }),
+        makeQuestion({ id: 4, pageId: 3, displayOrder: 1 })
+      ],
+      [
+        makeRule({
+          id: 1,
+          targetQuestionId: null,
+          targetPageId: 2,
+          actionType: "JUMP_TO_PAGE",
+          skipTargetInNormalFlow: true
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+    const nodeByQuestionId = new Map(graph.nodes.map((node) => [node.questionId, node]));
+
+    expect(nodeByQuestionId.get(2)?.isConditionalOnly).toBe(true);
+    expect(nodeByQuestionId.get(3)?.isConditionalOnly).toBe(true);
+    expect(nodeByQuestionId.get(4)?.isConditionalOnly).toBe(false);
+    expect(graph.issues.map((issue) => issue.code)).not.toContain("unreachable_question");
+  });
+
+  it("routes normal flow around skipped branch pages while walking within one", () => {
+    // Department (page 1) branches to Engineering (page 2: q2,q3), Sales
+    // (page 3: q4), and Operations (page 4: q5); all three branch pages are
+    // skip-in-normal-flow. Shared Final is page 5 (q6).
+    const department = makeQuestion({
+      id: 1,
+      pageId: 1,
+      displayOrder: 1,
+      answerOptions: [
+        makeOption({ id: 11, questionId: 1 }),
+        makeOption({ id: 12, questionId: 1 }),
+        makeOption({ id: 13, questionId: 1 })
+      ]
+    });
+    const survey = makeSurvey(
+      [
+        department,
+        makeQuestion({ id: 2, pageId: 2, displayOrder: 1 }),
+        makeQuestion({ id: 3, pageId: 2, displayOrder: 2 }),
+        makeQuestion({ id: 4, pageId: 3, displayOrder: 1 }),
+        makeQuestion({ id: 5, pageId: 4, displayOrder: 1 }),
+        makeQuestion({ id: 6, pageId: 5, displayOrder: 1 })
+      ],
+      [
+        makeRule({ id: 1, sourceAnswerOptionId: 11, targetPageId: 2, actionType: "JUMP_TO_PAGE" }),
+        makeRule({ id: 2, sourceAnswerOptionId: 12, targetPageId: 3, actionType: "JUMP_TO_PAGE" }),
+        makeRule({ id: 3, sourceAnswerOptionId: 13, targetPageId: 4, actionType: "JUMP_TO_PAGE" })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+    const nodeByQuestionId = new Map(graph.nodes.map((node) => [node.questionId, node]));
+
+    // Department with no rule firing skips every branch page straight to Final.
+    expect(nodeByQuestionId.get(1)?.normalNextQuestionId).toBe(6);
+    // Inside the Engineering branch, normal flow still walks q2 -> q3...
+    expect(nodeByQuestionId.get(2)?.normalNextQuestionId).toBe(3);
+    // ...then q3 (last on the branch page) bypasses Sales/Operations to Final.
+    expect(nodeByQuestionId.get(3)?.normalNextQuestionId).toBe(6);
+    expect(nodeByQuestionId.get(5)?.normalNextQuestionId).toBe(6);
+    // Every question is still reachable (each branch via its firable jump).
+    expect(graph.nodes.every((node) => node.isReachable)).toBe(true);
+    expect(graph.issues.map((issue) => issue.code)).not.toContain("unreachable_question");
+  });
+
+  it("walks through a same-page jump target on a page reached by a page jump", () => {
+    // Department (page 1) jumps to the Engineering branch page (page 2), which
+    // holds EngA (q2) and EngB (q3). EngB is ALSO a skip-in-normal-flow
+    // JUMP_TO_QUESTION target from EngA. Because the participant reaches page 2
+    // by a jump, the runtime reveals EngA -> EngB, so the map must too.
+    const department = makeQuestion({
+      id: 1,
+      pageId: 1,
+      displayOrder: 1,
+      answerOptions: [makeOption({ id: 11, questionId: 1 })]
+    });
+    const engineeringA = makeQuestion({
+      id: 2,
+      pageId: 2,
+      displayOrder: 1,
+      answerOptions: [makeOption({ id: 31, questionId: 2 })]
+    });
+    const survey = makeSurvey(
+      [
+        department,
+        engineeringA,
+        makeQuestion({ id: 3, pageId: 2, displayOrder: 2 }),
+        makeQuestion({ id: 4, pageId: 3, displayOrder: 1 })
+      ],
+      [
+        makeRule({ id: 1, sourceAnswerOptionId: 11, targetPageId: 2, actionType: "JUMP_TO_PAGE" }),
+        makeRule({
+          id: 2,
+          sourceQuestionId: 2,
+          sourceAnswerOptionId: 31,
+          targetQuestionId: 3,
+          actionType: "JUMP_TO_QUESTION"
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+    const nodeByQuestionId = new Map(graph.nodes.map((node) => [node.questionId, node]));
+
+    // EngA walks to the same-page EngB even though EngB is a question-level
+    // skip target; EngB then leaves the branch page for Final.
+    expect(nodeByQuestionId.get(2)?.normalNextQuestionId).toBe(3);
+    expect(nodeByQuestionId.get(3)?.normalNextQuestionId).toBe(4);
+    expect(nodeByQuestionId.get(3)?.isReachable).toBe(true);
+    expect(graph.issues.map((issue) => issue.code)).not.toContain("unreachable_question");
+  });
+
+  it("walks through a same-page jump target on a page reached by a question jump", () => {
+    // Q1 (page 1) jumps to Q2 (page 2) with skipTargetInNormalFlow. Page 2 also
+    // holds Q3, itself a skip-flow JUMP_TO_QUESTION target. The runtime reaches
+    // page 2 by a jump (wasReachedByJump) and walks Q2 -> Q3, so the map must
+    // too — even though page 2 is not a JUMP_TO_PAGE branch page.
+    const router = makeQuestion({
+      id: 1,
+      pageId: 1,
+      displayOrder: 1,
+      answerOptions: [makeOption({ id: 11, questionId: 1 })]
+    });
+    const target = makeQuestion({
+      id: 2,
+      pageId: 2,
+      displayOrder: 1,
+      answerOptions: [makeOption({ id: 31, questionId: 2 })]
+    });
+    const survey = makeSurvey(
+      [
+        router,
+        target,
+        makeQuestion({ id: 3, pageId: 2, displayOrder: 2 }),
+        makeQuestion({ id: 4, pageId: 3, displayOrder: 1 })
+      ],
+      [
+        makeRule({ id: 1, sourceAnswerOptionId: 11, targetQuestionId: 2, actionType: "JUMP_TO_QUESTION" }),
+        makeRule({
+          id: 2,
+          sourceQuestionId: 2,
+          sourceAnswerOptionId: 31,
+          targetQuestionId: 3,
+          actionType: "JUMP_TO_QUESTION"
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+    const nodeByQuestionId = new Map(graph.nodes.map((node) => [node.questionId, node]));
+
+    // Q2 is conditional-only (jump target); its page is reached by jump, so the
+    // same-page Q3 target is revealed rather than skipped.
+    expect(nodeByQuestionId.get(2)?.isConditionalOnly).toBe(true);
+    expect(nodeByQuestionId.get(2)?.normalNextQuestionId).toBe(3);
+    expect(nodeByQuestionId.get(3)?.normalNextQuestionId).toBe(4);
+    expect(nodeByQuestionId.get(3)?.isReachable).toBe(true);
+  });
+
+  it("keeps page-jump target questions in normal flow when the flag is off", () => {
+    const survey = makeSurvey(
+      [
+        sourceWithOption(),
+        makeQuestion({ id: 2, pageId: 2, displayOrder: 1 }),
+        makeQuestion({ id: 3, pageId: 3, displayOrder: 1 })
+      ],
+      [
+        makeRule({
+          id: 1,
+          targetQuestionId: null,
+          targetPageId: 2,
+          actionType: "JUMP_TO_PAGE",
+          skipTargetInNormalFlow: false
+        })
+      ]
+    );
+    const graph = buildSurveyFlowGraph(survey);
+
+    expect(graph.nodes.every((node) => node.isConditionalOnly === false)).toBe(true);
+  });
 });
 
 describe("buildSurveyFlowGraph validation issues", () => {

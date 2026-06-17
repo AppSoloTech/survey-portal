@@ -1,0 +1,150 @@
+Phase 13 — Logic Page Round 2 (branch-page skip + Logic page split) — for Codex
+================================================================================
+
+Roles reversed (Claude implemented, Codex reviews). Please record findings in:
+
+    notes/codex_review_phase_13.txt
+
+Then summarize in chat. Do not modify source unless the developer asks for fixes.
+
+Source of the request
+---------------------
+notes/phase_12_test_notes.txt, "Round 2 / Logic Page":
+  1) Ignore pages on "Jump to page": answering "Engineering" should jump to the
+     Engineering page and avoid the Sales and Operations pages.
+  2) Break the Logic page into smaller, user-friendly pieces; let the admin act
+     on a question in the flow map (create rules from the map).
+
+Developer decisions captured during planning:
+  - Keep the existing checkbox label "Skip target in normal flow".
+  - The new page-jump checkbox defaults UNCHECKED (a jump must not silently
+    remove a page from everyone's normal flow).
+  - Scope for #2: split the page into collapsible sections + inline "Add rule"
+    on flow-map nodes. Per-page PageSwitcher filtering and a standalone
+    question-navigation picker were explicitly out of scope.
+
+Key finding (why #1 is small)
+-----------------------------
+The runtime already supports excluding a page from normal flow. In
+packages/shared/src/index.ts, getNormalFlowExcludedPageIds() (line ~880)
+collects the target pages of JUMP_TO_PAGE rules whose skipTargetInNormalFlow is
+true; resolveProgressivePageState / getNextVisiblePage / appendProjectedPagePath
+already honor it (such a page is reachable only via a jump). The API
+(validation) also already accepts the flag for page jumps and only forces it
+false for HIDE_QUESTION. The ONLY gap was the admin UI never rendering the
+checkbox for JUMP_TO_PAGE rules. So #1 is UI exposure + one flow-map graph fix.
+No data-model, runtime, or API change.
+
+What changed
+------------
+Update #1 — expose skipTargetInNormalFlow for JUMP_TO_PAGE
+  - RuleCreateForm.tsx (new; extracted from SurveyLogicPage): the JUMP_TO_PAGE
+    branch now renders the "Skip target in normal flow" checkbox after the target
+    page select, defaulting UNCHECKED. (The JUMP_TO_QUESTION branch keeps its
+    legacy defaultChecked.) handleAddRule already read
+    data.get("skipTargetInNormalFlow") for the jump branch, so no handler change.
+  - SurveyBuilderComponents.tsx (RuleEditor): the spacer condition changed from
+    `isSkipRule || isPageJumpRule` to `isSkipRule` only, so page-jump rules now
+    fall into the checkbox branch (defaultChecked={rule.skipTargetInNormalFlow}).
+    handleSaveRule already persisted the flag for non-HIDE actions.
+  - surveyFlowGraph.ts: skipTargetQuestionIds previously only covered
+    JUMP_TO_QUESTION targets, so a branch page reached by a page jump never got
+    the "Conditional only" badge. Now: collect skipTargetPageIds from
+    JUMP_TO_PAGE + flag rules and mark EVERY question on those pages
+    conditional-only (mirrors the shared getNormalFlowExcludedPageIds union
+    semantics; replicated locally since that helper is not exported), then still
+    add JUMP_TO_QUESTION targets.
+  - SurveyFlowMap.tsx (describeOutgoingEdge): the JUMP_TO_PAGE case now appends
+    "Target page is skipped in normal flow." / "...also stays in normal flow."
+    using edge.skipTargetInNormalFlow, matching the JUMP_TO_QUESTION wording.
+
+Update #2 — split the Logic page + inline "Add rule"
+  - SurveyLogicPage.tsx is now a thin composer. It owns only the cross-component
+    prefill state (ruleSourceQuestionId, ruleActionType) plus an isCreateOpen
+    flag, and renders three collapsible <details class="logic-section"> groups:
+    "Create a rule", "Existing rules", "Flow map".
+  - handleCreateRuleForQuestion(questionId): sets the source question, picks a
+    default action (HIDE_QUESTION for text, else JUMP_TO_PAGE), force-opens the
+    create section, then (in requestAnimationFrame, after layout) scrolls the
+    form (#rule-create-form) into view and focuses its first control.
+  - RuleCreateForm.tsx (new): the create form + RuleBuilderEmptyState. Owns its
+    own skipTargetIds state and all source/target derivations; source question
+    and action type are controlled via props so the map can prefill them.
+    Receives survey/isSubmitting/isLocked/runSurveyMutation/reloadSurvey as props
+    (the page keeps the single useSurveyWorkspace() call).
+  - RuleList.tsx (new): the grouped rule list + groupRulesBySource +
+    handleSaveRule/handleDeleteRule (moved verbatim). Orphaned-source rules still
+    bucket under the trailing "missing source question" group.
+  - SurveyFlowMap.tsx: accepts optional onCreateRuleForQuestion + isLocked. Each
+    node whose question type can source a rule (single_select / multi_select /
+    text) renders an "Add rule" button when not locked; clicking calls back to
+    the page. The map stays read-only otherwise.
+  - styles.css: new .logic-section / .logic-section-summary (collapsible header
+    bar above the existing card) and .flow-node-add-rule; .flow-node-header
+    switched from grid to flex so the button sits top-right. The 4px card top
+    accent selector now also matches `.logic-section > .builder-form` since the
+    cards are nested one level deeper.
+
+Files to review
+---------------
+  apps/web/src/pages/admin/SurveyLogicPage.tsx        (rewritten: thin composer)
+  apps/web/src/components/admin/RuleCreateForm.tsx     (new: create form + empty state + page-jump checkbox)
+  apps/web/src/components/admin/RuleList.tsx           (new: grouped list + save/delete)
+  apps/web/src/components/admin/SurveyBuilderComponents.tsx (RuleEditor spacer condition)
+  apps/web/src/components/admin/surveyFlowGraph.ts     (conditional-only for page-jump branch pages)
+  apps/web/src/components/admin/SurveyFlowMap.tsx      (page-jump skip suffix + inline Add rule)
+  apps/web/src/styles.css                              (logic-section, flow-node Add rule)
+  apps/web/src/components/admin/surveyFlowGraph.test.ts (+2 cases)
+  apps/api/test/progressivePageRunner.test.ts          (+1 branch-page suite)
+
+Diff commands
+-------------
+    git diff main
+    git ls-files --others --exclude-standard   # RuleCreateForm.tsx, RuleList.tsx
+
+Suggested review focus
+----------------------
+1. RuleCreateForm/RuleList are extractions — confirm behavior is byte-for-byte
+   equivalent to the old inline SurveyLogicPage (handleAddRule sequential skip
+   creation + partial-failure reloadSurvey; handleSaveRule action/operator
+   coercion). The only intended behavior delta is the new page-jump checkbox.
+2. Page-jump checkbox default: UNCHECKED on create (per developer), but
+   defaultChecked={rule.skipTargetInNormalFlow} when editing an existing rule.
+   Confirm both create and edit round-trip the flag through the API.
+3. surveyFlowGraph: a page targeted by several rules where only some set the flag
+   is still excluded (union) — confirm that matches the runtime's
+   getNormalFlowExcludedPageIds, and that all questions on the page (not just the
+   first) get isConditionalOnly. Confirm reachability is unaffected (branch pages
+   reached by their firable jump stay reachable).
+4. Prefill UX: handleCreateRuleForQuestion opens the create <details> and scrolls
+   via requestAnimationFrame. Confirm the controlled source <select> picks up the
+   new id and the dependent answer/target selects re-key. The map "Add rule"
+   button is correctly hidden when isLocked or the node is not a valid source.
+5. Collapsible sections: the create section is controlled (open + onToggle); the
+   other two use uncontrolled `open`. Confirm no React controlled/uncontrolled
+   warning and that the card top-accent (4px) still renders now that
+   .builder-form is nested in .logic-section.
+6. CSS: .flow-node-header changed grid -> flex; confirm long question text wraps
+   (min-width:0 on the inner div) and the badges/paths layout is unchanged.
+
+Validation already run
+----------------------
+  - npm run typecheck: pass.
+  - npm run lint: pass (shared/web/api).
+  - npm test: pass — shared 43, web 47 (+2 surveyFlowGraph cases), api 149
+    (+1 branch-page test) = 239.
+  - npm run build:web: pass (vite production build).
+  - git diff --check: clean.
+  - New runtime test (apps/api/test/progressivePageRunner.test.ts,
+    "branch-page navigation"): a Department selector jumps to Engineering and the
+    runner advances Engineering -> Final, never visiting Sales/Operations, then
+    completes.
+  - Manual browser pass: pending (no browser automation here). Suggested checks:
+    create a JUMP_TO_PAGE rule and confirm the checkbox appears/defaults
+    unchecked and round-trips in RuleEditor; a flagged branch page shows
+    "Conditional only" with the new edge suffix; the three sections collapse;
+    "Add rule" on a valid node opens+prefills+scrolls the create form; locked
+    (published) surveys hide the affordance.
+
+No data-model, API, auth, or participant-facing changes — admin builder UI plus
+one flow-map graph fix, all reusing the existing skipTargetInNormalFlow runtime.

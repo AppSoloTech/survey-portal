@@ -1,0 +1,49 @@
+Phase 13 fix #2 review - Codex
+==============================
+
+Findings
+--------
+
+1. P3 - Same-page exception still misses pages reached by JUMP_TO_QUESTION.
+
+   The fix now handles the handoff's JUMP_TO_PAGE case: if a page is in
+   normalFlowExcludedPageIds, resolveGraphNormalNext() reveals same-page
+   question-level jump targets. However, the runtime sets wasReachedByJump for
+   navigation targets produced by both JUMP_TO_PAGE and JUMP_TO_QUESTION rules.
+   resolveTriggeredNavigationPage() accepts both actions, then
+   resolveProgressivePageState() adds the target page id to jumpedToPageIds.
+
+   In the graph, the same-page exception is currently keyed only by
+   normalFlowExcludedPageIds.has(fromQuestion.pageId). A page reached by a
+   skip-in-normal-flow JUMP_TO_QUESTION is not necessarily in that page set, so
+   same-page normalFlowExcludedQuestionIds are still skipped in the graph even
+   though runtime reveals them after the page jump.
+
+   Example: Q1 on page 1 jumps to question Q2 on page 2 with
+   skipTargetInNormalFlow=true. Page 2 also has Q3, and Q3 is another
+   skip-in-normal-flow JUMP_TO_QUESTION target. Runtime reaches page 2 by a
+   jump and walks Q2 -> Q3, while the flow map reports Q2 -> the next
+   non-excluded question/page.
+
+   Suggested fix: track pages that can be reached by any firable jump edge
+   (JUMP_TO_PAGE or JUMP_TO_QUESTION) and apply the same-page "was reached by
+   jump" exception for those pages, or otherwise compute the graph successor
+   with enough path context to distinguish jumped-to pages from ordinary normal
+   flow pages. Add a regression test for a JUMP_TO_QUESTION target page that
+   contains another same-page question-level jump target.
+
+Reviewed With No Additional Findings
+------------------------------------
+
+- The specific P3 handoff case is fixed: a page reached by JUMP_TO_PAGE now
+  walks through same-page JUMP_TO_QUESTION skip targets.
+- The original P2 branch-page behavior remains covered: normal flow bypasses
+  later skipped branch pages, while walking within the selected branch page.
+- node.normalNextQuestionId and reachability still consume the same precomputed
+  normal-next map, so the graph remains internally consistent for the modeled
+  successor behavior.
+
+Validation
+----------
+
+Review only. I did not modify source files or rerun the full validation suite.

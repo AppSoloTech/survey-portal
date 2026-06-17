@@ -10,12 +10,23 @@ import {
   type SurveyFlowNode
 } from "./surveyFlowGraph.js";
 
-export function SurveyFlowMap({ survey }: { survey: Survey }) {
+export function SurveyFlowMap({
+  isLocked = false,
+  onCreateRuleForQuestion,
+  survey
+}: {
+  isLocked?: boolean;
+  onCreateRuleForQuestion?: (questionId: number) => void;
+  survey: Survey;
+}) {
   const graph = useMemo(() => buildSurveyFlowGraph(survey), [survey]);
   const nodesByQuestionId = useMemo(
     () => new Map(graph.nodes.map((node) => [node.questionId, node])),
     [graph]
   );
+  // Only selection and text questions can source a rule, mirroring the create
+  // form's source filter. Hide the affordance once logic is locked.
+  const canAddRule = !isLocked && Boolean(onCreateRuleForQuestion);
 
   return (
     <section className="builder-form advanced-builder-section flow-map-section" id="survey-flow">
@@ -58,6 +69,7 @@ export function SurveyFlowMap({ survey }: { survey: Survey }) {
               key={node.questionId}
               node={node}
               nodesByQuestionId={nodesByQuestionId}
+              onCreateRuleForQuestion={canAddRule ? onCreateRuleForQuestion : undefined}
             />
           ))}
         </ol>
@@ -124,12 +136,18 @@ function FlowNavigationNotes({ graph }: { graph: SurveyFlowGraph }) {
 function FlowQuestionNode({
   graph,
   node,
-  nodesByQuestionId
+  nodesByQuestionId,
+  onCreateRuleForQuestion
 }: {
   graph: SurveyFlowGraph;
   node: SurveyFlowNode;
   nodesByQuestionId: Map<number, SurveyFlowNode>;
+  onCreateRuleForQuestion?: (questionId: number) => void;
 }) {
+  const canSourceRule =
+    node.questionType === "single_select" ||
+    node.questionType === "multi_select" ||
+    node.questionType === "text";
   const outgoingEdges = graph.conditionalEdges.filter(
     (edge) => edge.sourceQuestionId === node.questionId
   );
@@ -174,6 +192,15 @@ function FlowQuestionNode({
           </div>
           <p className="flow-node-text">{node.questionText}</p>
         </div>
+        {onCreateRuleForQuestion && canSourceRule ? (
+          <button
+            className="button-link compact-button secondary-button flow-node-add-rule"
+            onClick={() => onCreateRuleForQuestion(node.questionId)}
+            type="button"
+          >
+            Add rule
+          </button>
+        ) : null}
       </div>
 
       <div className="flow-node-paths">
@@ -259,7 +286,11 @@ function describeOutgoingEdge(
   }
 
   if (edge.actionType === "JUMP_TO_PAGE") {
-    return `If ${conditionLabel}, jump to page containing ${targetLabel}.`;
+    const pageSkipLabel = edge.skipTargetInNormalFlow
+      ? " Target page is skipped in normal flow."
+      : " Target page also stays in normal flow.";
+
+    return `If ${conditionLabel}, jump to page containing ${targetLabel}.${pageSkipLabel}`;
   }
 
   if (edge.actionType !== "JUMP_TO_QUESTION") {

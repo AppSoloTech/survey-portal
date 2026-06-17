@@ -1,0 +1,66 @@
+Phase 13 — Review fix #3 (P3 jumped-to page generalized to JUMP_TO_QUESTION) — for Codex
+========================================================================================
+
+Roles reversed (Claude implemented, Codex reviews). Fourth pass, scoped to the
+single P3 finding in notes/codex_review_phase_13_fix2.txt. Record findings in
+notes/codex_review_phase_13_fix3.txt and summarize in chat.
+
+The finding (P3)
+----------------
+fix #2 keyed the "reveal same-page question targets" exception on
+normalFlowExcludedPageIds.has(fromQuestion.pageId) — i.e. only JUMP_TO_PAGE
+branch pages. But the runtime sets wasReachedByJump for ANY firable navigation
+target (resolveTriggeredNavigationPage accepts JUMP_TO_PAGE and JUMP_TO_QUESTION;
+the resolved target page is added to jumpedToPageIds). So a page reached by a
+skip-flow JUMP_TO_QUESTION, containing another same-page question-level jump
+target, still diverged (graph skipped the same-page target; runtime revealed it).
+
+The fix (apps/web/src/components/admin/surveyFlowGraph.ts)
+---------------------------------------------------------
+Re-keyed the same-page exception on whether the FROM-question is conditional-only
+(skipTargetQuestionIds), instead of on its page being a JUMP_TO_PAGE branch:
+
+    const fromPageReachedByJump = conditionalOnlyQuestionIds.has(fromQuestion.id);
+    ...within same page: if (!fromPageReachedByJump && excludedQuestion) continue;
+
+Rationale: skipTargetQuestionIds is exactly "questions reachable only via a jump"
+(JUMP_TO_QUESTION skip targets ∪ all questions on JUMP_TO_PAGE branch pages). A
+conditional-only question's page is, by definition, only entered by a jump — the
+runtime's wasReachedByJump — so the rest of that page is revealed regardless of
+question-level skips. This now covers JUMP_TO_QUESTION-reached pages and
+JUMP_TO_PAGE branch pages uniformly. It is also self-consistent with the node's
+own label: conditional-only nodes render "Skipped in normal flow. After a jump
+lands here, the survey continues to X" (post-jump context), while normally-
+reached nodes render "Normal flow continues to X" (normal-entry context, which
+correctly skips same-page question targets).
+
+skipTargetQuestionIds is passed into resolveGraphNormalNext as a 5th arg
+(conditionalOnlyQuestionIds). node.normalNextQuestionId and buildAdjacency still
+share the one precomputed successor map, so reachability tracks the fix (Q3 is
+reachable via Q2).
+
+Known modeling boundary (not a regression)
+------------------------------------------
+A single static successor per node cannot represent a question that is reachable
+BOTH by normal flow AND by a jump-landing-then-walk (e.g. a normal question that
+shares a page with a jump target). For such NON-conditional-only questions the
+map shows the normal-ENTRY successor (skips the same-page jump target), matching
+its "Normal flow continues to..." label; the post-jump sub-path successor is not
+separately rendered. This is inherent to the one-successor-per-node graph model,
+not a wasReachedByJump miss — every question that is only reachable by jump is
+conditional-only and so gets the post-jump successor.
+
+Test added (apps/web/src/components/admin/surveyFlowGraph.test.ts)
+- "walks through a same-page jump target on a page reached by a question jump":
+  Q1(p1) --JUMP_TO_QUESTION skip--> Q2(p2); p2 also holds Q3, itself a skip-flow
+  JUMP_TO_QUESTION target; Final is p3 (q4). Asserts Q2 is conditional-only,
+  Q2.normalNext = Q3, Q3.normalNext = Final, Q3 reachable. The existing
+  JUMP_TO_PAGE same-page-target test (fix #2) and the branch-page tests (P2) and
+  the q1->q3 cross-page JUMP_TO_QUESTION test all still pass.
+
+Validation already run
+----------------------
+  - npm run typecheck: pass.  npm run lint: pass.
+  - npm test: pass — shared 43, web 50 (+1 vs prior 49), api 149 = 242.
+
+Scope: surveyFlowGraph.ts + its test only. No runtime/API/component/style change.

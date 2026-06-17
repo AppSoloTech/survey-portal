@@ -1,3 +1,4 @@
+import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import type { Survey } from "@survey-portal/shared";
@@ -249,6 +250,196 @@ describe("mid-page navigation", () => {
     expect(afterChange.currentPage?.id).toBe(routePage.id);
     expect(afterChange.currentQuestion?.id).toBe(afterRoute.id);
     expect(afterChange.isCompleteReady).toBe(false);
+  });
+});
+
+// A department selector on Page 1 jumps to one of three branch pages
+// (Engineering, Sales, Operations), each marked skip-in-normal-flow so that
+// taking one branch bypasses the others before the shared Final page.
+async function createBranchSurvey(admin: TestSession) {
+  let survey = await createDraftSurvey(app, admin, "Department branch survey");
+  const selectPage = survey.pages[0];
+
+  if (!selectPage) {
+    throw new Error("Default first page was not created");
+  }
+
+  survey = await addPage(app, admin, survey.id, { title: "Engineering" });
+  const engineeringPage = pageByTitle(survey, "Engineering");
+  survey = await addPage(app, admin, survey.id, { title: "Sales" });
+  const salesPage = pageByTitle(survey, "Sales");
+  survey = await addPage(app, admin, survey.id, { title: "Operations" });
+  const operationsPage = pageByTitle(survey, "Operations");
+  survey = await addPage(app, admin, survey.id, { title: "Final" });
+  const finalPage = pageByTitle(survey, "Final");
+
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Department",
+    questionType: "single_select",
+    pageId: selectPage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "EngineeringQ",
+    pageId: engineeringPage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "SalesQ",
+    pageId: salesPage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "OperationsQ",
+    pageId: operationsPage.id
+  });
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "FinalQ",
+    pageId: finalPage.id
+  });
+
+  const departmentQuestion = findQuestion(survey, "Department");
+  survey = await addOption(app, admin, survey.id, departmentQuestion.id, "Engineering");
+  survey = await addOption(app, admin, survey.id, departmentQuestion.id, "Sales");
+  survey = await addOption(app, admin, survey.id, departmentQuestion.id, "Operations");
+
+  for (const [optionText, targetPage] of [
+    ["Engineering", engineeringPage],
+    ["Sales", salesPage],
+    ["Operations", operationsPage]
+  ] as const) {
+    survey = await addRule(app, admin, survey.id, {
+      sourceQuestionId: departmentQuestion.id,
+      sourceAnswerOptionId: optionId(survey, "Department", optionText),
+      actionType: "JUMP_TO_PAGE",
+      targetPageId: targetPage.id,
+      skipTargetInNormalFlow: true
+    });
+  }
+  await setSurveyStatus(app, admin, survey.id, "published");
+
+  return {
+    survey,
+    department: findQuestion(survey, "Department"),
+    engineeringPage,
+    salesPage,
+    operationsPage,
+    finalPage,
+    engineeringQuestion: findQuestion(survey, "EngineeringQ"),
+    finalQuestion: findQuestion(survey, "FinalQ"),
+    engineeringOptionId: optionId(survey, "Department", "Engineering")
+  };
+}
+
+describe("branch-page navigation", () => {
+  it("jumps to the chosen branch page and skips the other branch pages in normal flow", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const {
+      survey,
+      department,
+      engineeringPage,
+      salesPage,
+      operationsPage,
+      finalPage,
+      engineeringQuestion,
+      finalQuestion,
+      engineeringOptionId
+    } = await createBranchSurvey(admin);
+
+    const started = await startAttempt(app, user, survey.id);
+    expect(started.currentQuestion?.id).toBe(department.id);
+
+    // Choosing Engineering jumps straight to the Engineering branch page.
+    const afterDepartment = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: department.id,
+      selectedAnswerOptionIds: [engineeringOptionId]
+    });
+    expect(afterDepartment.currentPage?.id).toBe(engineeringPage.id);
+    expect(afterDepartment.currentQuestion?.id).toBe(engineeringQuestion.id);
+
+    // Answering the Engineering question advances straight to Final: normal
+    // flow from the Engineering page skips the Sales and Operations branch
+    // pages because each is marked skip-in-normal-flow.
+    const afterEngineering = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: engineeringQuestion.id,
+      answerText: "eng"
+    });
+    expect(afterEngineering.currentPage?.id).toBe(finalPage.id);
+    expect(afterEngineering.currentPage?.id).not.toBe(salesPage.id);
+    expect(afterEngineering.currentPage?.id).not.toBe(operationsPage.id);
+    expect(afterEngineering.currentQuestion?.id).toBe(finalQuestion.id);
+
+    // Finishing the Final page completes the survey with no other branch pages.
+    const afterFinal = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: finalQuestion.id,
+      answerText: "done"
+    });
+    expect(afterFinal.currentPage).toBeNull();
+    expect(afterFinal.isCompleteReady).toBe(true);
+
+    const completed = await completeAttempt(app, user, survey.id, started.attempt.id);
+    expect(completed.attempt.status).toBe("completed");
+  });
+
+  it("prunes the abandoned branch's answers when the respondent changes department", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const { survey, department, engineeringPage, salesPage, engineeringQuestion } =
+      await createBranchSurvey(admin);
+    const engineeringOptionId = optionId(survey, "Department", "Engineering");
+    const salesOptionId = optionId(survey, "Department", "Sales");
+    const salesQuestion = findQuestion(survey, "SalesQ");
+
+    const started = await startAttempt(app, user, survey.id);
+
+    // Choose Engineering and answer the Engineering branch question.
+    await submitPageAnswers(app, user, survey.id, department.pageId, {
+      attemptId: started.attempt.id,
+      answers: [{ questionId: department.id, selectedAnswerOptionIds: [engineeringOptionId] }]
+    });
+    const afterEngineering = await submitPageAnswers(app, user, survey.id, engineeringPage.id, {
+      attemptId: started.attempt.id,
+      answers: [{ questionId: engineeringQuestion.id, answerText: "eng answer" }]
+    });
+    expect(afterEngineering.currentPage?.id).not.toBe(engineeringPage.id);
+
+    // Go "Previous" and switch the department to Sales — this strands the
+    // Engineering answer off the final path, so it must be pruned (mirrors the
+    // phase_12_test_notes edge case).
+    const afterSales = await submitPageAnswers(app, user, survey.id, department.pageId, {
+      attemptId: started.attempt.id,
+      answers: [{ questionId: department.id, selectedAnswerOptionIds: [salesOptionId] }]
+    });
+    expect(afterSales.currentPage?.id).toBe(salesPage.id);
+
+    const { pool } = await import("../src/db.js");
+    const stored = await pool.query<{ question_id: number }>(
+      `select question_id from survey_response_answers where survey_attempt_id = $1`,
+      [started.attempt.id]
+    );
+    const storedQuestionIds = stored.rows.map((row) => row.question_id);
+
+    // The Department answer remains, the off-path Engineering answer is gone,
+    // and the Sales branch is empty until the respondent re-answers it.
+    expect(storedQuestionIds).toContain(department.id);
+    expect(storedQuestionIds).not.toContain(engineeringQuestion.id);
+    expect(storedQuestionIds).not.toContain(salesQuestion.id);
+
+    // Admin detail must report the pruned page-branch question off the final
+    // path. The onFinalPath safety net uses the page resolver, so a JUMP_TO_PAGE
+    // branch that was never reached is not mislabelled as on the final path.
+    const detail = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(detail.status).toBe(200);
+
+    const engineeringAnswer = detail.body.answers.find(
+      (answer: { questionText: string }) => answer.questionText === "EngineeringQ"
+    );
+
+    expect(engineeringAnswer).toMatchObject({ state: "not_reached", onFinalPath: false });
   });
 });
 

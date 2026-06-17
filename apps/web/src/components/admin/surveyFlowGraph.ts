@@ -1,6 +1,5 @@
 import {
   getOrderedQuestions,
-  resolveNextQuestion,
   type ConditionalLogicRule,
   type Survey,
   type SurveyQuestion,
@@ -69,21 +68,65 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
   const pagesById = new Map(survey.pages.map((page) => [page.id, page]));
   const startQuestion = orderedQuestions[0] ?? null;
 
-  // Mirrors the static skip set in resolveNextQuestion: only JUMP rules with
+  // Mirrors the static skip sets in the runtime: only JUMP rules with
   // skipTargetInNormalFlow remove their target from normal flow. HIDE rule
-  // targets stay in the normal flow and are skipped per attempt at runtime.
-  const skipTargetQuestionIds = new Set(
+  // targets stay in normal flow and are skipped per attempt at runtime.
+  // JUMP_TO_QUESTION excludes a single target question
+  // (getNormalFlowExcludedQuestionIds); JUMP_TO_PAGE excludes the whole target
+  // page (getNormalFlowExcludedPageIds).
+  const normalFlowExcludedPageIds = new Set(
     survey.conditionalLogicRules
-      .filter((rule) => rule.actionType === "JUMP_TO_QUESTION" && rule.skipTargetInNormalFlow)
+      .filter((rule) => rule.actionType === "JUMP_TO_PAGE" && rule.skipTargetInNormalFlow)
+      .map((rule) => rule.targetPageId)
+      .filter((targetPageId): targetPageId is number => targetPageId !== null)
+  );
+  const normalFlowExcludedQuestionIds = new Set(
+    survey.conditionalLogicRules
+      .filter(
+        (rule) =>
+          rule.actionType === "JUMP_TO_QUESTION" &&
+          rule.skipTargetInNormalFlow &&
+          rule.targetQuestionId !== null
+      )
       .map((rule) => rule.targetQuestionId)
       .filter((targetQuestionId): targetQuestionId is number => targetQuestionId !== null)
+  );
+  // A question is "conditional only" (reachable solely via a jump) when it is a
+  // JUMP_TO_QUESTION skip target or sits on a skipped branch page. Such a
+  // question's page is, by definition, only ever entered by a jump — the
+  // runtime's wasReachedByJump state.
+  const skipTargetQuestionIds = new Set<number>(normalFlowExcludedQuestionIds);
+  for (const question of orderedQuestions) {
+    if (normalFlowExcludedPageIds.has(question.pageId)) {
+      skipTargetQuestionIds.add(question.id);
+    }
+  }
+
+  // Precompute the normal-flow successor for every question once, mirroring the
+  // runtime's page navigation so the map's arrows and reachability stay in sync.
+  const normalNextByQuestionId = new Map<number, number | null>(
+    orderedQuestions.map((question) => [
+      question.id,
+      resolveGraphNormalNext(
+        orderedQuestions,
+        question,
+        normalFlowExcludedQuestionIds,
+        normalFlowExcludedPageIds,
+        skipTargetQuestionIds
+      )?.id ?? null
+    ])
   );
 
   const conditionalEdges = buildConditionalEdges(survey, questionsById);
   const issues: SurveyFlowIssue[] = conditionalEdges.flatMap((edge) => edge.issues);
   const pageNavigationNotes = buildPageNavigationNotes(survey, questionsById, conditionalEdges);
 
-  const adjacency = buildAdjacency(survey, orderedQuestions, questionsById, conditionalEdges);
+  const adjacency = buildAdjacency(
+    orderedQuestions,
+    questionsById,
+    conditionalEdges,
+    normalNextByQuestionId
+  );
   const reachableQuestionIds = collectReachableQuestionIds(startQuestion, adjacency);
 
   for (const question of orderedQuestions) {
@@ -126,7 +169,7 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
       isStart: question.id === startQuestion?.id,
       isConditionalOnly: skipTargetQuestionIds.has(question.id),
       isReachable: reachableQuestionIds.has(question.id),
-      normalNextQuestionId: resolveNextQuestion(survey, question, undefined)?.id ?? null
+      normalNextQuestionId: normalNextByQuestionId.get(question.id) ?? null
     };
   });
 
@@ -351,19 +394,19 @@ function canRuleFireAtRuntime(
 }
 
 function buildAdjacency(
-  survey: Survey,
   orderedQuestions: SurveyQuestion[],
   questionsById: Map<number, SurveyQuestion>,
-  conditionalEdges: SurveyFlowConditionalEdge[]
+  conditionalEdges: SurveyFlowConditionalEdge[],
+  normalNextByQuestionId: Map<number, number | null>
 ): Map<number, number[]> {
   const adjacency = new Map<number, number[]>();
 
   for (const question of orderedQuestions) {
     const nextQuestionIds: number[] = [];
-    const normalNext = resolveNextQuestion(survey, question, undefined);
+    const normalNextId = normalNextByQuestionId.get(question.id) ?? null;
 
-    if (normalNext) {
-      nextQuestionIds.push(normalNext.id);
+    if (normalNextId !== null) {
+      nextQuestionIds.push(normalNextId);
     }
 
     for (const edge of conditionalEdges) {
@@ -389,6 +432,57 @@ function buildAdjacency(
 
 function firstQuestionOnPage(survey: Survey, pageId: number): SurveyQuestion | null {
   return getOrderedQuestions(survey).find((question) => question.pageId === pageId) ?? null;
+}
+
+// Graph-local normal-flow successor that mirrors the runtime page navigation
+// (resolveProgressivePageState + getNextVisiblePage). Two phases:
+//   - Within the from-question's own page: return the next question. When the
+//     from-question is conditional-only, its page is only ever entered by a jump
+//     (the runtime's wasReachedByJump), which reveals EVERY remaining question
+//     including same-page JUMP_TO_QUESTION/JUMP_TO_PAGE skip targets. For a
+//     normally-reached question those question-level targets are skipped, which
+//     is what the node's "Normal flow continues to..." label describes.
+//   - Crossing to a later page (normal flow, not a jump): skip whole skipped
+//     branch pages and skip question-level jump targets, landing on the first
+//     question that survives both exclusions.
+function resolveGraphNormalNext(
+  orderedQuestions: SurveyQuestion[],
+  fromQuestion: SurveyQuestion,
+  normalFlowExcludedQuestionIds: ReadonlySet<number>,
+  normalFlowExcludedPageIds: ReadonlySet<number>,
+  conditionalOnlyQuestionIds: ReadonlySet<number>
+): SurveyQuestion | null {
+  const fromIndex = orderedQuestions.findIndex((question) => question.id === fromQuestion.id);
+
+  if (fromIndex < 0) {
+    return null;
+  }
+
+  // A conditional-only source sits on a page reached only by a jump, so the
+  // runtime reveals the rest of that page regardless of question-level skips.
+  const fromPageReachedByJump = conditionalOnlyQuestionIds.has(fromQuestion.id);
+
+  for (const candidate of orderedQuestions.slice(fromIndex + 1)) {
+    if (candidate.pageId === fromQuestion.pageId) {
+      if (!fromPageReachedByJump && normalFlowExcludedQuestionIds.has(candidate.id)) {
+        continue;
+      }
+
+      return candidate;
+    }
+
+    if (normalFlowExcludedPageIds.has(candidate.pageId)) {
+      continue;
+    }
+
+    if (normalFlowExcludedQuestionIds.has(candidate.id)) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return null;
 }
 
 function collectReachableQuestionIds(

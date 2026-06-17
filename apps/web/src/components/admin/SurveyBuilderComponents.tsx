@@ -1024,9 +1024,9 @@ export function RuleEditor({
           </select>
         </label>
       )}
-      {isSkipRule || isPageJumpRule ? (
+      {isSkipRule ? (
         // Occupies the normal-flow checkbox cell so Save/Delete land in the
-        // same grid column for both rule kinds.
+        // same grid column for skip rules, which never carry the flag.
         <span aria-hidden="true" className="rule-flow-spacer" />
       ) : (
         <label className="checkbox-label rule-flow-toggle">

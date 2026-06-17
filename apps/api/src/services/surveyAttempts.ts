@@ -603,6 +603,105 @@ export async function saveAnswer(
   }
 }
 
+// Loads an attempt's saved answers (with selected options) through the supplied
+// queryable so callers inside an open transaction observe the just-saved rows.
+// Branching/jump rules key off selected options, so they must be hydrated for
+// the path walk to resolve correctly.
+async function fetchAttemptResponses(
+  queryable: Queryable,
+  attemptId: number
+): Promise<SurveyResponseAnswer[]> {
+  const responsesResult = await queryable.query<SurveyResponseAnswerRecord>(
+    `select
+       id,
+       survey_attempt_id,
+       question_id,
+       answer_text,
+       answer_integer,
+       created_at,
+       updated_at
+     from survey_response_answers
+     where survey_attempt_id = $1
+     order by id`,
+    [attemptId]
+  );
+  const responseIds = responsesResult.rows.map((response) => response.id);
+  const selectedOptionsResult =
+    responseIds.length > 0
+      ? await queryable.query<SelectedOptionRecord>(
+          `select
+             survey_response_answer_id,
+             answer_option_id
+           from survey_response_selected_options
+           where survey_response_answer_id = any($1::int[])
+           order by survey_response_answer_id, answer_option_id`,
+          [responseIds]
+        )
+      : { rows: [] as SelectedOptionRecord[] };
+  const selectedOptionsByResponseId = new Map<number, number[]>();
+
+  for (const selectedOption of selectedOptionsResult.rows) {
+    const selectedIds =
+      selectedOptionsByResponseId.get(selectedOption.survey_response_answer_id) ?? [];
+    selectedIds.push(selectedOption.answer_option_id);
+    selectedOptionsByResponseId.set(selectedOption.survey_response_answer_id, selectedIds);
+  }
+
+  return responsesResult.rows.map((response) =>
+    mapSurveyResponseAnswerRecord(
+      response,
+      selectedOptionsByResponseId.get(response.id) ?? []
+    )
+  );
+}
+
+// Recomputes the revealed-question set from the attempt's current answers and
+// deletes any saved answer whose question is no longer revealed. When a
+// respondent changes an earlier branching/jump answer (or flips a skip
+// trigger), the runtime reroutes the path and the old branch's questions fall
+// off it; this keeps the stored answers matching what the respondent actually
+// saw and answered on their final path. Cascade on
+// survey_response_selected_options removes the linked option rows. Reverses the
+// Phase 8 "keep historical answers, mark them off-path" decision — see
+// markdown/FOLLOW_UPS.md.
+//
+// Uses resolveProgressivePageState — the same resolver the page runtime uses to
+// reveal questions — so jump/skip semantics (including JUMP_TO_PAGE and
+// HIDE_QUESTION) can never diverge from what the respondent was shown. Scope is
+// "all off-path": both jump-abandoned branches and rule-hidden questions are
+// pruned.
+//
+// Safe for in-progress attempts: not-yet-reached questions have no stored rows,
+// and the resolver projects forward along the normal flow, so only already-saved
+// rows that are genuinely off-path are removed. A loop yields an unreliable
+// partial state, so pruning is skipped in that case; an empty keep-set (a survey
+// with no revealable questions) is likewise left untouched.
+export async function pruneOffPathAnswers(
+  queryable: Queryable,
+  survey: Survey,
+  attemptId: number
+): Promise<void> {
+  const responses = await fetchAttemptResponses(queryable, attemptId);
+  const { visibleQuestionIdsByPageId, hasLoop } = resolveProgressivePageState(survey, responses);
+
+  if (hasLoop) {
+    return;
+  }
+
+  const keepQuestionIds = Object.values(visibleQuestionIdsByPageId).flat();
+
+  if (keepQuestionIds.length === 0) {
+    return;
+  }
+
+  await queryable.query(
+    `delete from survey_response_answers
+     where survey_attempt_id = $1
+       and question_id <> all($2::int[])`,
+    [attemptId, keepQuestionIds]
+  );
+}
+
 export function validateReachedRequiredQuestions(
   survey: Survey,
   attempt: SurveyAttempt

@@ -235,7 +235,7 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
     expect(middle).toMatchObject({ state: "skipped_blank", onFinalPath: true });
   });
 
-  it("marks answers left behind by a changed branch as off the final path", async () => {
+  it("prunes answers left behind by a changed branch off the final path", async () => {
     const admin = await registerAdmin(app);
     const fixture = await createPublishedJumpSurvey(app, admin);
     const user = await registerUser(app);
@@ -250,10 +250,11 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
     await submitAnswer(app, user, fixture.survey.id, {
       attemptId: started.attempt.id,
       questionId: fixture.middleQuestion.id,
-      answerText: "middle answer kept as history"
+      answerText: "middle answer that becomes off-path"
     });
     // ...then change the branching answer so the middle question becomes
-    // unreachable on the final path.
+    // unreachable on the final path. Its stored answer must be pruned rather
+    // than kept as history (reverses the Phase 8 keep-history decision).
     await submitAnswer(app, user, fixture.survey.id, {
       attemptId: started.attempt.id,
       questionId: fixture.routeQuestion.id,
@@ -268,8 +269,8 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
       (answer: { questionText: string }) => answer.questionText === "Middle"
     );
 
-    expect(middle).toMatchObject({ state: "answered", onFinalPath: false });
-    expect(middle.answerText).toBe("middle answer kept as history");
+    expect(middle).toMatchObject({ state: "not_reached", onFinalPath: false });
+    expect(middle.answerText).toBeNull();
   });
 
   it("marks rule-skipped questions as not reached and off the final path", async () => {
@@ -314,7 +315,7 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
     expect(answersByText.get("Final")).toMatchObject({ state: "answered", onFinalPath: true });
   });
 
-  it("marks answers hidden by a later trigger change as off the final path", async () => {
+  it("prunes answers hidden by a later trigger change off the final path", async () => {
     const admin = await registerAdmin(app);
     const fixture = await createPublishedSkipSurvey(app, admin);
     const user = await registerUser(app);
@@ -329,9 +330,11 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
     await submitAnswer(app, user, fixture.survey.id, {
       attemptId: started.attempt.id,
       questionId: fixture.hiddenQuestionA.id,
-      answerText: "kept as history"
+      answerText: "answer that becomes hidden"
     });
-    // ...then flip the trigger so the question is skipped by rule.
+    // ...then flip the trigger so the question is skipped by rule. Pruning is
+    // "all off-path", so a HIDE_QUESTION-hidden answer is removed too (not just
+    // jump-abandoned branches).
     await submitAnswer(app, user, fixture.survey.id, {
       attemptId: started.attempt.id,
       questionId: fixture.triggerQuestion.id,
@@ -346,8 +349,8 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
       (answer: { questionText: string }) => answer.questionText === "Hidden A"
     );
 
-    expect(hiddenA).toMatchObject({ state: "answered", onFinalPath: false });
-    expect(hiddenA.answerText).toBe("kept as history");
+    expect(hiddenA).toMatchObject({ state: "not_reached", onFinalPath: false });
+    expect(hiddenA.answerText).toBeNull();
   });
 
   it("includes hidden tags on selected options for admins", async () => {
@@ -491,6 +494,64 @@ describe("report option distribution and tag rollup", () => {
     );
 
     expect(textStat.optionStats).toEqual([]);
+  });
+
+  it("excludes pruned off-path answers from aggregate counts", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await createPublishedJumpSurvey(app, admin);
+    const user = await registerUser(app);
+
+    // Branch to the Stay path and answer the middle question, then switch the
+    // route to Jump (pruning the Stay-branch answer) and complete on Target.
+    const started = await startAttempt(app, user, fixture.survey.id);
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.routeQuestion.id,
+      selectedAnswerOptionIds: [fixture.stayOptionId]
+    });
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.middleQuestion.id,
+      answerText: "off-path answer"
+    });
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.routeQuestion.id,
+      selectedAnswerOptionIds: [fixture.jumpOptionId]
+    });
+    await submitAnswer(app, user, fixture.survey.id, {
+      attemptId: started.attempt.id,
+      questionId: fixture.targetQuestion.id,
+      answerText: "target"
+    });
+    await completeAttempt(app, user, fixture.survey.id, started.attempt.id);
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/report`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+
+    // The pruned Middle answer no longer inflates the answered count, and the
+    // overwritten Route selection leaves no stale "Stay" tally.
+    const middleStat = response.body.report.questionStats.find(
+      (stat: { questionText: string }) => stat.questionText === "Middle"
+    );
+
+    expect(middleStat).toMatchObject({ answeredCount: 0, blankCount: 0 });
+
+    const routeStat = response.body.report.questionStats.find(
+      (stat: { questionText: string }) => stat.questionText === "Route"
+    );
+    const countsByOption = new Map(
+      routeStat.optionStats.map((option: { optionText: string; selectionCount: number }) => [
+        option.optionText,
+        option.selectionCount
+      ])
+    );
+
+    expect(countsByOption.get("Jump")).toBe(1);
+    expect(countsByOption.get("Stay")).toBe(0);
   });
 
   it("rolls up hidden tag pairs with selection and respondent counts", async () => {

@@ -2871,3 +2871,189 @@ responsive browser pass (already tracked as a follow-up).
   collapse).
 - Ready to commit: Yes, pending the manual browser pass or its explicit acceptance
   as a carried follow-up.
+
+---
+
+# Phase 14 — Prune Off-Path Answers At Runtime
+
+Date:
+2026-06-17
+
+Status:
+Completed (pending Codex review and manual browser pass)
+
+Prompt:
+None — driven by the `notes/phase_12_test_notes.txt` edge case ("Engineering
+answers recorded even though they were not relevant to the respondent"). Roles
+reversed: Claude implemented, Codex reviews.
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/codex_handoff_phase_14.txt`
+- Codex review: `notes/codex_review_phase_14.txt` (completed — no blocking findings)
+
+## Codex Review Outcome
+
+Codex review: no blocking findings. One Low finding — stale comments plus
+`onFinalPath` page-flow drift (the kept safety net still used the question-level
+`resolveAttemptPath`, which does not model page jumps, so admin attempt detail
+could mark a never-reached page-branch question as `onFinalPath: true`).
+
+Fixes applied (this session):
+- Migrated `collectFinalPathQuestionIds`
+  (`apps/api/src/services/surveyReporting.ts`) onto `resolveProgressivePageState`
+  so the `onFinalPath` safety net matches the participant runtime for page-jump
+  surveys. Added an admin-detail assertion to the page-based repro test
+  (EngineeringQ -> `state: not_reached`, `onFinalPath: false`).
+- Updated the two misleading comments (`packages/shared/src/index.ts`
+  `onFinalPath` doc; the `collectFinalPathQuestionIds` doc) and the obsolete
+  FOLLOW_UPS migration item.
+
+Re-validated after fixes: `npm run typecheck`, `npm run lint`, `npm test`
+(16 files / 151 tests) all green.
+
+## Goals
+
+- Stop storing answers from a survey branch the respondent abandons by changing
+  an earlier branching/jump answer (or by flipping a skip trigger).
+- Make stored answers match what the respondent actually answered on their final
+  path, so the attempt detail and the aggregate report stop counting off-path
+  data.
+- Cover the fix with tests before any commit, since it deletes respondent data.
+
+## Built
+
+- `pruneOffPathAnswers(queryable, survey, attemptId)` in
+  `apps/api/src/services/surveyAttempts.ts`: recomputes the revealed-question set
+  via `resolveProgressivePageState` (the page runtime's own resolver) and deletes
+  every `survey_response_answers` row whose question is not revealed.
+  `survey_response_selected_options` rows cascade. Skips pruning when the path
+  loops or the keep-set is empty.
+- `fetchAttemptResponses(queryable, attemptId)`: transaction-scoped loader so the
+  prune observes the just-saved rows (and hydrates selected options, which jump
+  rules depend on).
+- Call sites inside the existing transactions: the single-answer route
+  (`POST /:id/answer`, which now also fetches the survey structure) and the page
+  route (`POST /:id/pages/:pageId/answer`, once per request after
+  `savePageAnswers`).
+- Tests: rewrote the two reporting "kept as history" cases to assert the off-path
+  answer is now deleted (`state: not_reached`, null text); added an aggregate
+  non-inflation test; added a page-based repro test (Engineering → answer →
+  switch to Sales) asserting the Engineering answer rows are gone.
+- Docs: recorded the reversal of the Phase 8 keep-history decision in
+  `markdown/FOLLOW_UPS.md` (with the deferred-backfill and onFinalPath follow-ups).
+
+## Important Decisions
+
+### Reverse the Phase 8 "keep history" decision
+
+Decision: Prune off-path answers at save time rather than keeping them and
+flagging them "not on final path".
+
+Reason: Keeping them stored let in-progress and completed off-path answers inflate
+the aggregate report counts and hidden-tag rollups (no final-path filter in
+`surveyReporting.ts`), and contradicted the respondent's actual path. Pruning the
+rows fixes the aggregate leak with no SQL change.
+
+Tradeoff: Irreversibly deletes respondent data; re-entering an abandoned branch
+shows it empty (the respondent re-answers). Both confirmed acceptable with the
+developer.
+
+### Keep-set source: resolveProgressivePageState
+
+Decision: Build the keep-set from `resolveProgressivePageState`'s
+`visibleQuestionIdsByPageId`, not the question-level `resolveAttemptPath`.
+
+Reason: The participant runtime is page-based. `resolveAttemptPath` does not
+reroute on `JUMP_TO_PAGE` the way the page runtime does (verified: the page-based
+repro test failed when pruning off `resolveAttemptPath`, passed off
+`resolveProgressivePageState`). Using the runtime's own resolver guarantees the
+prune can never diverge from what the respondent was shown.
+
+Tradeoff: None material; `resolveProgressivePageState` already handles
+`JUMP_TO_QUESTION`, `JUMP_TO_PAGE`, and `HIDE_QUESTION`.
+
+### Scope = all off-path; runtime-only; keep onFinalPath
+
+Decisions (with the developer): prune ALL off-path answers (jump-abandoned and
+`HIDE_QUESTION`-hidden alike); fix the runtime only with NO backfill of existing
+rows; keep the `onFinalPath` flag and "Not on final path" badge as a safety net.
+
+## Architecture Notes
+
+- Database/schema impact: none (no migration). Relies on the existing
+  `on delete cascade` from `survey_response_selected_options`.
+- API contract impact: none; response shapes unchanged.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: deletes off-path respondent answers at save
+  time. Aggregate report counts and hidden-tag rollups now exclude off-path data
+  because the rows no longer exist.
+- Frontend UX impact: none directly; admin Results detail now shows pruned
+  questions as `not_reached` instead of "answered / Not on final path".
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+```
+
+Results:
+
+- Passed: typecheck, lint, full suite (shared + web + api = 151 api/web/shared
+  tests, 16 files, all green).
+- Failed: none (an intermediate page-based test failure exposed the
+  resolveAttemptPath/JUMP_TO_PAGE divergence and was fixed by switching to
+  resolveProgressivePageState).
+- Not run: none.
+
+Manual tests:
+
+- Done (developer, 2026-06-17): took the repro survey, branched to Engineering,
+  answered, went Previous, switched to Sales, completed; behavior verified as
+  working. Accepted.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/codex_handoff_phase_14.txt`
+- Codex review status before commit: Completed (no blocking findings; Low finding
+  fixed — see Codex Review Outcome above)
+
+## Problems Encountered
+
+- Problem: the first keep-set source (`resolveAttemptPath`) left the Engineering
+  answer in place because the question-level walker does not reroute on
+  `JUMP_TO_PAGE`.
+  Resolution: switched `pruneOffPathAnswers` to `resolveProgressivePageState`'s
+  `visibleQuestionIdsByPageId`, the resolver the page runtime itself uses.
+
+## Follow-Up Tasks
+
+- Decide whether to backfill/prune off-path rows already stored before this phase
+  (chosen runtime-only for now).
+- Revisit whether the `onFinalPath` machinery / badge can be simplified once the
+  safety net proves unnecessary.
+- Manual browser pass on the repro survey (above).
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes (reuses the canonical runtime
+  resolver; no new schema, API, or auth surface)
+- Security review complete: Yes; Codex review found no auth/data-exposure
+  regression. Change is server-side and runs inside the existing answer-save
+  transaction.
+- Review findings addressed or deferred: Yes; the single Low finding (stale
+  comments + `onFinalPath` resolver drift) was fixed this session. Backfill and
+  badge-simplification carried as explicit follow-ups.
+- Manual testing complete: Yes; developer verified the repro survey works (above).
+- Ready to commit: Yes, at the developer's discretion.

@@ -1,0 +1,98 @@
+Phase 14 Codex Review — Prune Off-Path Answers At Runtime
+==========================================================
+
+Review scope
+------------
+- Handoff: `notes/codex_handoff_phase_14.txt`
+- Code reviewed:
+  - `apps/api/src/services/surveyAttempts.ts`
+  - `apps/api/src/routes/surveyAttemptRoutes.ts`
+  - `apps/api/test/reporting.test.ts`
+  - `apps/api/test/progressivePageRunner.test.ts`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+- Related resolver/reporting context reviewed:
+  - `packages/shared/src/index.ts`
+  - `apps/api/src/services/surveyReporting.ts`
+
+Findings
+--------
+
+Low — `onFinalPath` still has page-flow drift and stale comments after this
+phase.
+
+- `apps/api/src/services/surveyReporting.ts:447` still computes final-path ids
+  with `resolveAttemptPath`, while Phase 14 pruning correctly uses
+  `resolveProgressivePageState` in `apps/api/src/services/surveyAttempts.ts:685`.
+  For the newly covered `JUMP_TO_PAGE` branch pattern, pruning should prevent
+  stale answered rows from surviving, so I do not see a data-retention bug here.
+  However, admin attempt detail can still mark page-branch questions that were
+  not reached as `onFinalPath: true`, because the question-level walker does not
+  model page jumps / page-level normal-flow exclusions.
+- The comments are now actively misleading in two places:
+  - `packages/shared/src/index.ts:398` still says saved off-path answers are kept
+    as historical data.
+  - `apps/api/src/services/surveyReporting.ts:443` says the reporting walker is
+    exactly the shared runtime resolver, but the page runtime and pruning use the
+    progressive page resolver.
+- Recommendation: keep this as a non-blocking cleanup if desired, but update the
+  comments before commit or track the resolver migration explicitly. If the
+  `onFinalPath` safety net remains, consider moving it to
+  `resolveProgressivePageState` so admin detail semantics match the runtime for
+  page-based surveys.
+
+Review notes
+------------
+
+- Data-loss safety: acceptable. `pruneOffPathAnswers` reloads the attempt's
+  current rows through the transaction-scoped `queryable`, hydrates selected
+  options for branch rule matching, skips deletion on loops, and guards the empty
+  keep-set before using `question_id <> all($2::int[])`. The selected-option rows
+  should cascade from `survey_response_answers`.
+- Transaction boundaries: acceptable. Both answer endpoints call pruning before
+  commit, so a prune failure rolls back the save. The single-answer route fetches
+  survey structure via the pool while the answer transaction is open; that is
+  consistent with the page-answer route's existing pattern and the survey
+  structure is not changed by the participant transaction.
+- Keep-set source: correct. Using `resolveProgressivePageState` is the right
+  source for Phase 14 because it is the page runtime's resolver and covers
+  `JUMP_TO_PAGE`, the original repro shape. The new page-based regression test
+  specifically protects that choice.
+- Scope: matches the developer decision. The HIDE_QUESTION test now asserts
+  hidden answers are pruned, not just jump-abandoned branches.
+- Performance: the extra response/options load and delete per save are
+  reasonable for this change. The single-answer route now also fetches the survey
+  structure per answer; worth watching if the legacy question-level flow is used
+  heavily, but not a blocker for correctness.
+
+Validation
+----------
+
+Run by Codex during review:
+
+```bash
+npm run build -w packages/shared
+npm run test -w apps/api -- test/reporting.test.ts test/progressivePageRunner.test.ts
+```
+
+Results:
+- Shared build passed.
+- Focused API tests passed: 2 files, 29 tests.
+- Initial sandboxed API test attempt failed with `EPERM 127.0.0.1:5432`; reran
+  with approved escalation so the Vitest global setup could reset/connect to the
+  local PostgreSQL test database.
+
+Not rerun by Codex:
+- Full `npm run typecheck`
+- Full `npm run lint`
+- Full `npm test`
+- Manual browser pass
+
+Overall
+-------
+
+No blocking findings. The pruning implementation and tests look aligned with the
+Phase 14 requirements. I would either update the stale comments now or carry the
+`onFinalPath`/page-resolver cleanup as an explicit follow-up, then do the pending
+manual browser pass before commit because this change intentionally deletes
+respondent answer rows.

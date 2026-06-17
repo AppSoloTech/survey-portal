@@ -9,3 +9,15 @@ Questions Page
 Resolutions (Phase 12, manual test round 1):
 - Organize 1: each page card now has a collapse/expand toggle (chevron), plus a board-level "Collapse all / Expand all" so long pages can be hidden for easy page reordering. Cross-page drops onto a collapsed page still work via the card header.
 - Questions 1+2: after the contained scrolling pill bar would not scroll reliably across screen widths, the pills were replaced (per developer call) with a single nice-looking page dropdown flanked by prev/next stepper arrows and an "X of N" indicator. One control, scales to any number of pages, no overflow. This also removes the redundant separate "Jump to page" dropdown.
+
+Round 2
+Logic Page
+1) Need the ability to ignore pages upon "Jump to page" logic. If I answer "engineering" I want to jump to the engineering page and avoid the "Sales" and "Operations" pages.
+
+2) Need to break down this page into smaller, user friendly pieces. Need to add elements that allow the admin to move to a question in the map. Make page treversal easier to do. Consider adding mechanism to create rules on the questions themselves on the flow map.
+
+Round 3 Phase 13
+1) Survey Logic page: on the "Choose source question" dropdown, add collapsable and expandable groupings by page. This will help organization and long dropdown lists as the number of options grow. 
+2) The survey results page is not ordered by the P#Q# pattern. 
+
+3) Survey user test edge case on the "Workplace Role Based Survey (copy)" survey. User selected "Engineering", which triggered the page skip to the Engineering page. The user recoreded an answer for the first question of Engineering page, the second question rendered, then the user clicked "Previous" and selected "Sales" instead, which triggered a skip page to the Sales page and continued with the survey. The issue is that the Engineering answers were recorded even though they were not relevent to the respondant. 

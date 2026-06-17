@@ -1,5 +1,5 @@
 import {
-  resolveAttemptPath,
+  resolveProgressivePageState,
   valueTagMatchesResponse,
   type AdminAttemptAnswer,
   type AdminAttemptDetailResponse,
@@ -439,18 +439,24 @@ export async function buildSurveyCsvExport(
   };
 }
 
-// Walks the navigation path implied by the attempt's saved answers, exactly
-// as the shared runtime resolver would during survey taking. Questions
-// outside this walk either were never reached or hold historical answers
-// from a changed branching path. Delegates to the shared walker so jump and
-// skip semantics can never diverge from the attempt engine.
+// Resolves the set of questions revealed on the attempt's final path, using the
+// same page resolver the participant runtime uses (resolveProgressivePageState).
+// This matches Phase 14 pruning, which deletes off-path answers via the same
+// resolver, and correctly models page jumps (JUMP_TO_PAGE) and page-level
+// normal-flow exclusions that the question-level walker does not — so a
+// page-branch question that was never reached is reported off the final path
+// rather than mislabelled as on it. With pruning in place, answered off-path
+// rows no longer exist; this flag is the safety net for any that escape pruning
+// plus the never-reached projection states.
 export function collectFinalPathQuestionIds(
   survey: Survey,
   responsesByQuestionId: Map<number, SurveyResponseAnswer>
 ): Set<number> {
-  const { path } = resolveAttemptPath(survey, [...responsesByQuestionId.values()]);
+  const { visibleQuestionIdsByPageId } = resolveProgressivePageState(survey, [
+    ...responsesByQuestionId.values()
+  ]);
 
-  return new Set(path.map((question) => question.id));
+  return new Set(Object.values(visibleQuestionIdsByPageId).flat());
 }
 
 export function buildAdminAttemptAnswers(

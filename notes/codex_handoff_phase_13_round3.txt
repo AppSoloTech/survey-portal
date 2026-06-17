@@ -1,0 +1,109 @@
+Phase 13 — Round 3 (grouped source picker + results ordering) — for Codex
+=========================================================================
+
+Roles reversed (Claude implemented, Codex reviews). Record findings in
+notes/codex_review_phase_13_round3.txt and summarize in chat. Do not modify
+source unless the developer asks for fixes.
+
+Source of the request
+---------------------
+notes/phase_12_test_notes.txt, "Round 3 Phase 13 User Test":
+  1) Survey Logic page: on the "Choose source question" dropdown, add collapsible
+     and expandable groupings by page (organization for long lists as options
+     grow).
+  2) The survey results page is not ordered by the P#Q# pattern.
+
+Developer decision (this round): for #1, build a CUSTOM collapsible dropdown
+(not a native <optgroup>), explicitly chosen over the native option.
+
+Update #1 — collapsible, page-grouped source-question picker
+------------------------------------------------------------
+New component apps/web/src/components/admin/PageGroupedQuestionSelect.tsx:
+  - A select-like trigger button (aria-haspopup="listbox", aria-expanded) over an
+    absolutely-positioned popover. The popover lists groups in getOrderedPages()
+    order; each group has a clickable header ("Page N — Title" + count) that
+    expands/collapses its questions (collapsedPageKeys: Set<number>). Question
+    rows use formatQuestionOptionLabel (the P#-Q# label).
+  - A hidden <input name=...> carries the selected id so the existing FormData
+    flow in RuleCreateForm.handleAddRule (readFormNumber("sourceQuestionId"))
+    keeps working unchanged.
+  - Closes on outside mousedown and Escape (listeners attached only while open).
+  - Questions whose page is missing fall into a trailing "Other questions" group
+    (defensive; eligible sources normally always map to a page).
+Wired into apps/web/src/components/admin/RuleCreateForm.tsx: the native
+"Source question" <select> was replaced by <PageGroupedQuestionSelect>. The
+onChange does exactly what the old select onChange did (setRuleSourceQuestionId;
+default to HIDE_QUESTION for text sources; clear skipTargetIds). value is driven
+by activeRuleSourceQuestion?.id ?? null, so the post-save reset
+(setRuleSourceQuestionId(null)) clears it back to the placeholder.
+apps/web/src/pages/admin/SurveyLogicPage.tsx: the flow-map "Add rule" focus
+helper selector now skips the grouped-select's hidden input
+(input:not([type='hidden'])) so focus lands on the trigger button.
+apps/web/src/styles.css: new .grouped-select* rules; the trigger mirrors
+.builder-form select; the .grouped-select-field wrapper mirrors .builder-form
+label so the control slots into the .rule-form grid like its native siblings.
+
+Scope note: applied to the CREATE form's source picker (the reported "Choose
+source question" control). RuleEditor's inline per-row source <select> was left
+native to keep its compact grid row intact — easy to switch to the same
+component later if wanted.
+
+Update #2 — results page ordered by P#-Q#
+-----------------------------------------
+apps/web/src/pages/admin/SurveyResultsPage.tsx:
+  - report.questionStats and the attempt detail's answers came back keyed by
+    question id and were rendered in API order with a bare "{displayOrder}."
+    label — displayOrder is per-page, so across pages it was neither P#-Q# order
+    nor labelled by page.
+  - Added questionOrderIndex(survey) from getOrderedQuestions(survey) and sorted
+    both lists by it (compareByQuestionOrder, missing ids sort last). Labels now
+    use resultsQuestionLabel() = formatQuestionLocator (P#-Q#) + text, falling
+    back to "Q{displayOrder}" if the question is absent from the survey.
+  - AttemptDetailPanel now receives survey + orderIndex. Purely client-side using
+    the workspace survey as the source of truth; no API change.
+  - Out of scope (flagged): the CSV export ordering is server-side and unchanged.
+
+Files to review
+---------------
+  apps/web/src/components/admin/PageGroupedQuestionSelect.tsx   (new)
+  apps/web/src/components/admin/RuleCreateForm.tsx              (source picker swap)
+  apps/web/src/pages/admin/SurveyLogicPage.tsx                  (focus selector)
+  apps/web/src/pages/admin/SurveyResultsPage.tsx               (ordering + labels)
+  apps/web/src/styles.css                                       (.grouped-select*)
+
+Diff commands
+-------------
+    git diff main
+    git ls-files --others --exclude-standard
+
+Suggested review focus
+----------------------
+1. FormData integrity: confirm the hidden input keeps sourceQuestionId flowing
+   into handleAddRule, that required-ness is still effectively enforced by the
+   Add button's disabled gate (no native "required" on the custom control), and
+   that post-save reset returns the trigger to the placeholder.
+2. Popover lifecycle: outside-click + Escape close; no listener leak (effect
+   gated on isOpen); disabled state hides the panel; clicking a group header
+   toggles only that group; selecting a question closes the popover.
+3. a11y boundary: this is a pragmatic listbox (button + role=listbox + role=
+   option), not a full keyboard combobox (no arrow-key roving). Flag if you want
+   full keyboard nav; the trigger and all rows are individually tab/Enter
+   focusable buttons.
+4. Results ordering: confirm sort is stable for equal/missing order indexes and
+   that P#-Q# labels match the builder/flow-map locator. Detail answers and the
+   per-question stats should both now read in survey order.
+
+Validation already run
+----------------------
+  - npm run typecheck: pass.  npm run lint: pass.
+  - npm test: pass — shared 43, web 50, api 149 = 242 (no test changes this
+    round; UI-only, plus client-side ordering).
+  - npm run build:web: pass.
+  - Manual browser pass: pending (no browser automation here). Suggested checks:
+    open the source-question dropdown, collapse/expand page groups, pick a
+    question across pages, verify the rule still saves; open Results with a
+    multi-page survey and confirm both "Answers per question" and an attempt's
+    answers list read top-to-bottom in P#-Q# order with P#-Q# labels.
+
+No data-model, API, auth, or participant-facing changes — admin builder/results
+UI only.

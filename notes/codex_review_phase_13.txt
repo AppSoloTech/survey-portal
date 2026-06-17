@@ -1,0 +1,51 @@
+Phase 13 review - Codex
+=======================
+
+Findings
+--------
+
+1. P2 - Flow map still treats skip-in-normal-flow page targets as normal-flow reachable.
+
+   In apps/web/src/components/admin/surveyFlowGraph.ts, page-jump targets are now
+   added to skipTargetQuestionIds for the conditional-only badge (lines ~77-87),
+   but the graph still builds normal adjacency and node normal-next pointers via
+   resolveNextQuestion() (lines ~103, ~146, ~380). That shared helper only excludes
+   JUMP_TO_QUESTION targets from question-level normal flow; the page runtime uses
+   getNextVisiblePage()/getNormalFlowExcludedPageIds() to exclude JUMP_TO_PAGE
+   target pages.
+
+   Result: a branch page can be labelled "Conditional only" while its normal-flow
+   text/reachability still points into another skipped branch page. Example from
+   the requested Engineering/Sales/Operations shape: after answering Engineering
+   and landing on the Engineering page, the graph can say Engineering continues
+   to Sales even though participant page navigation skips Sales/Operations and
+   goes to Final. The same mismatch can hide unreachable warnings for a skipped
+   page whose page-jump rule cannot actually fire, because normal adjacency still
+   makes that page reachable.
+
+   Suggested fix: make surveyFlowGraph use a graph-local normal-next helper that
+   mirrors both getNormalFlowExcludedQuestionIds() and getNormalFlowExcludedPageIds()
+   for normal adjacency and node.normalNextQuestionId, or export/reuse the shared
+   runtime helpers so page-jump normal-flow exclusion is modeled consistently.
+   Add a test that a skipped branch page's last question normal-next bypasses the
+   other skipped branch pages and lands on the shared final page.
+
+Reviewed With No Additional Findings
+------------------------------------
+
+- RuleCreateForm extraction: add-rule behavior appears faithful to the old inline
+  implementation, including sequential skip-rule creation, stale skip target
+  filtering, partial-failure reloadSurvey, and reset after successful save.
+- Page-jump create checkbox: rendered unchecked by default and submitted through
+  createConditionalRule as false unless selected.
+- RuleEditor edit path: page-jump rules now render the normal-flow checkbox and
+  handleSaveRule persists it for non-HIDE actions.
+- RuleList extraction: save/delete handlers and source grouping match the previous
+  SurveyLogicPage behavior.
+- Flow-map Add rule affordance: hidden when locked or when the node is not a
+  supported source type; prefill action selection matches the implemented scope.
+
+Validation
+----------
+
+Review only. I did not modify source files or rerun the full validation suite.

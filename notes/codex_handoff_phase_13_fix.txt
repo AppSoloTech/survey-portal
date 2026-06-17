@@ -1,0 +1,63 @@
+Phase 13 — Review fix (P2 flow-map normal flow) — for Codex
+===========================================================
+
+Roles reversed (Claude implemented, Codex reviews). This is a SECOND pass
+covering only the fix for the single finding in notes/codex_review_phase_13.txt.
+Please append/record findings in notes/codex_review_phase_13.txt (or a new
+notes/codex_review_phase_13_fix.txt) and summarize in chat.
+
+The finding (P2)
+----------------
+surveyFlowGraph added JUMP_TO_PAGE branch-page questions to the conditional-only
+badge set, but node.normalNextQuestionId and the reachability adjacency still
+came from the shared resolveNextQuestion(), which only excludes JUMP_TO_QUESTION
+targets from question-level normal flow. So a branch page could be badged
+"Conditional only" while its normal-flow arrow/reachability still walked into
+another skipped branch page (e.g. Engineering -> Sales), and an unfirable
+branch-page jump could be hidden because normal adjacency still reached the page.
+
+The fix (apps/web/src/components/admin/surveyFlowGraph.ts)
+---------------------------------------------------------
+- Stopped using resolveNextQuestion() in the graph (import removed). Added a
+  graph-local resolveGraphNormalNext() that mirrors the runtime page navigation
+  (getNextVisiblePage + getNormalFlowExcludedPageIds/QuestionIds):
+    * skips JUMP_TO_QUESTION skip-target questions (question-level), AND
+    * skips questions on a skipped branch page (page-level) UNLESS the candidate
+      shares the from-question's page — so a participant who jumped onto a branch
+      page still walks the rest of that page (q2 -> q3) before leaving it.
+- Compute normalNextByQuestionId once for all questions and feed it to BOTH
+  node.normalNextQuestionId and buildAdjacency (buildAdjacency no longer takes
+  `survey`; it takes the precomputed map). Reachability now matches the runtime:
+  a branch page is reachable only via its firable jump edge, so an unfirable
+  page jump correctly yields an "unreachable" branch page.
+- The conditional-only badge logic is unchanged in effect; the two excluded sets
+  (normalFlowExcludedPageIds, normalFlowExcludedQuestionIds) are now named to
+  match the shared helpers and reused for both the badge and normal-next.
+
+Test added (apps/web/src/components/admin/surveyFlowGraph.test.ts)
+- "routes normal flow around skipped branch pages while walking within one":
+  Department(p1) -> Engineering(p2: q2,q3) / Sales(p3: q4) / Operations(p4: q5),
+  all branches skip-in-normal-flow, shared Final(p5: q6). Asserts
+  Department.normalNext = Final (skips all branches), Eng q2.normalNext = q3
+  (within-page), Eng q3.normalNext = Final (bypasses Sales/Operations),
+  Ops q5.normalNext = Final, every node reachable, no unreachable_question issue.
+
+Suggested re-review focus
+-------------------------
+1. resolveGraphNormalNext same-page exception: confirm it matches the runtime's
+   wasReachedByJump behavior (all questions of a jumped-to page are revealed) and
+   doesn't accidentally keep an excluded page in normal flow when the source
+   question happens to be on that page.
+2. Confirm describeNormalFlow text now reads correctly for branch nodes ("Skipped
+   in normal flow. After a jump lands here, the survey continues to <Final>").
+3. Confirm the unfirable-branch-jump case now surfaces an unreachable warning
+   (no regression to the existing unreachable/circular checks).
+
+Validation already run
+----------------------
+- npm run typecheck: pass.  npm run lint: pass.
+- npm test: pass — shared 43, web 48 (+1 vs the prior 47), api 149 = 240.
+- npm run build:web: pass earlier; no new runtime/API surface in this fix.
+
+Scope: this fix touches only surveyFlowGraph.ts (and its test). No change to the
+runtime, API, RuleCreateForm/RuleList, SurveyFlowMap rendering, or styles.

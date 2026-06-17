@@ -1,11 +1,13 @@
-import type {
-  AdminAttemptAnswer,
-  AdminAttemptDetailResponse,
-  AdminAttemptSummary,
-  SurveyAttemptStatus,
-  SurveyReportOptionStat,
-  SurveyReportSummary,
-  SurveyReportTagStat
+import {
+  getOrderedQuestions,
+  type AdminAttemptAnswer,
+  type AdminAttemptDetailResponse,
+  type AdminAttemptSummary,
+  type Survey,
+  type SurveyAttemptStatus,
+  type SurveyReportOptionStat,
+  type SurveyReportSummary,
+  type SurveyReportTagStat
 } from "@survey-portal/shared";
 import { useEffect, useRef, useState } from "react";
 
@@ -15,10 +17,42 @@ import {
   fetchSurveyReport,
   surveyExportCsvUrl
 } from "../../api/surveys.js";
+import { formatQuestionLocator } from "../../components/admin/SurveyBuilderComponents.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
+
+// Results come back from the report/attempt APIs keyed by question id; order
+// them by the survey's page-then-question flow and label them with the same
+// P#-Q# locator the builder uses, so the page reads in survey order.
+function questionOrderIndex(survey: Survey): Map<number, number> {
+  return new Map(getOrderedQuestions(survey).map((question, index) => [question.id, index]));
+}
+
+function compareByQuestionOrder(
+  orderIndex: Map<number, number>,
+  leftQuestionId: number,
+  rightQuestionId: number
+): number {
+  return (
+    (orderIndex.get(leftQuestionId) ?? Number.MAX_SAFE_INTEGER) -
+    (orderIndex.get(rightQuestionId) ?? Number.MAX_SAFE_INTEGER)
+  );
+}
+
+function resultsQuestionLabel(
+  survey: Survey,
+  questionId: number,
+  displayOrder: number,
+  questionText: string
+): string {
+  const question = survey.questions.find((candidate) => candidate.id === questionId);
+  const locator = question ? formatQuestionLocator(survey, question) : `Q${displayOrder}`;
+
+  return `${locator} ${questionText}`;
+}
 
 export function SurveyResultsPage() {
   const { survey } = useSurveyWorkspace();
+  const orderIndex = questionOrderIndex(survey);
   const [report, setReport] = useState<SurveyReportSummary | null>(null);
   const [attempts, setAttempts] = useState<AdminAttemptSummary[] | null>(null);
   const [detail, setDetail] = useState<AdminAttemptDetailResponse | null>(null);
@@ -204,7 +238,11 @@ export function SurveyResultsPage() {
         {report.questionStats.length > 0 ? (
           <div className="results-question-stats">
             <h4>Answers per question</h4>
-            {report.questionStats.map((stat) => {
+            {[...report.questionStats]
+              .sort((left, right) =>
+                compareByQuestionOrder(orderIndex, left.questionId, right.questionId)
+              )
+              .map((stat) => {
               // Bars scale against the most-answered question so the list
               // reads as a drop-off funnel through the survey.
               const maxAnswered = Math.max(
@@ -216,7 +254,7 @@ export function SurveyResultsPage() {
               return (
                 <div className="results-question-stat-row" key={stat.questionId}>
                   <span className="results-question-label">
-                    {stat.displayOrder}. {stat.questionText}
+                    {resultsQuestionLabel(survey, stat.questionId, stat.displayOrder, stat.questionText)}
                   </span>
                   <span className="results-question-counts">
                     {formatCount(stat.answeredCount, "answer")}
@@ -295,13 +333,21 @@ export function SurveyResultsPage() {
         )}
 
         {isDetailLoading ? <p className="status muted">Loading answers...</p> : null}
-        {detail ? <AttemptDetailPanel detail={detail} /> : null}
+        {detail ? <AttemptDetailPanel detail={detail} orderIndex={orderIndex} survey={survey} /> : null}
       </section>
     </div>
   );
 }
 
-function AttemptDetailPanel({ detail }: { detail: AdminAttemptDetailResponse }) {
+function AttemptDetailPanel({
+  detail,
+  orderIndex,
+  survey
+}: {
+  detail: AdminAttemptDetailResponse;
+  orderIndex: Map<number, number>;
+  survey: Survey;
+}) {
   return (
     <div className="results-detail-panel" aria-label="Attempt answers">
       <div className="results-detail-heading">
@@ -317,11 +363,15 @@ function AttemptDetailPanel({ detail }: { detail: AdminAttemptDetailResponse }) 
         </span>
       </div>
 
-      {detail.answers.map((answer) => (
+      {[...detail.answers]
+        .sort((left, right) =>
+          compareByQuestionOrder(orderIndex, left.questionId, right.questionId)
+        )
+        .map((answer) => (
         <div className="results-answer-row" key={answer.questionId}>
           <div className="results-answer-heading">
             <span className="results-question-label">
-              {answer.displayOrder}. {answer.questionText}
+              {resultsQuestionLabel(survey, answer.questionId, answer.displayOrder, answer.questionText)}
             </span>
             <AnswerStateBadge answer={answer} />
           </div>

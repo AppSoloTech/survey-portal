@@ -28,6 +28,12 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Optional optimistic/local reorder on the Organize board for snappier drag persistence, plus a live cross-page drag preview (today a cross-page drag shows the DragOverlay and re-homes only on drop; within-page reordering already animates).
 - Re-check the @dnd-kit React 19 `JSX` global shim (`apps/web/src/jsx-global-shim.d.ts`) when upgrading @dnd-kit or @types/react; remove it if upstream type defs stop referencing the global `JSX` namespace.
 
+### Phase 14 Off-Path Answer Pruning
+
+- Existing data backfill (deferred): the runtime prune only prevents *new* off-path rows. Off-path answers already stored before Phase 14 remain until that attempt is next saved. Decide whether to add a one-time cleanup (script/migration) that prunes pre-existing off-path rows so historical reports correct themselves. Chosen runtime-only for now.
+- The `onFinalPath` flag and the "Not on final path" answered badge are now largely vestigial for answered rows (pruning removes them); kept as a safety net for any row that escapes pruning and for `not_reached`/projection states. Its keep-set was migrated onto `resolveProgressivePageState` (Phase 14 review) so it no longer mislabels page-jump branches. Revisit whether to simplify if the safety net proves unnecessary.
+- ~~Manual browser pass: take the "Workplace Role Based Survey (copy)", branch to Engineering, answer, go Previous, switch to Sales, complete; confirm in admin Results that the attempt detail shows no Engineering answers and the aggregate "Answers per question" / hidden-tag rollup no longer count them.~~ Done 2026-06-17 (developer verified the repro works).
+
 ### Phase 11 Page-Based Flow
 
 - Run the API test suite after explicit approval to reset the local PostgreSQL test schema; sandbox escalation was rejected because the harness drops/recreates `public`.
@@ -49,7 +55,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Avoid the redundant `/api/auth/me` fetch immediately after login/register.
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Confirm with the client that the enforced attempt policy matches the business need: a completed attempt blocks new starts (409), while an abandoned attempt allows a fresh start and stays visible in reports as history.
-- Migrate `collectFinalPathQuestionIds` in `apps/api/src/services/surveyReporting.ts` onto the shared `resolveAttemptPath` helper (the attempt-service and web walks were consolidated in Phase 10).
+- ~~Migrate `collectFinalPathQuestionIds` in `apps/api/src/services/surveyReporting.ts` onto the shared `resolveAttemptPath` helper~~ — superseded in Phase 14: it now uses `resolveProgressivePageState` (the page runtime's resolver) so the `onFinalPath` flag matches what the participant was shown for page-jump surveys.
 - Add reporting pagination and hidden-tag filtering when attempt volume or analysis needs grow.
 - The surveys overview fetches one report per non-draft survey for its completion indicator (now only for the visible page); replace with a batched count endpoint if survey count grows.
 - Add a lightweight server-paginated survey list endpoint (without full question trees) when survey volume outgrows client-side pagination on the dashboard and admin overview.
@@ -81,7 +87,8 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Phase 8: Added the automated test harness (Vitest + supertest + dedicated test database) covering auth, hidden-tag isolation, builder validation, ordering, attempt lifecycle, conditional navigation, and reporting.
 - Phase 8: The Phase 4 insert-at-position/reorder smoke test now runs as automated route tests in `apps/api/test/surveyBuilder.test.ts`.
 - Phase 8: Frontend unit tests now cover `surveyFlowGraph.ts` and shared `resolveNextQuestion`.
-- Phase 8: Decided changed-branch response handling for reporting: keep historical answers, mark them "not on final path" in reports and exports.
+- Phase 8: Decided changed-branch response handling for reporting: keep historical answers, mark them "not on final path" in reports and exports. **Reversed in Phase 14** — off-path answers are now pruned at save time so stored data matches the respondent's final path (see Phase 14 below).
+- Phase 14: Reversed the Phase 8 "keep historical answers" decision. `pruneOffPathAnswers` (`apps/api/src/services/surveyAttempts.ts`) deletes any saved answer not on the recomputed final path after each answer/page save, inside the existing transaction; `survey_response_selected_options` cascades. Scope is "all off-path" (jump-abandoned branches and `HIDE_QUESTION`-hidden answers alike). The aggregate report/tag leak (no final-path filter in `surveyReporting.ts`) self-corrects with no SQL change because the rows no longer exist. The `onFinalPath` machinery and "Not on final path" badge were kept as a safety net.
 - Phase 8 (post-review): Enforced one-completed-attempt-per-user-per-survey — the start endpoint returns 409 once a completed attempt exists; abandoned attempts permit a fresh start. Resolves the long-standing "decide whether completed attempts should prevent repeat attempts" item.
 - Phase 9: Added auth rate limiting for login/register and a 72-byte registration password maximum.
 - Phase 9: Split health checks into liveness and readiness, kept `/api/health` as readiness, and made readiness query `app_health_check`.

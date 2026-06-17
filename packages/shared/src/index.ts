@@ -395,9 +395,10 @@ export interface AdminAttemptAnswer {
   // Hidden value tags whose condition this answer satisfies (text/integer
   // questions). Admin-only, like selectedOptions[].hiddenTags.
   valueTags: { tagKey: string; tagValue: string }[];
-  // True when the question sits on the navigation path implied by the
-  // attempt's saved answers. Saved answers off this path are kept as
-  // historical data and reported as "not on final path".
+  // True when the question is revealed on the final path implied by the
+  // attempt's saved answers. As of Phase 14, off-path answers are pruned at
+  // save time, so this flag is a safety net: any answer that escaped pruning,
+  // or a never-reached question, is reported as "not on final path".
   onFinalPath: boolean;
 }
 

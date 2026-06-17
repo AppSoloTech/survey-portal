@@ -1,0 +1,149 @@
+Phase 14 — Prune off-path answers at runtime — for Codex
+========================================================
+
+Roles reversed (Claude implemented, Codex reviews). Record findings in
+notes/codex_review_phase_14.txt and summarize in chat. Do not modify source
+unless the developer asks for fixes.
+
+Source of the request
+---------------------
+notes/phase_12_test_notes.txt edge case (and the developer's IDE selection):
+  "Survey user test edge case ... User selected Engineering, which triggered the
+   page skip to the Engineering page ... then clicked Previous and selected Sales
+   instead ... The issue is that the Engineering answers were recorded even though
+   they were not relevant to the respondent."
+
+This reverses the Phase 8 decision (markdown/FOLLOW_UPS.md / PHASE_LOG.md): we no
+longer "keep historical answers, mark them not on final path" — off-path answers
+are pruned at save time so stored data matches the respondent's final path.
+
+Developer decisions settled before implementing (four flagged in the brief)
+---------------------------------------------------------------------------
+1. Prune scope: ALL off-path answers — jump-abandoned branches AND
+   HIDE_QUESTION-hidden answers (not jump-only).
+2. Backfill: RUNTIME ONLY. No script/migration to clean pre-existing off-path
+   rows. (Tracked as a deferred follow-up.)
+3. onFinalPath badge: KEEP as a safety net (no change to that machinery).
+4. "Previous" re-entry showing the abandoned branch empty: ACCEPTABLE.
+
+What changed
+------------
+apps/api/src/services/surveyAttempts.ts
+  - New pruneOffPathAnswers(queryable, survey, attemptId): recomputes the
+    revealed-question set from the attempt's CURRENT answers via
+    resolveProgressivePageState, then
+        delete from survey_response_answers
+        where survey_attempt_id = $1 and question_id <> all($2::int[])
+    with the keep-set = union of visibleQuestionIdsByPageId.
+    survey_response_selected_options rows cascade
+    (database/migrations/0003_surveys.sql on delete cascade).
+    Guards: returns early (no delete) when hasLoop, or when the keep-set is empty.
+  - New fetchAttemptResponses(queryable, attemptId): transaction-scoped loader
+    (mirrors fetchAttemptsByCondition's response/selected-option hydration but on
+    the supplied queryable) so the prune sees the just-saved rows and the
+    selected options that jump rules key off.
+
+apps/api/src/routes/surveyAttemptRoutes.ts
+  - POST /:id/answer: after saveAnswer, fetch the survey structure
+    (fetchSurveyStructures, includeAllStatuses:true, includeHiddenTags:false) and
+    call pruneOffPathAnswers — all still inside the existing transaction, before
+    commit.
+  - POST /:id/pages/:pageId/answer: after savePageAnswers (survey already
+    fetched), call pruneOffPathAnswers once per request, before commit.
+  - /complete intentionally NOT touched: it has no transaction wrapper, and every
+    answer/page save already prunes, so data is clean by completion.
+
+KEY DESIGN POINT to scrutinize — keep-set source
+-------------------------------------------------
+The keep-set comes from resolveProgressivePageState (the PAGE runtime's resolver),
+NOT the question-level resolveAttemptPath used by surveyReporting.ts.
+Reason: resolveAttemptPath does not reroute on JUMP_TO_PAGE the way the page
+runtime does. An intermediate version pruned off resolveAttemptPath and the
+page-based repro test FAILED (Engineering answer survived); switching to
+resolveProgressivePageState fixed it. resolveProgressivePageState handles
+JUMP_TO_QUESTION, JUMP_TO_PAGE, and HIDE_QUESTION, so the prune cannot diverge
+from what the respondent was shown.
+
+Note the slight asymmetry worth a look: the prune uses resolveProgressivePageState
+while collectFinalPathQuestionIds (the onFinalPath badge / safety net) still uses
+resolveAttemptPath. After pruning, answered-off-path rows shouldn't exist so the
+badge is vestigial for answered rows; confirm the two cannot disagree in a way
+that mislabels a surviving row.
+
+Tests changed / added
+----------------------
+apps/api/test/reporting.test.ts
+  - Rewrote "marks answers left behind by a changed branch as off the final path"
+    -> "prunes answers left behind by a changed branch off the final path":
+    asserts the Middle answer is now state:"not_reached", answerText null.
+  - Rewrote "marks answers hidden by a later trigger change as off the final path"
+    -> "prunes answers hidden by a later trigger change off the final path":
+    asserts Hidden A is state:"not_reached", null (covers the all-off-path scope
+    including HIDE_QUESTION).
+  - Added "excludes pruned off-path answers from aggregate counts": branch to
+    Stay (answer Middle), switch to Jump, complete; assert report Middle
+    answeredCount 0 / blankCount 0 and Route option tally Jump 1 / Stay 0.
+
+apps/api/test/progressivePageRunner.test.ts
+  - Added "prunes the abandoned branch's answers when the respondent changes
+    department" in the branch-page navigation block: page-based repro
+    (Engineering -> answer -> Previous -> Sales) asserting the stored question ids
+    contain Department, NOT EngineeringQ, and NOT (yet) SalesQ.
+
+Docs
+----
+  markdown/FOLLOW_UPS.md  — Phase 8 line annotated "Reversed in Phase 14"; new
+                            Phase 14 completed note; new active follow-ups
+                            (deferred backfill, onFinalPath simplification,
+                            manual browser pass).
+  markdown/PHASE_LOG.md   — Phase 14 entry.
+
+Files to review
+---------------
+  apps/api/src/services/surveyAttempts.ts        (pruneOffPathAnswers + loader)
+  apps/api/src/routes/surveyAttemptRoutes.ts     (two call sites, transactions)
+  apps/api/test/reporting.test.ts                (2 rewrites + 1 new)
+  apps/api/test/progressivePageRunner.test.ts    (1 new repro)
+  markdown/FOLLOW_UPS.md, markdown/PHASE_LOG.md
+
+Diff commands
+-------------
+    git diff
+    git ls-files --others --exclude-standard
+
+Suggested review focus
+----------------------
+1. Data-loss safety: confirm the delete can only ever remove genuinely off-path
+   rows. Not-yet-reached questions have no rows; the keep-set is the union of
+   revealed/projected question ids; empty keep-set and hasLoop both skip the
+   delete. Check the `<> all($2::int[])` semantics with the chosen guard (an empty
+   array would otherwise match all rows — guarded by the length===0 return).
+2. Transaction boundaries: both call sites run before commit, so a failed prune
+   rolls back the save. fetchAttemptResponses reads via the same client (sees the
+   just-saved rows); fetchSurveyStructures reads survey structure via the pool
+   (unchanged within the txn) — confirm that's acceptable.
+3. Keep-set correctness vs the runtime: resolveProgressivePageState is the right
+   single source of truth (see KEY DESIGN POINT). Confirm in-progress projection
+   can't false-delete and that the onFinalPath/resolveAttemptPath asymmetry is
+   harmless.
+4. Scope = all off-path: verify HIDE_QUESTION-hidden answers really should be
+   pruned (developer chose yes). reporting.test.ts:317 now asserts deletion.
+5. Performance: one extra SELECT(+options) and one DELETE per answer/page save,
+   plus a survey-structure fetch added to the single-answer route. Flag if that
+   per-keystroke cost is a concern for the single-answer flow.
+
+Validation already run
+----------------------
+  - npm run typecheck: pass.
+  - npm run lint: pass.
+  - npm test: pass — 16 files, 151 tests green (shared + web + api).
+  - Manual browser pass: pending. Suggested: "Workplace Role Based Survey (copy)",
+    branch to Engineering, answer, Previous, switch to Sales, complete; in admin
+    Results confirm the attempt detail shows no Engineering answers and the
+    "Answers per question" / hidden-tag rollup no longer count them.
+
+This change DELETES respondent data. It runs inside the existing answer-save
+transaction and is covered by tests; no commit until the developer accepts the
+review and (ideally) the manual browser pass.
+
+Write the full review to: notes/codex_review_phase_14.txt

@@ -12,6 +12,7 @@ import {
   fetchCompletedAttempt,
   fetchAttemptWithResponses,
   insertSurveyAttemptOrFetchActive,
+  pruneOffPathAnswers,
   saveAnswer,
   savePageAnswers,
   validateAnswerForQuestion,
@@ -159,6 +160,19 @@ surveyAttemptRouter.post("/:id/answer", requireAuth, async (req, res, next) => {
     }
 
     await saveAnswer(client, attempt.id, question, answerValidation.value);
+
+    // Drop any answers stranded off the final path by this answer (e.g. a
+    // changed branch jump) so stored data matches the respondent's real path.
+    const [survey] = await fetchSurveyStructures({
+      surveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: false
+    });
+
+    if (survey) {
+      await pruneOffPathAnswers(client, survey, attempt.id);
+    }
+
     await client.query(
       `update survey_attempts
        set last_activity_at = now(),
@@ -258,6 +272,10 @@ surveyAttemptRouter.post("/:id/pages/:pageId/answer", requireAuth, async (req, r
       res.status(400).json({ error: saveValidation.error });
       return;
     }
+
+    // Drop any answers stranded off the final path by this submit (e.g. a
+    // changed branch jump) so stored data matches the respondent's real path.
+    await pruneOffPathAnswers(client, survey, attempt.id);
 
     await client.query(
       `update survey_attempts

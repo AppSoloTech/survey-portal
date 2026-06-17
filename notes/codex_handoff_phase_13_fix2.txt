@@ -1,0 +1,52 @@
+Phase 13 — Review fix #2 (P3 same-page jump target on a jumped-to page) — for Codex
+===================================================================================
+
+Roles reversed (Claude implemented, Codex reviews). Third pass, scoped to the
+single P3 finding in notes/codex_review_phase_13_fix.txt. Record findings in
+notes/codex_review_phase_13_fix2.txt (or append to the existing review) and
+summarize in chat.
+
+The finding (P3)
+----------------
+resolveGraphNormalNext() skipped normalFlowExcludedQuestionIds BEFORE checking
+same-page, so within a branch page reached by a page jump it would also bypass a
+same-page JUMP_TO_QUESTION skip target. The runtime sets wasReachedByJump for a
+jumped-to page and only suppresses normalFlowExcludedQuestionIds when
+!wasReachedByJump — so such a page reveals ALL remaining questions, including
+same-page question-level jump targets. Example: Department -> Engineering(page
+jump); Engineering has EngA, EngB where EngB is also a skip-flow JUMP_TO_QUESTION
+target. Runtime walks EngA -> EngB -> Final; the map said EngA -> Final.
+
+The fix (apps/web/src/components/admin/surveyFlowGraph.ts)
+---------------------------------------------------------
+Rewrote resolveGraphNormalNext() as the runtime's two-phase walk:
+  - Same page as the from-question: return the next question. If that page is a
+    skipped branch page (in normalFlowExcludedPageIds — only ever reached by a
+    jump), reveal every remaining question, INCLUDING question-level jump
+    targets (mirrors wasReachedByJump). On a normal page, still skip
+    normalFlowExcludedQuestionIds.
+  - Crossing to a later page (normal flow): skip whole skipped branch pages and
+    skip question-level jump targets, landing on the first surviving question.
+This keeps the prior P2 behavior (branch-page bypass + within-branch walking)
+and additionally walks same-page question targets on jumped-to pages. node
+normalNext and buildAdjacency both consume the same precomputed map, so
+reachability tracks the corrected successor too (EngB is now reachable via EngA).
+
+Test added (apps/web/src/components/admin/surveyFlowGraph.test.ts)
+- "walks through a same-page jump target on a page reached by a page jump":
+  Department(p1) --JUMP_TO_PAGE--> Engineering(p2: EngA q2, EngB q3), where EngB
+  is also a skip-flow JUMP_TO_QUESTION target from EngA; Final is p3 (q4).
+  Asserts EngA.normalNext = EngB (q3), EngB.normalNext = Final (q4), EngB
+  reachable, and no unreachable_question issue.
+
+Re-check the existing JUMP_TO_QUESTION cases still hold:
+  - "labels skip-flow jump targets as conditional only": q1(p1) with a skip-flow
+    JUMP_TO_QUESTION to q2(p2); q1.normalNext is still q3 (q2 is a different
+    page AND a question target, so the cross-page phase skips it). Passes.
+
+Validation already run
+----------------------
+  - npm run typecheck: pass.  npm run lint: pass.
+  - npm test: pass — shared 43, web 49 (+1 vs prior 48), api 149 = 241.
+
+Scope: surveyFlowGraph.ts + its test only. No runtime/API/component/style change.
