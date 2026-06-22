@@ -23,6 +23,9 @@ Default arrangement:
 
 Branch:
 
+Start implementation from `main` on a fresh phase branch. Do not implement this
+phase directly on `main`.
+
 ```bash
 git checkout main
 git checkout -b phase-22-question-definitions
