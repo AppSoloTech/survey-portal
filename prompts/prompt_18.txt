@@ -48,8 +48,13 @@ Read before implementation:
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
 * `prompts/prompt_16.txt`
+* `prompts/prompt_17.txt`
 * Current auth routes, password hashing helpers, auth rate limits, and email
   service.
+* `apps/api/src/services/anonymousSurveys.ts` for the Phase 17 lookup-key plus
+  hashed-secret token pattern.
+* `apps/api/src/services/rateLimitStore.ts` if public reset endpoints should use
+  the shared PostgreSQL-backed rate-limit store.
 
 ---
 
@@ -83,11 +88,15 @@ Implement:
 
 * Password reset token table or equivalent relational model storing hashed
   tokens, expiry, consumed timestamp, and user association.
+* Public lookup key plus hashed secret token model, similar to Phase 17
+  anonymous links.
 * Request endpoint from login that always returns a generic success response.
 * Complete endpoint that verifies a token, hashes the new password with bcrypt,
   consumes the token, and rejects reuse.
 * Logged-in profile/settings reset initiation using the same reset service.
 * Phase 16 email service integration for reset email dispatch.
+* Reset links generated from `WEB_ORIGIN`, with a frontend reset-password route
+  that accepts the reset token from the URL.
 * Development-safe reset testing path that does not log reset secrets in
   production.
 * Rate limiting consistent with existing auth protection.
@@ -99,8 +108,12 @@ Do not implement:
 * unrelated profile redesign beyond the reset entry point
 * admin-triggered password reset; that belongs to Phase 20
 * plaintext token storage
+* encrypted or recoverable reset-token storage; password reset tokens should
+  remain one-time hash-only credentials
 * production reset-token logging
 * account recovery questions or MFA
+* a production email provider adapter; Phase 16 only added the email abstraction
+  and disabled/no-op behavior
 
 ## Assumptions
 
@@ -108,11 +121,23 @@ Do not implement:
 * Tokens are single-use and expire.
 * Resetting a password should not expose password hashes or reset secrets in any
   API response.
+* Phase 16 provides the email client abstraction, but real email delivery is
+  still disabled/no-op only.
+* App-wide `Referrer-Policy: no-referrer` from Phase 17 should protect
+  reset-token URLs from referrer leakage.
+* Do not reuse `ANONYMOUS_LINK_TOKEN_ENCRYPTION_SECRET`; reset tokens should not
+  be stored in recoverable form.
+* If no profile/settings page exists, add only the smallest logged-in account or
+  settings entry point needed for reset initiation.
 
 ## Open Questions
 
 * Should existing login sessions be invalidated after password reset? If no
-  token revocation model exists, document the tradeoff and keep scope minimal.
+  token revocation model exists, default to not invalidating existing sessions,
+  document the tradeoff, and keep scope minimal.
+* Should public reset endpoints use existing auth rate-limit behavior only, or
+  the Phase 17 PostgreSQL-backed store for horizontal scaling? Prefer the
+  existing auth behavior unless a shared public reset limit is straightforward.
 
 ---
 
@@ -122,7 +147,8 @@ The phase is ready for review when:
 
 * Login screen has a "Forgot password?" flow.
 * Logged-in user can initiate a reset from profile/settings.
-* Existing and non-existing emails receive the same public request response.
+* Existing and non-existing emails receive identical status codes and response
+  bodies.
 * A valid reset token works once and then cannot be reused.
 * Expired, consumed, malformed, or unknown tokens fail safely.
 * New passwords use existing bcrypt hashing and validation rules.
@@ -149,6 +175,10 @@ Add focused tests for:
 * successful password update and old password rejection
 * logged-in reset initiation auth requirement
 * rate limiting where practical
+* reset email payload sent through the Phase 16 email client abstraction
+* reset-token URL generated from `WEB_ORIGIN`
+* reset token not stored plaintext, encrypted, or otherwise recoverable
+* reset request and completion endpoints do not set unexpected cookies
 
 Manual checks:
 
@@ -157,6 +187,9 @@ Manual checks:
 * Reuse expired/consumed token; confirm safe error.
 * Trigger reset while logged in from profile/settings.
 * Confirm no plaintext reset token is stored in the database.
+* Confirm no reset token is stored in encrypted/recoverable form.
+* Confirm the reset link route works without leaking the token into logs or
+  referrers.
 
 ---
 
@@ -175,6 +208,7 @@ Ask Claude Code to review:
 * rate limiting
 * cookie/session behavior after reset
 * email safety
+* use of Phase 17 token/referrer/rate-limit lessons where appropriate
 * accidental implementation of Phase 20 admin reset scope
 
 Claude Code must write review output to:

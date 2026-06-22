@@ -1972,7 +1972,7 @@ Date:
 2026-06-11
 
 Status:
-Implemented; Claude review pending
+Completed; ready to commit with follow-ups
 
 Prompt:
 `prompts/prompt_9.txt`
@@ -3728,3 +3728,251 @@ Phase closeout artifacts:
 - Manual testing complete: Pending browser pass
 - Ready to commit: Yes after the recommended manual browser pass, at the
   developer's discretion
+
+---
+
+## Phase 18 — Password Reset Foundation
+
+Date:
+2026-06-22
+
+Status:
+Implemented; Claude review pending
+
+Prompt:
+`prompts/prompt_18.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_18.txt`
+- Claude review: `notes/claude_review_phase_18.txt`
+
+## Goals
+
+- Build secure password reset foundation from the login screen and a logged-in
+  settings context.
+- Store reset tokens as one-time, hash-only credentials with expiry and
+  consumption tracking.
+- Reuse the Phase 16 email abstraction and Phase 17 public lookup-key plus
+  hashed-secret lessons.
+
+## Built
+
+- Added `password_reset_tokens` migration with user association, public lookup
+  key, hashed secret, expiry, consumed timestamp, and timestamps.
+- Added password reset service for `prt.lookup.secret` token generation,
+  SHA-256 secret hashing, timing-safe comparison, reset URL generation from
+  `WEB_ORIGIN`, Phase 16 email dispatch, and transactional completion.
+- Added public reset request and completion endpoints:
+  `POST /api/auth/password-reset/request` and
+  `POST /api/auth/password-reset/complete`.
+- Added authenticated reset initiation endpoint:
+  `POST /api/auth/me/password-reset/request`.
+- Centralized password validation so registration and reset completion use the
+  same minimum length and bcrypt 72-byte maximum.
+- Added reset request and completion rate limiting using the existing auth
+  in-memory limiter pattern.
+- Public reset requests now return the generic response immediately and queue
+  reset creation/email dispatch after response, preventing downstream email
+  failures from becoming existing-email-only 500s.
+- The local no-op email adapter logs password reset links only outside
+  production so the full link flow can be manually tested without real email.
+- Added login "Forgot password?" flow, `/forgot-password`, `/reset-password`,
+  and a minimal protected `/settings` account page for logged-in reset
+  initiation.
+- The reset page clears the URL hash after reading the token so the secret does
+  not linger visibly in the address bar.
+- Added focused API tests for enumeration resistance, token storage, email
+  payload dispatch, single-use reset, old-password rejection, expired/malformed
+  token failures, auth requirement, request and completion rate limiting, and no
+  unexpected cookies.
+- Updated `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt` to document that
+  `WEB_ORIGIN` is used for password reset links.
+
+## Important Decisions
+
+### Hash-Only Reset Tokens
+
+Decision:
+Reset tokens use a public lookup key and high-entropy secret. The database
+stores the lookup key and SHA-256 hash of the secret, never the full token or a
+recoverable encrypted token.
+
+Reason:
+This matches the Phase 17 lookup-key plus hashed-secret pattern while avoiding
+recoverable password reset credentials.
+
+Tradeoff:
+Reset links cannot be reconstructed from the database. This is intentional for
+password reset.
+
+### URL Fragment Reset Links
+
+Decision:
+Reset emails use `/reset-password#token=...` instead of putting the token in
+the path or query string.
+
+Reason:
+URL fragments are not sent in HTTP requests, which keeps reset secrets out of
+normal Express request logs while still allowing the React route to read the
+token.
+
+Tradeoff:
+The reset form must run in the browser to read the fragment. This fits the
+current React app.
+
+### Existing Sessions Remain Valid
+
+Decision:
+Password reset updates the password hash and consumes reset tokens, but does
+not invalidate existing auth cookies/sessions.
+
+Reason:
+The app does not yet have a session version or token revocation model.
+
+Tradeoff:
+An already authenticated browser remains authenticated after reset. Revisit
+when session revocation exists.
+
+### Consume Outstanding Reset Tokens
+
+Decision:
+A successful reset consumes all outstanding reset tokens for the account.
+
+Reason:
+Older reset emails should not remain usable after the user has changed their
+password.
+
+Tradeoff:
+Only the newest or used link effectively survives until reset completion. This
+is acceptable for a security-sensitive account flow.
+
+## Architecture Notes
+
+- Database/schema impact: migration `0021_password_reset_tokens.sql`.
+- API contract impact: three auth endpoints were added for request, completion,
+  and authenticated self-initiation.
+- Auth or authorization impact: public request/complete endpoints do not set
+  cookies; logged-in initiation requires `requireAuth`; existing sessions are
+  not invalidated.
+- Data privacy or visibility impact: reset request responses are generic for
+  existing, unknown, and invalid email input. Reset secrets are not returned by
+  API responses and are not stored plaintext or encrypted at rest.
+- Frontend UX impact: login includes "Forgot password?", reset screens were
+  added, and a small Settings page exposes logged-in reset initiation.
+- Environment or deployment impact: run migration `0021` on deploy.
+  `WEB_ORIGIN` must be correct in hosted environments for reset links.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_18.txt`
+
+Status:
+
+- Completed. No critical issues; verdict was ready to commit with follow-ups.
+
+Findings and fixes:
+
+- Addressed: public reset request timing/error-path enumeration by returning the
+  generic response before reset creation/email dispatch and logging only a
+  sanitized async failure.
+- Addressed: added a development-safe no-op password reset link log, guarded by
+  non-production behavior.
+- Addressed: added completion-endpoint rate-limit coverage.
+- Addressed: removed the redundant partial lookup index from the unshipped
+  migration.
+- Addressed: cleared the reset token hash from the browser address bar after
+  the React reset page reads it.
+- Accepted tradeoff: existing sessions remain valid after password reset until
+  a future session revocation model exists.
+- Accepted tradeoff: reset endpoints use the existing in-memory auth
+  rate-limit pattern unless/until the app scales horizontally.
+
+Product note:
+
+- With production email still forced disabled, the user-facing "Forgot
+  password?" flow is a foundation, not an end-to-end shippable production
+  recovery feature. Real delivery remains blocked on an approved provider
+  adapter.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed `npm test` passed shared/web tests, then API tests failed
+  with `EPERM 127.0.0.1:5432` because local PostgreSQL access was blocked.
+- Passed with approved local PostgreSQL access: `npm test` (shared 47, web 52,
+  API 178 tests across 18 API files)
+- Passed after Claude review fixes: `npm run typecheck`
+- Passed after Claude review fixes: `npm run lint`
+- Passed after Claude review fixes: `npm run build` (Vite emitted the existing
+  large chunk warning)
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm test` (shared 47, web 52, API 180 tests across 18 API files)
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Not run in browser. Recommended browser pass: request reset for existing and
+  non-existing email; use the reset link once; confirm old password fails and
+  new password works; attempt reuse; trigger reset from `/settings`.
+
+## Problems Encountered
+
+- Problem:
+  API tests need local PostgreSQL and were blocked in the sandbox.
+  Resolution:
+  Reran the full test suite with approved local PostgreSQL access.
+
+- Problem:
+  The first expired-token test attempted to set `expires_at` earlier than
+  `created_at`, violating the migration check constraint.
+  Resolution:
+  Updated the test fixture to age both `created_at` and `expires_at`
+  consistently.
+
+- Problem:
+  Claude review identified non-blocking hardening around public request timing,
+  future provider error paths, dev manual link testing, completion limiter
+  coverage, a redundant index, and address-bar hash hygiene.
+  Resolution:
+  Applied the targeted fixes listed in the Claude Review Notes section and
+  reran validation.
+
+## Follow-Up Tasks
+
+- Keep the existing auth/security follow-up to replace in-memory auth rate
+  limiting with a shared store if the API scales horizontally.
+- Revisit existing session invalidation after password reset when the app has a
+  session version or token revocation model.
+- Real password reset email delivery remains blocked on the future production
+  email provider adapter.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical issues.
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Pending browser pass
+- Ready to commit: Yes with the documented production email and manual browser
+  testing follow-ups, at the developer's discretion

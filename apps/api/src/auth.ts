@@ -6,6 +6,7 @@ import type { AuthUser, UserRole } from "@survey-portal/shared";
 import { config } from "./config.js";
 
 const passwordHashRounds = 12;
+const maxPasswordBytes = 72;
 export const authCookieName = "survey_portal_auth";
 // Keeps the missing-email login path on bcrypt's cost curve.
 export const passwordVerificationDecoyHash =
@@ -49,6 +50,18 @@ export function mapUserRecord(record: UserRecord): AuthUser {
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, passwordHashRounds);
+}
+
+export function validatePassword(password: string): string | null {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters";
+  }
+
+  if (Buffer.byteLength(password, "utf8") > maxPasswordBytes) {
+    return "Password must be at most 72 bytes";
+  }
+
+  return null;
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {

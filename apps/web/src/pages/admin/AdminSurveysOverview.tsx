@@ -180,10 +180,10 @@ export function AdminSurveysOverview() {
     <section className="page admin-builder-page">
       <div className="page-header">
         <p className="eyebrow">Admin portal</p>
-        <h2>Surveys</h2>
+        <h2>Admin workspace</h2>
         <p>
-          Create, maintain, publish, and retire data-driven surveys. Open a survey to
-          work on its setup, questions, logic, and preview.
+          Create, maintain, publish, and retire data-driven surveys. Manage user
+          access and reporting configuration from the admin tools.
         </p>
       </div>
 
@@ -212,6 +212,8 @@ export function AdminSurveysOverview() {
               New surveys start as drafts and open in the survey workspace.
             </p>
           </form>
+
+          <AdminToolsPanel />
 
           <CategoryManagerPanel />
         </div>
@@ -284,6 +286,29 @@ export function AdminSurveysOverview() {
             </div>
           ) : null}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function AdminToolsPanel() {
+  return (
+    <section className="builder-form compact-builder-form admin-tools-panel">
+      <h3>Admin tools</h3>
+      <p className="builder-heading-note">Manage people and reusable reporting configuration.</p>
+      <div className="admin-tool-list">
+        <Link className="admin-tool-link" to="/admin/users">
+          <span>
+            <strong>Users</strong>
+            <small>Promote users and manage account roles.</small>
+          </span>
+        </Link>
+        <Link className="admin-tool-link" to="/admin/tags">
+          <span>
+            <strong>Tags</strong>
+            <small>Review hidden tag definitions used in reporting.</small>
+          </span>
+        </Link>
       </div>
     </section>
   );

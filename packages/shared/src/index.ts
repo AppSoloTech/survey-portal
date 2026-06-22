@@ -18,6 +18,10 @@ export interface AuthMeResponse {
   user: AuthUser;
 }
 
+export interface PasswordResetMessageResponse {
+  message: string;
+}
+
 export type SurveyAttemptStatus =
   | "not_started"
   | "in_progress"

@@ -26,11 +26,14 @@ import { SurveyResultsPage } from "./pages/admin/SurveyResultsPage.js";
 import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
 import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
 import { RouteTransition } from "./motion/RouteTransition.js";
+import { AccountSettings } from "./pages/AccountSettings.js";
 import { CategorySurveysPage } from "./pages/CategorySurveysPage.js";
+import { ForgotPassword } from "./pages/ForgotPassword.js";
 import { Home } from "./pages/Home.js";
 import { Login } from "./pages/Login.js";
 import { NotFound } from "./pages/NotFound.js";
 import { Register } from "./pages/Register.js";
+import { ResetPassword } from "./pages/ResetPassword.js";
 import { AnonymousSurveyAttemptPage, SurveyAttemptPage } from "./pages/SurveyAttemptPage.js";
 import { UserDashboard } from "./pages/UserDashboard.js";
 
@@ -49,12 +52,15 @@ export function App() {
                   <Route element={<Home />} path="/" />
                   <Route element={<Login />} path="/login" />
                   <Route element={<Register />} path="/register" />
+                  <Route element={<ForgotPassword />} path="/forgot-password" />
+                  <Route element={<ResetPassword />} path="/reset-password" />
                   <Route
                     element={<AnonymousSurveyAttemptPage />}
                     path="/anonymous-surveys/:token"
                   />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<UserDashboard />} path="/dashboard" />
+                    <Route element={<AccountSettings />} path="/settings" />
                     <Route
                       element={<CategorySurveysPage />}
                       path="/dashboard/category/:categoryId"
@@ -89,7 +95,7 @@ export function App() {
 // three.js stays out of the main bundle; only public pages render the aurora.
 const AmbientBackdrop = lazy(() => import("./components/AmbientBackdrop.js"));
 
-const backdropPaths = new Set(["/", "/login", "/register"]);
+const backdropPaths = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password"]);
 
 function BackdropGate() {
   const { pathname } = useLocation();
@@ -107,7 +113,9 @@ function BackdropGate() {
 
 function Header() {
   const { isAuthenticated, logout, user } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -128,21 +136,17 @@ function Header() {
   const links = isAuthenticated
     ? [
         { to: "/dashboard", label: "Dashboard" },
-        ...(user?.role === "admin"
-          ? [
-              { to: "/admin", label: "Admin workspace" },
-              { to: "/admin/users", label: "Users" },
-              { to: "/admin/tags", label: "Tags" }
-            ]
-          : [])
+        ...(user?.role === "admin" ? [{ to: "/admin", label: "Admin" }] : [])
       ]
     : [
         { to: "/", label: "Home" },
         { to: "/register", label: "Create account" }
       ];
+  const isAccountActive = location.pathname.startsWith("/settings");
 
   function closeMenu() {
     setIsMenuOpen(false);
+    setIsAccountMenuOpen(false);
   }
 
   async function handleLogout() {
@@ -172,17 +176,6 @@ function Header() {
         className={isMenuOpen ? "primary-nav open" : "primary-nav"}
         id="primary-navigation"
       >
-        {isAuthenticated && user ? (
-          <div className="nav-identity" aria-label="Signed in account">
-            <span className="nav-identity-name">
-              {user.firstName} {user.lastName}
-            </span>
-            {user.role === "admin" ? (
-              <span className="nav-identity-role admin">Admin</span>
-            ) : null}
-          </div>
-        ) : null}
-        <ThemeToggle />
         {links.map((link) => (
           <NavLink
             className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
@@ -194,10 +187,49 @@ function Header() {
             {link.label}
           </NavLink>
         ))}
-        {isAuthenticated ? (
-          <button className="nav-link nav-button nav-logout" onClick={handleLogout} type="button">
-            Logout
-          </button>
+        {isAuthenticated && user ? (
+          <div className={isAccountMenuOpen ? "account-menu open" : "account-menu"}>
+            <button
+              aria-expanded={isAccountMenuOpen}
+              aria-haspopup="menu"
+              className={isAccountActive ? "nav-link nav-button active" : "nav-link nav-button"}
+              onClick={() => setIsAccountMenuOpen((open) => !open)}
+              type="button"
+            >
+              Account
+            </button>
+            <div className="account-menu-panel" role="menu">
+              <div className="nav-identity" aria-label="Signed in account">
+                <span className="nav-identity-name">
+                  {user.firstName} {user.lastName}
+                </span>
+                {user.role === "admin" ? (
+                  <span className="nav-identity-role admin">Admin</span>
+                ) : null}
+              </div>
+              <NavLink
+                className={({ isActive }) =>
+                  isActive ? "account-menu-item active" : "account-menu-item"
+                }
+                onClick={closeMenu}
+                role="menuitem"
+                to="/settings"
+              >
+                Settings
+              </NavLink>
+              <div className="account-menu-item theme-menu-item">
+                <ThemeToggle />
+              </div>
+              <button
+                className="account-menu-item account-menu-button"
+                onClick={handleLogout}
+                role="menuitem"
+                type="button"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
         ) : null}
       </nav>
     </header>

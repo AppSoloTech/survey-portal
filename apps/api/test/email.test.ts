@@ -160,6 +160,35 @@ describe("email client", () => {
     logSpy.mockRestore();
   });
 
+  it("logs password reset links only through the development no-op adapter", async () => {
+    const logSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const client = createEmailClient({ enabled: true, provider: "noop" });
+
+    const message: EmailMessage = {
+      template: "password_reset",
+      to: {
+        email: "person@example.com",
+        name: "Reset Recipient"
+      },
+      resetUrl: "https://example.com/reset-password#token=dev-reset-token",
+      expiresAt: "2026-06-22T12:00:00.000Z"
+    };
+
+    await expect(client.send(message)).resolves.toEqual({
+      status: "skipped",
+      provider: "noop"
+    });
+
+    const loggedOutput = stringifyConsoleCalls(logSpy.mock.calls);
+
+    expect(loggedOutput).toContain("Development password reset link");
+    expect(loggedOutput).toContain("https://example.com/reset-password#token=dev-reset-token");
+    expect(loggedOutput).not.toContain("person@example.com");
+    expect(loggedOutput).not.toContain("Reset Recipient");
+
+    logSpy.mockRestore();
+  });
+
   it("rejects enabled email without an active adapter", () => {
     expect(() => createEmailClient({ enabled: true, provider: "disabled" })).toThrow(
       "No enabled email adapter is configured"

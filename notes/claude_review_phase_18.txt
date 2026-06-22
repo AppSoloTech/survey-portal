@@ -1,0 +1,196 @@
+# Claude Review — Phase 18: Password Reset Foundation
+
+Reviewer: Claude Code
+Scope reviewed: current phase diff only (git diff + untracked phase files).
+Reference reading: prompt_18, prompt_16/17, handoff, anonymousSurveys.ts,
+rateLimitStore pattern, REVIEW_CHECKLIST, ARCHITECTURE_PRINCIPLES, DATA_MODEL_VISION.
+
+Overall: solid, security-conscious implementation that follows the Phase 17
+lookup-key + hashed-secret pattern faithfully. Token storage is non-recoverable,
+comparison is timing-safe, responses are enumeration-resistant at the body/status
+level, no Phase 20 admin scope leaked in, and email stays no-op/disabled. No
+release-blocking defects found. Recommendations below are hardening and follow-up,
+not blockers.
+
+================================================================================
+1. CRITICAL ISSUES
+================================================================================
+
+None blocking. I found no correctness bug that breaks the acceptance criteria and
+no defect that exposes a reset secret, password hash, or recoverable token.
+
+The items in section 2 are worth addressing, but none of them prevents commit.
+
+================================================================================
+2. SUGGESTED IMPROVEMENTS
+================================================================================
+
+2.1 (Highest value) Timing-based enumeration on the public request endpoint.
+    apps/api/src/services/passwordReset.ts:requestPasswordResetForEmail
+    For an existing email the path does: user SELECT -> token generation ->
+    INSERT -> email send (awaited). For a non-existent email it returns
+    immediately after the SELECT. That asymmetry is a measurable timing oracle
+    for account existence.
+    This matters because the project already chose to defend the analogous
+    channel on login with `passwordVerificationDecoyHash` (auth.ts:12) — so the
+    enumeration bar is inconsistent across the two auth surfaces. The status
+    code, body, and cookie behavior are all correctly identical; timing is the
+    one remaining tell.
+    Practical risk is lower than login's (a DB INSERT is ~single-digit ms vs
+    bcrypt's ~100ms, so it is far noisier to measure), which is why I did not
+    rate it critical. But it will get worse the moment a real email provider is
+    awaited inline.
+    Options: (a) perform comparable dummy work on the no-user branch, or
+    (b) move token creation + email dispatch off the response path (respond
+    generic immediately, do the work after), or (c) explicitly accept and
+    document it as a known residual channel. Recommend (a) or (b).
+
+2.2 Error-path enumeration once a real provider is added.
+    In auth.ts the request route lets exceptions propagate to next(error) -> 500.
+    Today the noop/disabled clients never throw, so existing vs non-existing
+    emails both return 200. When a sending provider is added, a throw on the
+    existing-email branch would surface as 500 while non-existent stays 200 —
+    re-introducing enumeration. Suggest the request handler swallow downstream
+    send/storage errors and still return the generic 200 (log server-side),
+    leaving only truly unexpected failures to bubble.
+
+2.3 No development-safe way to obtain a working reset link for manual testing.
+    Scope lists "Development-safe reset testing path that does not log reset
+    secrets in production." The secret is generated, only its hash is stored, and
+    the noop client logs template/recipientCount but not the URL — so in dev
+    nobody can retrieve a usable link except by calling the service directly from
+    a test. This is exactly why the handoff reports manual browser testing was
+    "not run." The non-logging behavior is correct for production; consider a
+    dev-only (RUN_ENV==="dev") log or response field carrying resetUrl so the
+    full link flow can be exercised manually. (If the intended "dev path" is the
+    test-only return value, fine — but then the manual-test checklist items in
+    the prompt are not actually reachable, and that should be stated.)
+
+2.4 Complete-endpoint rate limit is untested. The request endpoint has a 429
+    test; password-reset/complete has a limiter but no coverage. Add one test so
+    a future refactor cannot silently drop brute-force protection on the secret.
+
+2.5 Minor: `password_reset_tokens_active_lookup_idx` (partial index on
+    token_lookup_key WHERE consumed_at IS NULL) is largely redundant with the
+    global UNIQUE(token_lookup_key) index for the single point-lookup the service
+    performs. Harmless, but it can likely be dropped.
+
+2.6 Minor (UX/secret hygiene): ResetPassword.tsx leaves the token in
+    window.location.hash (and thus the address bar / browser history) after load.
+    Consider clearing the hash after reading it (history.replaceState) so the
+    secret does not linger in the visible URL on a shared screen. Low severity —
+    fragment never reaches the server or Referer.
+
+================================================================================
+3. ACCEPTABLE TRADEOFFS
+================================================================================
+
+3.1 Existing sessions remain valid after reset. Correct call for this phase:
+    there is no session-version / revocation model, JWT TTL is 1h, and the
+    follow-up is logged in FOLLOW_UPS.md (Auth And Security). Note the residual
+    risk: if a reset is performed *because* of a suspected compromise, an
+    attacker's already-issued cookie stays usable until expiry. Acceptable as a
+    documented tradeoff for a foundation phase; flag for promotion if reset is
+    ever marketed as an account-recovery / lock-out tool.
+
+3.2 In-memory rate-limit store rather than the Phase 17 PostgreSQL-backed store.
+    Matches the prompt preference and the existing horizontal-scaling follow-up.
+    Reasonable — the public reset endpoints are not more scale-sensitive than
+    login/register, which use the same in-memory pattern.
+
+3.3 Consuming ALL outstanding tokens for the user on successful reset. Good
+    hardening — invalidates older emailed links once the password changes. The
+    `for update` row lock + coalesce(consumed_at, now()) is correct and
+    concurrency-safe. Endorsed.
+
+3.4 SHA-256 (not bcrypt) for the token secret. Correct: the secret is 32 bytes of
+    crypto.randomBytes (256-bit), so a fast hash with timingSafeEqual is the right
+    choice and mirrors anonymousSurveys.ts. bcrypt is correctly reserved for the
+    low-entropy user password.
+
+3.5 URL fragment delivery (/reset-password#token=...). Good — the secret never
+    reaches the server in normal navigation, and app.ts already sets
+    `Referrer-Policy: no-referrer` (verified), so Referer leakage is covered. The
+    extra `?token=` sanitizer in request-logger.ts is sound belt-and-suspenders.
+
+================================================================================
+4. QUESTIONS / ASSUMPTIONS — answering the handoff's specific questions
+================================================================================
+
+Q: Tokens sufficiently non-recoverable and one-time?
+   Yes. Only token_lookup_key + SHA-256(secret) are stored; the secret is never
+   persisted, returned in any API response, or logged. Single-use is enforced by
+   consumed_at + row lock + bulk-consume. Verified by the storage test.
+
+Q: Request responses enumeration-resistant enough, incl. invalid email?
+   At the body/status/cookie level, yes — existing, unknown, and syntactically
+   invalid emails all return the same generic 200 with no Set-Cookie (tested).
+   The remaining gap is timing (2.1) and future error-path (2.2).
+
+Q: Is URL-fragment delivery acceptable; remaining logging/referrer concerns?
+   Acceptable and a good choice. No server-side token exposure; no-referrer in
+   place. Only residual is the address-bar/history persistence (2.6).
+
+Q: Is consuming all outstanding tokens a reasonable hardening choice?
+   Yes — see 3.3. Recommend keeping it.
+
+Q: Move public reset endpoints to the Postgres-backed rate-limit store now?
+   Not required this phase — see 3.2. Defer with the existing follow-up.
+
+Q: Promote "leave sessions valid" from tradeoff to required fix?
+   Not for this foundation phase — see 3.1. Keep as the logged follow-up.
+
+Q: Did it avoid Phase 20 admin-triggered reset scope?
+   Yes. Endpoints are public self-service (/password-reset/request|complete) and
+   logged-in self (/me/password-reset/request via requireAuth using req.user's
+   own id/email). No admin-initiated-for-another-user path exists. Confirmed.
+
+Assumptions I relied on:
+ - Phase 17's app-wide no-referrer header remains in place (verified in app.ts).
+ - Production keeps EMAIL_ENABLED=false (enforced by config.ts), which has the
+   product consequence in section 5.
+
+================================================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+================================================================================
+
+5.1 Foundation-only delivery: with email forced disabled in production
+    (config.ts rejects enabled+prod), reset tokens are generated and stored but
+    NO email is ever delivered to end users in prod. So the user-facing "Forgot
+    password?" flow is non-functional end-to-end in production until a real
+    provider adapter lands. This is consistent with Phase 16/18 scope, but it
+    should be stated plainly in the phase log / release notes so it is not
+    mistaken for a shippable user feature.
+
+5.2 Entry points match the request: login "Forgot password?" link (Login.tsx),
+    /forgot-password, /reset-password, and a minimal protected /settings page
+    with logged-in initiation. The /settings page is appropriately small (no
+    profile redesign) and wired into the authenticated nav. Good scope discipline.
+
+5.3 Both request flows show the same generic message and never auto-login (no
+    Set-Cookie on complete — verified). Reset success prompts manual login, which
+    is the safe default. Minor nicety: ResetPassword could offer/redirect to login
+    on success; current copy ("You can now log in.") is adequate.
+
+5.4 Frontend follows the Verdant design conventions (useReveal/data-reveal,
+    button-link/form-button classes, auth-card layout, /reset-password added to
+    the ambient-backdrop public-path set). Consistent with existing auth pages.
+
+================================================================================
+6. COMMIT READINESS
+================================================================================
+
+READY TO COMMIT (with follow-ups), pending the human's call on 2.1.
+
+ - Acceptance criteria are met; validation gate reported green (typecheck, lint,
+   build, npm test incl. 178 API tests, git diff --check).
+ - No blocking security or correctness defect found.
+ - Recommend before/at commit: address 2.1 (timing) OR explicitly document it as
+   an accepted residual channel, and add the 2.4 complete-endpoint rate-limit
+   test. 2.2 and 2.3 can be follow-ups but should be captured in FOLLOW_UPS.md.
+ - Manual browser testing in the checklist was not performed (see 2.3); call this
+   out in PHASE_LOG so the gap is visible, or add the dev-only link surface so it
+   can be done.
+
+Net: high-quality, well-scoped foundation. Ship after deciding on 2.1 and noting
+the manual-test/production-email caveats.

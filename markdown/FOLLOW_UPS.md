@@ -42,6 +42,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 ### Auth And Security
 
 - Replace the in-memory auth rate-limit store with a shared store if the API ever scales horizontally.
+- Revisit invalidating existing auth sessions after password reset once the app has a session version, token revocation, or similar server-side session invalidation model. Phase 18 intentionally left existing sessions valid because no revocation model exists yet.
 
 ### Environment And Deployment
 

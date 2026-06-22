@@ -1,4 +1,8 @@
-import type { AuthMeResponse, AuthResponse } from "@survey-portal/shared";
+import type {
+  AuthMeResponse,
+  AuthResponse,
+  PasswordResetMessageResponse
+} from "@survey-portal/shared";
 
 import { apiRequest } from "./client.js";
 
@@ -35,6 +39,31 @@ export async function fetchCurrentUser(): Promise<AuthMeResponse> {
 
 export async function logoutUser(): Promise<void> {
   await apiRequest<void>("/api/auth/logout", {
+    method: "POST"
+  });
+}
+
+export async function requestPasswordReset(input: {
+  email: string;
+}): Promise<PasswordResetMessageResponse> {
+  return apiRequest<PasswordResetMessageResponse>("/api/auth/password-reset/request", {
+    body: JSON.stringify({ email: input.email }),
+    method: "POST"
+  });
+}
+
+export async function requestCurrentUserPasswordReset(): Promise<PasswordResetMessageResponse> {
+  return apiRequest<PasswordResetMessageResponse>("/api/auth/me/password-reset/request", {
+    method: "POST"
+  });
+}
+
+export async function completePasswordReset(input: {
+  token: string;
+  newPassword: string;
+}): Promise<PasswordResetMessageResponse> {
+  return apiRequest<PasswordResetMessageResponse>("/api/auth/password-reset/complete", {
+    body: JSON.stringify(input),
     method: "POST"
   });
 }

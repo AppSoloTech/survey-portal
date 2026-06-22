@@ -1,0 +1,162 @@
+# Claude Review Handoff — Phase 18
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_18.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 18 for:
+
+- token hashing and non-recoverable reset-token storage
+- enumeration resistance
+- rate limiting
+- cookie/session behavior after reset
+- email safety and no-op/disabled behavior
+- use of Phase 17 token/referrer/rate-limit lessons where appropriate
+- accidental implementation of Phase 20 admin reset scope
+- architectural consistency, maintainability, and product UX alignment
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_18.txt`
+- `prompts/prompt_16.txt`
+- `prompts/prompt_17.txt`
+- `apps/api/src/services/anonymousSurveys.ts`
+- `apps/api/src/services/rateLimitStore.ts`
+
+## Phase Scope
+
+Implemented:
+
+- Added `database/migrations/0021_password_reset_tokens.sql` with `user_id`, public lookup key, hashed secret, expiry, consumed timestamp, and timestamps.
+- Added `apps/api/src/services/passwordReset.ts` for `prt.lookup.secret` generation, SHA-256 secret hashing, timing-safe comparison, reset URL generation from `WEB_ORIGIN`, email dispatch through the Phase 16 email client, and transactional completion.
+- Added public reset request and completion endpoints:
+  - `POST /api/auth/password-reset/request`
+  - `POST /api/auth/password-reset/complete`
+- Added authenticated reset initiation endpoint:
+  - `POST /api/auth/me/password-reset/request`
+- Reused registration password validation rules for reset completion.
+- Added separate in-memory auth-style rate limiters for public reset request and completion endpoints.
+- Kept public request responses generic for existing, unknown, and syntactically invalid emails.
+- Used URL fragments for reset links: `/reset-password#token=...`, so reset secrets are not sent to the server in normal browser navigation.
+- Added request-log sanitization for accidental `/reset-password?token=...` navigations.
+- Added frontend:
+  - login "Forgot password?" link
+  - `/forgot-password`
+  - `/reset-password`
+  - `/settings` protected account/settings page with logged-in reset initiation
+- Added focused API tests for enumeration resistance, token storage, email payload dispatch, single-use reset, old password rejection, expired/malformed/unknown token failure, auth requirement, rate limiting, and no unexpected cookies.
+- Updated `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt` to clarify that `WEB_ORIGIN` is used for password reset links.
+
+Non-goals respected:
+
+- No admin-triggered reset workflow was added.
+- No real email provider adapter was added.
+- No plaintext reset token column was added.
+- No encrypted/recoverable reset-token column was added.
+- Existing sessions are not invalidated after reset.
+- No unrelated profile redesign was added beyond the small `/settings` reset entry point.
+
+Known tradeoffs:
+
+- Existing authenticated sessions remain valid after a password reset because there is no token/session revocation model yet.
+- Reset request/complete rate limiting uses the existing auth in-memory pattern, not the Phase 17 PostgreSQL-backed store. This matches the prompt preference and the existing `Auth And Security` follow-up about horizontal scaling.
+- With email disabled in production, reset tokens can be generated but no real mail is delivered until a provider adapter is approved and implemented.
+- Successful reset consumes all outstanding reset tokens for the same account, not only the used token.
+
+Deferred work:
+
+- Real production email delivery remains deferred to the existing future email-provider follow-up.
+- Shared PostgreSQL-backed auth/reset rate limiting remains deferred with the existing horizontal-scaling follow-up.
+- Existing session invalidation after password reset should be revisited if/when the app gains session/version revocation.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Note:
+
+- `prompts/prompt_18.txt` was already modified before Codex began this phase and was not edited by Codex.
+- New untracked files belonging to this phase:
+  - `apps/api/src/services/passwordReset.ts`
+  - `apps/web/src/pages/AccountSettings.tsx`
+  - `apps/web/src/pages/ForgotPassword.tsx`
+  - `apps/web/src/pages/ResetPassword.tsx`
+  - `database/migrations/0021_password_reset_tokens.sql`
+  - `notes/claude_handoff_phase_18.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed `npm test` partially passed shared/web tests, then API tests failed with `EPERM 127.0.0.1:5432` because local PostgreSQL access was blocked.
+- Passed with approved local PostgreSQL access: `npm test` (shared 47, web 52, API 178 tests across 18 API files)
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser. Automated API coverage verifies request/complete behavior and frontend compiled successfully.
+
+## Specific Questions
+
+- Are password reset tokens sufficiently non-recoverable and one-time?
+- Are public reset request responses enumeration-resistant enough, including invalid email input?
+- Is URL-fragment token delivery acceptable for this React app, and are there any remaining logging/referrer concerns?
+- Is consuming all outstanding reset tokens after success a reasonable hardening choice?
+- Should reset public endpoints be moved to the PostgreSQL-backed rate-limit store now, or is the existing auth-style in-memory limiter acceptable for this phase?
+- Does leaving existing sessions valid after password reset need to be promoted from tradeoff to required fix?
+- Did the implementation avoid Phase 20 admin-triggered reset scope?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_18.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

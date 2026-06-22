@@ -64,6 +64,13 @@ class NoopEmailClient implements EmailClient {
       recipientCount: 1
     });
 
+    if (message.template === "password_reset" && !config.isProduction) {
+      console.info("Development password reset link", {
+        resetUrl: message.resetUrl,
+        expiresAt: message.expiresAt
+      });
+    }
+
     return {
       status: "skipped",
       provider: this.provider

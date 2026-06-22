@@ -14,6 +14,7 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const from = readRedirectPath(location.state) ?? "/dashboard";
+  const passwordResetComplete = readPasswordResetComplete(location.state);
 
   if (isAuthenticated) {
     return <Navigate replace to={from} />;
@@ -43,32 +44,45 @@ export function Login() {
           <p>Access your survey workspace.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
-        <label data-reveal>
-          Email
-          <input
-            autoComplete="email"
-            name="email"
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            type="email"
-            value={email}
-          />
-        </label>
-        <label data-reveal>
-          Password
-          <input
-            autoComplete="current-password"
-            name="password"
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            type="password"
-            value={password}
-          />
-        </label>
-        {error ? <p className="status error">{error}</p> : null}
-        <button className="button-link form-button" data-reveal disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Logging in..." : "Login"}
-        </button>
+          {passwordResetComplete ? (
+            <p className="status success" data-reveal>
+              Password reset complete. Sign in with your new password.
+            </p>
+          ) : null}
+          <label data-reveal>
+            Email
+            <input
+              autoComplete="email"
+              name="email"
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </label>
+          <label data-reveal>
+            Password
+            <input
+              autoComplete="current-password"
+              name="password"
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+          </label>
+          <p className="form-note align-right" data-reveal>
+            <Link to="/forgot-password">Forgot password?</Link>
+          </p>
+          {error ? <p className="status error">{error}</p> : null}
+          <button
+            className="button-link form-button"
+            data-reveal
+            disabled={isSubmitting}
+            type="submit"
+          >
+            {isSubmitting ? "Logging in..." : "Login"}
+          </button>
           <p className="form-note" data-reveal>
             Need an account? <Link to="/register">Register</Link>
           </p>
@@ -92,4 +106,13 @@ function readRedirectPath(state: unknown): string | null {
   }
 
   return null;
+}
+
+function readPasswordResetComplete(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    "passwordResetComplete" in state &&
+    state.passwordResetComplete === true
+  );
 }

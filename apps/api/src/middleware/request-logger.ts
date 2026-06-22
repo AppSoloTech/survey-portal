@@ -12,8 +12,7 @@ export const requestLogger: RequestHandler = (req, res, next) => {
 };
 
 function sanitizeUrl(originalUrl: string): string {
-  return originalUrl.replace(
-    /^\/api\/anonymous-surveys\/[^/?#]+/,
-    "/api/anonymous-surveys/[token]"
-  );
+  return originalUrl
+    .replace(/^\/api\/anonymous-surveys\/[^/?#]+/, "/api/anonymous-surveys/[token]")
+    .replace(/^\/reset-password\?token=[^&#]+/, "/reset-password?token=[token]");
 }

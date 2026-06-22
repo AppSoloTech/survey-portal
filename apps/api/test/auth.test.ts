@@ -1,7 +1,14 @@
 import request from "supertest";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
+import { pool } from "../src/db.js";
+import type { EmailClient, EmailMessage } from "../src/services/email.js";
+import {
+  buildPasswordResetUrl,
+  genericPasswordResetMessage,
+  requestPasswordResetForEmail
+} from "../src/services/passwordReset.js";
 import { extractAuthCookie, registerAdmin, registerUser, uniqueEmail } from "./helpers/factories.js";
 
 const app = createApp();
@@ -125,6 +132,191 @@ describe("auth routes", () => {
       const limitedResponse = await request(app)
         .post("/api/auth/login")
         .send({ email, password: "wrong-password-123" });
+
+      expect(limitedResponse.status).toBe(429);
+      expect(limitedResponse.body).toEqual({
+        error: "Too many authentication attempts. Please try again later."
+      });
+    });
+  });
+
+  describe("password reset", () => {
+    it("returns the same generic response for existing and unknown emails without setting cookies", async () => {
+      const session = await registerUser(app);
+
+      const existingResponse = await request(app)
+        .post("/api/auth/password-reset/request")
+        .send({ email: session.user.email });
+      const unknownResponse = await request(app)
+        .post("/api/auth/password-reset/request")
+        .send({ email: uniqueEmail("unknown-reset") });
+
+      expect(existingResponse.status).toBe(200);
+      expect(unknownResponse.status).toBe(200);
+      expect(existingResponse.body).toEqual({ message: genericPasswordResetMessage });
+      expect(unknownResponse.body).toEqual(existingResponse.body);
+      expect(existingResponse.headers["set-cookie"]).toBeUndefined();
+      expect(unknownResponse.headers["set-cookie"]).toBeUndefined();
+    });
+
+    it("stores only lookup and hashed reset-token secret and sends the email payload through the email client", async () => {
+      const session = await registerUser(app);
+      const messages: EmailMessage[] = [];
+      const client: EmailClient = {
+        provider: "noop",
+        send: vi.fn(async (message) => {
+          messages.push(message);
+          return { status: "skipped", provider: "noop" };
+        })
+      };
+
+      const result = await requestPasswordResetForEmail({
+        email: session.user.email,
+        client
+      });
+
+      expect(result.token).toMatch(/^prt\.[^.]+\.[^.]+$/);
+      expect(result.resetUrl).toBe(buildPasswordResetUrl(result.token ?? ""));
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        template: "password_reset",
+        to: {
+          email: session.user.email,
+          name: `${session.user.firstName} ${session.user.lastName}`
+        },
+        resetUrl: result.resetUrl,
+        expiresAt: result.expiresAt?.toISOString()
+      });
+
+      const stored = await pool.query<{
+        token_lookup_key: string;
+        token_secret_hash: string;
+        consumed_at: Date | null;
+      }>(
+        `select token_lookup_key, token_secret_hash, consumed_at
+         from password_reset_tokens
+         where user_id = $1`,
+        [session.user.id]
+      );
+
+      const tokenParts = result.token?.split(".") ?? [];
+      expect(stored.rows).toHaveLength(1);
+      expect(stored.rows[0].token_lookup_key).toBe(tokenParts[1]);
+      expect(stored.rows[0].token_secret_hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(stored.rows[0].token_secret_hash).not.toContain(tokenParts[2]);
+      expect(JSON.stringify(stored.rows[0])).not.toContain(result.token);
+      expect(stored.rows[0].consumed_at).toBeNull();
+    });
+
+    it("resets a password once, rejects the old password, and rejects token reuse", async () => {
+      const session = await registerUser(app);
+      const result = await requestPasswordResetForEmail({ email: session.user.email });
+      const token = result.token ?? "";
+      const newPassword = "new-password-456";
+
+      const resetResponse = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({ token, newPassword });
+
+      expect(resetResponse.status).toBe(200);
+      expect(resetResponse.headers["set-cookie"]).toBeUndefined();
+
+      const oldLogin = await request(app)
+        .post("/api/auth/login")
+        .send({ email: session.user.email, password: session.password });
+      const newLogin = await request(app)
+        .post("/api/auth/login")
+        .send({ email: session.user.email, password: newPassword });
+      const reuse = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({ token, newPassword: "another-password-789" });
+
+      expect(oldLogin.status).toBe(401);
+      expect(newLogin.status).toBe(200);
+      expect(reuse.status).toBe(400);
+      expect(reuse.body.error).toBe("Password reset link is invalid or expired");
+    });
+
+    it("rejects expired, malformed, and unknown reset tokens safely", async () => {
+      const session = await registerUser(app);
+      const result = await requestPasswordResetForEmail({ email: session.user.email });
+      const token = result.token ?? "";
+      const tokenParts = token.split(".");
+
+      await pool.query(
+        `update password_reset_tokens
+         set created_at = now() - interval '2 hours',
+             expires_at = now() - interval '1 minute'
+         where token_lookup_key = $1`,
+        [tokenParts[1]]
+      );
+
+      const expired = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({ token, newPassword: "new-password-456" });
+      const malformed = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({ token: "not-a-reset-token", newPassword: "new-password-456" });
+      const unknown = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({
+          token: `prt.${tokenParts[1]}.wrong-secret`,
+          newPassword: "new-password-456"
+        });
+
+      expect(expired.status).toBe(400);
+      expect(malformed.status).toBe(400);
+      expect(unknown.status).toBe(400);
+      expect(expired.body).toEqual(malformed.body);
+      expect(unknown.body).toEqual(malformed.body);
+    });
+
+    it("requires authentication for logged-in reset initiation", async () => {
+      const unauthenticated = await request(app).post("/api/auth/me/password-reset/request");
+      const session = await registerUser(app);
+      const authenticated = await request(app)
+        .post("/api/auth/me/password-reset/request")
+        .set("Cookie", session.cookie)
+        .send({});
+
+      expect(unauthenticated.status).toBe(401);
+      expect(authenticated.status).toBe(200);
+      expect(authenticated.body).toEqual({ message: genericPasswordResetMessage });
+      expect(authenticated.headers["set-cookie"]).toBeUndefined();
+    });
+
+    it("rate limits repeated public reset requests", async () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await request(app)
+          .post("/api/auth/password-reset/request")
+          .send({ email: uniqueEmail("rate-reset") });
+
+        expect(response.status).toBe(200);
+      }
+
+      const limitedResponse = await request(app)
+        .post("/api/auth/password-reset/request")
+        .send({ email: uniqueEmail("rate-reset") });
+
+      expect(limitedResponse.status).toBe(429);
+      expect(limitedResponse.body).toEqual({
+        error: "Too many authentication attempts. Please try again later."
+      });
+    });
+
+    it("rate limits repeated reset completion attempts", async () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await request(app)
+          .post("/api/auth/password-reset/complete")
+          .send({ token: `prt.lookup-${attempt}.wrong-secret`, newPassword: "new-password-456" });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toBe("Password reset link is invalid or expired");
+      }
+
+      const limitedResponse = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({ token: "prt.lookup-limited.wrong-secret", newPassword: "new-password-456" });
 
       expect(limitedResponse.status).toBe(429);
       expect(limitedResponse.body).toEqual({

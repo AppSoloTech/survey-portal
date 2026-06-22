@@ -99,6 +99,10 @@ Use `EMAIL_ENABLED=true` with `EMAIL_PROVIDER=noop` only for local non-sending
 development checks. Production must keep email disabled until an approved real
 provider adapter and Azure-held credentials are implemented.
 
+`WEB_ORIGIN` is used when the API builds user-facing links, including anonymous
+survey links and password reset links. Keep it set to the deployed web origin in
+hosted environments.
+
 ---
 
 ## Database Assumptions

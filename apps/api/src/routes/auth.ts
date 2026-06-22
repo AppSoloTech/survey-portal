@@ -9,6 +9,7 @@ import {
   normalizeEmail,
   passwordVerificationDecoyHash,
   setAuthCookie,
+  validatePassword,
   verifyPassword,
   type UserRecord,
   type UserWithPasswordRecord
@@ -16,12 +17,18 @@ import {
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
+import {
+  completePasswordReset,
+  genericPasswordResetMessage,
+  requestPasswordResetForEmail,
+  requestPasswordResetForUser
+} from "../services/passwordReset.js";
 
 const { DatabaseError } = pg;
-const maxPasswordBytes = 72;
-
 const loginRateLimitStore = new MemoryStore();
 const registerRateLimitStore = new MemoryStore();
+const passwordResetRequestRateLimitStore = new MemoryStore();
+const passwordResetCompleteRateLimitStore = new MemoryStore();
 
 const authRateLimitHandler: express.RequestHandler = (_req, res) => {
   res.status(429).json({ error: "Too many authentication attempts. Please try again later." });
@@ -42,6 +49,24 @@ const registerRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: registerRateLimitStore,
+  handler: authRateLimitHandler
+});
+
+const passwordResetRequestRateLimiter = rateLimit({
+  windowMs: config.authRateLimitWindowMs,
+  limit: config.authLoginRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: passwordResetRequestRateLimitStore,
+  handler: authRateLimitHandler
+});
+
+const passwordResetCompleteRateLimiter = rateLimit({
+  windowMs: config.authRateLimitWindowMs,
+  limit: config.authLoginRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: passwordResetCompleteRateLimitStore,
   handler: authRateLimitHandler
 });
 
@@ -115,8 +140,65 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   }
 });
 
+authRouter.post(
+  "/password-reset/request",
+  passwordResetRequestRateLimiter,
+  (req, res) => {
+    const email = readPasswordResetEmail(req.body);
+
+    if (email) {
+      queuePasswordResetRequest(email);
+    }
+
+    res.json({ message: genericPasswordResetMessage });
+  }
+);
+
+authRouter.post(
+  "/password-reset/complete",
+  passwordResetCompleteRateLimiter,
+  async (req, res, next) => {
+    try {
+      const validation = validatePasswordResetCompleteBody(req.body);
+
+      if (!validation.ok) {
+        res.status(400).json({ error: validation.error });
+        return;
+      }
+
+      const didReset = await completePasswordReset(validation.value);
+
+      if (!didReset) {
+        res.status(400).json({ error: "Password reset link is invalid or expired" });
+        return;
+      }
+
+      res.json({ message: "Password has been reset. You can now log in." });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user: (req as AuthenticatedRequest).user });
+});
+
+authRouter.post("/me/password-reset/request", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+
+    await requestPasswordResetForUser({
+      userId: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName
+    });
+
+    res.json({ message: genericPasswordResetMessage });
+  } catch (error) {
+    next(error);
+  }
 });
 
 authRouter.post("/logout", (_req, res) => {
@@ -147,12 +229,10 @@ function validateRegistrationBody(body: unknown): ValidationResult<{
     return { ok: false, error: "Enter a valid email address" };
   }
 
-  if (password.length < 8) {
-    return { ok: false, error: "Password must be at least 8 characters" };
-  }
+  const passwordError = validatePassword(password);
 
-  if (Buffer.byteLength(password, "utf8") > maxPasswordBytes) {
-    return { ok: false, error: "Password must be at most 72 bytes" };
+  if (passwordError) {
+    return { ok: false, error: passwordError };
   }
 
   return {
@@ -191,6 +271,52 @@ function validateLoginBody(body: unknown): ValidationResult<{ email: string; pas
   };
 }
 
+function readPasswordResetEmail(body: unknown): string | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+
+  const email = normalizeEmail(readTextField(body, "email"));
+
+  return isValidEmail(email) ? email : null;
+}
+
+function validatePasswordResetCompleteBody(body: unknown): ValidationResult<{
+  token: string;
+  newPassword: string;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const token = readTextField(body, "token");
+  const newPassword = readTextField(body, "newPassword");
+
+  if (!token || !newPassword) {
+    return { ok: false, error: "Reset token and new password are required" };
+  }
+
+  const passwordError = validatePassword(newPassword);
+
+  if (passwordError) {
+    return { ok: false, error: passwordError };
+  }
+
+  return {
+    ok: true,
+    value: {
+      token,
+      newPassword
+    }
+  };
+}
+
+function queuePasswordResetRequest(email: string): void {
+  void requestPasswordResetForEmail({ email }).catch(() => {
+    console.warn("Password reset request failed after generic response");
+  });
+}
+
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -211,5 +337,10 @@ function isUniqueEmailError(error: unknown): boolean {
 }
 
 export async function resetAuthRateLimitersForTests(): Promise<void> {
-  await Promise.all([loginRateLimitStore.resetAll(), registerRateLimitStore.resetAll()]);
+  await Promise.all([
+    loginRateLimitStore.resetAll(),
+    registerRateLimitStore.resetAll(),
+    passwordResetRequestRateLimitStore.resetAll(),
+    passwordResetCompleteRateLimitStore.resetAll()
+  ]);
 }
