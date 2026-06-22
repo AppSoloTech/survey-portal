@@ -37,10 +37,20 @@ interface QuestionStatRecord {
 }
 
 interface ParticipantRecord {
-  id: number;
-  first_name: string;
-  last_name: string;
-  email: string;
+  id: number | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+}
+
+function buildAnonymousParticipant(contactEmail: string | null): ReportParticipant {
+  return {
+    id: null,
+    firstName: "Anonymous",
+    lastName: "respondent",
+    email: contactEmail ?? "Anonymous survey link",
+    type: "anonymous"
+  };
 }
 
 // A response row "has content" when any answer value was saved. Rows without
@@ -291,6 +301,8 @@ export async function fetchAdminAttempts(
     `select
        survey_attempts.id as attempt_id,
        survey_attempts.status,
+       survey_attempts.user_id,
+       survey_attempts.anonymous_contact_email,
        survey_attempts.started_at,
        survey_attempts.last_activity_at,
        survey_attempts.completed_at,
@@ -300,7 +312,7 @@ export async function fetchAdminAttempts(
        users.email,
        count(survey_response_answers.id) filter (where ${meaningfulResponseSql})::text as answered_count
      from survey_attempts
-     join users on users.id = survey_attempts.user_id
+     left join users on users.id = survey_attempts.user_id
      left join survey_response_answers
        on survey_response_answers.survey_attempt_id = survey_attempts.id
      where survey_attempts.survey_id = $1${rangeSql}
@@ -311,7 +323,9 @@ export async function fetchAdminAttempts(
 
   return attemptsResult.rows.map((row) => ({
     attemptId: row.attempt_id,
-    participant: mapParticipantRecord(row),
+    participant: row.user_id
+      ? mapParticipantRecord(row)
+      : buildAnonymousParticipant(row.anonymous_contact_email),
     status: row.status,
     startedAt: row.started_at?.toISOString() ?? null,
     lastActivityAt: row.last_activity_at?.toISOString() ?? null,
@@ -342,11 +356,9 @@ export async function fetchAdminAttemptDetail(
     return null;
   }
 
-  const participant = await fetchParticipant(attempt.userId);
-
-  if (!participant) {
-    return null;
-  }
+  const participant = attempt.userId
+    ? (await fetchParticipant(attempt.userId)) ?? buildAnonymousParticipant(null)
+    : buildAnonymousParticipant(attempt.anonymousContactEmail);
 
   return {
     surveyId: survey.id,
@@ -373,7 +385,13 @@ export async function buildSurveyCsvExport(
   }
 
   const attempts = await fetchAttemptsWithResponsesForSurvey(surveyId, undefined, range);
-  const participantIds = [...new Set(attempts.map((attempt) => attempt.userId))];
+  const participantIds = [
+    ...new Set(
+      attempts
+        .map((attempt) => attempt.userId)
+        .filter((userId): userId is number => userId !== null)
+    )
+  ];
   const participantsById = await fetchParticipantsByIds(participantIds);
 
   const header = [
@@ -381,6 +399,7 @@ export async function buildSurveyCsvExport(
     "survey_title",
     "attempt_id",
     "participant_email",
+    "participant_email_status",
     "participant_name",
     "attempt_status",
     "started_at",
@@ -398,7 +417,9 @@ export async function buildSurveyCsvExport(
   const rows: CsvFieldValue[][] = [];
 
   for (const attempt of attempts) {
-    const participant = participantsById.get(attempt.userId);
+    const participant = attempt.userId
+      ? participantsById.get(attempt.userId)
+      : buildAnonymousParticipant(attempt.anonymousContactEmail);
     const answers = buildAdminAttemptAnswers(survey, attempt);
 
     for (const answer of answers) {
@@ -411,6 +432,7 @@ export async function buildSurveyCsvExport(
         survey.title,
         attempt.id,
         participant?.email ?? "",
+        participant ? participantEmailStatus(participant) : "",
         participant ? `${participant.firstName} ${participant.lastName}` : "",
         attempt.status,
         attempt.startedAt,
@@ -534,6 +556,9 @@ async function fetchAttemptsWithResponsesForSurvey(
        id,
        survey_id,
        user_id,
+       anonymous_link_id,
+       anonymous_access_token_hash,
+       anonymous_contact_email,
        status,
        started_at,
        last_activity_at,
@@ -625,16 +650,29 @@ async function fetchParticipantsByIds(
     [userIds]
   );
 
-  return new Map(result.rows.map((row) => [row.id, mapParticipantRecord(row)]));
+  return new Map(
+    result.rows
+      .filter((row): row is ParticipantRecord & { id: number } => row.id !== null)
+      .map((row) => [row.id, mapParticipantRecord(row)])
+  );
 }
 
 function mapParticipantRecord(record: ParticipantRecord): ReportParticipant {
   return {
-    id: record.id,
-    firstName: record.first_name,
-    lastName: record.last_name,
-    email: record.email
+    id: record.id ?? null,
+    firstName: record.first_name ?? "",
+    lastName: record.last_name ?? "",
+    email: record.email ?? "",
+    type: "user"
   };
+}
+
+function participantEmailStatus(participant: ReportParticipant): string {
+  if (participant.type === "anonymous" && participant.email !== "Anonymous survey link") {
+    return "unverified_follow_up";
+  }
+
+  return participant.type === "anonymous" ? "anonymous_no_email" : "verified_account";
 }
 
 function sortQuestions(questions: SurveyQuestion[]): SurveyQuestion[] {

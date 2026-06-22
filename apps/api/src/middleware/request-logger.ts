@@ -5,8 +5,15 @@ export const requestLogger: RequestHandler = (req, res, next) => {
 
   res.on("finish", () => {
     const durationMs = Date.now() - startedAt;
-    console.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`);
+    console.info(`${req.method} ${sanitizeUrl(req.originalUrl)} ${res.statusCode} ${durationMs}ms`);
   });
 
   next();
 };
+
+function sanitizeUrl(originalUrl: string): string {
+  return originalUrl.replace(
+    /^\/api\/anonymous-surveys\/[^/?#]+/,
+    "/api/anonymous-surveys/[token]"
+  );
+}

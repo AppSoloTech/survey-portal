@@ -102,7 +102,10 @@ export interface SurveyPageRecord {
 export interface SurveyAttemptRecord {
   id: number;
   survey_id: number;
-  user_id: number;
+  user_id: number | null;
+  anonymous_link_id: number | null;
+  anonymous_access_token_hash: string | null;
+  anonymous_contact_email: string | null;
   status: SurveyAttemptStatus;
   started_at: Date | null;
   last_activity_at: Date | null;
@@ -473,6 +476,8 @@ export function mapSurveyAttemptRecord(
     id: record.id,
     surveyId: record.survey_id,
     userId: record.user_id,
+    anonymousLinkId: record.anonymous_link_id,
+    anonymousContactEmail: record.anonymous_contact_email,
     status: record.status,
     startedAt: record.started_at?.toISOString() ?? null,
     lastActivityAt: record.last_activity_at?.toISOString() ?? null,

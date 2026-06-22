@@ -1,5 +1,6 @@
 import express from "express";
 
+import { anonymousSurveyAdminRouter } from "./anonymousSurveyRoutes.js";
 import { mySurveysRouter } from "./mySurveysRoutes.js";
 import { surveyAttemptRouter } from "./surveyAttemptRoutes.js";
 import { surveyBuilderRouter } from "./surveyBuilderRoutes.js";
@@ -12,6 +13,7 @@ import { surveyReportingRouter } from "./surveyReportingRoutes.js";
 export const surveysRouter = express.Router();
 
 surveysRouter.use(surveyReadRouter);
+surveysRouter.use(anonymousSurveyAdminRouter);
 surveysRouter.use(surveyBuilderRouter);
 surveysRouter.use(surveyAttemptRouter);
 surveysRouter.use(surveyReportingRouter);

@@ -9,6 +9,8 @@ const dataTables = [
   "survey_response_selected_options",
   "survey_response_answers",
   "survey_attempts",
+  "anonymous_rate_limits",
+  "anonymous_survey_links",
   "conditional_logic_rules",
   "answer_tags",
   "question_value_tags",
@@ -23,10 +25,13 @@ const dataTables = [
 
 beforeEach(async () => {
   const { pool, resetDatabaseHealthCheckForTests } = await import("../../src/db.js");
+  const { resetAnonymousSurveyRateLimiterForTests } = await import(
+    "../../src/routes/anonymousSurveyRoutes.js"
+  );
   const { resetAuthRateLimitersForTests } = await import("../../src/routes/auth.js");
 
   resetDatabaseHealthCheckForTests();
-  await resetAuthRateLimitersForTests();
+  await Promise.all([resetAuthRateLimitersForTests(), resetAnonymousSurveyRateLimiterForTests()]);
   await pool.query(`truncate ${dataTables.join(", ")} restart identity cascade`);
 });
 

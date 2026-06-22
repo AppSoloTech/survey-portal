@@ -239,7 +239,9 @@ export interface SurveyResponseAnswer {
 export interface SurveyAttempt {
   id: number;
   surveyId: number;
-  userId: number;
+  userId: number | null;
+  anonymousLinkId: number | null;
+  anonymousContactEmail: string | null;
   status: SurveyAttemptStatus;
   startedAt: string | null;
   lastActivityAt: string | null;
@@ -282,6 +284,46 @@ export interface StartSurveyResponse {
   currentPageQuestionIds: number[];
 }
 
+export interface AnonymousSurveyLink {
+  id: number;
+  surveyId: number;
+  enabled: boolean;
+  expiresAt: string | null;
+  disabledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publicUrl?: string;
+}
+
+export interface AnonymousSurveyLinkWithUrl extends AnonymousSurveyLink {
+  publicUrl: string;
+}
+
+export interface AnonymousSurveyLinksResponse {
+  links: AnonymousSurveyLink[];
+}
+
+export interface CreateAnonymousSurveyLinkResponse {
+  link: AnonymousSurveyLinkWithUrl;
+}
+
+export interface DisableAnonymousSurveyLinkResponse {
+  link: AnonymousSurveyLink;
+}
+
+export interface RotateAnonymousSurveyLinkResponse {
+  disabledLink: AnonymousSurveyLink;
+  link: AnonymousSurveyLinkWithUrl;
+}
+
+export interface AnonymousSurveyResponse {
+  survey: Survey;
+}
+
+export interface StartAnonymousSurveyResponse extends StartSurveyResponse {
+  attemptAccessToken: string;
+}
+
 export interface AnswerSurveyResponse {
   attempt: SurveyAttempt;
   currentQuestion: SurveyQuestion | null;
@@ -303,10 +345,11 @@ export interface HealthResponse {
 }
 
 export interface ReportParticipant {
-  id: number;
+  id: number | null;
   firstName: string;
   lastName: string;
   email: string;
+  type: "user" | "anonymous";
 }
 
 export interface SurveyReportOptionStat {

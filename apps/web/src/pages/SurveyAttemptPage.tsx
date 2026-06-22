@@ -21,11 +21,16 @@ import {
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
+  answerAnonymousSurvey,
   answerSurvey,
+  completeAnonymousSurvey,
   completeSurvey,
+  fetchAnonymousSurvey,
   fetchMySurvey,
   fetchMySurveys,
-  startSurvey
+  startAnonymousSurvey,
+  startSurvey,
+  submitAnonymousContactEmail
 } from "../api/surveys.js";
 import { AnimatedNumber } from "../components/AnimatedNumber.js";
 import { prefersReducedMotion, useReveal } from "../motion/motion.js";
@@ -33,6 +38,7 @@ import { prefersReducedMotion, useReveal } from "../motion/motion.js";
 interface ActiveSurveyState {
   survey: Survey;
   attempt: SurveyAttempt;
+  attemptAccessToken: string | null;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -42,8 +48,17 @@ type DraftAnswerMap<T> = Record<number, T>;
 type DraftAnswerSetter<T> = Dispatch<SetStateAction<DraftAnswerMap<T>>>;
 
 export function SurveyAttemptPage() {
-  const { surveyId: surveyIdParam } = useParams();
+  return <SurveyAttemptExperience mode="authenticated" />;
+}
+
+export function AnonymousSurveyAttemptPage() {
+  return <SurveyAttemptExperience mode="anonymous" />;
+}
+
+function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous" }) {
+  const { surveyId: surveyIdParam, token: tokenParam } = useParams();
   const surveyId = readSurveyIdParam(surveyIdParam);
+  const anonymousToken = tokenParam ?? null;
   const navigate = useNavigate();
   const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
   const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
@@ -55,6 +70,11 @@ export function SurveyAttemptPage() {
   >({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isContactEmailSubmitting, setIsContactEmailSubmitting] = useState(false);
+  const [isContactEmailModalOpen, setIsContactEmailModalOpen] = useState(false);
+  const [contactEmailDraft, setContactEmailDraft] = useState("");
+  const [contactEmailMessage, setContactEmailMessage] = useState<string | null>(null);
+  const [contactEmailError, setContactEmailError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -63,9 +83,15 @@ export function SurveyAttemptPage() {
   // Abandoned attempts intentionally start a new attempt per the attempt
   // policy.
   useEffect(() => {
-    if (surveyId === null) {
+    if (mode === "authenticated" && surveyId === null) {
       setIsLoading(false);
       setLoadError("Survey not found");
+      return;
+    }
+
+    if (mode === "anonymous" && !anonymousToken) {
+      setIsLoading(false);
+      setLoadError("Survey link unavailable");
       return;
     }
 
@@ -75,18 +101,34 @@ export function SurveyAttemptPage() {
     setLoadError(null);
     setActiveSurvey(null);
 
-    async function openSurvey(id: number): Promise<ActiveSurveyState> {
+    async function openAuthenticatedSurvey(id: number): Promise<ActiveSurveyState> {
       const summaries = await fetchMySurveys();
       const summary = summaries.surveys.find((item) => item.survey.id === id);
 
       if (summary?.attempt && summary.attempt.status !== "abandoned") {
-        return fetchMySurvey(summary.attempt.id);
+        return {
+          ...(await fetchMySurvey(summary.attempt.id)),
+          attemptAccessToken: null
+        };
       }
 
-      return startSurvey(id);
+      return {
+        ...(await startSurvey(id)),
+        attemptAccessToken: null
+      };
     }
 
-    openSurvey(surveyId)
+    async function openAnonymousSurvey(token: string): Promise<ActiveSurveyState> {
+      await fetchAnonymousSurvey(token);
+      return startAnonymousSurvey(token);
+    }
+
+    const openPromise =
+      mode === "authenticated"
+        ? openAuthenticatedSurvey(surveyId as number)
+        : openAnonymousSurvey(anonymousToken as string);
+
+    openPromise
       .then((response) => {
         if (isActive) {
           setActiveSurvey(response);
@@ -106,13 +148,17 @@ export function SurveyAttemptPage() {
     return () => {
       isActive = false;
     };
-  }, [surveyId]);
+  }, [anonymousToken, mode, surveyId]);
 
   useEffect(() => {
     if (!activeSurvey) {
       setAnswerTextByQuestionId({});
       setAnswerIntegerByQuestionId({});
       setSelectedAnswerOptionIdsByQuestionId({});
+      setContactEmailDraft("");
+      setContactEmailMessage(null);
+      setContactEmailError(null);
+      setIsContactEmailModalOpen(false);
       return;
     }
 
@@ -132,6 +178,14 @@ export function SurveyAttemptPage() {
       ])
     );
   }, [activeSurvey?.attempt]);
+
+  useEffect(() => {
+    if (mode !== "anonymous" || activeSurvey?.attempt.status !== "completed") {
+      return;
+    }
+
+    setContactEmailDraft(activeSurvey.attempt.anonymousContactEmail ?? "");
+  }, [activeSurvey?.attempt.anonymousContactEmail, activeSurvey?.attempt.status, mode]);
 
   async function handleSubmitAnswer(question: SurveyQuestion, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -168,8 +222,7 @@ export function SurveyAttemptPage() {
 
     try {
       const isUpdatingReviewedQuestion = question.id !== activeSurvey.currentQuestion?.id;
-      const response = await answerSurvey({
-        surveyId: activeSurvey.survey.id,
+      const answerInput = {
         attemptId: activeSurvey.attempt.id,
         questionId: question.id,
         answerText: question.questionType === "text" ? answerText : null,
@@ -180,11 +233,23 @@ export function SurveyAttemptPage() {
           question.questionType === "scale"
             ? selectedAnswerOptionIds
             : []
-      });
+      };
+      const response =
+        mode === "anonymous" && anonymousToken && activeSurvey.attemptAccessToken
+          ? await answerAnonymousSurvey({
+              ...answerInput,
+              token: anonymousToken,
+              attemptAccessToken: activeSurvey.attemptAccessToken
+            })
+          : await answerSurvey({
+              ...answerInput,
+              surveyId: activeSurvey.survey.id
+            });
 
       setActiveSurvey({
         survey: activeSurvey.survey,
         attempt: response.attempt,
+        attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion:
           isUpdatingReviewedQuestion && response.currentPage === null
             ? activeSurvey.currentQuestion
@@ -214,22 +279,91 @@ export function SurveyAttemptPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await completeSurvey({
-        surveyId: activeSurvey.survey.id,
-        attemptId: activeSurvey.attempt.id
-      });
+      const response =
+        mode === "anonymous" && anonymousToken && activeSurvey.attemptAccessToken
+          ? await completeAnonymousSurvey({
+              token: anonymousToken,
+              attemptAccessToken: activeSurvey.attemptAccessToken,
+              attemptId: activeSurvey.attempt.id
+            })
+          : await completeSurvey({
+              surveyId: activeSurvey.survey.id,
+              attemptId: activeSurvey.attempt.id
+            });
       setActiveSurvey({
         survey: activeSurvey.survey,
         attempt: response.attempt,
+        attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion: null,
         currentPage: null,
         currentPageQuestionIds: []
       });
+      if (mode === "anonymous" && !response.attempt.anonymousContactEmail) {
+        setContactEmailMessage(null);
+        setContactEmailError(null);
+        setIsContactEmailModalOpen(true);
+      }
     } catch (completeError) {
       setError(completeError instanceof Error ? completeError.message : "Could not submit survey");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleSubmitAnonymousContactEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (
+      mode !== "anonymous" ||
+      !anonymousToken ||
+      !activeSurvey?.attemptAccessToken ||
+      activeSurvey.attempt.status !== "completed"
+    ) {
+      return;
+    }
+
+    const email = contactEmailDraft.trim();
+
+    if (!email) {
+      return;
+    }
+
+    setContactEmailError(null);
+    setContactEmailMessage(null);
+    setIsContactEmailSubmitting(true);
+
+    try {
+      const response = await submitAnonymousContactEmail({
+        token: anonymousToken,
+        attemptAccessToken: activeSurvey.attemptAccessToken,
+        attemptId: activeSurvey.attempt.id,
+        email
+      });
+
+      setActiveSurvey({
+        ...activeSurvey,
+        attempt: response.attempt
+      });
+      setContactEmailMessage("Email saved");
+      setIsContactEmailModalOpen(false);
+    } catch (submitError) {
+      setContactEmailError(
+        submitError instanceof Error ? submitError.message : "Could not save email"
+      );
+    } finally {
+      setIsContactEmailSubmitting(false);
+    }
+  }
+
+  function handleOpenContactEmailModal() {
+    setContactEmailError(null);
+    setContactEmailMessage(null);
+    setIsContactEmailModalOpen(true);
+  }
+
+  function handleSkipContactEmail() {
+    setContactEmailError(null);
+    setIsContactEmailModalOpen(false);
   }
 
   function handlePrevious() {
@@ -310,13 +444,15 @@ export function SurveyAttemptPage() {
   }
 
   function handleClose() {
-    navigate("/dashboard");
+    navigate(mode === "anonymous" ? "/" : "/dashboard");
   }
 
   return (
     <section className="page attempt-page">
       <nav aria-label="Breadcrumb" className="attempt-breadcrumbs">
-        <Link to="/dashboard">Dashboard</Link>
+        <Link to={mode === "anonymous" ? "/" : "/dashboard"}>
+          {mode === "anonymous" ? "Home" : "Dashboard"}
+        </Link>
         <span aria-hidden="true">/</span>
         <span className="attempt-breadcrumb-current">
           {activeSurvey?.survey.title ?? "Survey"}
@@ -331,8 +467,11 @@ export function SurveyAttemptPage() {
           <strong>{loadError}</strong>
           <span>The survey may be unavailable or already completed.</span>
           <div className="inline-actions">
-            <Link className="button-link compact-button primary-button" to="/dashboard">
-              Back to dashboard
+            <Link
+              className="button-link compact-button primary-button"
+              to={mode === "anonymous" ? "/" : "/dashboard"}
+            >
+              {mode === "anonymous" ? "Back home" : "Back to dashboard"}
             </Link>
           </div>
         </div>
@@ -344,9 +483,12 @@ export function SurveyAttemptPage() {
             activeSurvey={activeSurvey}
             answerIntegerByQuestionId={answerIntegerByQuestionId}
             answerTextByQuestionId={answerTextByQuestionId}
+            contactEmailMessage={contactEmailMessage}
+            isAnonymous={mode === "anonymous"}
             isSubmitting={isSubmitting}
             onClose={handleClose}
             onComplete={() => void handleComplete()}
+            onOpenContactEmailModal={handleOpenContactEmailModal}
             onIntegerChange={handleIntegerChange}
             onPrevious={handlePrevious}
             onResume={handleResume}
@@ -355,6 +497,21 @@ export function SurveyAttemptPage() {
             onTextChange={handleTextChange}
             selectedAnswerOptionIdsByQuestionId={selectedAnswerOptionIdsByQuestionId}
           />
+          {mode === "anonymous" && activeSurvey.attempt.status === "completed" ? (
+            <AnonymousContactEmailModal
+              email={contactEmailDraft}
+              error={contactEmailError}
+              isOpen={isContactEmailModalOpen}
+              isSubmitting={isContactEmailSubmitting}
+              onChange={(value) => {
+                setContactEmailDraft(value);
+                setContactEmailError(null);
+                setContactEmailMessage(null);
+              }}
+              onSkip={handleSkipContactEmail}
+              onSubmit={(event) => void handleSubmitAnonymousContactEmail(event)}
+            />
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -365,9 +522,12 @@ function SurveyRunner({
   activeSurvey,
   answerIntegerByQuestionId,
   answerTextByQuestionId,
+  contactEmailMessage,
+  isAnonymous,
   isSubmitting,
   onClose,
   onComplete,
+  onOpenContactEmailModal,
   onIntegerChange,
   onPrevious,
   onResume,
@@ -379,9 +539,12 @@ function SurveyRunner({
   activeSurvey: ActiveSurveyState;
   answerIntegerByQuestionId: DraftAnswerMap<string>;
   answerTextByQuestionId: DraftAnswerMap<string>;
+  contactEmailMessage: string | null;
+  isAnonymous: boolean;
   isSubmitting: boolean;
   onClose: () => void;
   onComplete: () => void;
+  onOpenContactEmailModal: () => void;
   onIntegerChange: (questionId: number, value: string) => void;
   onPrevious: () => void;
   onResume: () => void;
@@ -441,6 +604,23 @@ function SurveyRunner({
               : "You can go back to review saved answers before submitting the survey."}
           </span>
         </div>
+        {isAnonymous && isCompleted ? (
+          <div className="contact-email-summary" data-reveal>
+            {contactEmailMessage || attempt.anonymousContactEmail ? (
+              <p className="status muted">
+                {contactEmailMessage ?? `Follow-up email saved as ${attempt.anonymousContactEmail}`}
+              </p>
+            ) : (
+              <button
+                className="button-link secondary-button compact-button"
+                onClick={onOpenContactEmailModal}
+                type="button"
+              >
+                Add follow-up email
+              </button>
+            )}
+          </div>
+        ) : null}
         <div className="survey-actions">
           <button
             className="button-link secondary-button"
@@ -587,6 +767,78 @@ function SurveyRunner({
           Back to surveys
         </button>
       </div>
+    </div>
+  );
+}
+
+function AnonymousContactEmailModal({
+  email,
+  error,
+  isOpen,
+  isSubmitting,
+  onChange,
+  onSkip,
+  onSubmit
+}: {
+  email: string;
+  error: string | null;
+  isOpen: boolean;
+  isSubmitting: boolean;
+  onChange: (value: string) => void;
+  onSkip: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <form
+        aria-labelledby="anonymous-contact-email-title"
+        aria-modal="true"
+        className="contact-email-modal"
+        onSubmit={onSubmit}
+        role="dialog"
+      >
+        <div className="contact-email-modal-heading">
+          <p className="eyebrow">Optional</p>
+          <h3 id="anonymous-contact-email-title">Share an email for follow-up?</h3>
+        </div>
+        <p className="muted">
+          Enter an email if you would like the survey owner to contact you about this survey.
+          This address is optional and will be visible to the survey owner.
+        </p>
+        <label>
+          <span>Email</span>
+          <input
+            autoComplete="email"
+            inputMode="email"
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="name@example.com"
+            type="email"
+            value={email}
+          />
+        </label>
+        {error ? <p className="status error">{error}</p> : null}
+        <div className="contact-email-modal-actions">
+          <button
+            className="button-link ghost-button"
+            disabled={isSubmitting}
+            onClick={onSkip}
+            type="button"
+          >
+            Skip
+          </button>
+          <button
+            className="button-link primary-button"
+            disabled={isSubmitting || !email.trim()}
+            type="submit"
+          >
+            {isSubmitting ? "Saving..." : "Save email"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

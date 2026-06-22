@@ -324,6 +324,9 @@ Suggested fields:
 id
 survey_id
 user_id
+anonymous_link_id
+anonymous_access_token_hash
+anonymous_contact_email
 status
 started_at
 last_activity_at
@@ -343,9 +346,55 @@ abandoned
 
 Notes:
 
+* A registered attempt is owned by `user_id`.
+* An anonymous attempt is owned by `anonymous_link_id` plus a hashed per-attempt
+  access token.
+* An anonymous attempt may optionally store `anonymous_contact_email` after
+  completion so admins can follow up without creating a user account.
+* Exactly one ownership path should be set: registered user or anonymous link.
 * A user may have one or more attempts depending on business rules.
 * For MVP, consider limiting each user to one active attempt per survey.
 * Admins need to see whether a user has started, completed, or abandoned a survey.
+
+---
+
+## Anonymous Survey Link
+
+Represents a tokenized public entry point to a published survey.
+
+Suggested fields:
+
+```txt
+id
+survey_id
+token_lookup_key
+token_secret_hash
+public_token
+enabled
+expires_at
+created_by_user_id
+disabled_at
+created_at
+updated_at
+```
+
+Notes:
+
+* Anonymous links are admin-created and scoped to one published survey.
+* The public URL token should be high entropy.
+* Store a lookup key plus a hash of the token secret for validation.
+* Store the complete public token encrypted at rest for admin-only reveal/copy
+  in Setup. Older links created before this field exists cannot be
+  reconstructed from hashes.
+* `public_token` uses application-layer authenticated encryption. If the
+  encryption secret changes, existing links still validate through their hash
+  but cannot be revealed for copying.
+* Anonymous takers do not receive or create user accounts.
+* Public anonymous survey APIs must return the same participant-safe survey
+  shape as logged-in survey-taking APIs: hidden tags and admin-only metadata are
+  not included.
+* Disabled, expired, draft, retired, deleted, or otherwise unavailable links
+  should produce a safe unavailable response.
 
 ---
 
@@ -433,6 +482,7 @@ Survey
   has many SurveyQuestions
   has many ConditionalLogicRules
   has many SurveyAttempts
+  has many AnonymousSurveyLinks
 
 SurveyQuestion
   belongs to Survey
@@ -446,7 +496,8 @@ AnswerOption
   may be selected in SurveyResponseSelectedOptions
 
 SurveyAttempt
-  belongs to User
+  belongs to User for registered attempts
+  belongs to AnonymousSurveyLink for anonymous attempts
   belongs to Survey
   has many SurveyResponseAnswers
 
@@ -490,6 +541,10 @@ For MVP:
 * users can resume an in-progress survey
 * users can submit a completed survey
 * admins can view each user’s survey status
+* anonymous visitors can start and complete a published survey only through an
+  enabled, unexpired anonymous survey link
+* anonymous attempts remain separate from registered user attempts and should be
+  reported as anonymous, not as synthetic user accounts
 
 Recommended MVP constraint:
 
@@ -630,5 +685,7 @@ Eventually yes, but for MVP this can be admin-visible as in_progress unless aban
 Recommended MVP answer:
 
 ```txt
-No, users must register and login.
+Yes, but only through admin-created, tokenized anonymous survey links scoped to
+published surveys. Anonymous survey takers must remain separate from registered
+users and must not need accounts.
 ```

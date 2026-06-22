@@ -218,6 +218,8 @@ export const config = {
   databaseUrl: readDatabaseUrl(runEnv),
   databaseSslCa: readOptionalDatabaseSslCa(),
   jwtSecret: readJwtSecret(runEnv),
+  anonymousLinkTokenEncryptionSecret:
+    process.env.ANONYMOUS_LINK_TOKEN_ENCRYPTION_SECRET || readJwtSecret(runEnv),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "1h",
   trustProxyHops: readNonNegativeIntegerEnv(
     "TRUST_PROXY_HOPS",
@@ -229,5 +231,13 @@ export const config = {
   ),
   authLoginRateLimitMax: readPositiveIntegerEnv("AUTH_LOGIN_RATE_LIMIT_MAX", 5),
   authRegisterRateLimitMax: readPositiveIntegerEnv("AUTH_REGISTER_RATE_LIMIT_MAX", 5),
+  anonymousSurveyRateLimitWindowMs: readPositiveIntegerEnv(
+    "ANONYMOUS_SURVEY_RATE_LIMIT_WINDOW_MS",
+    15 * 60 * 1000
+  ),
+  anonymousSurveyRateLimitMax: readPositiveIntegerEnv(
+    "ANONYMOUS_SURVEY_RATE_LIMIT_MAX",
+    120
+  ),
   email: readEmailConfigFromEnv(process.env, runEnv)
 } as const;

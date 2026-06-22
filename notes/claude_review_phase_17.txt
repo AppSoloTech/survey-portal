@@ -1,0 +1,258 @@
+# Claude Review — Phase 17: Anonymous Survey (UPDATED PASS)
+
+Reviewer: Claude Code
+Date: 2026-06-22
+Branch: phase-17-anonymous-survey-foundation
+Scope: current phase diff, second pass covering the new repeat-copy, public_token
+(migration 0018), follow-up contact-email (migration 0017), rate limiting, and
+referrer-policy changes. Supersedes the first-pass review above the line in this file's
+history.
+
+Validations run locally (all green):
+- npm run typecheck — clean (web + api)
+- npm run lint — clean (web + api)
+- npm run build — succeeds (only the pre-existing >500kB chunk-size warning)
+- npm run test -w apps/api -- test/anonymousSurvey.test.ts — 4 passed
+- npm test — full suite green (API 18 files / 172 tests; shared + web also pass)
+
+Resolved since first pass — good follow-through:
+- Rate limiting now applied to the public anonymous router
+  (express-rate-limit, configurable via ANONYMOUS_SURVEY_RATE_LIMIT_*; default 120/15min).
+- Constant-time secret comparison via crypto.timingSafeEqual (tokenSecretMatches).
+- Referrer-Policy: no-referrer set app-wide in createApp (test asserts it on the public read).
+- Mid-flow retired/disabled survey now returns a safe 404 via AnonymousSurveyUnavailableError
+  instead of a 500.
+
+Overall: ownership, hidden-tag isolation, and the new contact-email flow are correct and
+well-tested; no IDOR or regression from the nullable-owner model. The one design decision
+that deserves an explicit call is storing the full link token in plaintext (public_token) —
+see sections 1/5. I do not consider it a hard blocker given the token's low sensitivity, but
+it should be a conscious, documented choice and the now-redundant hash should be reconciled.
+
+---
+
+## 1. Critical / blocking issues
+
+None that block commit outright. The closest thing to a blocker is a design decision rather
+than a defect:
+
+- public_token stores the FULL working token (`asl.<lookupKey>.<secret>`) in plaintext, in the
+  same row as token_secret_hash. This means the SHA-256 hash now provides ZERO additional
+  protection: anyone who can read the row (DB compromise, read-only SQL injection, an
+  unencrypted backup, broad DB credentials) obtains live, working survey links. The previous
+  design's security property ("the token cannot be reconstructed after creation") has been
+  traded away to enable repeat-copy.
+
+  Why I rate this important-but-not-blocking: an anonymous survey link is a low-sensitivity
+  capability URL. It grants exactly one ability — submit an anonymous response to a published
+  survey — and that ability is now rate-limited. It does not expose PII, existing responses,
+  hidden tags, or any admin/auth surface. The links are designed to be widely shared (emailed,
+  posted), so their confidentiality requirement is inherently low. Given that, plaintext storage
+  is defensible. But the team should decide deliberately (section 5), document it, and stop
+  carrying a hash that implies protection it no longer provides.
+
+Everything else in the requested focus list checks out (details in sections 2/4).
+
+---
+
+## 2. Non-blocking security / privacy concerns
+
+a) Redundant hash alongside plaintext token (maintainability + honesty).
+   With public_token stored, token_secret_hash + timingSafeEqual is vestigial. Keep ONE model:
+   either drop the hash and match on the stored token, or (preferred) encrypt public_token and
+   keep the hash for lookup verification. Carrying both invites a future reader to assume the
+   tokens are protected at rest when they are not.
+
+b) In-memory rate-limit store does not span instances.
+   `new MemoryStore()` is per-process. On Azure App Service with >1 instance (or after a
+   restart), the effective limit is N × max and counters reset on deploy. Fine for a single
+   instance / MVP, but note it: a shared store (Redis/Postgres) is needed before horizontal
+   scaling for the limit to be real. Also, IP-keying means participants behind a shared
+   corporate NAT share a bucket — 120/15min is generous enough that false positives are
+   unlikely, but worth knowing.
+
+c) Anonymous follow-up email is unverified PII surfaced to admins.
+   `anonymous_contact_email` is free-typed, never verified, and rendered in admin Results and
+   CSV through `ReportParticipant.email` (disambiguated only by `type: "anonymous"`). Two notes:
+   - Treat it as PII in the data model docs; it partially de-anonymizes an otherwise anonymous
+     attempt by design (opt-in), so it should be called out as such.
+   - In the admin UI/CSV, make sure it is labeled as an unverified, self-supplied follow-up
+     address, not mistaken for a verified account email. The CSV currently reuses the same
+     participant email column for both kinds.
+   The capture flow itself is correctly gated: post-completion only (409 before), owner-scoped
+   by link id + per-attempt token hash + survey id, length/shape validated, lowercased, and
+   constrained at the DB layer to anonymous attempts only. Good.
+
+d) Token still travels in the URL path.
+   Mitigated for app logs (request-logger masks `/api/anonymous-surveys/[token]`) and for
+   referrers (no-referrer app-wide). Residual exposure is the participant's own browser history
+   and any intermediary that logs full URLs outside our app — inherent to shareable-link
+   designs; acceptable, just not zero.
+
+---
+
+## 3. UX / process suggestions
+
+a) Contact-email modal over-promises. The copy reads "Want survey result updates? Enter an
+   email if you would like more info regarding the results of the survey." There is no email
+   delivery in the product yet (Phase 16 shipped a disabled/no-op foundation), so today this
+   email is only stored and shown to the admin — no updates can be sent. Either soften the copy
+   to reflect that the survey owner may follow up, or hold the result-updates promise until a
+   real provider exists. Also consider adding a short "the survey owner will be able to see this
+   address" disclosure for informed consent, since it de-anonymizes.
+
+b) Repeat-copy is admin-only and correctly hides the URL for disabled links (test covers both),
+   which is the right behavior. Consider showing a subtle "treat this link as shareable but not
+   secret" hint near the copy button so admins don't assume it is a private credential.
+
+c) Document the public_token decision in DATA_MODEL_VISION.md (sensitivity classification,
+   at-rest handling) so the next phase doesn't reintroduce a hashed-only assumption.
+
+---
+
+## 4. Focus-area verdicts (the 10 you asked about)
+
+1. Anonymous public link security — token = 96-bit lookup key + 256-bit secret; lookup by key,
+   constant-time hash compare; enabled/expiry/published/not-deleted all revalidated per request;
+   rate-limited. Sound.
+2. Repeat-copy for enabled links — list/create/disable return publicUrl only for enabled links
+   with a stored token; disabled links omit it. Admin-only. Works; depends on plaintext storage.
+3. public_token column — functions as intended (`like 'asl.%'` constrained, nullable). The
+   concern is at-rest exposure, not correctness.
+4. Acceptable to store the full token? — Tolerable for this low-sensitivity capability URL, but
+   reconcile the redundant hash; see section 5 for the explicit recommendation.
+5. Contact-email capture — post-completion, owner-scoped, validated, DB-constrained. Correct.
+6. Admin exposure of contact email — intended; treat as unverified PII and label it as such in
+   Results/CSV (2c).
+7. Public route authz (link token + per-attempt access token) — writes require BOTH; attempts
+   are fetched by (attempt id, link id, access-token hash, survey id), and the complete/email
+   UPDATEs re-assert those in their WHERE. Strong; no cross-attempt or cross-link access.
+8. Hidden-tag isolation — every public structure load passes includeHiddenTags:false; tests
+   assert answerTags/valueTags absent from public payloads while admins still see hidden tags.
+   Correct.
+9. Rate limiting + referrer leakage — both now implemented (note the in-memory store caveat, 2b).
+10. IDOR / nullable-owner regression — re-verified: `fetchAttemptsByCondition` callers each
+    carry their own ownership predicate (user_id for users, link+token for anonymous); the
+    `survey_attempts_owner_check` constraint enforces user XOR anonymous; reporting/CSV handle
+    null user_id (LEFT JOIN, null-filtered id map, anonymous participant builder). Full suite
+    green. No IDOR or regression found.
+
+Migration notes (0016–0018): idempotent guards used throughout; 0017/0018 add validated CHECK
+constraints (table scans + brief locks at scale — consider ADD ... NOT VALID then VALIDATE on a
+large prod survey_attempts). Existing rows satisfy both new constraints (anonymous_contact_email
+null; public_token null) so no backfill risk. 0016's `survey_attempts.anonymous_link_id` FK has
+no ON DELETE action while `anonymous_survey_links.survey_id` is ON DELETE CASCADE — currently
+unreachable because surveys soft-delete, but document the reliance on soft-delete.
+
+---
+
+## 5. Specific recommendation on public_token: ACCEPT (with hardening) — do not remove
+
+Decision among accept / encrypt / remove / redesign:
+
+- REMOVE is wrong for this use case. A survey link is distributed once and widely; admins need a
+  stable, retrievable URL to re-copy. Reverting to copy-once breaks the legitimate workflow that
+  motivated this change, and rotating the token on each copy would invalidate links already
+  emailed out.
+- ACCEPT plaintext is reasonable on its own merits: the token is a low-sensitivity capability
+  URL (submit-only, rate-limited, no PII/admin reach), exposed via API to admins only.
+- ENCRYPT is the recommended hardening if you want defense-in-depth: store public_token
+  encrypted at rest (AES-GCM with an app/Key-Vault-held key), keep token_secret_hash for the
+  fast lookup-key verification, and decrypt only when an admin requests the URL. This preserves
+  repeat-copy while ensuring a DB-only or backup-only compromise does not yield live links.
+
+Recommendation: ACCEPT for now as an explicitly documented, low-sensitivity decision, AND
+reconcile the redundant hash. Concretely:
+  1. Add a sensitivity note to DATA_MODEL_VISION.md: anonymous link tokens are shareable
+     capability URLs, stored retrievably to support re-copy, protected primarily by DB access
+     control and rate limiting.
+  2. Either drop token_secret_hash (and match on the stored token) OR — preferred if survey
+     participation is considered sensitive in your context — encrypt public_token at rest and
+     keep the hash for verification.
+  3. Ensure DB backups and connection credentials are access-controlled (they should be already).
+Encryption can land in a small follow-up; it does not need to block this commit.
+
+---
+
+## Commit readiness
+
+Commit-ready: YES, conditionally.
+
+- No blocking defects; all requested validations pass locally (typecheck, lint, build, anonymous
+  suite, full suite 172/172).
+- Before/at commit: make the public_token decision explicit (section 5 — at minimum document it
+  and reconcile the redundant hash) and soften the contact-email modal copy / add the consent
+  line (section 3a).
+- Recommended follow-ups (non-blocking): encrypt public_token at rest (5), move the rate-limit
+  store off in-memory before horizontal scaling (2b), label the unverified anonymous email in
+  Results/CSV (2c), and run the manual browser pass (admin create+copy+disable, incognito
+  completion + optional email, separate Results rows, disabled/expired/bad-token states).
+
+I did not modify any source files, per the handoff instructions.
+
+================================================================================
+DELTA PASS 3 — hardening that landed after the updated review
+================================================================================
+
+Reviewer: Claude Code
+Date: 2026-06-22
+Scope: only the new work since DELTA PASS 2 — public_token encryption
+(migration 0019), Postgres-backed shared rate-limit store (migration 0020 +
+services/rateLimitStore.ts), and the link rotate / disabled-link cleanup flow.
+
+Validations re-run, all green:
+- npm run typecheck — clean (web + api)
+- npm run lint — clean (web + api)
+- npm run test -w apps/api -- test/anonymousSurvey.test.ts — 4 passed
+- npm test — full suite green (API 18 files / 172 tests; shared + web pass)
+
+What resolved my prior findings:
+
+- public_token is now AES-256-GCM ENCRYPTED at rest (format enc:v1:<iv>:<tag>:<ct>,
+  per-record random 12-byte IV, GCM auth tag). token_secret_hash is retained for the
+  timing-safe lookup verification, and the plaintext is decrypted only when an admin
+  reads the URL. This is exactly the "encrypt at rest, keep the hash for lookup"
+  option I recommended in section 5 — it closes the section-1 concern: a DB-only or
+  backup-only compromise no longer yields live links without also holding the app
+  encryption secret. Migration 0019 widens the CHECK to allow enc:v1:% (still permits
+  legacy asl.% for back-compat). Test asserts the stored value is enc:v1:* and does
+  not contain the plaintext token. RESOLVED.
+- Rate-limit store moved off in-memory to a shared Postgres table
+  (PostgresRateLimitStore, migration 0020), so the limit is now real across instances
+  and restarts. Bonus privacy: it stores SHA-256(client key), not raw IPs. Closes
+  prior finding 2b. RESOLVED.
+- Link rotation + disabled-link cleanup: POST /:id/anonymous-links/:linkId/rotate
+  (admin-only) transactionally issues a fresh token and disables the old one
+  (SELECT ... FOR UPDATE, rollback on failure, re-checks survey still published).
+  Test confirms the old token becomes unavailable and the new one works. Sound.
+
+New minor (non-blocking) notes from this delta:
+
+a) Encryption key reuse. anonymousLinkTokenEncryptionSecret falls back to the JWT
+   secret when ANONYMOUS_LINK_TOKEN_ENCRYPTION_SECRET is unset. Reusing one secret for
+   two cryptographic purposes (HMAC-JWT and AES-GCM) is a crypto-hygiene smell rather
+   than a vulnerability — the key is derived via SHA-256 and stays server-side, and in
+   prod it inherits the JWT secret's length/placeholder guards. Recommend setting a
+   dedicated secret in prod (the env doc already marks it "optional"); consider a prod
+   guard so it is not silently shared.
+b) Rate-limit pruning cost. PostgresRateLimitStore.increment() runs a global
+   DELETE ... WHERE window_reset_at <= now() on EVERY anonymous request. With the
+   window_reset_at index this is a ranged delete, but on a hot public endpoint it is
+   write amplification plus dead-tuple churn and possible contention. Prefer
+   probabilistic pruning (e.g. ~1% of calls) or a scheduled sweep; the get/increment
+   window checks already ignore expired rows, so eager pruning is not required for
+   correctness.
+c) Key-rotation behavior (document it). If the encryption secret changes, existing
+   rows fail to decrypt and decryptPublicToken returns null, so admin re-copy/list
+   simply omits publicUrl — the links themselves still work for takers (verification
+   uses lookup key + secret hash, independent of public_token). Graceful, but worth a
+   one-line note in DATA_MODEL_VISION so a future secret rotation is not mistaken for
+   data loss. The legacy asl.% passthrough in decrypt is harmless for this unreleased
+   phase (no released plaintext rows to migrate).
+
+Verdict: COMMIT-READY. The two items I had carried as recommended hardening
+(encrypt public_token, shared rate-limit store) are now done, and the rotate flow is
+a clean addition. Remaining items (a/b/c above, plus the earlier contact-email modal
+copy and the unverified-email labeling in Results/CSV) are all non-blocking polish.
+
+I did not modify any source files.

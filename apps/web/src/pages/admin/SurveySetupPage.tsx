@@ -1,8 +1,14 @@
-import type { SurveyCategory } from "@survey-portal/shared";
+import type { AnonymousSurveyLink, SurveyCategory } from "@survey-portal/shared";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { createCategory, fetchCategories } from "../../api/categories.js";
-import { updateSurveyMetadata } from "../../api/surveys.js";
+import {
+  createAnonymousSurveyLink,
+  disableAnonymousSurveyLink,
+  fetchAnonymousSurveyLinks,
+  rotateAnonymousSurveyLink,
+  updateSurveyMetadata
+} from "../../api/surveys.js";
 import { readFormText, readNullableFormText } from "../../components/admin/builderForm.js";
 import { StatusActionPanel } from "../../components/admin/SurveyBuilderComponents.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
@@ -14,6 +20,13 @@ export function SurveySetupPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(survey.categoryId);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [anonymousLinks, setAnonymousLinks] = useState<AnonymousSurveyLink[]>([]);
+  const [newAnonymousUrl, setNewAnonymousUrl] = useState<string | null>(null);
+  const [anonymousLinkExpiryPreset, setAnonymousLinkExpiryPreset] =
+    useState<AnonymousLinkExpiryPreset>("none");
+  const [copiedAnonymousLinkId, setCopiedAnonymousLinkId] = useState<number | null>(null);
+  const [isLoadingLinks, setIsLoadingLinks] = useState(false);
+  const [isMutatingLink, setIsMutatingLink] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -37,6 +50,34 @@ export function SurveySetupPage() {
   useEffect(() => {
     setSelectedCategoryId(survey.categoryId);
   }, [survey.id, survey.categoryId]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    setIsLoadingLinks(true);
+    setNewAnonymousUrl(null);
+
+    fetchAnonymousSurveyLinks(survey.id)
+      .then((response) => {
+        if (isActive) {
+          setAnonymousLinks(response.links);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setAnonymousLinks([]);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingLinks(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [survey.id]);
 
   async function handleSaveMetadata(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,6 +124,108 @@ export function SurveySetupPage() {
       setIsCreatingCategory(false);
     }
   }
+
+  async function handleCreateAnonymousLink() {
+    setIsMutatingLink(true);
+    setNewAnonymousUrl(null);
+    setCopiedAnonymousLinkId(null);
+
+    try {
+      const response = await createAnonymousSurveyLink({
+        surveyId: survey.id,
+        expiresAt: getAnonymousLinkExpiresAt(anonymousLinkExpiryPreset)
+      });
+      setAnonymousLinks((current) => [response.link, ...current]);
+      setNewAnonymousUrl(response.link.publicUrl);
+      setFeedback({ error: null, notice: "Anonymous survey link created" });
+      await copyText(response.link.publicUrl)
+        .then(() => setCopiedAnonymousLinkId(response.link.id))
+        .catch(() => undefined);
+    } catch (createError) {
+      setFeedback({
+        error:
+          createError instanceof Error
+            ? createError.message
+            : "Could not create anonymous survey link",
+        notice: null
+      });
+    } finally {
+      setIsMutatingLink(false);
+    }
+  }
+
+  async function handleDisableAnonymousLink(linkId: number) {
+    setIsMutatingLink(true);
+    setCopiedAnonymousLinkId(null);
+
+    try {
+      const response = await disableAnonymousSurveyLink({ surveyId: survey.id, linkId });
+      setAnonymousLinks((current) =>
+        current.map((link) => (link.id === linkId ? response.link : link))
+      );
+      setFeedback({ error: null, notice: "Anonymous survey link disabled" });
+    } catch (disableError) {
+      setFeedback({
+        error:
+          disableError instanceof Error
+            ? disableError.message
+            : "Could not disable anonymous survey link",
+        notice: null
+      });
+    } finally {
+      setIsMutatingLink(false);
+    }
+  }
+
+  async function handleCopyAnonymousLinkRow(link: AnonymousSurveyLink) {
+    if (!link.publicUrl) {
+      return;
+    }
+
+    try {
+      await copyText(link.publicUrl);
+      setCopiedAnonymousLinkId(link.id);
+      setFeedback({ error: null, notice: "Anonymous survey link copied" });
+    } catch {
+      setFeedback({ error: "Could not copy link", notice: null });
+    }
+  }
+
+  async function handleRotateAnonymousLink(linkId: number) {
+    setIsMutatingLink(true);
+    setNewAnonymousUrl(null);
+    setCopiedAnonymousLinkId(null);
+
+    try {
+      const response = await rotateAnonymousSurveyLink({
+        surveyId: survey.id,
+        linkId,
+        expiresAt: getAnonymousLinkExpiresAt(anonymousLinkExpiryPreset)
+      });
+      setAnonymousLinks((current) => [
+        response.link,
+        ...current.map((link) => (link.id === response.disabledLink.id ? response.disabledLink : link))
+      ]);
+      setNewAnonymousUrl(response.link.publicUrl);
+      setFeedback({ error: null, notice: "Anonymous survey link rotated" });
+      await copyText(response.link.publicUrl)
+        .then(() => setCopiedAnonymousLinkId(response.link.id))
+        .catch(() => undefined);
+    } catch (rotateError) {
+      setFeedback({
+        error:
+          rotateError instanceof Error
+            ? rotateError.message
+            : "Could not rotate anonymous survey link",
+        notice: null
+      });
+    } finally {
+      setIsMutatingLink(false);
+    }
+  }
+
+  const enabledAnonymousLinks = anonymousLinks.filter((link) => link.enabled);
+  const disabledAnonymousLinks = anonymousLinks.filter((link) => !link.enabled);
 
   return (
     <div className="builder-workspace">
@@ -155,6 +298,203 @@ export function SurveySetupPage() {
         onStatusChange={changeStatus}
         survey={survey}
       />
+
+      <section className="builder-form anonymous-links-panel">
+        <div className="builder-section-heading">
+          <div>
+            <p className="eyebrow">Anonymous access</p>
+            <h3>Tokenized public links</h3>
+            <p className="builder-heading-note">
+              Published surveys can be completed without an account through scoped links.
+            </p>
+          </div>
+          <div className="anonymous-link-create-controls">
+            <label>
+              Expires
+              <select
+                onChange={(event) =>
+                  setAnonymousLinkExpiryPreset(event.target.value as AnonymousLinkExpiryPreset)
+                }
+                value={anonymousLinkExpiryPreset}
+              >
+                <option value="none">No expiry</option>
+                <option value="7">7 days</option>
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+              </select>
+            </label>
+            <button
+              className="button-link compact-button primary-button"
+              disabled={isMutatingLink || survey.status !== "published"}
+              onClick={() => void handleCreateAnonymousLink()}
+              type="button"
+            >
+              {isMutatingLink ? "Working..." : "Create link"}
+            </button>
+          </div>
+        </div>
+
+        {survey.status !== "published" ? (
+          <p className="status muted">Publish the survey before creating anonymous links.</p>
+        ) : null}
+
+        {newAnonymousUrl ? (
+          <label>
+            New link
+            <input readOnly value={newAnonymousUrl} />
+            <span className="input-helper-text">
+              This link was copied to your clipboard and can be revealed again while enabled.
+            </span>
+          </label>
+        ) : null}
+
+        {isLoadingLinks ? <p className="status muted">Loading anonymous links...</p> : null}
+
+        {!isLoadingLinks && anonymousLinks.length === 0 ? (
+          <div className="builder-empty-state">
+            <strong>No anonymous links</strong>
+            <span>Create a tokenized link when this survey should be available without login.</span>
+          </div>
+        ) : null}
+
+        {anonymousLinks.length > 0 ? (
+          <div className="anonymous-link-list">
+            {enabledAnonymousLinks.some((link) => !link.publicUrl) ? (
+              <p className="status muted">
+                Some enabled links were created before repeat-copy support. Rotate one to create a copyable replacement.
+              </p>
+            ) : null}
+            {enabledAnonymousLinks.length === 0 ? (
+              <div className="builder-empty-state compact-empty-state">
+                <strong>No enabled links</strong>
+                <span>Create or rotate a tokenized link when this survey should be available without login.</span>
+              </div>
+            ) : null}
+            {enabledAnonymousLinks.map((link) => {
+              const publicUrl = link.publicUrl;
+
+              return (
+                <div className="anonymous-link-row" key={link.id}>
+                  <div className="anonymous-link-main">
+                    <div className="anonymous-link-meta">
+                      <strong>Link #{link.id}</strong>
+                      <span className="results-attempt-email">
+                        Created {formatDateTime(link.createdAt)}
+                      </span>
+                      <span className="results-attempt-email">
+                        Expires {formatAnonymousLinkExpiry(link.expiresAt)}
+                      </span>
+                      <span className={`status-pill ${link.enabled ? "published" : "retired"}`}>
+                        {link.enabled ? "enabled" : "disabled"}
+                      </span>
+                      {copiedAnonymousLinkId === link.id ? (
+                        <span className="status-pill published">copied</span>
+                      ) : null}
+                    </div>
+                    {link.enabled ? (
+                      <details className="anonymous-link-reveal">
+                        <summary>Show public link</summary>
+                        {publicUrl ? (
+                          <div className="anonymous-link-copy-row">
+                            <input aria-label={`Public URL for link ${link.id}`} readOnly value={publicUrl} />
+                            <button
+                              className="button-link compact-button secondary-button"
+                              onClick={() => void handleCopyAnonymousLinkRow(link)}
+                              type="button"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="status muted">
+                            This link was created before repeat-copy support. Rotate it to create a copyable replacement.
+                          </p>
+                        )}
+                      </details>
+                    ) : null}
+                  </div>
+                  {link.enabled ? (
+                    <div className="anonymous-link-row-actions">
+                      <button
+                        className="button-link compact-button secondary-button"
+                        disabled={isMutatingLink}
+                        onClick={() => void handleRotateAnonymousLink(link.id)}
+                        type="button"
+                      >
+                        Rotate
+                      </button>
+                      <button
+                        className="button-link compact-button secondary-button"
+                        disabled={isMutatingLink}
+                        onClick={() => void handleDisableAnonymousLink(link.id)}
+                        type="button"
+                      >
+                        Disable
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+            {disabledAnonymousLinks.length > 0 ? (
+              <details className="anonymous-disabled-links">
+                <summary>Disabled links ({disabledAnonymousLinks.length})</summary>
+                <div className="anonymous-disabled-link-list">
+                  {disabledAnonymousLinks.map((link) => (
+                    <div className="anonymous-link-row disabled" key={link.id}>
+                      <div className="anonymous-link-main">
+                        <div className="anonymous-link-meta">
+                          <strong>Link #{link.id}</strong>
+                          <span className="results-attempt-email">
+                            Created {formatDateTime(link.createdAt)}
+                          </span>
+                          <span className="results-attempt-email">
+                            Disabled {formatDateTime(link.disabledAt)}
+                          </span>
+                          <span className="status-pill retired">disabled</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
     </div>
   );
+}
+
+type AnonymousLinkExpiryPreset = "none" | "7" | "30" | "90";
+
+async function copyText(value: string): Promise<void> {
+  if (!navigator.clipboard) {
+    return;
+  }
+
+  await navigator.clipboard.writeText(value);
+}
+
+function formatDateTime(isoDate: string | null): string {
+  if (!isoDate) {
+    return "-";
+  }
+
+  const parsed = new Date(isoDate);
+
+  return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleString();
+}
+
+function formatAnonymousLinkExpiry(isoDate: string | null): string {
+  return isoDate ? formatDateTime(isoDate) : "never";
+}
+
+function getAnonymousLinkExpiresAt(preset: AnonymousLinkExpiryPreset): string | null {
+  if (preset === "none") {
+    return null;
+  }
+
+  const days = Number(preset);
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }

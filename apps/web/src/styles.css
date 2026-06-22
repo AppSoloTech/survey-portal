@@ -1912,6 +1912,90 @@ main {
   color: var(--text-muted);
 }
 
+.contact-email-summary {
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+}
+
+.contact-email-summary .status {
+  margin: 0;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(13, 24, 41, 0.5);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 30;
+}
+
+.contact-email-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  display: grid;
+  gap: 1rem;
+  max-width: 480px;
+  padding: clamp(1.25rem, 4vw, 1.75rem);
+  width: min(100%, 480px);
+}
+
+.contact-email-modal-heading {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.contact-email-modal h3 {
+  margin: 0;
+}
+
+.contact-email-modal label {
+  color: var(--text-muted);
+  display: grid;
+  font-size: 0.875rem;
+  font-weight: 700;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.contact-email-modal input {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  min-height: 2.6rem;
+  padding: 0.55rem 0.75rem;
+  transition:
+    border-color var(--speed-fast) var(--ease-out),
+    box-shadow var(--speed-base) var(--ease-out),
+    background-color var(--speed-fast) var(--ease-out);
+  width: 100%;
+}
+
+.contact-email-modal input:focus {
+  background: var(--surface);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  outline: none;
+}
+
+.contact-email-modal .status {
+  margin: 0;
+}
+
+.contact-email-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
 /* ------------------------------------------------------------------ */
 /*  8. Admin workspace                                                  */
 /* ------------------------------------------------------------------ */
@@ -3522,6 +3606,115 @@ main {
   gap: 0.5rem;
 }
 
+.anonymous-link-create-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.anonymous-link-create-controls label {
+  color: var(--text-muted);
+  display: grid;
+  font-size: 0.875rem;
+  font-weight: 700;
+  gap: 0.35rem;
+  min-width: 8.5rem;
+}
+
+.anonymous-link-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.anonymous-link-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.875rem;
+}
+
+.anonymous-link-row.disabled {
+  background: var(--surface-2);
+}
+
+.anonymous-link-main,
+.anonymous-link-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.anonymous-link-main {
+  flex: 1 1 320px;
+}
+
+.anonymous-link-meta {
+  min-width: 0;
+}
+
+.anonymous-link-reveal {
+  flex: 1 1 100%;
+}
+
+.anonymous-link-reveal summary {
+  color: var(--brand);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 750;
+  width: fit-content;
+}
+
+.anonymous-link-copy-row {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 0.75rem;
+}
+
+.anonymous-link-copy-row input {
+  min-width: 0;
+}
+
+.anonymous-link-row-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.anonymous-link-reveal .status {
+  margin: 0.75rem 0 0;
+}
+
+.anonymous-disabled-links {
+  border-top: 1px solid var(--border);
+  margin-top: 0.25rem;
+  padding-top: 0.75rem;
+}
+
+.anonymous-disabled-links summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 750;
+  width: fit-content;
+}
+
+.anonymous-disabled-link-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 .results-detail-panel {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -4226,6 +4419,10 @@ main {
   .survey-card,
   .empty-panel {
     padding: 1.25rem;
+  }
+
+  .contact-email-modal-actions .button-link {
+    flex: 1 1 auto;
   }
 
   .admin-overview-layout,

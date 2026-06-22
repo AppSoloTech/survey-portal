@@ -422,6 +422,7 @@ describe("GET /api/surveys/:id/export.csv", () => {
       "survey_title",
       "attempt_id",
       "participant_email",
+      "participant_email_status",
       "participant_name",
       "attempt_status",
       "started_at",
@@ -445,6 +446,7 @@ describe("GET /api/surveys/:id/export.csv", () => {
       line.includes(fixture.completer.user.email)
     );
     expect(completerRows).toHaveLength(2);
+    expect(completerRows[0]).toContain(",verified_account,");
     expect(completerRows[1]).toContain('"target, with a ""quoted"" answer"');
 
     const blankRow = lines.find((line) => line.includes("skipped_blank"));

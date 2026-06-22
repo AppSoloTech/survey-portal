@@ -1,9 +1,15 @@
 import type {
   AdminAttemptDetailResponse,
+  AnonymousSurveyLinksResponse,
+  AnonymousSurveyResponse,
   AnswerSurveyResponse,
   CompleteSurveyResponse,
+  CreateAnonymousSurveyLinkResponse,
+  DisableAnonymousSurveyLinkResponse,
   MySurveyResponse,
   MySurveysResponse,
+  RotateAnonymousSurveyLinkResponse,
+  StartAnonymousSurveyResponse,
   StartSurveyResponse,
   SurveyAttemptsListResponse,
   SurveyListResponse,
@@ -82,6 +88,123 @@ export async function completeSurvey(input: {
     }),
     method: "POST"
   });
+}
+
+export async function fetchAnonymousSurvey(token: string): Promise<AnonymousSurveyResponse> {
+  return apiRequest<AnonymousSurveyResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(token)}`
+  );
+}
+
+export async function startAnonymousSurvey(token: string): Promise<StartAnonymousSurveyResponse> {
+  return apiRequest<StartAnonymousSurveyResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(token)}/start`,
+    { method: "POST" }
+  );
+}
+
+export async function answerAnonymousSurvey(input: {
+  token: string;
+  attemptAccessToken: string;
+  attemptId: number;
+  questionId: number;
+  answerText: string | null;
+  answerInteger: number | null;
+  selectedAnswerOptionIds: number[];
+}): Promise<AnswerSurveyResponse> {
+  return apiRequest<AnswerSurveyResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(input.token)}/answer`,
+    {
+      body: JSON.stringify({
+        attemptAccessToken: input.attemptAccessToken,
+        attemptId: input.attemptId,
+        questionId: input.questionId,
+        answerText: input.answerText,
+        answerInteger: input.answerInteger,
+        selectedAnswerOptionIds: input.selectedAnswerOptionIds
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function completeAnonymousSurvey(input: {
+  token: string;
+  attemptAccessToken: string;
+  attemptId: number;
+}): Promise<CompleteSurveyResponse> {
+  return apiRequest<CompleteSurveyResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(input.token)}/complete`,
+    {
+      body: JSON.stringify({
+        attemptAccessToken: input.attemptAccessToken,
+        attemptId: input.attemptId
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function submitAnonymousContactEmail(input: {
+  token: string;
+  attemptAccessToken: string;
+  attemptId: number;
+  email: string;
+}): Promise<CompleteSurveyResponse> {
+  return apiRequest<CompleteSurveyResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(input.token)}/contact-email`,
+    {
+      body: JSON.stringify({
+        attemptAccessToken: input.attemptAccessToken,
+        attemptId: input.attemptId,
+        email: input.email
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function fetchAnonymousSurveyLinks(
+  surveyId: number
+): Promise<AnonymousSurveyLinksResponse> {
+  return apiRequest<AnonymousSurveyLinksResponse>(`/api/surveys/${surveyId}/anonymous-links`);
+}
+
+export async function createAnonymousSurveyLink(input: {
+  surveyId: number;
+  expiresAt?: string | null;
+}): Promise<CreateAnonymousSurveyLinkResponse> {
+  return apiRequest<CreateAnonymousSurveyLinkResponse>(
+    `/api/surveys/${input.surveyId}/anonymous-links`,
+    {
+      body: JSON.stringify({ expiresAt: input.expiresAt ?? null }),
+      method: "POST"
+    }
+  );
+}
+
+export async function disableAnonymousSurveyLink(input: {
+  surveyId: number;
+  linkId: number;
+}): Promise<DisableAnonymousSurveyLinkResponse> {
+  return apiRequest<DisableAnonymousSurveyLinkResponse>(
+    `/api/surveys/${input.surveyId}/anonymous-links/${input.linkId}/disable`,
+    { method: "PATCH" }
+  );
+}
+
+export async function rotateAnonymousSurveyLink(input: {
+  surveyId: number;
+  linkId: number;
+  expiresAt?: string | null;
+}): Promise<RotateAnonymousSurveyLinkResponse> {
+  return apiRequest<RotateAnonymousSurveyLinkResponse>(
+    `/api/surveys/${input.surveyId}/anonymous-links/${input.linkId}/rotate`,
+    {
+      body: JSON.stringify({ expiresAt: input.expiresAt ?? null }),
+      method: "POST"
+    }
+  );
 }
 
 export async function fetchAdminSurveys(): Promise<SurveyListResponse> {

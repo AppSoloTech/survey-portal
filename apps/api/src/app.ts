@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { adminRouter } from "./routes/admin.js";
+import { anonymousSurveyPublicRouter } from "./routes/anonymousSurveyRoutes.js";
 import { authRouter } from "./routes/auth.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { healthRouter } from "./routes/health.js";
@@ -23,6 +24,10 @@ export function createApp() {
   app.set("trust proxy", config.trustProxyHops);
 
   app.use(requestLogger);
+  app.use((_req, res, next) => {
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
   app.use(express.json({ limit: "100kb" }));
 
   if (!config.isProduction) {
@@ -36,6 +41,7 @@ export function createApp() {
 
   app.use("/api/health", healthRouter);
   app.use("/api/auth", authRouter);
+  app.use("/api/anonymous-surveys", anonymousSurveyPublicRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/surveys", surveysRouter);
   app.use("/api/my-surveys", mySurveysRouter);

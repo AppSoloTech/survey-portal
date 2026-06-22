@@ -1,0 +1,180 @@
+# Claude Review Handoff — Phase 17
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_17.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- auth boundary leakage
+- hidden-tag exposure
+- token entropy and storage
+- request-log token leakage
+- expired/disabled link behavior
+- anonymous attempt ownership
+- reporting representation for anonymous attempts
+- accidental implementation of broad email invitations or account creation
+- architectural consistency
+- maintainability
+- app environment safety
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_17.txt`
+- `notes/next_phases.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+
+## Phase Scope
+
+Implemented:
+
+- Added `database/migrations/0016_anonymous_survey_links.sql`.
+- Added admin-created anonymous survey links scoped to published, non-deleted surveys.
+- Link URL token format uses a public lookup key plus high-entropy secret.
+- Database stores only the lookup key and SHA-256 hash of the token secret.
+- Added nullable `survey_attempts.user_id`, `anonymous_link_id`, and `anonymous_access_token_hash`.
+- Added a DB owner check so attempts are owned by either a registered user or an anonymous link plus attempt token hash.
+- Added per-attempt anonymous access tokens for public answer/complete calls.
+- Added admin routes:
+  - `GET /api/surveys/:id/anonymous-links`
+  - `POST /api/surveys/:id/anonymous-links`
+  - `PATCH /api/surveys/:id/anonymous-links/:linkId/disable`
+- Added public routes:
+  - `GET /api/anonymous-surveys/:token`
+  - `POST /api/anonymous-surveys/:token/start`
+  - `POST /api/anonymous-surveys/:token/answer`
+  - `POST /api/anonymous-surveys/:token/pages/:pageId/answer`
+  - `POST /api/anonymous-surveys/:token/complete`
+- Public routes revalidate link token, enabled state, expiration, survey status, and soft-delete state.
+- Public routes reuse existing answer validation, page save, off-path pruning, completion validation, and participant-safe survey structure loading.
+- Request logging masks anonymous survey token path segments.
+- Admin reporting and CSV export label anonymous attempts without synthetic users.
+- Admin Setup page can create, copy-on-create, list, and disable anonymous links.
+- Added public frontend route `/anonymous-surveys/:token` reusing the participant runner without auth.
+- Updated data-model docs, follow-ups, and phase log.
+- Added focused API tests for admin-only endpoints, token unavailability, lifecycle, hidden-tag isolation, owner separation, and reporting representation.
+
+Non-goals respected:
+
+- No anonymous user accounts.
+- No public survey discovery page.
+- No `/api/my-surveys`, dashboard, profile, admin, hidden-tag, or auth-only access for anonymous users.
+- No email invitation delivery.
+- No recipient list management.
+- No assignment rules.
+- No password reset behavior.
+
+Known tradeoffs:
+
+- The full public URL can be shown/copied only immediately after creation. Because only the token secret hash is stored, the full token cannot be reconstructed after reload.
+- Anonymous attempts do not yet have a refresh/resume mechanism. Reloading the public route starts a new anonymous attempt.
+- Disabling or expiring an anonymous link blocks in-progress anonymous writes for that token.
+- Link secret hashing uses SHA-256 over a high-entropy random secret rather than a slow password hash; this is intended for random bearer tokens, not human passwords.
+
+Deferred work:
+
+- Decide whether anonymous attempts need browser refresh/resume through session storage or another anonymous session mechanism.
+- Future invitation/email phases may send anonymous links once a real email provider exists.
+- Recipient-list management, invite tracking, opt-in/out handling, and assignment workflows remain out of scope.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Important untracked files:
+
+```txt
+apps/api/src/routes/anonymousSurveyRoutes.ts
+apps/api/src/services/anonymousSurveys.ts
+apps/api/test/anonymousSurvey.test.ts
+database/migrations/0016_anonymous_survey_links.sql
+notes/claude_handoff_phase_17.txt
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm run test -w apps/api -- test/anonymousSurvey.test.ts
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing chunk-size warning; build succeeded.
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/anonymousSurvey.test.ts` (4 tests)
+- Passed with approved local PostgreSQL access:
+  `npm test` (shared 47, web 52, API 172 tests across 18 API files)
+- Passed: `git diff --check`
+- Initial sandbox-only failure: API tests could not connect to local PostgreSQL until rerun with approval.
+
+Manual testing:
+
+- Not run in browser during this implementation pass.
+- Recommended manual pass:
+  - Admin creates a link for a published survey and copies it.
+  - Anonymous visitor completes the survey in a fresh/incognito browser.
+  - Logged-in and anonymous attempts both appear separately in Results.
+  - Disabled, expired, and bad tokens show safe unavailable states.
+  - Anonymous participant UI does not show hidden tags.
+
+## Specific Questions
+
+- Does any public anonymous route leak hidden tags, value tags, admin metadata, auth-only data, or user-dashboard access?
+- Is the token model acceptable: lookup key + hashed link secret, plus per-attempt hashed access token?
+- Are anonymous attempt ownership checks strong enough for answer/page-answer/complete writes?
+- Should disabling/expiring a link block already-started anonymous attempts, or should started attempts be allowed to finish?
+- Is request-log token masking sufficient for `/api/anonymous-surveys/:token/*` paths?
+- Does reporting safely represent anonymous attempts without inventing user accounts?
+- Did the phase accidentally implement email invitations, recipient management, public discovery, or account creation?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_17.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

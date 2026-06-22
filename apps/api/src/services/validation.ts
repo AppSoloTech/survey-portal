@@ -11,6 +11,7 @@ const scaleRangeMaxValueCount = 21;
 const categoryNameMaxLength = 120;
 const surveyPageTitleMaxLength = 180;
 const surveyPageDescriptionMaxLength = 600;
+const anonymousContactEmailMaxLength = 320;
 
 export function validateSurveyBody(body: unknown): ValidationResult<{
   title: string;
@@ -640,6 +641,38 @@ export function validateCompleteBody(body: unknown): ValidationResult<{ attemptI
     ok: true,
     value: { attemptId }
   };
+}
+
+export function validateAnonymousContactEmailBody(
+  body: unknown
+): ValidationResult<{ attemptId: number; email: string }> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const attemptId = readPositiveIntegerField(body, "attemptId");
+  const email = readTextField(body, "email").toLowerCase();
+
+  if (!attemptId) {
+    return { ok: false, error: "Attempt id is required" };
+  }
+
+  if (!email) {
+    return { ok: false, error: "Email is required" };
+  }
+
+  if (email.length > anonymousContactEmailMaxLength) {
+    return {
+      ok: false,
+      error: `Email must be ${anonymousContactEmailMaxLength} characters or fewer`
+    };
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: "Email must be a valid address" };
+  }
+
+  return { ok: true, value: { attemptId, email } };
 }
 
 export function readPositiveIntegerParam(value: string | undefined): number | null {

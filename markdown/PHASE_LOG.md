@@ -3443,3 +3443,288 @@ Phase closeout artifacts:
   comments were added after review.
 - Manual testing complete: Basic disabled API startup and health check complete.
 - Ready to commit: Yes, at the developer's discretion.
+
+---
+
+# Phase 17 — Anonymous Survey Foundation
+
+Date:
+2026-06-22
+
+Status:
+Completed; ready to commit after manual browser sign-off
+
+Prompt:
+`prompts/prompt_17.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_17.txt`
+- Claude review: `notes/claude_review_phase_17.txt`
+
+## Goals
+
+- Add a safe anonymous survey foundation with tokenized public access.
+- Keep anonymous takers separate from logged-in users.
+- Reuse the existing participant-safe survey runner, answer validation,
+  pruning, completion, and admin reporting paths where practical.
+- Avoid email invitations, recipient management, public discovery, or account
+  creation for anonymous takers.
+
+## Built
+
+- Added `database/migrations/0016_anonymous_survey_links.sql`.
+- Added `anonymous_survey_links` with token lookup key, hashed token secret,
+  enabled/disabled state, nullable expiration, creator, and timestamps.
+- Added `database/migrations/0017_anonymous_contact_email.sql`.
+- Added `database/migrations/0018_anonymous_link_public_token.sql`.
+- Added `anonymous_survey_links.public_token` so enabled links created after
+  the migration can be revealed and copied again by admins in Setup.
+- Added `database/migrations/0019_anonymous_link_public_token_encryption.sql`.
+- Added application-layer AES-256-GCM encryption for `public_token`, with
+  plaintext legacy-token read support.
+- Added `database/migrations/0020_anonymous_rate_limits.sql`.
+- Replaced the anonymous public-route in-memory rate-limit store with a
+  PostgreSQL-backed store shared across API instances.
+- Added nullable `survey_attempts.user_id`, `anonymous_link_id`, and
+  `anonymous_access_token_hash`, with an owner check requiring either registered
+  user ownership or anonymous link ownership.
+- Added nullable `survey_attempts.anonymous_contact_email` for optional
+  post-completion anonymous follow-up contact capture.
+- Added anonymous token helpers using high-entropy URL-safe random tokens,
+  hashed secrets, and dot separators.
+- Added admin anonymous-link APIs under `/api/surveys/:id/anonymous-links`.
+- Added public anonymous survey APIs under `/api/anonymous-surveys/:token`.
+- Added IP-based throttling for the public anonymous survey router, with
+  `ANONYMOUS_SURVEY_RATE_LIMIT_WINDOW_MS` and
+  `ANONYMOUS_SURVEY_RATE_LIMIT_MAX` environment controls.
+- Public anonymous APIs return participant-safe survey structures only
+  (`includeHiddenTags: false`) and require a per-attempt anonymous token for
+  answer/complete writes.
+- Masked anonymous survey token values in API request logs.
+- Added a global `Referrer-Policy: no-referrer` header so anonymous tokens in
+  SPA paths are not leaked as referrers.
+- Changed link-secret hash verification to use constant-time comparison.
+- Made hard-deleting anonymous links explicitly cascade to their anonymous
+  attempts, matching the existing hard-delete survey cascade behavior.
+- Mapped mid-flow anonymous survey unavailability to the same safe 404 response
+  instead of generic 500s.
+- Updated admin reporting and CSV export to represent anonymous attempts as
+  anonymous participants rather than synthetic users.
+- Added admin Setup controls to create with expiration presets, copy-on-create,
+  reveal/copy enabled links from the list, rotate enabled links, show
+  expiration, show row-level copied feedback, disable anonymous links, and keep
+  disabled links in a collapsed management section for published surveys.
+- Added `/anonymous-surveys/:token` frontend route that reuses the participant
+  runner without requiring authentication.
+- Added an optional anonymous completion modal that can save a
+  respondent-provided follow-up email after submission.
+- Exposed saved anonymous follow-up emails in admin Results and CSV exports,
+  labelled as unverified follow-up addresses rather than account emails. CSV
+  includes `participant_email_status` for this distinction.
+- Added focused API tests for admin-only link management, unavailable tokens,
+  anonymous lifecycle, hidden-tag isolation, anonymous/user ownership separation,
+  follow-up email capture, and reporting representation.
+- Updated `markdown/DATA_MODEL_VISION.md` and `markdown/FOLLOW_UPS.md`.
+
+## Important Decisions
+
+### Hashed Link Secret And Admin Repeat Copy
+
+Decision:
+Anonymous link URLs are generated as a public lookup key plus a high-entropy
+secret. The database stores the lookup key and a hash of the secret for
+validation. Links created after migration `0018` also store `public_token` so
+admins can reveal and copy enabled public links again from Setup. New writes
+encrypt `public_token` with application-layer AES-256-GCM.
+
+Reason:
+Admins need to recover already-distributed links. The hash remains useful for
+lookup/verification, while encrypted `public_token` restores repeat-copy UX for
+enabled links without storing new tokens as plaintext.
+
+Tradeoff:
+Anyone with raw database or backup read access still cannot use encrypted
+`public_token` without the application secret. If that secret changes, existing
+links continue to validate through their hash but cannot be revealed for repeat
+copy; admins can rotate affected links.
+
+### Per-Attempt Anonymous Access Token
+
+Decision:
+Starting an anonymous survey creates an attempt-specific high-entropy token,
+stored only as a hash and required for answer/complete calls.
+
+Reason:
+The public link authorizes starting a survey, but attempt writes need a separate
+ownership credential so knowing or guessing an attempt id is not enough to edit
+responses.
+
+Tradeoff:
+There is no anonymous resume-after-refresh flow yet; a browser refresh starts a
+new anonymous attempt. Durable anonymous resume can be added later if required.
+
+### Disabled Or Expired Links Stop Writes
+
+Decision:
+Every public anonymous read/write revalidates the link token, enabled state,
+expiration, survey status, and soft-delete state.
+
+Reason:
+Disabling or expiring a link should make that token unavailable promptly,
+including in-progress anonymous attempts.
+
+Tradeoff:
+An anonymous taker in progress may be blocked if an admin disables the link
+before completion. This matches the Phase 17 safety expectation.
+
+## Architecture Notes
+
+- Database/schema impact: migrations `0016`, `0017`, `0018`, `0019`, and
+  `0020`; attempt ownership can now be registered or anonymous, anonymous
+  attempts may carry a nullable follow-up email after completion, newly created
+  anonymous links retain an encrypted admin-copyable public token, and anonymous
+  public-route rate limits are stored in PostgreSQL.
+- API contract impact: new admin anonymous-link endpoints, public anonymous
+  survey endpoints, and an anonymous post-completion contact-email endpoint;
+  existing authenticated survey APIs continue to require auth.
+- Auth or authorization impact: admin link management remains auth+admin-only;
+  public routes do not set cookies and require token validation.
+- Data privacy or visibility impact: hidden tags remain excluded from anonymous
+  participant responses; admin reports still include hidden tags. Request logs
+  mask anonymous token path segments.
+- Frontend UX impact: Setup tab has anonymous-link controls; public route reuses
+  the existing survey runner and shows an optional contact modal after anonymous
+  completion.
+- Environment or deployment impact: run migrations `0016`, `0017`, `0018`,
+  `0019`, and `0020` on deploy. Public URLs are generated from `WEB_ORIGIN`.
+  Tune anonymous public-route rate-limit settings in Azure before sharing links
+  broadly. `ANONYMOUS_LINK_TOKEN_ENCRYPTION_SECRET` can be set to decouple link
+  token encryption from `JWT_SECRET`.
+
+## Claude Review Outcome
+
+Source:
+
+- `notes/claude_review_phase_17.txt`
+
+Status:
+
+- Completed; no critical issues.
+
+Confirmed safe:
+
+- Auth boundaries, hidden-tag isolation, token entropy/storage, request-log
+  masking, anonymous ownership checks, reporting representation, and non-goal
+  discipline.
+
+Post-review fixes applied:
+
+- Added public anonymous endpoint rate limiting.
+- Added `Referrer-Policy: no-referrer`.
+- Switched token-secret hash comparison to `crypto.timingSafeEqual`.
+- Made `anonymous_link_id` hard-delete behavior explicit with `on delete cascade`.
+- Mapped mid-flow unavailable anonymous surveys to safe 404 responses.
+- Documented anonymous rate-limit environment variables in `.env.example`,
+  `.env.prod.example`, and `GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`.
+- Documented the encrypted `public_token` repeat-copy decision in
+  `markdown/DATA_MODEL_VISION.md` and this phase log.
+- Replaced plaintext `public_token` writes with encrypted writes, retaining
+  support for older plaintext rows.
+- Replaced the anonymous public-route in-memory rate-limit store with a
+  PostgreSQL-backed shared store.
+- Softened the anonymous follow-up email modal copy so it does not promise
+  automated survey result emails.
+- Labelled anonymous follow-up emails as unverified in admin Results and CSV.
+
+Accepted tradeoffs:
+
+- Anonymous attempts do not resume after refresh because the attempt token stays
+  in React state only.
+- Disabling or expiring a link blocks in-progress anonymous writes.
+- Enabled anonymous links created after migration `0018` can be revealed/copied
+  by admins because `public_token` is stored; new writes are encrypted after
+  migration `0019`.
+- Links created before migration `0018` cannot be reconstructed from their
+  existing hashes; admins can create replacement links if needed.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm run test -w apps/api -- test/anonymousSurvey.test.ts
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/anonymousSurvey.test.ts` (4 tests)
+- Passed with approved local PostgreSQL access: `npm test` (shared 47, web 52,
+  API 172 tests across 18 API files)
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Pending browser pass: admin creates/copies/disables a link; anonymous visitor
+  completes in a fresh browser; disabled/bad link shows unavailable state; admin
+  Results labels anonymous attempts.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_17.txt`
+- Claude review status before commit: Completed; review written to
+  `notes/claude_review_phase_17.txt`
+
+## Problems Encountered
+
+- Problem:
+  Initial token parsing used underscores as separators, but URL-safe base64 can
+  contain underscores.
+  Resolution:
+  Switched link and attempt tokens to dot-separated segments.
+
+- Problem:
+  API tests need local PostgreSQL and were blocked in the sandbox.
+  Resolution:
+  Reran the focused API test with approved local PostgreSQL access.
+
+- Problem:
+  Claude review identified several non-blocking hardening items around public
+  endpoint throttling, referrer leakage, token comparison style, FK hard-delete
+  behavior, and rare mid-flow survey unavailability.
+  Resolution:
+  Addressed those items in the post-review fix pass and reran validation.
+
+## Follow-Up Tasks
+
+- Decide whether anonymous attempts should support browser refresh/resume via
+  session storage or another anonymous session mechanism.
+- Future invitation/email phases may send anonymous links after a real email
+  provider is selected; recipient lists and invitation workflows remain out of
+  scope.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes; `DATA_MODEL_VISION.md` updated to replace
+  the old "no anonymous completion" answer.
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude review found no blocking issues and the
+  non-blocking hardening suggestions were fixed.
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Pending browser pass
+- Ready to commit: Yes after the recommended manual browser pass, at the
+  developer's discretion

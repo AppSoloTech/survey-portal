@@ -301,7 +301,9 @@ export function SurveyResultsPage() {
                   <strong>
                     {attempt.participant.firstName} {attempt.participant.lastName}
                   </strong>
-                  <span className="results-attempt-email">{attempt.participant.email}</span>
+                  <span className="results-attempt-email">
+                    {formatParticipantEmail(attempt.participant)}
+                  </span>
                   <div className="results-attempt-meta">
                     <span>Started {formatDateTime(attempt.startedAt)}</span>
                     <span>
@@ -357,6 +359,9 @@ function AttemptDetailPanel({
             {detail.participant.firstName} {detail.participant.lastName} —{" "}
             {detail.surveyTitle}
           </h4>
+          <span className="results-attempt-email">
+            {formatParticipantEmail(detail.participant)}
+          </span>
         </div>
         <span className={`status-pill ${detail.attempt.status}`}>
           {formatAttemptStatus(detail.attempt.status)}
@@ -400,6 +405,14 @@ function AnswerStateBadge({ answer }: { answer: AdminAttemptAnswer }) {
   ) : (
     <span className="answer-state-badge skipped">Never reached</span>
   );
+}
+
+function formatParticipantEmail(participant: { email: string; type: "user" | "anonymous" }): string {
+  if (participant.type === "anonymous" && participant.email !== "Anonymous survey link") {
+    return `Unverified follow-up: ${participant.email}`;
+  }
+
+  return participant.email;
 }
 
 function AnswerValue({ answer }: { answer: AdminAttemptAnswer }) {

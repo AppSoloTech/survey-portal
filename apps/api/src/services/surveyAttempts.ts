@@ -34,6 +34,12 @@ import type {
 
 const { DatabaseError } = pg;
 
+export class AnonymousSurveyUnavailableError extends Error {
+  constructor() {
+    super("Anonymous survey link is unavailable");
+  }
+}
+
 export async function insertSurveyAttemptOrFetchActive(
   surveyId: number,
   userId: number
@@ -74,6 +80,30 @@ export async function insertSurveyAttemptOrFetchActive(
   }
 }
 
+export async function insertAnonymousSurveyAttempt(input: {
+  surveyId: number;
+  anonymousLinkId: number;
+  accessTokenHash: string;
+}): Promise<{ attemptId: number }> {
+  const result = await pool.query<{ id: number }>(
+    `insert into survey_attempts (
+       survey_id,
+       user_id,
+       anonymous_link_id,
+       anonymous_access_token_hash,
+       anonymous_contact_email,
+       status,
+       started_at,
+       last_activity_at
+     )
+     values ($1, null, $2, $3, null, 'in_progress', now(), now())
+     returning id`,
+    [input.surveyId, input.anonymousLinkId, input.accessTokenHash]
+  );
+
+  return { attemptId: result.rows[0].id };
+}
+
 export async function fetchActiveAttempt(
   userId: number,
   surveyId: number
@@ -83,6 +113,9 @@ export async function fetchActiveAttempt(
        id,
        survey_id,
        user_id,
+       anonymous_link_id,
+       anonymous_access_token_hash,
+       anonymous_contact_email,
        status,
        started_at,
        last_activity_at,
@@ -114,6 +147,9 @@ export async function fetchCompletedAttempt(
        id,
        survey_id,
        user_id,
+       anonymous_link_id,
+       anonymous_access_token_hash,
+       anonymous_contact_email,
        status,
        started_at,
        last_activity_at,
@@ -143,6 +179,9 @@ export async function fetchAttemptForUser(
        id,
        survey_id,
        user_id,
+       anonymous_link_id,
+       anonymous_access_token_hash,
+       anonymous_contact_email,
        status,
        started_at,
        last_activity_at,
@@ -154,6 +193,37 @@ export async function fetchAttemptForUser(
        and user_id = $2
        and survey_id = $3`,
     [attemptId, userId, surveyId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function fetchAttemptForAnonymousOwner(
+  queryable: Queryable,
+  attemptId: number,
+  anonymousLinkId: number,
+  accessTokenHash: string,
+  surveyId: number
+): Promise<SurveyAttemptRecord | null> {
+  const result = await queryable.query<SurveyAttemptRecord>(
+    `select
+       id,
+       survey_id,
+       user_id,
+       anonymous_link_id,
+       anonymous_access_token_hash,
+       status,
+       started_at,
+       last_activity_at,
+       completed_at,
+       created_at,
+       updated_at
+     from survey_attempts
+     where id = $1
+       and anonymous_link_id = $2
+       and anonymous_access_token_hash = $3
+       and survey_id = $4`,
+    [attemptId, anonymousLinkId, accessTokenHash, surveyId]
   );
 
   return result.rows[0] ?? null;
@@ -174,11 +244,49 @@ export async function buildStartSurveyResponse(
   };
 }
 
+export async function buildStartAnonymousSurveyResponse(input: {
+  attemptId: number;
+  anonymousLinkId: number;
+  accessToken: string;
+  accessTokenHash: string;
+}): Promise<StartSurveyResponse & { attemptAccessToken: string }> {
+  const detail = await buildAnonymousAttemptDetail(
+    input.attemptId,
+    input.anonymousLinkId,
+    input.accessTokenHash
+  );
+
+  return {
+    attempt: detail.attempt,
+    survey: detail.survey,
+    currentQuestion: detail.currentQuestion,
+    currentPage: detail.currentPage,
+    currentPageQuestionIds: detail.currentPageQuestionIds,
+    attemptAccessToken: input.accessToken
+  };
+}
+
 export async function buildAnswerSurveyResponse(
   attemptId: number,
   userId: number
 ): Promise<AnswerSurveyResponse> {
   const detail = await buildAttemptDetail(attemptId, userId);
+
+  return {
+    attempt: detail.attempt,
+    currentQuestion: detail.currentQuestion,
+    currentPage: detail.currentPage,
+    currentPageQuestionIds: detail.currentPageQuestionIds,
+    isCompleteReady: detail.currentPage === null
+  };
+}
+
+export async function buildAnonymousAnswerSurveyResponse(
+  attemptId: number,
+  anonymousLinkId: number,
+  accessTokenHash: string
+): Promise<AnswerSurveyResponse> {
+  const detail = await buildAnonymousAttemptDetail(attemptId, anonymousLinkId, accessTokenHash);
 
   return {
     attempt: detail.attempt,
@@ -235,6 +343,44 @@ export async function buildAttemptDetail(
   return response;
 }
 
+export async function buildAnonymousAttemptDetail(
+  attemptId: number,
+  anonymousLinkId: number,
+  accessTokenHash: string
+): Promise<{
+  attempt: SurveyAttempt;
+  survey: Survey;
+  currentQuestion: SurveyQuestion | null;
+  currentPage: SurveyPage | null;
+  currentPageQuestionIds: number[];
+}> {
+  const attempt = await fetchAnonymousAttemptWithResponses(
+    attemptId,
+    anonymousLinkId,
+    accessTokenHash
+  );
+
+  if (!attempt) {
+    throw new AnonymousSurveyUnavailableError();
+  }
+
+  const [survey] = await fetchSurveyStructures({
+    surveyId: attempt.surveyId,
+    includeAllStatuses: true,
+    includeHiddenTags: false
+  });
+
+  if (!survey || survey.status !== "published" || survey.deletedAt) {
+    throw new AnonymousSurveyUnavailableError();
+  }
+
+  return {
+    attempt,
+    survey,
+    ...determineProgressiveAttemptState(survey, attempt)
+  };
+}
+
 export async function buildMySurveysResponse(userId: number): Promise<MySurveysResponse> {
   const surveyIdResult = await pool.query<{ id: number }>(
     `with survey_scope as (
@@ -288,8 +434,24 @@ export async function fetchAttemptWithResponses(
   userId: number
 ): Promise<SurveyAttempt | null> {
   const attempts = await fetchAttemptsByCondition(
-    `survey_attempts.id = $2`,
+    `survey_attempts.user_id = $1
+       and survey_attempts.id = $2`,
     [userId, attemptId]
+  );
+
+  return attempts[0] ?? null;
+}
+
+export async function fetchAnonymousAttemptWithResponses(
+  attemptId: number,
+  anonymousLinkId: number,
+  accessTokenHash: string
+): Promise<SurveyAttempt | null> {
+  const attempts = await fetchAttemptsByCondition(
+    `survey_attempts.id = $1
+       and survey_attempts.anonymous_link_id = $2
+       and survey_attempts.anonymous_access_token_hash = $3`,
+    [attemptId, anonymousLinkId, accessTokenHash]
   );
 
   return attempts[0] ?? null;
@@ -304,7 +466,8 @@ export async function fetchAttemptsForSurveyIds(
   }
 
   return fetchAttemptsByCondition(
-    `survey_attempts.survey_id = any($2::int[])`,
+    `survey_attempts.user_id = $1
+       and survey_attempts.survey_id = any($2::int[])`,
     [userId, surveyIds]
   );
 }
@@ -318,6 +481,9 @@ async function fetchAttemptsByCondition(
        survey_attempts.id,
        survey_attempts.survey_id,
        survey_attempts.user_id,
+       survey_attempts.anonymous_link_id,
+       survey_attempts.anonymous_access_token_hash,
+       survey_attempts.anonymous_contact_email,
        survey_attempts.status,
        survey_attempts.started_at,
        survey_attempts.last_activity_at,
@@ -325,8 +491,7 @@ async function fetchAttemptsByCondition(
        survey_attempts.created_at,
        survey_attempts.updated_at
      from survey_attempts
-     where survey_attempts.user_id = $1
-       and ${condition}
+     where ${condition}
      order by
        survey_attempts.survey_id,
        case

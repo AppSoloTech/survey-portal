@@ -31,7 +31,7 @@ import { Home } from "./pages/Home.js";
 import { Login } from "./pages/Login.js";
 import { NotFound } from "./pages/NotFound.js";
 import { Register } from "./pages/Register.js";
-import { SurveyAttemptPage } from "./pages/SurveyAttemptPage.js";
+import { AnonymousSurveyAttemptPage, SurveyAttemptPage } from "./pages/SurveyAttemptPage.js";
 import { UserDashboard } from "./pages/UserDashboard.js";
 
 export function App() {
@@ -49,6 +49,10 @@ export function App() {
                   <Route element={<Home />} path="/" />
                   <Route element={<Login />} path="/login" />
                   <Route element={<Register />} path="/register" />
+                  <Route
+                    element={<AnonymousSurveyAttemptPage />}
+                    path="/anonymous-surveys/:token"
+                  />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<UserDashboard />} path="/dashboard" />
                     <Route
