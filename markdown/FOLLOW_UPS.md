@@ -70,6 +70,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Run the Phase 8 manual browser checklist from `prompts/prompt_8.txt` (Results tab, attempt detail, CSV spot-check, 360px width).
 - Add React component tests when UI behavior grows beyond what pure-helper unit tests cover.
 - Run a manual browser pass over the Phase 10 UI changes: centered auth card, integer stepper, scale slider snapping, dashboard category grouping/pagination, attempt route breadcrumbs and refresh recovery, toasts, admin users/tags pages, and survey delete/duplicate flows (including 360/768px widths).
+- Run the Phase 19 manual browser pass: Account dropdown to `/settings` at 375/768/1280px, save/reload optional profile fields, verify survey stats after starting/completing a registered survey, confirm anonymous attempts do not change the registered user's profile stats, and confirm the Settings password reset cooldown still works.
 
 ---
 

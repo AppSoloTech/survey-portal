@@ -53,8 +53,16 @@ Read before implementation:
 * `markdown/REVIEW_CHECKLIST.md`
 * `prompts/prompt_18.txt`
 * `prompts/prompt_19.txt`
+* `notes/claude_handoff_phase_19.txt`
+* `notes/claude_review_phase_19.txt`
 * Current admin users page, admin routes, profile endpoints, and password reset
   service.
+* `apps/api/src/services/userProfile.ts` for Phase 19 self-profile validation
+  and registered-user stat semantics.
+* `apps/api/src/routes/profile.ts` as a self-service-only boundary not to
+  extend with admin behavior.
+* `apps/web/src/pages/admin/AdminUsersPage.tsx`
+* `apps/web/src/api/admin.ts`
 
 ---
 
@@ -86,11 +94,19 @@ Expected impact:
 
 Implement:
 
-* Admin user detail endpoint with profile metadata and survey statistics.
+* Admin user detail endpoint under the admin API namespace with safe profile
+  metadata and survey statistics.
 * Admin user detail view linked from the existing admin users table.
 * Admin-triggered password reset initiation through the Phase 18 reset service.
 * User-facing notification via email service, not admin-visible tokens.
 * Clear admin UI feedback for reset initiation.
+* Shared admin user detail/reset response types.
+* Reuse or deliberately mirror Phase 19 registered-user survey-stat semantics:
+  available published surveys, in-progress registered attempts, completed
+  registered attempts, last registered activity, and completion rate. Do not
+  mix anonymous attempt statistics into registered user detail.
+* Keep admin profile demographics read-only; standard users continue to update
+  their own profile only through `/api/profile`.
 
 ## Non-Goals
 
@@ -101,6 +117,9 @@ Do not implement:
 * admin editing of demographics unless explicitly needed and approved
 * broad CRM/account management workflows
 * bulk user actions
+* extending `/api/profile` with user-id parameters or admin behavior
+* changing the Phase 19 completion-rate definition unless this phase explicitly
+  updates both user and admin surfaces consistently
 
 ## Assumptions
 
@@ -108,12 +127,28 @@ Do not implement:
 * Reset initiation sends the same type of reset email as the user-requested
   flow.
 * Existing self-role-change protections remain intact.
+* Admin detail may show a user's email, first name, last name, role,
+  registration timestamp, approved profile metadata, and registered survey
+  statistics. Avoid additional PII.
+* Admin-triggered reset responses are generic/success-oriented and never include
+  reset URLs or token material, even in development/no-op email mode.
+* If the target user has no `user_profiles` row, return null profile fields
+  rather than creating one during read.
+* The Phase 19 profile update API is partial-merge and self-service only;
+  admin detail should not rely on request body user ids or mass-assign profile
+  fields.
 
 ## Open Questions
 
 * Should admins be allowed to reset their own password from admin tools, or only
   through profile/settings? If unanswered, allow the same safe reset initiation
   but never expose the token.
+* Should the admin detail label clarify that completion rate is "of all
+  available surveys"? If unanswered, keep the Phase 19 calculation and use
+  concise UI wording that does not imply "of started surveys."
+* Should abandoned attempts appear in "last activity" for admin detail? If
+  unanswered, keep Phase 19 behavior: abandoned attempts may set last activity
+  but do not contribute to available/in-progress/completed tiles.
 
 ---
 
@@ -126,6 +161,9 @@ The phase is ready for review when:
 * Admin can initiate a password reset for a user without seeing token contents.
 * Standard users and unauthenticated requests receive 403/401 as appropriate.
 * Password hashes and reset secrets are never returned.
+* Admin user detail returns 404 for unknown users without leaking secrets.
+* Anonymous attempts do not affect registered user detail statistics.
+* The existing `/api/profile` self-service endpoints remain current-user-only.
 
 ---
 
@@ -148,13 +186,21 @@ Add focused tests for:
 * user detail response excludes password/reset secrets
 * reset initiation creates/sends reset through the reset service
 * unknown user behavior
+* anonymous attempts excluded from admin-visible registered-user stats
+* self-reset behavior for admins, following the open-question default
+* `/api/profile/:id` or similar guessed self-service profile routes still do not
+  exist
 
 Manual checks:
 
 * Admin views user profile/stats.
+* Admin opens user detail from the existing user table and returns to the list.
 * Standard user receives 403 from all admin user detail/reset endpoints.
 * Admin initiates reset and user can complete it via email/dev adapter.
 * Admin cannot see plaintext tokens or password hashes.
+* Admin detail/reset UI works at 375/768/1280px.
+* Existing Settings `/api/profile` save/reload still works after admin tools are
+  added.
 
 ---
 
@@ -172,6 +218,8 @@ Ask Claude Code to review:
 * PII minimization
 * reset-token handling
 * self-action edge cases
+* profile/stat semantics consistency with Phase 19
+* anonymous attempt isolation
 * accidental implementation of broad CRM-style account management
 
 Claude Code must write review output to:

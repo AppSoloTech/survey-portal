@@ -161,16 +161,19 @@ function Header() {
         <p className="eyebrow">Survey Portal</p>
         <h1>Survey workspace</h1>
       </Link>
-      <button
-        aria-controls="primary-navigation"
-        aria-expanded={isMenuOpen}
-        className="nav-toggle"
-        onClick={() => setIsMenuOpen((open) => !open)}
-        type="button"
-      >
-        <span aria-hidden="true" className="nav-toggle-icon" />
-        Menu
-      </button>
+      <div className="header-actions">
+        <ThemeToggle />
+        <button
+          aria-controls="primary-navigation"
+          aria-expanded={isMenuOpen}
+          className="nav-toggle"
+          onClick={() => setIsMenuOpen((open) => !open)}
+          type="button"
+        >
+          <span aria-hidden="true" className="nav-toggle-icon" />
+          Menu
+        </button>
+      </div>
       <nav
         aria-label="Primary navigation"
         className={isMenuOpen ? "primary-nav open" : "primary-nav"}
@@ -217,9 +220,6 @@ function Header() {
               >
                 Settings
               </NavLink>
-              <div className="account-menu-item theme-menu-item">
-                <ThemeToggle />
-              </div>
               <button
                 className="account-menu-item account-menu-button"
                 onClick={handleLogout}

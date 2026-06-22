@@ -1,0 +1,154 @@
+# Claude Review — Phase 19: User Profile Foundation
+
+Reviewer: Claude Code
+Branch: phase-19-user-profile-foundation
+Scope reviewed: current phase diff only (git diff + new untracked phase files)
+
+Files reviewed:
+- apps/api/src/routes/profile.ts (new)
+- apps/api/src/services/userProfile.ts (new)
+- apps/api/test/profile.test.ts (new)
+- database/migrations/0022_user_profiles.sql (new)
+- apps/api/src/app.ts (router mount)
+- apps/api/test/helpers/setup.ts (truncation list)
+- apps/web/src/api/auth.ts (client functions)
+- apps/web/src/pages/AccountSettings.tsx (UI)
+- packages/shared/src/index.ts (shared types)
+- markdown/DATA_MODEL_VISION.md, markdown/FOLLOW_UPS.md, markdown/PHASE_LOG.md
+
+Validation re-run locally:
+- npm run typecheck: PASS (shared build + web + api).
+- Stats correctness cross-checked against survey_attempts data-model invariants
+  (0003_surveys.sql) and the existing buildMySurveysResponse survey-scope logic.
+
+--------------------------------------------------------------------------------
+1. Critical issues
+--------------------------------------------------------------------------------
+
+None found. The phase is functionally correct, authorization is sound, and no
+PII or cross-user leakage was identified.
+
+--------------------------------------------------------------------------------
+2. Suggested improvements
+--------------------------------------------------------------------------------
+
+S1. PUT /api/profile is full-replace, not partial-merge. Any field omitted (or
+    sent as null/empty/whitespace) is stored as NULL, overwriting a previously
+    saved value. The web form always submits all three fields, so this is safe
+    today, but the endpoint is easy to misuse from a future caller. Consider
+    documenting the replace semantics on the route, or switching to merge
+    semantics (only update keys present in the body).
+
+S2. isRecord() accepts arrays (typeof [] === "object" && !== null). A JSON array
+    body would pass validation, read every field as undefined, and silently NULL
+    the whole profile. Low impact (the UI never does this), but a cheap guard
+    (`!Array.isArray(value)`) would tighten input handling.
+
+S3. Stats publish/non-draft asymmetry is intentional but worth a code comment.
+    available_surveys filters `status = 'published'`, while counted_attempts and
+    registered_activity filter `status <> 'draft'` (so they also include
+    'retired' surveys the user already attempted). This matches the existing
+    buildMySurveysResponse survey-scope union, so it is consistent — but a
+    one-line comment explaining the deliberate mismatch would help the next
+    reader avoid "fixing" it.
+
+S4. last_activity_at includes abandoned attempts. registered_activity has no
+    status filter, while counted_attempts excludes 'abandoned'. Result: an
+    abandoned attempt can set "last activity" even though it contributes to no
+    count tile and re-opens the survey as "available". This is a defensible
+    definition of activity, but it is a subtle inconsistency; confirm it is the
+    intended behavior.
+
+--------------------------------------------------------------------------------
+3. Acceptable tradeoffs
+--------------------------------------------------------------------------------
+
+A1. Completion rate denominator = available + inProgress + completed (i.e., every
+    published survey reachable by the user, including ones never opened). So the
+    rate is "completed / all available surveys," and it drops for every user
+    whenever an admin publishes a new survey. Documented in the handoff; see
+    UX note U1 below.
+
+A2. PUT returns only { profile }; the client re-fetches GET /api/profile for
+    refreshed stats/auth data. Reasonable; the UI updates local profile state
+    from the PUT response and does not need a stats refresh on save.
+
+A3. No double-counting risk despite per-attempt counting. The partial unique
+    index `(survey_id, user_id) where status in ('not_started','in_progress')`
+    plus the "completed permanently blocks new starts / abandoned filtered out"
+    rule guarantees at most one not_started/in_progress/completed attempt per
+    survey per user. So counting attempts rather than de-duping by survey is
+    safe here. (If the retake rule ever changes, revisit fetchCurrentUserSurveyStats.)
+
+A4. emptyUserProfile() returns null timestamps when no row exists. The UI guards
+    on profile?.updatedAt before rendering "Updated ...", so this is fine.
+
+--------------------------------------------------------------------------------
+4. Questions or assumptions
+--------------------------------------------------------------------------------
+
+Q1. Should anonymous-link-only published surveys count toward a registered user's
+    "available" tile? The stats (and the test, available=2) include the
+    anonymous survey because it is published and the registered user can reach it
+    via my-surveys. Confirm this is desired in the profile view.
+
+Q2. Confirm the abandoned-attempt activity behavior in S4 is intended.
+
+Q3. Assumption: all published surveys are visible to all registered users (no
+    per-user assignment/visibility layer). The "available" count relies on this,
+    consistent with buildMySurveysResponse.
+
+--------------------------------------------------------------------------------
+5. Product UX alignment notes
+--------------------------------------------------------------------------------
+
+U1. "Completion rate" semantics may surprise users: it measures completion across
+    all available surveys, not across surveys the user has engaged with. A user
+    who completed every survey they ever started can still show a low percentage
+    if many unopened surveys exist. Consider a label/tooltip ("of all available
+    surveys") or redefining as completed / (inProgress + completed).
+
+U2. PII minimization looks good: only the three approved optional fields
+    (organization/department, job title/role, location/region), each optional,
+    trimmed, 120-char capped at both the API validation layer and DB CHECK
+    constraints, with maxLength=120 on the inputs. No free-text bio, no uploads,
+    no demographics beyond the approved set.
+
+U3. GET /api/profile returns the current user's own AuthUser (email, names, role)
+    alongside profile/stats — own-account data only, no other-user exposure.
+
+U4. Settings page preserves the Phase 18 password reset panel and the 30s
+    cooldown timer logic unchanged; the new profile form and stats grid are added
+    as sibling panels without altering the reset flow.
+
+--------------------------------------------------------------------------------
+6. Commit readiness
+--------------------------------------------------------------------------------
+
+READY TO COMMIT.
+
+Phase-goal verification:
+- PII exposure: minimal, own-account only. PASS.
+- Validation: type + trim + 120-char bounds at API and DB layers. PASS.
+- Profile update authorization: requireAuth on both routes; identity taken from
+  req.user.id; body userId ignored (no mass assignment); no ID-param routes, so
+  /api/profile/:id 404s (test-confirmed). PASS.
+- Survey statistic correctness: counts/rate verified against data-model
+  invariants and the existing my-surveys scope; test asserts
+  available=2/inProgress=1/completed=1/rate=25. PASS.
+- Registered-only, no anonymous mixing: all stats CTEs filter
+  survey_attempts.user_id = $1; anonymous attempts (user_id null) excluded;
+  test asserts an anonymous attempt does not move the numbers. PASS.
+- No Phase 20 admin scope: only current-user routes; nothing under /api/admin;
+  no admin profile/user tooling. PASS.
+- Phase 18 cooldown preserved: reset panel + 30s cooldown intact. PASS.
+
+Recommended (non-blocking) follow-ups before merge or in a fast-follow:
+- Address S1/S2 (replace semantics + array guard) if other callers are expected.
+- Add the S3 code comment on the publish/non-draft asymmetry.
+- Decide on U1 completion-rate labeling.
+
+Outstanding: the logged manual browser pass (FOLLOW_UPS) at 375/768/1280px,
+including profile save/reload, stats after start+complete, anonymous-exclusion
+spot check, and password-reset cooldown, was not run in this environment and
+should be completed before sign-off.

@@ -1,6 +1,7 @@
 import type {
   AuthMeResponse,
   AuthResponse,
+  CurrentUserProfileResponse,
   PasswordResetMessageResponse
 } from "@survey-portal/shared";
 
@@ -35,6 +36,26 @@ export async function loginUser(input: {
 
 export async function fetchCurrentUser(): Promise<AuthMeResponse> {
   return apiRequest<AuthMeResponse>("/api/auth/me");
+}
+
+export async function fetchCurrentUserProfile(): Promise<CurrentUserProfileResponse> {
+  return apiRequest<CurrentUserProfileResponse>("/api/profile");
+}
+
+export async function updateCurrentUserProfile(input: {
+  organization: string;
+  jobTitle: string;
+  location: string;
+}): Promise<CurrentUserProfileResponse["profile"]> {
+  const response = await apiRequest<{ profile: CurrentUserProfileResponse["profile"] }>(
+    "/api/profile",
+    {
+      body: JSON.stringify(input),
+      method: "PUT"
+    }
+  );
+
+  return response.profile;
 }
 
 export async function logoutUser(): Promise<void> {

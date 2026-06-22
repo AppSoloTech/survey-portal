@@ -22,6 +22,32 @@ export interface PasswordResetMessageResponse {
   message: string;
 }
 
+export interface UserProfile {
+  organization: string | null;
+  jobTitle: string | null;
+  location: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CurrentUserSurveyStats {
+  available: number;
+  inProgress: number;
+  completed: number;
+  lastActivityAt: string | null;
+  completionRate: number;
+}
+
+export interface CurrentUserProfileResponse {
+  user: AuthUser;
+  profile: UserProfile;
+  surveyStats: CurrentUserSurveyStats;
+}
+
+export interface UpdateCurrentUserProfileResponse {
+  profile: UserProfile;
+}
+
 export type SurveyAttemptStatus =
   | "not_started"
   | "in_progress"

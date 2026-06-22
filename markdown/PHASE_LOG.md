@@ -3976,3 +3976,209 @@ Manual tests:
 - Manual testing complete: Pending browser pass
 - Ready to commit: Yes with the documented production email and manual browser
   testing follow-ups, at the developer's discretion
+
+---
+
+## Phase 19 — User Profile Foundation
+
+Date:
+2026-06-22
+
+Status:
+Completed; ready to commit with manual-browser follow-up
+
+Prompt:
+`prompts/prompt_19.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_19.txt`
+- Claude review: `notes/claude_review_phase_19.txt`
+
+## Goals
+
+- Extend the existing `/settings` route with optional user profile metadata.
+- Store approved demographics relationally.
+- Add authenticated current-user profile read/update APIs.
+- Show registered current-user survey statistics without mixing anonymous
+  attempts.
+- Preserve the Phase 18 password reset panel and cooldown behavior.
+
+## Built
+
+- Added `database/migrations/0022_user_profiles.sql` with `user_profiles`
+  linked one-to-one with `users`.
+- Added shared `UserProfile`, `CurrentUserSurveyStats`,
+  `CurrentUserProfileResponse`, and `UpdateCurrentUserProfileResponse` types.
+- Added `GET /api/profile` and `PUT /api/profile`, both protected by
+  `requireAuth` and scoped only to `req.user.id`.
+- Added server-side profile validation for optional text fields with a
+  120-character maximum and blank-to-null normalization.
+- Added current-user survey stats for available, in progress, completed, last
+  activity, and completion rate.
+- Updated `/settings` to render account details, survey stats, editable
+  demographic fields, and the existing password reset action.
+- Added focused API tests for authentication, profile persistence, user
+  isolation, validation, stats correctness, and anonymous-attempt exclusion.
+- Updated `markdown/DATA_MODEL_VISION.md` with the user profile entity.
+- Addressed Claude review follow-ups by making `PUT /api/profile` partial-merge
+  safe, rejecting array request bodies, and documenting the intentional
+  published-vs-non-draft stats split in code comments.
+
+## Important Decisions
+
+### Separate User Profile Table
+
+Decision:
+Use a `user_profiles` table rather than adding demographic columns directly to
+`users`.
+
+Reason:
+The approved demographics are optional profile metadata and can remain
+relational without expanding the auth-critical user row.
+
+Tradeoff:
+Profile reads join/lookup another table. The endpoint hides that complexity and
+returns null profile fields when no row exists yet.
+
+### Current-User-Only API Shape
+
+Decision:
+Expose only `/api/profile` without any user id parameter.
+
+Reason:
+Standard users can only read and update their own profile. Avoiding id-bearing
+routes reduces the chance of cross-user access bugs and keeps Phase 20 admin
+profile tooling out of scope.
+
+Tradeoff:
+Admin profile lookup/editing will need its own explicitly admin-scoped route in
+a future phase.
+
+### Registered Survey Stats
+
+Decision:
+Profile stats count only attempts where `survey_attempts.user_id` matches the
+authenticated user. Anonymous attempts are ignored.
+
+Reason:
+Anonymous attempts have separate ownership and must not be mixed into a
+registered user's private profile view.
+
+Tradeoff:
+An anonymous attempt by the same real-world person is not reflected in their
+registered profile stats. This is intentional for the anonymous/registered
+separation.
+
+## Architecture Notes
+
+- Database/schema impact: migration `0022_user_profiles.sql`.
+- API contract impact: added current-user profile response/update contracts and
+  `/api/profile` endpoints.
+- Auth or authorization impact: both profile endpoints require auth; there is no
+  user-id parameter and no admin profile surface.
+- Data privacy or visibility impact: profile metadata is visible only to the
+  authenticated owner in this phase; no public or admin profile view was added.
+- Frontend UX impact: existing Settings route now includes profile fields and
+  survey stats while keeping password reset available.
+- Environment or deployment impact: run migration `0022` on deploy.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed targeted API test failed with `EPERM 127.0.0.1:5432`
+  because local PostgreSQL access was blocked.
+- Initial approved targeted profile test failed on an ambiguous SQL
+  `updated_at` reference in the stats CTE.
+- Passed after SQL fix with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/profile.test.ts`
+- Passed with approved local PostgreSQL access: `npm test` (shared 47, web 52,
+  API 185 tests across 19 API files)
+- Passed after Claude review fixes: `npm run typecheck`
+- Passed after Claude review fixes: `npm run lint`
+- Passed after Claude review fixes: `npm run build` (Vite emitted the existing
+  large chunk warning)
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/profile.test.ts`
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm test` (shared 47, web 52, API 185 tests across 19 API files)
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Not run in browser. Follow-up logged for Account dropdown `/settings`,
+  profile save/reload, stats update, anonymous-stat isolation, password reset
+  cooldown, and responsive checks at 375/768/1280px.
+
+## Problems Encountered
+
+- Problem:
+  The sandbox blocked local PostgreSQL access for API tests.
+  Resolution:
+  Reran targeted and full tests with approved local PostgreSQL access.
+
+- Problem:
+  The profile stats CTE selected `updated_at` after joining `surveys`, causing
+  an ambiguous column error.
+  Resolution:
+  Qualified the registered activity columns with `survey_attempts`.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_19.txt`
+
+Status:
+
+- Completed. No critical issues; verdict was ready to commit.
+
+Findings and fixes:
+
+- Addressed: partial profile updates no longer clear omitted fields.
+- Addressed: array JSON bodies are rejected instead of treated as empty profile
+  objects.
+- Addressed: added code comments for the intentional stats scope asymmetry and
+  abandoned-attempt last-activity behavior.
+
+Accepted tradeoffs:
+
+- Completion rate remains completed divided by available + in-progress +
+  completed survey units.
+- Available surveys include all published surveys visible to registered users,
+  including surveys that also have anonymous links.
+
+## Follow-Up Tasks
+
+- Run the logged Phase 19 manual browser pass for Settings/profile/stat
+  behavior and responsive widths.
+- Decide later whether the Settings stat label needs more explicit completion
+  rate wording after a browser/user review pass.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical issues.
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Pending browser pass
+- Ready to commit: Yes with the documented manual browser follow-up, at the
+  developer's discretion

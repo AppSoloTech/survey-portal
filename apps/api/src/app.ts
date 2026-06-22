@@ -13,6 +13,7 @@ import { authRouter } from "./routes/auth.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { healthRouter } from "./routes/health.js";
 import { mySurveysRouter, surveysRouter } from "./routes/surveys.js";
+import { profileRouter } from "./routes/profile.js";
 import { tagsRouter } from "./routes/tags.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,7 @@ export function createApp() {
   app.use("/api/admin", adminRouter);
   app.use("/api/surveys", surveysRouter);
   app.use("/api/my-surveys", mySurveysRouter);
+  app.use("/api/profile", profileRouter);
   app.use("/api/categories", categoriesRouter);
   app.use("/api/tags", tagsRouter);
 

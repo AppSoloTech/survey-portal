@@ -319,6 +319,14 @@ nav {
 
 .primary-nav {
   align-items: center;
+  margin-left: auto;
+}
+
+.header-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  order: 3;
 }
 
 .account-menu {
@@ -468,24 +476,6 @@ nav {
   color: var(--brand);
 }
 
-.theme-menu-item {
-  cursor: default;
-  padding: 0.25rem 0;
-}
-
-.theme-menu-item:hover {
-  background: transparent;
-}
-
-.theme-menu-item .theme-toggle {
-  justify-content: flex-start;
-  width: 100%;
-}
-
-.theme-menu-item .theme-toggle-text {
-  display: inline;
-}
-
 @keyframes mobile-nav-in {
   from {
     opacity: 0;
@@ -601,6 +591,7 @@ nav {
 .theme-toggle {
   gap: 0.5rem;
   min-width: 2.5rem;
+  padding-inline: 0.75rem;
 }
 
 .theme-toggle span[aria-hidden="true"] {
@@ -637,6 +628,10 @@ nav {
     display: inline-flex;
   }
 
+  .header-actions {
+    margin-left: auto;
+  }
+
   .app-header .primary-nav {
     align-items: stretch;
     display: none;
@@ -644,6 +639,8 @@ nav {
     flex-direction: column;
     gap: 0.5rem;
     justify-content: flex-start;
+    margin-left: 0;
+    order: 4;
   }
 
   .app-header .primary-nav.open {
@@ -653,6 +650,10 @@ nav {
 
   .app-header .nav-link {
     width: 100%;
+  }
+
+  .app-header .header-actions .nav-link {
+    width: auto;
   }
 
   .account-menu {
@@ -1077,8 +1078,24 @@ main {
   border-radius: var(--radius-md);
   display: grid;
   gap: 1rem;
-  max-width: 520px;
   padding: 1.5rem;
+}
+
+.settings-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.profile-panel h3 {
+  font-size: var(--text-lg);
+  margin: 0;
+}
+
+.profile-panel > p,
+.profile-form p {
+  color: var(--text-muted);
+  margin: 0.25rem 0 0;
 }
 
 .profile-panel dl {
@@ -1099,14 +1116,83 @@ main {
   margin: 0.25rem 0 0;
 }
 
+.profile-form {
+  align-content: start;
+}
+
+.profile-form label {
+  color: var(--text-label);
+  display: grid;
+  font-size: 0.875rem;
+  font-weight: 700;
+  gap: 0.5rem;
+}
+
+.profile-form input {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  min-height: 2.7rem;
+  padding: 0.5rem 0.85rem;
+  transition:
+    border-color var(--speed-fast) var(--ease-out),
+    box-shadow var(--speed-base) var(--ease-out),
+    background-color var(--speed-fast) var(--ease-out);
+}
+
+.profile-form input:focus {
+  background: var(--surface);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  outline: none;
+}
+
+.settings-stats-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-stat-tile {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 0.25rem;
+  min-height: 5rem;
+  padding: 0.85rem;
+}
+
+.settings-stat-tile.wide {
+  grid-column: 1 / -1;
+}
+
+.settings-stat-tile span,
+.settings-meta {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settings-stat-tile strong {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+}
+
+.settings-meta {
+  margin: 0;
+  text-transform: none;
+}
+
 .settings-action {
   align-items: center;
-  border-top: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
   justify-content: space-between;
-  padding-top: 1rem;
 }
 
 .settings-action h3 {
@@ -4491,6 +4577,10 @@ main {
     display: inline-flex;
   }
 
+  .header-actions {
+    margin-left: auto;
+  }
+
   .app-header .primary-nav {
     align-items: stretch;
     display: none;
@@ -4498,6 +4588,8 @@ main {
     flex-direction: column;
     gap: 0.5rem;
     justify-content: flex-start;
+    margin-left: 0;
+    order: 4;
   }
 
   .app-header .primary-nav.open {
@@ -4516,8 +4608,8 @@ main {
     padding: 0.25rem 0.25rem 0.75rem;
   }
 
-  .theme-toggle-text {
-    display: inline;
+  .app-header .header-actions .nav-link {
+    width: auto;
   }
 
   main {
@@ -4545,6 +4637,10 @@ main {
   .profile-panel,
   .system-status-panel {
     max-width: none;
+  }
+
+  .settings-layout {
+    grid-template-columns: 1fr;
   }
 
   .status {

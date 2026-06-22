@@ -10,6 +10,7 @@ const dataTables = [
   "survey_response_answers",
   "survey_attempts",
   "password_reset_tokens",
+  "user_profiles",
   "anonymous_rate_limits",
   "anonymous_survey_links",
   "conditional_logic_rules",

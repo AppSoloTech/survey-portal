@@ -1,0 +1,153 @@
+# Claude Review Handoff — Phase 19
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_19.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 19 for:
+
+- PII exposure
+- validation
+- profile update authorization
+- survey statistic correctness
+- registered-user-only stats, with no anonymous attempt mixing
+- accidental implementation of Phase 20 admin profile/user tooling
+- preservation of the Phase 18 Settings password reset cooldown behavior
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_19.txt`
+- `prompts/prompt_18.txt`
+- `notes/claude_handoff_phase_18.txt`
+- `notes/claude_review_phase_18.txt`
+- `apps/web/src/pages/AccountSettings.tsx`
+- `apps/web/src/App.tsx`
+- `apps/api/src/routes/mySurveysRoutes.ts`
+- `apps/api/src/services/surveyAttempts.ts`
+
+## Phase Scope
+
+Implemented:
+
+- Added `database/migrations/0022_user_profiles.sql` with a relational `user_profiles` table keyed to `users.id`.
+- Added shared profile/stat response types:
+  - `UserProfile`
+  - `CurrentUserSurveyStats`
+  - `CurrentUserProfileResponse`
+  - `UpdateCurrentUserProfileResponse`
+- Added current-user-only profile APIs:
+  - `GET /api/profile`
+  - `PUT /api/profile`
+- Validates optional profile fields as text with a 120-character maximum, trims whitespace, and stores blank values as `null`.
+- Derives registered current-user survey stats:
+  - available published surveys with no active/completed registered attempt for the current user
+  - in-progress registered attempts
+  - completed registered attempts
+  - last registered activity timestamp
+  - rounded completion rate
+- Keeps anonymous attempts out of stats by filtering stats from `survey_attempts.user_id = req.user.id`.
+- Extends `/settings` with account details, optional profile fields, current-user survey stats, and the existing password reset panel/cooldown.
+- Added focused API tests for auth rejection, profile persistence, current-user-only isolation, validation bounds, stats counts/rate, and anonymous-attempt exclusion.
+- Updated `markdown/DATA_MODEL_VISION.md`, `markdown/FOLLOW_UPS.md`, and `markdown/PHASE_LOG.md`.
+
+Non-goals respected:
+
+- No admin profile viewing/editing tools were added.
+- No admin password reset initiation was added.
+- No profile photos or uploads were added.
+- No public profile pages were added.
+- No speculative demographics beyond organization/department, job title/role, and location/region were added.
+
+Known tradeoffs:
+
+- `PUT /api/profile` returns only the saved profile object; callers can re-fetch `GET /api/profile` when stats or auth-user data are needed.
+- Completion rate is rounded whole-percent over available + in-progress + completed visible survey units.
+- Manual browser checks were not run in this environment; they are logged as a follow-up.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+New files belonging to this phase:
+
+- `apps/api/src/routes/profile.ts`
+- `apps/api/src/services/userProfile.ts`
+- `apps/api/test/profile.test.ts`
+- `database/migrations/0022_user_profiles.sql`
+- `notes/claude_handoff_phase_19.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed targeted API test failed with `EPERM 127.0.0.1:5432` because local PostgreSQL access was blocked.
+- Initial approved targeted profile test found an ambiguous SQL `updated_at` reference; fixed by qualifying the `survey_attempts` columns in the stats CTE.
+- Passed with approved local PostgreSQL access: `npm test` (shared 47, web 52, API 185 tests across 19 API files)
+
+Manual testing:
+
+- Not run in browser. Follow-up logged for `/settings` responsive/manual checks and password reset cooldown confirmation.
+
+## Specific Questions
+
+- Are the profile fields and validation bounds appropriate for PII minimization?
+- Is the current-user-only API shape sufficient to prevent profile ID guessing?
+- Are available/in-progress/completed/completion-rate semantics correct for the user-owned profile view?
+- Does the stats SQL avoid anonymous attempt leakage and avoid cross-user attempt leakage?
+- Did this phase avoid Phase 20 admin-user-management scope?
+- Did the Settings page preserve Phase 18 password reset behavior cleanly?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_19.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

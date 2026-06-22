@@ -102,6 +102,32 @@ Notes:
 
 ---
 
+## User Profile
+
+Represents optional, user-owned profile metadata for a registered person.
+
+Suggested fields:
+
+```txt
+id
+user_id
+organization
+job_title
+location
+created_at
+updated_at
+```
+
+Notes:
+
+* Profile metadata belongs to one user and should use a foreign key to `users`.
+* Core profile fields should remain relational columns, not JSON blobs.
+* Standard users may read and update only their own profile metadata.
+* Admin profile viewing or editing is a separate admin-user-management concern,
+  not part of the user-owned profile model.
+
+---
+
 ## Survey
 
 Represents a survey template created by an administrator.
