@@ -1,0 +1,175 @@
+# Claude Review — Phase 16: Email Client Foundation
+
+Reviewer: Claude Code
+Date: 2026-06-22
+Branch: phase-16-email-client
+Scope reviewed: current phase diff only (git diff + untracked email.ts / email.test.ts)
+
+Validation reproduced locally:
+- apps/api email tests: 6 passed (test/email.test.ts)
+- apps/api typecheck (tsc --noEmit): clean
+- Reviewed full diff for config.ts, .env.example, .env.prod.example,
+  GLOBAL_DEVELOPMENT_ENVIRONMENT.txt, FOLLOW_UPS.md, PHASE_LOG.md,
+  test/helpers/testDatabaseUrl.ts, plus the new service and test files.
+
+Overall: This is a clean, conservative foundation phase that does exactly what
+the prompt asked and nothing more. Secret handling, disabled-by-default
+behavior, the production fail-fast guard, and sanitized logging are all sound.
+No critical issues. Findings below are minor maintainability/coverage notes.
+
+---
+
+## 1. Critical issues
+
+None.
+
+Specifically confirmed safe:
+- No secrets, credentials, tokens, or real provider integration introduced.
+- No password reset routes, tokens, storage, or user-facing flow.
+- No anonymous survey link generation, invitation sending, or public routes.
+- No database/migration/schema changes.
+- No queues/workers/microservices.
+- `.env.example` / `.env.prod.example` contain placeholders only; the
+  `EMAIL_FROM_ADDRESS` placeholder uses the reserved `.invalid` TLD (RFC 2606),
+  which cannot resolve or send.
+- Logging leaks nothing sensitive (see Sanitized logging below).
+
+---
+
+## 2. Suggested improvements
+
+These are optional polish; none block commit.
+
+a) Test coverage gaps for two reachable guard branches.
+   The following branches in config.ts/email.ts are implemented but not exercised
+   by a test:
+   - `readEmailConfigFromEnv` line ~179: `enabled && provider === "disabled"`
+     ("EMAIL_PROVIDER must not be disabled when EMAIL_ENABLED is true").
+   - `readEmailProvider` invalid-value path
+     ("EMAIL_PROVIDER must be either disabled or noop") for a non-empty bad value.
+   - `readBooleanEnv` invalid-value path ("EMAIL_ENABLED must be either true or
+     false").
+   - `createEmailClient` throw path ("No enabled email adapter is configured")
+     when given `{ enabled: true, provider: "disabled" }`.
+   Adding 3-4 small assertions would lock in the matrix you intentionally
+   designed. Low effort, good regression protection for a config surface that
+   future phases will extend.
+
+b) Two-layer provider validation is mildly redundant.
+   `readEmailProvider` already enforces "required when enabled," then
+   `readEmailConfigFromEnv` re-checks the enabled/disabled x provider matrix.
+   It is correct and defensive, but a future maintainer adding a real provider
+   (e.g. "azure_acs") must update both `EmailProvider` (config.ts) and the
+   `createEmailClient` switch (email.ts) and keep the cross-checks in sync. A
+   one-line comment in `readEmailProvider` pointing at `readEmailConfigFromEnv`
+   (and vice versa) would reduce the chance of a half-updated matrix later.
+
+c) `EmailProvider` conflates "configured provider" with "active adapter."
+   `EmailProvider = "disabled" | "noop"` is used both as the env-config value and
+   as the runtime client's readonly `provider` field. They happen to coincide
+   today. When a real provider lands, the disabled adapter's `provider` and the
+   no-op adapter's `provider` are conceptually adapter identities, not config
+   values. Not worth refactoring now, but worth a note so the next phase doesn't
+   assume config-provider == adapter-name forever.
+
+d) Service-level `EmailClientConfig` is narrower than what it is fed.
+   `createEmailClient(config.email)` passes an object that also carries
+   `fromAddress` / `replyToAddress`, but `EmailClientConfig` only declares
+   `enabled` / `provider`. TypeScript allows this (variable, not literal), and
+   the extra fields are correctly forward-looking. Just flagging that
+   `fromAddress`/`replyToAddress` are parsed and stored in config but not yet
+   consumed by the client — expected for a foundation, no action needed.
+
+e) Hardcoded `recipientCount: 1` in the no-op logger.
+   Correct today (the typed messages carry a single `to`), but if a future
+   template gains multiple recipients this constant silently becomes wrong.
+   Deriving it (even trivially) or commenting "single-recipient by design" would
+   age better.
+
+f) `emailClient` singleton is exported but imported nowhere yet.
+   Expected for a foundation phase (it instantiates the DisabledEmailClient at
+   module load and is harmless). No action; noting it so it is not mistaken for
+   dead code during a later cleanup sweep.
+
+---
+
+## 3. Acceptable tradeoffs
+
+- Production fail-fast on `EMAIL_ENABLED=true` (config.ts ~183). This is the
+  right call and answers your own open question: failing fast is better than a
+  production no-op that looks enabled while silently dropping reset/invite mail.
+  Because the check runs at module-load when `config` is built, a misconfigured
+  prod deploy refuses to start rather than starting in a deceptive state. Keep
+  it strict.
+- Sanitized no-op logging. The no-op adapter logs only `provider`, `template`,
+  and `recipientCount`. Verified by test: recipient email, recipient name,
+  survey title, token strings, and full URLs are all asserted absent. This meets
+  the "no tokens/passwords/links/bodies in logs" requirement. `console.info` is
+  consistent with the project's existing logging convention (request-logger,
+  server, db all use console.* directly — no logger abstraction to adopt).
+- Minimal template payloads. `password_reset` and `anonymous_survey_invite` are
+  type-only shapes with no rendering or transport. Appropriately small for a
+  foundation; they give future callers a contract without committing to a
+  provider.
+- API test setup pins `EMAIL_ENABLED=false` / `EMAIL_PROVIDER=disabled`
+  (testDatabaseUrl.ts). Good hardening — prevents a developer's private `.env`
+  from coupling unrelated tests to email config.
+
+---
+
+## 4. Questions or assumptions
+
+Answering the handoff's specific questions:
+
+- "Is the production guard too strict?" No — it is appropriate. Fail-fast until a
+  real adapter exists is the safer default and is reversible in one place when a
+  provider is approved.
+- "Does no-op logging avoid token/link/body/recipient leakage?" Yes, confirmed by
+  the test assertions and by reading the adapter; only metadata is logged.
+- "Are the template shapes small enough?" Yes. They are minimal and forward-only.
+- "Did the phase introduce any user-facing reset/anonymous behavior?" No. No
+  routes, tokens, storage, or UI.
+- "Are the env docs clear?" Yes. `.env.example`, `.env.prod.example`, and
+  GLOBAL_DEVELOPMENT_ENVIRONMENT.txt all clearly state disabled-by-default,
+  noop-for-local-only, and credentials-in-Azure-not-in-file.
+
+Open assumption to carry forward: provider choice (Azure Communication Services
+vs SendGrid vs SMTP) is still deferred per FOLLOW_UPS.md. When chosen, both the
+`EmailProvider` union and the `createEmailClient` switch must be extended
+together, and provider-specific integration tests added (already listed as
+deferred work).
+
+---
+
+## 5. Product UX alignment notes
+
+- No user-facing surface changed, so there is no UX regression risk this phase.
+- Aligns with notes/next_phases.txt item 1: the client is provider-agnostic and
+  pre-shapes both the password-reset and anonymous-survey-invite payloads that
+  items 2 and 3 will need, without prematurely building either flow.
+- Hidden-tag / participant-privacy principles are respected: survey titles and
+  recipient identities are explicitly kept out of logs, which matters for the
+  future anonymous-invite path where participant anonymity is a product
+  requirement.
+- FOLLOW_UPS.md was updated to replace the old "Email notifications" parked item
+  with an accurate "provider selection + real delivery adapter" follow-up that
+  reflects what now exists. Good bookkeeping.
+
+---
+
+## 6. Commit readiness
+
+Ready to commit: Yes (from the review side).
+
+- Requirements implemented: Yes — matches prompt_16 scope exactly.
+- Non-goals respected: Yes — no reset/anonymous/provider/DB scope leaked in.
+- Secret handling: Safe — placeholders only, prod credentials deferred to Azure.
+- Production safety: Safe — fail-fast guard prevents deceptive enabled state.
+- Logging safety: Safe — metadata-only, verified by test.
+- Tests: Green locally (6 passed); typecheck clean.
+- Suggested improvements in section 2 are optional polish and can be deferred or
+  folded in at the developer's discretion; none are blockers.
+
+Recommendation: Commit as-is, or optionally add the section-2(a) guard-branch
+tests first if you want the config matrix fully pinned before the real-provider
+phase builds on it.

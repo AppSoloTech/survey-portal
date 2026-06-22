@@ -1,0 +1,145 @@
+# Claude Review Handoff — Phase 16
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_16.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- secret handling
+- production no-op/disabled behavior
+- logging safety
+- provider abstraction size
+- accidental implementation of later password reset or anonymous survey scope
+- architectural consistency
+- maintainability
+- app environment safety
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_16.txt`
+- `notes/next_phases.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+
+## Phase Scope
+
+Implemented:
+
+- Added placeholder-only email environment config with `EMAIL_ENABLED=false` and `EMAIL_PROVIDER=disabled` as the safe default.
+- Added an internal provider-agnostic email client boundary in `apps/api/src/services/email.ts`.
+- Added typed future template payloads for `password_reset` and `anonymous_survey_invite`.
+- Added disabled and development no-op adapters only; neither sends real email.
+- Added tests for disabled startup/config behavior, no-op send behavior, production guardrails, and sanitized no-op logging.
+- Updated environment docs and follow-ups to keep real provider selection deferred.
+
+Non-goals respected:
+
+- No password reset routes, tokens, storage, or user-facing flows.
+- No anonymous survey link generation, invitations, or public survey routes.
+- No real email provider integration or credentials.
+- No database changes.
+- No queues, workers, or microservices.
+
+Known tradeoffs:
+
+- `EMAIL_ENABLED=true` is rejected in production until a real provider adapter exists, so production cannot accidentally run with a no-op provider that looks enabled.
+- The no-op adapter logs only template metadata and recipient count. It does not log recipients, URLs, token strings, survey titles, or message bodies.
+- The template payloads are minimal shapes for future callers; rendering and provider-specific transport are intentionally absent.
+
+Deferred work:
+
+- Choose an approved provider and credential strategy before real delivery.
+- Implement password reset and anonymous survey invitation flows in their own scoped phases.
+- Add provider-specific tests when a real adapter is approved.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Important untracked files:
+
+```txt
+apps/api/src/services/email.ts
+apps/api/test/email.test.ts
+notes/claude_handoff_phase_16.txt
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+env PORT=3106 EMAIL_ENABLED=false EMAIL_PROVIDER=disabled node apps/api/dist/server.js
+curl -sS http://127.0.0.1:3106/api/health
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test` after rerunning with approved local PostgreSQL access; shared 47, web 52, API 163 tests, 17 API files.
+- Passed: `git diff --check`
+- Passed: built API started with email disabled on `127.0.0.1:3106`; `/api/health` returned status `ok` and database `connected`.
+- Initial sandbox-only failures: `npm test` API setup could not connect to local PostgreSQL (`EPERM 127.0.0.1:5432`) until rerun with approval; API startup could not bind local port 3106 until rerun with approval.
+
+Manual testing:
+
+- Started the built API with `EMAIL_ENABLED=false` and `EMAIL_PROVIDER=disabled`.
+- Confirmed existing `/api/health` readiness still returns HTTP 200 with the database connected.
+- Exercised disabled and no-op email adapters through automated tests; no real mail was sent.
+
+## Specific Questions
+
+- Is the production guard too strict, or is failing fast on `EMAIL_ENABLED=true` appropriate until a real provider exists?
+- Does the no-op adapter's metadata logging avoid all token/link/body/recipient leakage?
+- Are the `password_reset` and `anonymous_survey_invite` template shapes small enough for this foundation phase?
+- Did the phase accidentally introduce any user-facing password reset or anonymous survey behavior?
+- Are `.env.example`, `.env.prod.example`, and `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt` clear enough about placeholder-only configuration?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_16.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

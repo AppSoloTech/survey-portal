@@ -3239,3 +3239,207 @@ lever so the skip can instead fire the moment the trigger answer is submitted.
   good
 - Ready to commit: Yes — all gates green (tests, both Codex reviews, manual pass);
   commit at the developer's discretion
+
+---
+
+# Phase 16 — Email Client Foundation
+
+Date:
+2026-06-22
+
+Status:
+Completed; ready to commit
+
+Prompt:
+`prompts/prompt_16.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_16.txt`
+- Claude review: `notes/claude_review_phase_16.txt` (completed — no critical
+  issues; optional coverage/comment suggestions fixed)
+
+## Goals
+
+- Add the minimum provider-agnostic email foundation needed for future password
+  reset and anonymous survey invitation phases.
+- Keep local and production behavior safe while provider credentials are not
+  available.
+- Avoid implementing any user-facing password reset, anonymous survey, assignment,
+  notification, or receipt workflow.
+
+## Built
+
+- Added email configuration parsing in `apps/api/src/config.ts`.
+- Added `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `EMAIL_FROM_ADDRESS`, and
+  `EMAIL_REPLY_TO_ADDRESS` placeholders to `.env.example` and `.env.prod.example`.
+- Added `apps/api/src/services/email.ts` with:
+  - typed `password_reset` and `anonymous_survey_invite` message payloads
+  - provider-agnostic `EmailClient`
+  - disabled adapter
+  - development no-op adapter
+  - default `emailClient` built from API config
+- Added focused tests in `apps/api/test/email.test.ts` for disabled defaults,
+  explicit no-op configuration, invalid config guard branches, production
+  guardrails, client adapter mismatch behavior, and logging safety.
+- Pinned API test setup to `EMAIL_ENABLED=false` / `EMAIL_PROVIDER=disabled` so
+  local private `.env` files cannot make unrelated tests depend on email settings.
+- Updated `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt` and `markdown/FOLLOW_UPS.md`.
+
+## Important Decisions
+
+### Email Disabled By Default
+
+Decision:
+`EMAIL_ENABLED=false` and `EMAIL_PROVIDER=disabled` are the documented defaults.
+
+Reason:
+The provider and credentials are not approved yet, so local development and
+production startup should be safe by default.
+
+Tradeoff:
+Future phases must explicitly enable a provider before real mail can send.
+
+### No Production No-Op
+
+Decision:
+`EMAIL_ENABLED=true` fails fast in `RUN_ENV=prod` until a real provider adapter is
+implemented.
+
+Reason:
+A production no-op provider can look like delivery is enabled while silently
+dropping password reset or invitation messages.
+
+Tradeoff:
+There is no production smoke mode for enabled email yet; disabled production
+startup remains supported.
+
+### Sanitized No-Op Logging
+
+Decision:
+The no-op adapter logs only provider, template name, and recipient count.
+
+Reason:
+Future reset URLs, invite URLs, tokens, recipients, survey titles, and message
+bodies can be sensitive.
+
+Tradeoff:
+No-op logs are intentionally sparse; tests assert that sensitive message fields
+do not appear.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none; no public routes or response shapes changed.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: no real email is sent; logs omit recipients,
+  links, tokens, titles, and message bodies.
+- Frontend UX impact: none.
+- Environment or deployment impact: production must keep email disabled until an
+  approved provider adapter and Azure-held credentials are implemented.
+
+## Claude Review Outcome
+
+Source:
+
+- `notes/claude_review_phase_16.txt`
+
+Status:
+
+- Completed; no critical issues.
+
+Optional suggestions fixed after review:
+
+- Added tests for invalid `EMAIL_ENABLED`, invalid `EMAIL_PROVIDER`, disabled
+  email with `noop`, enabled email with `disabled`, and
+  `createEmailClient({ enabled: true, provider: "disabled" })`.
+- Added comments documenting that provider validation must stay in sync with the
+  client factory and that Phase 16 message shapes are single-recipient.
+
+Accepted tradeoffs:
+
+- Keep the strict production fail-fast when `EMAIL_ENABLED=true` until a real
+  provider adapter exists.
+- Keep sparse no-op logging with provider/template/recipient count only.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run test -w apps/api -- email.test.ts
+git diff --check
+env PORT=3106 EMAIL_ENABLED=false EMAIL_PROVIDER=disabled node apps/api/dist/server.js
+curl -sS http://127.0.0.1:3106/api/health
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test` after rerunning with approved local PostgreSQL access
+  (shared 47, web 52, API 163 tests across 17 API files).
+- Passed after Claude review fixes: focused API email test with approved local
+  PostgreSQL access (11 tests).
+- Passed: `git diff --check`
+- Passed: built API startup with email disabled; `/api/health` returned HTTP 200
+  with `status: ok` and `database: connected`.
+- Failed in sandbox only: initial `npm test` API global setup could not connect
+  to local PostgreSQL (`EPERM 127.0.0.1:5432`); rerun with approval passed.
+- Failed in sandbox only: initial API startup could not bind
+  `127.0.0.1:3106`; rerun with approval passed.
+
+Manual tests:
+
+- Confirmed the built API starts with `EMAIL_ENABLED=false` and
+  `EMAIL_PROVIDER=disabled`.
+- Confirmed existing readiness route still works with email config present.
+- Reviewed `.env.example` and `.env.prod.example`; values are placeholders only.
+- Exercised disabled and no-op adapters through automated tests without sending
+  real mail.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_16.txt`
+- Claude review status before commit: Completed; review written to
+  `notes/claude_review_phase_16.txt`
+
+## Problems Encountered
+
+- Problem:
+  The sandbox blocked local PostgreSQL access during the API test global setup.
+  Resolution:
+  Reran `npm test` with approved local PostgreSQL access; full suite passed.
+
+- Problem:
+  The sandbox blocked binding the manual API startup port.
+  Resolution:
+  Reran the built API startup command with approval; health check passed.
+
+## Follow-Up Tasks
+
+- Choose the real email provider and credential strategy before enabling delivery.
+- Implement password reset and anonymous survey invitation sending in separate
+  phases.
+- Add provider-specific integration tests once a real adapter is approved.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude review found no critical issues and
+  confirmed secret handling, production safety, logging safety, and scope control.
+- Review findings addressed or deferred: Yes; optional guard-branch tests and
+  comments were added after review.
+- Manual testing complete: Basic disabled API startup and health check complete.
+- Ready to commit: Yes, at the developer's discretion.

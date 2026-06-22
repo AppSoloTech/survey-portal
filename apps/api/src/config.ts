@@ -12,6 +12,7 @@ dotenv.config({ path: rootEnvPath });
 dotenv.config({ path: workspaceEnvPath });
 
 type RunEnvironment = "dev" | "prod";
+export type EmailProvider = "disabled" | "noop";
 const localJwtSecretPlaceholder = "replace_with_a_local_development_secret";
 
 function readRunEnv(): RunEnvironment {
@@ -128,6 +129,75 @@ function readPositiveIntegerEnv(name: string, defaultValue: number): number {
   return value;
 }
 
+function readBooleanEnv(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  defaultValue: boolean
+): boolean {
+  const rawValue = env[name];
+
+  if (rawValue === undefined || rawValue === "") {
+    return defaultValue;
+  }
+
+  if (rawValue === "true") {
+    return true;
+  }
+
+  if (rawValue === "false") {
+    return false;
+  }
+
+  throw new Error(`${name} must be either true or false`);
+}
+
+function readEmailProvider(rawValue: string | undefined, enabled: boolean): EmailProvider {
+  const value = rawValue ?? (enabled ? undefined : "disabled");
+
+  // Keep this accepted-provider list in sync with createEmailClient. The
+  // enabled/disabled matrix is checked below in readEmailConfigFromEnv.
+  if (value === "disabled" || value === "noop") {
+    return value;
+  }
+
+  if (!value) {
+    throw new Error("EMAIL_PROVIDER is required when EMAIL_ENABLED is true");
+  }
+
+  throw new Error("EMAIL_PROVIDER must be either disabled or noop");
+}
+
+export function readEmailConfigFromEnv(
+  env: NodeJS.ProcessEnv,
+  runEnv: RunEnvironment
+) {
+  const enabled = readBooleanEnv(env, "EMAIL_ENABLED", false);
+  const provider = readEmailProvider(env.EMAIL_PROVIDER, enabled);
+
+  // This matrix check keeps the disabled env state distinct from enabled
+  // provider adapters as real delivery providers are added.
+  if (!enabled && provider !== "disabled") {
+    throw new Error("EMAIL_PROVIDER must be disabled when EMAIL_ENABLED is false");
+  }
+
+  if (enabled && provider === "disabled") {
+    throw new Error("EMAIL_PROVIDER must not be disabled when EMAIL_ENABLED is true");
+  }
+
+  if (enabled && runEnv === "prod") {
+    throw new Error(
+      "Real email provider integration is not implemented yet; keep EMAIL_ENABLED=false in production"
+    );
+  }
+
+  return {
+    enabled,
+    provider,
+    fromAddress: env.EMAIL_FROM_ADDRESS || undefined,
+    replyToAddress: env.EMAIL_REPLY_TO_ADDRESS || undefined
+  } as const;
+}
+
 const runEnv = readRunEnv();
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const isProduction = runEnv === "prod";
@@ -158,5 +228,6 @@ export const config = {
     15 * 60 * 1000
   ),
   authLoginRateLimitMax: readPositiveIntegerEnv("AUTH_LOGIN_RATE_LIMIT_MAX", 5),
-  authRegisterRateLimitMax: readPositiveIntegerEnv("AUTH_REGISTER_RATE_LIMIT_MAX", 5)
+  authRegisterRateLimitMax: readPositiveIntegerEnv("AUTH_REGISTER_RATE_LIMIT_MAX", 5),
+  email: readEmailConfigFromEnv(process.env, runEnv)
 } as const;

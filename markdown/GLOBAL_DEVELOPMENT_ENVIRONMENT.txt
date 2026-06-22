@@ -70,6 +70,10 @@ TRUST_PROXY_HOPS=
 AUTH_RATE_LIMIT_WINDOW_MS=
 AUTH_LOGIN_RATE_LIMIT_MAX=
 AUTH_REGISTER_RATE_LIMIT_MAX=
+EMAIL_ENABLED=
+EMAIL_PROVIDER=
+EMAIL_FROM_ADDRESS=
+EMAIL_REPLY_TO_ADDRESS=
 ADMIN_FIRST_NAME=
 ADMIN_LAST_NAME=
 ADMIN_EMAIL=
@@ -79,6 +83,18 @@ ADMIN_PASSWORD=
 If the implementation uses split PostgreSQL variables instead of `DATABASE_URL`, document the exact variables in `.env.example` and keep the database connection module consistent.
 
 Never commit real credentials, production secrets, or client data.
+
+Email is intentionally disabled by default. Phase 16 adds only the internal
+foundation and a development no-op adapter:
+
+```txt
+EMAIL_ENABLED=false
+EMAIL_PROVIDER=disabled
+```
+
+Use `EMAIL_ENABLED=true` with `EMAIL_PROVIDER=noop` only for local non-sending
+development checks. Production must keep email disabled until an approved real
+provider adapter and Azure-held credentials are implemented.
 
 ---
 

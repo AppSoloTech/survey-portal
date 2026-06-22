@@ -60,6 +60,8 @@ export function applyTestEnvironment(): string {
   process.env.LOCAL_DATABASE_URL = testDatabaseUrl;
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test_only_jwt_secret_for_local_api_tests";
+  process.env.EMAIL_ENABLED = "false";
+  process.env.EMAIL_PROVIDER = "disabled";
   process.env.SURVEY_PORTAL_TEST_DATABASE_APPLIED = "1";
 
   return testDatabaseUrl;
