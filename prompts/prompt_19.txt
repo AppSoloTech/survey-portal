@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Add a user profile/settings foundation for additional demographics and
+Extend the existing user settings foundation with additional demographics and
 current-user survey statistics.
 
 This phase is user-scoped only. Admin user profile tools belong to Phase 20.
@@ -47,7 +47,12 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
+* `prompts/prompt_18.txt`
+* `notes/claude_handoff_phase_18.txt`
+* `notes/claude_review_phase_18.txt`
 * Current auth user model, dashboard, my-surveys endpoints, and routing.
+* `apps/web/src/pages/AccountSettings.tsx`
+* `apps/web/src/App.tsx` for the Account dropdown and settings route.
 
 ---
 
@@ -69,7 +74,7 @@ Expected impact:
 
 * profile data model
 * profile read/update endpoints
-* profile/settings route
+* existing account settings page
 * current-user survey statistics
 
 ---
@@ -78,15 +83,18 @@ Expected impact:
 
 Implement:
 
-* User profile/settings route in the user portal.
+* Extend the existing `/settings` route in the user portal.
 * Minimal demographic fields: organization or department, job title or role,
   and location or region.
 * Relational storage for profile metadata, either as columns or a user profile
   table, avoiding JSON for core profile data.
 * Authenticated current-user profile read/update endpoint.
-* Current-user survey statistics: available, in progress, completed, last
-  activity, and completion rate.
+* Registered current-user survey statistics: available, in progress, completed,
+  last activity, and completion rate. Do not mix anonymous attempt statistics
+  into this user-owned view.
 * Shared profile and survey-stat types.
+* Preserve the Phase 18 password reset panel and cooldown behavior on the
+  settings page.
 
 ## Non-Goals
 
@@ -105,6 +113,8 @@ Do not implement:
 * Email, first name, and last name remain part of the auth user model unless a
   small update is clearly needed for the profile screen.
 * Profile stats are derived from existing survey/attempt data.
+* Phase 18 already created the Account dropdown and `/settings` page; Phase 19
+  should build on that page rather than adding a duplicate route.
 
 ## Open Questions
 
@@ -118,10 +128,13 @@ Do not implement:
 The phase is ready for review when:
 
 * User can open profile/settings from navigation.
+* User can open Settings from the Account dropdown.
 * User can save demographic fields and see them after reload.
 * User survey statistics render on the profile/settings page.
 * API enforces current-user-only access.
 * Admin-specific user tools are not implemented in this phase.
+* Existing password reset initiation from Settings still works after profile
+  changes.
 
 ---
 
@@ -147,9 +160,12 @@ Add focused tests for:
 
 Manual checks:
 
+* Account dropdown opens Settings at desktop, tablet, and mobile widths.
 * User updates profile fields and reloads.
 * Another user cannot fetch or edit the profile by guessing IDs.
 * Dashboard/profile stats update after starting and completing a survey.
+* Password reset panel on Settings still sends a reset link and cooldown state
+  still works.
 * Mobile pass for dashboard/profile/settings at 375/768/1280px.
 
 ---
