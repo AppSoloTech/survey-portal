@@ -1,0 +1,195 @@
+# Phase 18 — Password Reset Foundation
+
+## Purpose
+
+Build secure password reset foundation from both the login screen and a logged-in
+profile/settings context.
+
+This phase depends on the Phase 16 email client foundation.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 3
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-18-password-reset
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_18.txt`
+* Claude review: `notes/claude_review_phase_18.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `prompts/prompt_16.txt`
+* Current auth routes, password hashing helpers, auth rate limits, and email
+  service.
+
+---
+
+# Received Feedback
+
+Users should be able to request a password reset from a logged-in state via
+profile/settings and from the login screen with "Forgot password?".
+
+---
+
+# Intake Classification
+
+* security-sensitive auth feature
+* database schema and API contract change
+* email service usage
+* frontend auth/profile workflow
+
+Expected impact:
+
+* password reset token storage
+* auth endpoints
+* login UI
+* logged-in profile/settings reset initiation
+* tests for enumeration resistance and token lifecycle
+
+---
+
+# Scope
+
+Implement:
+
+* Password reset token table or equivalent relational model storing hashed
+  tokens, expiry, consumed timestamp, and user association.
+* Request endpoint from login that always returns a generic success response.
+* Complete endpoint that verifies a token, hashes the new password with bcrypt,
+  consumes the token, and rejects reuse.
+* Logged-in profile/settings reset initiation using the same reset service.
+* Phase 16 email service integration for reset email dispatch.
+* Development-safe reset testing path that does not log reset secrets in
+  production.
+* Rate limiting consistent with existing auth protection.
+
+## Non-Goals
+
+Do not implement:
+
+* unrelated profile redesign beyond the reset entry point
+* admin-triggered password reset; that belongs to Phase 20
+* plaintext token storage
+* production reset-token logging
+* account recovery questions or MFA
+
+## Assumptions
+
+* Password reset responses must not reveal whether an email exists.
+* Tokens are single-use and expire.
+* Resetting a password should not expose password hashes or reset secrets in any
+  API response.
+
+## Open Questions
+
+* Should existing login sessions be invalidated after password reset? If no
+  token revocation model exists, document the tradeoff and keep scope minimal.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Login screen has a "Forgot password?" flow.
+* Logged-in user can initiate a reset from profile/settings.
+* Existing and non-existing emails receive the same public request response.
+* A valid reset token works once and then cannot be reused.
+* Expired, consumed, malformed, or unknown tokens fail safely.
+* New passwords use existing bcrypt hashing and validation rules.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* request flow enumeration resistance
+* token hash storage and single-use consumption
+* expired/used/invalid token failure
+* successful password update and old password rejection
+* logged-in reset initiation auth requirement
+* rate limiting where practical
+
+Manual checks:
+
+* Request reset for existing and non-existing email; both show generic success.
+* Use reset link once; confirm new password works and old password fails.
+* Reuse expired/consumed token; confirm safe error.
+* Trigger reset while logged in from profile/settings.
+* Confirm no plaintext reset token is stored in the database.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_18.txt
+```
+
+Ask Claude Code to review:
+
+* token hashing
+* enumeration resistance
+* rate limiting
+* cookie/session behavior after reset
+* email safety
+* accidental implementation of Phase 20 admin reset scope
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_18.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `.env.example` or environment docs if reset URLs add config
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

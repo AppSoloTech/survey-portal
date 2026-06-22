@@ -1,0 +1,203 @@
+# Phase 21 — Choice "Other" Answer Foundation
+
+## Purpose
+
+Add system-generated "Other" answer support for applicable choice-based
+questions, storing custom text separately from normal answer options.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 6
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-21-choice-other-answer
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_21.txt`
+* Claude review: `notes/claude_review_phase_21.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current survey question, answer option, answer save, reporting, CSV, and
+  participant runner code.
+
+---
+
+# Received Feedback
+
+For choice-based questions, admins can enable an "Allow Other" setting. When
+enabled, the survey-taking UI should render an "Other" option with a free-text
+input field. The "Other" option is system-generated, not a normal manually
+entered answer option, and the response should be stored separately from
+standard option IDs.
+
+---
+
+# Intake Classification
+
+* feature request
+* database schema and API contract change
+* participant-facing survey behavior
+* reporting/export behavior
+* hidden-tag visibility risk
+
+Expected impact:
+
+* question setting
+* response storage
+* answer validation
+* admin question editor
+* participant runner
+* reporting and CSV
+
+---
+
+# Scope
+
+Implement:
+
+* Question-level `allowOther` setting for `single_select` and `multi_select`.
+* Separate response storage for Other selection and custom text.
+* Shared API/request/response types for Other answer data.
+* Admin question editor toggle for applicable types only.
+* Participant "Other" choice plus text input when enabled.
+* Required validation:
+  * single-select required is satisfied by exactly one standard option or a
+    non-blank Other response.
+  * multi-select required is satisfied by at least one standard option or a
+    non-blank Other response.
+  * Other text is required when Other is selected.
+* Reporting and CSV display of Other text separately from standard options.
+
+## Non-Goals
+
+Do not implement:
+
+* a normal `answer_options` row for Other
+* hidden tags on Other
+* conditional logic triggered by Other
+* Other support for `scale` unless explicitly approved
+* new question types
+
+## Assumptions
+
+* Other applies to `single_select` and `multi_select` only.
+* Other text should be trimmed and bounded like other user-entered text.
+* Existing responses remain valid after migration with Other disabled by
+  default.
+
+## Open Questions
+
+* Should reports aggregate identical Other text values? If unanswered, display
+  raw Other text per response/export and defer aggregation.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can enable/disable Allow Other on applicable draft questions.
+* Participant UI renders Other only when enabled.
+* Standard option, Other-only, and mixed multi-select submissions save
+  correctly.
+* Other text is not represented as an answer option ID.
+* Reporting and CSV show Other text separately.
+* Hidden tags remain attached only to real answer options.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* question create/update with `allowOther`
+* invalid `allowOther` use on non-choice types
+* single-select Other validation
+* multi-select standard + Other validation
+* required empty Other text rejection
+* reporting and CSV Other output
+* hidden-tag isolation for Other
+
+Manual checks:
+
+* Admin enables/disables Other on single-select and multi-select questions.
+* Participant submits standard option only, Other only, and multi-select mixed
+  standard plus Other.
+* Required validation blocks empty Other text when Other is selected.
+* Admin Results and CSV show custom Other text without fake option IDs or hidden
+  tags.
+* Published/read-only survey behavior remains intact.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_21.txt
+```
+
+Ask Claude Code to review:
+
+* data model separation
+* required validation
+* reporting and CSV behavior
+* hidden-tag isolation
+* backward compatibility
+* accidental implementation of Other for unsupported question types
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_21.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

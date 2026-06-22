@@ -1,0 +1,189 @@
+# Phase 19 — User Profile Foundation
+
+## Purpose
+
+Add a user profile/settings foundation for additional demographics and
+current-user survey statistics.
+
+This phase is user-scoped only. Admin user profile tools belong to Phase 20.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 4
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-19-user-profile-foundation
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_19.txt`
+* Claude review: `notes/claude_review_phase_19.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current auth user model, dashboard, my-surveys endpoints, and routing.
+
+---
+
+# Received Feedback
+
+Get more user information via profile to collect additional user demographics.
+The user profile should contain user metadata and some user survey statistics.
+
+---
+
+# Intake Classification
+
+* feature foundation
+* user data and privacy concern
+* database schema and API contract change
+* frontend authenticated user workflow
+
+Expected impact:
+
+* profile data model
+* profile read/update endpoints
+* profile/settings route
+* current-user survey statistics
+
+---
+
+# Scope
+
+Implement:
+
+* User profile/settings route in the user portal.
+* Minimal demographic fields: organization or department, job title or role,
+  and location or region.
+* Relational storage for profile metadata, either as columns or a user profile
+  table, avoiding JSON for core profile data.
+* Authenticated current-user profile read/update endpoint.
+* Current-user survey statistics: available, in progress, completed, last
+  activity, and completion rate.
+* Shared profile and survey-stat types.
+
+## Non-Goals
+
+Do not implement:
+
+* admin profile viewing or editing
+* admin password reset initiation
+* CRM-style account management
+* speculative demographics beyond the approved minimal fields
+* public profile pages
+* profile photos or file uploads
+
+## Assumptions
+
+* Standard users can only read and update their own profile.
+* Email, first name, and last name remain part of the auth user model unless a
+  small update is clearly needed for the profile screen.
+* Profile stats are derived from existing survey/attempt data.
+
+## Open Questions
+
+* Are any demographic fields required? If unanswered, keep all new demographic
+  fields optional.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* User can open profile/settings from navigation.
+* User can save demographic fields and see them after reload.
+* User survey statistics render on the profile/settings page.
+* API enforces current-user-only access.
+* Admin-specific user tools are not implemented in this phase.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* authenticated profile read/update
+* unauthenticated rejection
+* current-user-only authorization
+* profile validation bounds
+* survey statistics counts and completion rate
+
+Manual checks:
+
+* User updates profile fields and reloads.
+* Another user cannot fetch or edit the profile by guessing IDs.
+* Dashboard/profile stats update after starting and completing a survey.
+* Mobile pass for dashboard/profile/settings at 375/768/1280px.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_19.txt
+```
+
+Ask Claude Code to review:
+
+* PII exposure
+* validation
+* profile update authorization
+* survey statistic correctness
+* accidental implementation of Phase 20 admin scope
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_19.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md` if profile fields become durable model
+  guidance
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

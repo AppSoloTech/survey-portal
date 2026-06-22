@@ -1,0 +1,203 @@
+# Phase 17 — Anonymous Survey Foundation
+
+## Purpose
+
+Build a safe anonymous survey foundation with tokenized public access while
+keeping anonymous takers separate from logged-in users.
+
+This is a foundation phase. Implement only the minimum anonymous survey-taking
+path needed for tokenized access and safe attempt ownership.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 2
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-17-anonymous-survey-foundation
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_17.txt`
+* Claude review: `notes/claude_review_phase_17.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current survey attempt, participant runner, reporting, and auth middleware
+  implementations.
+
+---
+
+# Received Feedback
+
+Develop anonymous survey functionality with a safe bifurcation between logged-in
+users and anonymous survey takers who do not have, and should not need, an
+account.
+
+---
+
+# Intake Classification
+
+* feature foundation
+* security, privacy, and data-visibility risk
+* participant-facing survey behavior
+* database schema and API contract change
+
+Expected impact:
+
+* data model vision update
+* database migration for anonymous links/ownership
+* public anonymous survey routes
+* participant UI route for anonymous token access
+* reporting adjustments to represent anonymous attempts safely
+
+---
+
+# Scope
+
+Implement:
+
+* Durable documentation update allowing anonymous survey completion, replacing
+  the previous "users must register and login" decision where needed.
+* Tokenized anonymous link model scoped to a published survey, with enabled or
+  disabled status and optional expiration if the implementation can keep it
+  simple.
+* Anonymous attempt ownership that is separate from `users.id`.
+* Public anonymous survey read/start/answer/complete path that reuses the
+  existing survey runner logic where practical.
+* Admin controls to create, copy, and disable anonymous links for published
+  surveys.
+* Reporting display that identifies anonymous attempts without inventing user
+  accounts.
+
+## Non-Goals
+
+Do not implement:
+
+* user account creation for anonymous takers
+* anonymous access to `/api/my-surveys`, user dashboard, profile, admin routes,
+  hidden tags, or auth-only APIs
+* broad email invitation workflows beyond optional link copy
+* assignment rules or recipient list management
+* public survey discovery pages
+
+## Assumptions
+
+* Anonymous tokens must be high entropy and stored safely.
+* Anonymous attempts should not set auth cookies.
+* Anonymous participants receive the same participant-safe survey shape as
+  logged-in users: no hidden tags or admin-only metadata.
+* Completed anonymous attempts should be visible in admin reporting.
+
+## Open Questions
+
+* Should anonymous links expire by default, or remain active until disabled?
+  If unanswered, prefer a nullable expiration with no default expiry.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can create and disable an anonymous link for a published survey.
+* Anonymous visitors can open a valid token, complete the survey, and submit
+  without logging in.
+* Bad, disabled, expired, or survey-unavailable tokens show safe unavailable
+  responses.
+* Anonymous attempts remain separate from registered user attempts.
+* Hidden tags and admin-only survey data remain unavailable to anonymous
+  participants.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* admin-only anonymous link creation/disable endpoints
+* token lookup and unavailable-token behavior
+* anonymous start/answer/complete lifecycle
+* hidden-tag isolation
+* separation from logged-in user attempts
+* reporting representation for anonymous attempts
+
+Manual checks:
+
+* Admin creates an anonymous link for a published survey and copies it.
+* Anonymous visitor completes a survey in a fresh/incognito browser.
+* Logged-in and anonymous attempts do not merge or overwrite each other.
+* Disabled/expired/bad token shows a safe unavailable state.
+* Admin Results includes anonymous attempts without exposing participant-only or
+  hidden-tag data to the anonymous UI.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_17.txt
+```
+
+Ask Claude Code to review:
+
+* auth boundary leakage
+* hidden-tag exposure
+* token entropy and storage
+* expired/disabled link behavior
+* anonymous attempt ownership
+* accidental implementation of broad email invitations or account creation
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_17.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

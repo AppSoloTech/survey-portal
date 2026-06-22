@@ -1,0 +1,189 @@
+# Phase 16 — Email Client Foundation
+
+## Purpose
+
+Build the minimum provider-agnostic email foundation needed for future password
+reset and anonymous survey invitation phases.
+
+This is a foundation phase. Do not build password reset, anonymous survey
+sending, assignment notifications, or completion receipts in this phase.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 1
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-16-email-client
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_16.txt`
+* Claude review: `notes/claude_review_phase_16.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current API config, auth, logging, and environment files.
+
+---
+
+# Received Feedback
+
+Build an email client that can later send password reset links/tokens and
+anonymous survey links. Email client credentials are not yet provided, so use
+placeholders for now.
+
+---
+
+# Intake Classification
+
+* feature foundation
+* environment and secret handling
+* future auth and anonymous survey dependency
+
+Expected impact:
+
+* API configuration
+* environment documentation
+* internal service scaffolding
+* automated tests for safe disabled/no-op behavior
+
+No database, public API, participant-facing survey behavior, or auth behavior
+should change in this phase.
+
+---
+
+# Scope
+
+Implement:
+
+* Provider-agnostic internal email service interface.
+* A disabled/no-op adapter that is safe for local development.
+* Placeholder-only environment configuration and `.env.example` entries.
+* Template shape/types for future password reset and anonymous survey invite
+  emails.
+* Tests proving the email client can be initialized disabled and cannot send
+  real mail without explicit provider configuration.
+
+## Non-Goals
+
+Do not implement:
+
+* password reset flows
+* anonymous survey links or invitation sending
+* real email provider integration without credentials/provider approval
+* new user-facing routes
+* production secret values
+* queues, workers, or microservices
+
+## Assumptions
+
+* Provider is unknown, so the service must be small and provider-agnostic.
+* `EMAIL_ENABLED=false` or equivalent should be the safest local default.
+* Production must not log tokens, passwords, reset links, or full message bodies.
+
+## Open Questions
+
+* Which provider should be used later, such as Azure Communication Services,
+  SendGrid, SMTP, or another approved service?
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The API can start with email disabled.
+* Placeholder environment variables are documented without secrets.
+* The no-op/dev adapter can be exercised safely by tests.
+* Future phases can request a typed password reset or anonymous survey invite
+  email without choosing a provider in this phase.
+* No password reset or anonymous survey functionality is available to users yet.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* disabled email startup/config behavior
+* no-op send behavior
+* production-safe logging expectations where practical
+
+Manual checks:
+
+* Start the API with email disabled and confirm existing auth/survey routes
+  still work.
+* Review `.env.example` and confirm all email values are placeholders.
+* Exercise the dev/no-op adapter without sending real mail.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_16.txt
+```
+
+Ask Claude Code to review:
+
+* secret handling
+* production no-op/disabled behavior
+* logging safety
+* provider abstraction size
+* accidental implementation of later password reset or anonymous survey scope
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_16.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `.env.example`
+* README or environment docs if setup behavior changes
+* `markdown/FOLLOW_UPS.md` if email provider selection remains deferred
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

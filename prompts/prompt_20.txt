@@ -1,0 +1,188 @@
+# Phase 20 — Admin User Tools Foundation
+
+## Purpose
+
+Extend admin user management with safe user detail visibility and admin-triggered
+password reset initiation.
+
+This phase depends on the Phase 18 password reset foundation and the Phase 19
+user profile foundation.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 5
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-20-admin-user-tools
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_20.txt`
+* Claude review: `notes/claude_review_phase_20.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `prompts/prompt_18.txt`
+* `prompts/prompt_19.txt`
+* Current admin users page, admin routes, profile endpoints, and password reset
+  service.
+
+---
+
+# Received Feedback
+
+Increase the amount of base user-related functionality the admin has, including
+viewing user profile information and initiating a password reset.
+
+---
+
+# Intake Classification
+
+* admin feature foundation
+* privacy and authorization risk
+* API contract change
+* frontend admin workflow
+* password reset service usage
+
+Expected impact:
+
+* admin user detail endpoint
+* admin user detail UI
+* admin-triggered password reset request
+* tests for admin-only access and token non-disclosure
+
+---
+
+# Scope
+
+Implement:
+
+* Admin user detail endpoint with profile metadata and survey statistics.
+* Admin user detail view linked from the existing admin users table.
+* Admin-triggered password reset initiation through the Phase 18 reset service.
+* User-facing notification via email service, not admin-visible tokens.
+* Clear admin UI feedback for reset initiation.
+
+## Non-Goals
+
+Do not implement:
+
+* showing reset tokens, password hashes, or reset links to admins
+* account impersonation
+* admin editing of demographics unless explicitly needed and approved
+* broad CRM/account management workflows
+* bulk user actions
+
+## Assumptions
+
+* Admin user detail remains read-only for profile demographics in this phase.
+* Reset initiation sends the same type of reset email as the user-requested
+  flow.
+* Existing self-role-change protections remain intact.
+
+## Open Questions
+
+* Should admins be allowed to reset their own password from admin tools, or only
+  through profile/settings? If unanswered, allow the same safe reset initiation
+  but never expose the token.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admin can open a user detail view from user management.
+* Detail view shows safe profile metadata and survey statistics.
+* Admin can initiate a password reset for a user without seeing token contents.
+* Standard users and unauthenticated requests receive 403/401 as appropriate.
+* Password hashes and reset secrets are never returned.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* admin-only detail endpoint
+* non-admin forbidden behavior
+* user detail response excludes password/reset secrets
+* reset initiation creates/sends reset through the reset service
+* unknown user behavior
+
+Manual checks:
+
+* Admin views user profile/stats.
+* Standard user receives 403 from all admin user detail/reset endpoints.
+* Admin initiates reset and user can complete it via email/dev adapter.
+* Admin cannot see plaintext tokens or password hashes.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_20.txt
+```
+
+Ask Claude Code to review:
+
+* admin-only enforcement
+* PII minimization
+* reset-token handling
+* self-action edge cases
+* accidental implementation of broad CRM-style account management
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_20.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

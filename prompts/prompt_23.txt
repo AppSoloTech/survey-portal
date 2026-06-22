@@ -1,0 +1,188 @@
+# Phase 23 — Estimated Time Remaining Foundation
+
+## Purpose
+
+Replace participant numeric progress labels with an estimated time remaining
+display based on remaining visible survey path.
+
+This phase affects the participant runner only. Admin pagination and admin
+workflow labels should remain unchanged.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 8
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-23-estimated-time-remaining
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_23.txt`
+* Claude review: `notes/claude_review_phase_23.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current participant runner, shared page path resolver, and progress UI.
+
+---
+
+# Received Feedback
+
+On the survey question page, replace numeric progress indicators with an
+estimated time remaining display. The survey-taking interface should no longer
+show "Question X of Y" or "Page X of Y" labels. Instead, display an estimated
+time remaining value based on the number and type of remaining questions/pages.
+
+---
+
+# Intake Classification
+
+* participant-facing UX feature
+* shared/client helper logic
+* no expected database or backend API change
+
+Expected impact:
+
+* participant runner display
+* time estimate helper
+* tests for estimate calculation and path handling
+
+---
+
+# Scope
+
+Implement:
+
+* Remove participant-facing "Page X of Y" and "Question X of Y" labels from the
+  survey-taking interface.
+* Add a simple reusable estimate helper using remaining visible path/questions.
+* Use configurable-in-code averages by question type with a fallback average.
+* Respect branching/page-jump/skip behavior by using the existing resolved page
+  path.
+* Display copy such as "About 3 min remaining" or "Less than 1 min remaining".
+* Keep the visual progress bar if it remains useful, but avoid numeric
+  page/question copy.
+
+## Non-Goals
+
+Do not implement:
+
+* survey navigation changes
+* server-owned estimates unless explicitly required
+* changes to admin pagination labels
+* removal of dashboard/admin "Page X of Y" pagination
+* analytics based on actual completion time
+
+## Assumptions
+
+* Estimated time can be approximate.
+* The current page's unanswered visible questions count as remaining.
+* Question type averages can live in frontend/shared code rather than
+  environment config for this foundation phase.
+
+## Open Questions
+
+* Should completed/review states show total time spent? If unanswered, do not
+  add elapsed-time tracking in this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Participant runner shows estimated time remaining instead of numeric progress
+  labels.
+* Straight survey estimates decrease as the participant advances.
+* Branching/page-jump/skip behavior updates the estimate after path changes.
+* Admin pagination labels remain unchanged.
+* Survey navigation and completion behavior are unchanged.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* estimate helper with text, integer, select, multi-select, and scale questions
+* remaining-page/question calculation on straight paths
+* branch/path changes if helper can be tested without browser automation
+
+Manual checks:
+
+* Straight survey shows decreasing estimate across pages.
+* Branching/page-jump survey updates estimate after path changes.
+* Multi-question page estimate accounts for all remaining visible questions.
+* Participant UI no longer shows "Page X of Y" or "Question X of Y".
+* Admin pagination still shows its normal page labels.
+* Mobile pass at 375/768/1280px.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_23.txt
+```
+
+Ask Claude Code to review:
+
+* path calculation
+* removal of numeric participant labels
+* mobile layout
+* no regression to admin pagination
+* no accidental navigation or backend behavior changes
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_23.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

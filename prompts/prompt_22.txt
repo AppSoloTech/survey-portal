@@ -1,0 +1,186 @@
+# Phase 22 — Question Definitions Tooltip Foundation
+
+## Purpose
+
+Surface optional question definition/help text through an accessible participant
+tooltip or popover.
+
+This phase should reuse the existing `helpText` field unless implementation
+inspection proves it is insufficient.
+
+Source feedback or planning note:
+
+```txt
+notes/next_phases.txt item 7
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-22-question-definitions
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_22.txt`
+* Claude review: `notes/claude_review_phase_22.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current question editor, preview, participant runner, shared question types,
+  and existing `helpText` persistence.
+
+---
+
+# Received Feedback
+
+Add optional question definitions/help text. Administrators should be able to
+enter explanatory text for each question. If provided, the survey-taking
+interface should display an information icon adjacent to the question text.
+Selecting the icon should display the definition/help text in a tooltip or
+popover without navigating away. The definition is informational only and should
+not affect survey logic or reporting.
+
+---
+
+# Intake Classification
+
+* UX feature
+* participant-facing survey behavior
+* likely frontend-only if existing `helpText` persistence is sufficient
+
+Expected impact:
+
+* admin question editor copy
+* participant runner display
+* accessible tooltip/popover component
+* possibly preview display
+
+No database change is expected because `survey_questions.help_text` already
+exists.
+
+---
+
+# Scope
+
+Implement:
+
+* Confirm existing `helpText` persists through create/update/read APIs.
+* Rename or clarify admin UI copy to "Definition/help text" where useful.
+* Participant info icon adjacent to the question prompt when help text exists.
+* Accessible tooltip/popover that works with click/tap and keyboard focus.
+* Admin preview behavior consistent with the participant runner where practical.
+
+## Non-Goals
+
+Do not implement:
+
+* a new schema field if `helpText` is sufficient
+* changes to validation, conditional logic, reporting, or exports
+* participant navigation away from the survey
+* help text as answer data
+* rich text/HTML definitions
+
+## Assumptions
+
+* `helpText` is the durable storage field for definitions.
+* Definition text is plain text.
+* Tooltip/popover content should be visible only when text exists.
+
+## Open Questions
+
+* None unless inspection shows `helpText` cannot support this behavior.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can create and edit definition/help text.
+* Participant runner shows an info icon only for questions with help text.
+* Tooltip/popover displays help text without changing survey state.
+* Keyboard and mobile interactions work.
+* Survey logic, reporting, and exports are unchanged.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests where practical for:
+
+* `helpText` persistence if not already covered
+* tooltip rendering helper/component behavior if component tests exist nearby
+
+Manual checks:
+
+* Admin creates/edits help text on draft questions.
+* Participant sees an info icon only when help text exists.
+* Tooltip opens/closes by click/tap and keyboard focus.
+* No help text appears in reporting as answer data.
+* Mobile pass at 375/768/1280px.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_22.txt
+```
+
+Ask Claude Code to review:
+
+* accessibility
+* mobile behavior
+* no survey-logic coupling
+* consistency with existing builder fields
+* whether any unnecessary schema was introduced
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_22.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness
