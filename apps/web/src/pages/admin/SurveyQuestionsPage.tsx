@@ -11,16 +11,19 @@ import { Link, useLocation } from "react-router-dom";
 import {
   createAnswerOption,
   createAnswerTag,
+  createQuestionOtherTag,
   createQuestionValueTag,
   createQuestion,
   deleteAnswerOption,
   deleteAnswerTag,
+  deleteQuestionOtherTag,
   deleteQuestionValueTag,
   deleteQuestion,
   reorderAnswerOptions,
   reorderQuestions,
   updateAnswerOption,
   updateAnswerTag,
+  updateQuestionOtherTag,
   updateQuestion,
   updateSurveyPage
 } from "../../api/surveys.js";
@@ -398,6 +401,72 @@ export function SurveyQuestionsPage() {
     );
   }
 
+  async function handleAddOtherTag(event: FormEvent<HTMLFormElement>, question: SurveyQuestion) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+
+    const didSave = await runSurveyMutation(
+      () =>
+        createQuestionOtherTag({
+          surveyId: survey.id,
+          questionId: question.id,
+          tagKey: readFormText(data, "tagKey"),
+          tagValue: readFormText(data, "tagValue")
+        }),
+      "Other hidden tag added"
+    );
+
+    if (didSave) {
+      form.reset();
+    }
+  }
+
+  async function handleSaveOtherTag(
+    event: FormEvent<HTMLFormElement>,
+    question: SurveyQuestion,
+    tagId: number
+  ) {
+    event.preventDefault();
+
+    const data = new FormData(event.currentTarget);
+
+    await runSurveyMutation(
+      () =>
+        updateQuestionOtherTag({
+          surveyId: survey.id,
+          questionId: question.id,
+          tagId,
+          tagKey: readFormText(data, "tagKey"),
+          tagValue: readFormText(data, "tagValue")
+        }),
+      "Other hidden tag saved"
+    );
+  }
+
+  async function handleDeleteOtherTag(question: SurveyQuestion, tagId: number) {
+    const tag = question.otherTags?.find((item) => item.id === tagId);
+
+    if (
+      !confirmAdminAction(
+        `Remove Other hidden tag "${tag ? `${tag.tagKey}: ${tag.tagValue}` : "from this question"}"?`
+      )
+    ) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        deleteQuestionOtherTag({
+          surveyId: survey.id,
+          questionId: question.id,
+          tagId
+        }),
+      "Other hidden tag removed"
+    );
+  }
+
   async function handleAddTag(
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion,
@@ -612,8 +681,10 @@ export function SurveyQuestionsPage() {
                   isPublished={!isDraft}
                   isSubmitting={isSubmitting}
                   onAddOption={handleAddOption}
+                  onAddOtherTag={handleAddOtherTag}
                   onAddTag={handleAddTag}
                   onAddValueTag={handleAddValueTag}
+                  onDeleteOtherTag={handleDeleteOtherTag}
                   onDeleteValueTag={handleDeleteValueTag}
                   onDeleteOption={handleDeleteOption}
                   onDeleteQuestion={handleDeleteQuestion}
@@ -621,6 +692,7 @@ export function SurveyQuestionsPage() {
                   onMoveOption={handleMoveOption}
                   onMoveQuestion={handleMoveQuestion}
                   onSaveOption={handleSaveOption}
+                  onSaveOtherTag={handleSaveOtherTag}
                   onSaveQuestion={handleSaveQuestion}
                   onSaveTag={handleSaveTag}
                   question={question}

@@ -4,6 +4,7 @@ import type {
   AnswerTag,
   ConditionalLogicActionType,
   ConditionalLogicConditionOperator,
+  QuestionOtherTag,
   ConditionalLogicRule,
   QuestionValueTag,
   Survey,
@@ -68,6 +69,15 @@ export interface QuestionValueTagRecord {
   question_id: number;
   integer_min: number | null;
   integer_max: number | null;
+  tag_key: string;
+  tag_value: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface QuestionOtherTagRecord {
+  id: number;
+  question_id: number;
   tag_key: string;
   tag_value: string;
   created_at: Date;
@@ -253,6 +263,17 @@ export function mapQuestionValueTagRecord(record: QuestionValueTagRecord): Quest
   };
 }
 
+export function mapQuestionOtherTagRecord(record: QuestionOtherTagRecord): QuestionOtherTag {
+  return {
+    id: record.id,
+    questionId: record.question_id,
+    tagKey: record.tag_key,
+    tagValue: record.tag_value,
+    createdAt: record.created_at.toISOString(),
+    updatedAt: record.updated_at.toISOString()
+  };
+}
+
 export function mapConditionalLogicRuleRecord(record: ConditionalLogicRuleRecord): ConditionalLogicRule {
   return {
     id: record.id,
@@ -378,6 +399,31 @@ export async function fetchTagForOption(
        and survey_questions.id = $3
        and survey_questions.survey_id = $4`,
     [tagId, optionId, questionId, surveyId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function fetchOtherTagForQuestion(
+  queryable: Queryable,
+  tagId: number,
+  questionId: number,
+  surveyId: number
+): Promise<QuestionOtherTagRecord | null> {
+  const result = await queryable.query<QuestionOtherTagRecord>(
+    `select
+       question_other_tags.id,
+       question_other_tags.question_id,
+       question_other_tags.tag_key,
+       question_other_tags.tag_value,
+       question_other_tags.created_at,
+       question_other_tags.updated_at
+     from question_other_tags
+     join survey_questions on survey_questions.id = question_other_tags.question_id
+     where question_other_tags.id = $1
+       and survey_questions.id = $2
+       and survey_questions.survey_id = $3`,
+    [tagId, questionId, surveyId]
   );
 
   return result.rows[0] ?? null;

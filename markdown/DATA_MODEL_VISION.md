@@ -291,6 +291,33 @@ Notes:
 
 ---
 
+## Question Other Tag
+
+Represents hidden metadata attached to the system-generated Other choice on a
+selection question.
+
+Suggested fields:
+
+```txt
+id
+question_id
+tag_key
+tag_value
+created_at
+updated_at
+```
+
+Notes:
+
+* Other tags belong to the question, not to an `answer_options` row.
+* They apply only when `allow_other = true` and a saved response has non-null
+  `other_text`.
+* They do not make Other editable, selectable as a normal answer option, or
+  usable by option-based conditional logic.
+* Tags must never be visible to survey participants.
+
+---
+
 ## Conditional Logic Rule
 
 Represents a rule that changes survey navigation based on a prior answer.
@@ -476,8 +503,9 @@ Notes:
 * Single-select questions should have one selected option.
 * Multi-select questions may have multiple selected options.
 * This table allows answer tags to be resolved through the selected answer options.
-* System-generated Other responses are not stored in this table and cannot carry
-  hidden tags or trigger option-based conditional logic.
+* System-generated Other responses are not stored in this table. Their hidden
+  tags, when configured, resolve from question-level Other metadata and still
+  cannot trigger option-based conditional logic.
 
 ---
 
@@ -628,7 +656,9 @@ If no rule matches, continue to the next question.
 
 ## Hidden Tag Resolution
 
-When reporting survey results, hidden tags should be resolved through selected answer options.
+When reporting survey results, hidden tags should be resolved through selected
+answer options, question-level Other tags when `other_text` is non-null, and
+value tags for supported entered-value questions.
 
 Example path:
 
@@ -638,6 +668,15 @@ SurveyAttempt
 -> SurveyResponseSelectedOption
 -> AnswerOption
 -> AnswerTag
+```
+
+Other path:
+
+```txt
+SurveyAttempt
+-> SurveyResponseAnswer.other_text
+-> SurveyQuestion
+-> QuestionOtherTag
 ```
 
 Survey participants should never receive hidden tag data in user-facing survey-taking API responses.
@@ -692,7 +731,8 @@ All published surveys are available to all users.
 Recommended MVP answer:
 
 ```txt
-No, hidden tags apply only to predefined answer options.
+Yes for admin reporting: value tags can apply to text/integer answers, while
+choice questions use answer-option tags plus optional Other tags.
 ```
 
 5. Should admins be able to reorder questions?

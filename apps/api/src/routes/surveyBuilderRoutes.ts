@@ -12,6 +12,7 @@ import {
   fetchNextQuestionDisplayOrder,
   fetchPageForSurvey,
   isAnswerTagUniqueViolation,
+  isQuestionOtherTagUniqueViolation,
   moveQuestionToPage,
   optionHasSavedSelections,
   pageHasQuestions,
@@ -35,6 +36,7 @@ import {
   deleteAnswerOptionsForQuestion,
   fetchConditionalRuleForSurvey,
   fetchOptionForQuestion,
+  fetchOtherTagForQuestion,
   fetchQuestionForSurvey,
   fetchSurveyRecord,
   fetchTagForOption
@@ -1574,6 +1576,194 @@ surveyBuilderRouter.delete(
   }
 );
 
+// Other hidden tags are question-level metadata for the system-generated
+// Other choice. The question must currently support and enable Other.
+surveyBuilderRouter.post(
+  "/:id/questions/:questionId/other-tags",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey and question ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateAnswerTagBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      if (
+        (question.question_type !== "single_select" && question.question_type !== "multi_select") ||
+        !question.allow_other
+      ) {
+        res.status(400).json({
+          error: "Other hidden tags require Allow Other on a single-select or multi-select question"
+        });
+        return;
+      }
+
+      await pool.query(
+        `insert into question_other_tags (question_id, tag_key, tag_value)
+         values ($1, $2, $3)`,
+        [questionId, validation.value.tagKey, validation.value.tagValue]
+      );
+      await registerTagDefinition(pool, validation.value.tagKey, validation.value.tagValue);
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      if (isQuestionOtherTagUniqueViolation(error)) {
+        res.status(409).json({ error: "Other hidden tag already exists for this question" });
+        return;
+      }
+
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.put(
+  "/:id/questions/:questionId/other-tags/:tagId",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+    const tagId = readPositiveIntegerParam(req.params.tagId);
+
+    if (!surveyId || !questionId || !tagId) {
+      res.status(400).json({ error: "Survey, question, and tag ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateAnswerTagBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      if (
+        (question.question_type !== "single_select" && question.question_type !== "multi_select") ||
+        !question.allow_other
+      ) {
+        res.status(400).json({
+          error: "Other hidden tags require Allow Other on a single-select or multi-select question"
+        });
+        return;
+      }
+
+      const tag = await fetchOtherTagForQuestion(pool, tagId, questionId, surveyId);
+
+      if (!tag) {
+        res.status(404).json({ error: "Other hidden tag not found" });
+        return;
+      }
+
+      await pool.query(
+        `update question_other_tags
+         set tag_key = $3,
+             tag_value = $4,
+             updated_at = now()
+         where id = $1
+           and question_id = $2`,
+        [tagId, questionId, validation.value.tagKey, validation.value.tagValue]
+      );
+      await registerTagDefinition(pool, validation.value.tagKey, validation.value.tagValue);
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      if (isQuestionOtherTagUniqueViolation(error)) {
+        res.status(409).json({ error: "Other hidden tag already exists for this question" });
+        return;
+      }
+
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.delete(
+  "/:id/questions/:questionId/other-tags/:tagId",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+    const tagId = readPositiveIntegerParam(req.params.tagId);
+
+    if (!surveyId || !questionId || !tagId) {
+      res.status(400).json({ error: "Survey, question, and tag ids must be positive integers" });
+      return;
+    }
+
+    try {
+      const result = await pool.query(
+        `delete from question_other_tags
+         where id = $1
+           and question_id = $2
+           and exists (
+             select 1
+             from survey_questions
+             where survey_questions.id = $2
+               and survey_questions.survey_id = $3
+           )`,
+        [tagId, questionId, surveyId]
+      );
+
+      if (result.rowCount === 0) {
+        res.status(404).json({ error: "Other hidden tag not found" });
+        return;
+      }
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // Value tags: hidden tags conditioned on the respondent's entered value,
 // for questions without answer options (text and integer types). Structural

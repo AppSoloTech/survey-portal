@@ -126,8 +126,10 @@ export function QuestionEditor({
   isPublished,
   isSubmitting,
   onAddOption,
+  onAddOtherTag,
   onAddTag,
   onAddValueTag,
+  onDeleteOtherTag,
   onDeleteOption,
   onDeleteQuestion,
   onDeleteTag,
@@ -135,6 +137,7 @@ export function QuestionEditor({
   onMoveOption,
   onMoveQuestion,
   onSaveOption,
+  onSaveOtherTag,
   onSaveQuestion,
   onSaveTag,
   question,
@@ -146,12 +149,14 @@ export function QuestionEditor({
   isPublished: boolean;
   isSubmitting: boolean;
   onAddOption: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
+  onAddOtherTag: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
   onAddTag: (
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion,
     option: AnswerOption
   ) => Promise<void>;
   onAddValueTag: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
+  onDeleteOtherTag: (question: SurveyQuestion, tagId: number) => Promise<void>;
   onDeleteValueTag: (question: SurveyQuestion, valueTagId: number) => Promise<void>;
   onDeleteOption: (question: SurveyQuestion, optionId: number) => Promise<void>;
   onDeleteQuestion: (questionId: number) => Promise<void>;
@@ -170,6 +175,11 @@ export function QuestionEditor({
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion,
     option: AnswerOption
+  ) => Promise<void>;
+  onSaveOtherTag: (
+    event: FormEvent<HTMLFormElement>,
+    question: SurveyQuestion,
+    tagId: number
   ) => Promise<void>;
   onSaveQuestion: (
     event: FormEvent<HTMLFormElement>,
@@ -547,6 +557,68 @@ export function QuestionEditor({
               </button>
             </form>
           ) : null}
+        </div>
+      ) : null}
+
+      {isSelectionQuestion(question) && question.allowOther ? (
+        <div className="option-editor">
+          <div>
+            <h4>Hidden tags for Other</h4>
+            <p className="builder-heading-note">
+              Tags apply when a respondent enters an Other answer. Other is not an answer option and cannot drive jump rules.
+            </p>
+          </div>
+          {(question.otherTags ?? []).map((tag) => (
+            <form
+              className="tag-row"
+              key={tag.id}
+              onSubmit={(event) => void onSaveOtherTag(event, question, tag.id)}
+            >
+              <TagFields
+                existingTags={(question.otherTags ?? [])
+                  .filter((item) => item.id !== tag.id)
+                  .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
+                initialTagKey={tag.tagKey}
+                initialTagValue={tag.tagValue}
+                tagPresets={tagPresets}
+              />
+              <button
+                className="button-link compact-button secondary-button"
+                disabled={isSubmitting || isPublished}
+                type="submit"
+              >
+                Save tag
+              </button>
+              <button
+                className="button-link compact-button danger-button"
+                disabled={isSubmitting || isPublished}
+                onClick={() => void onDeleteOtherTag(question, tag.id)}
+                type="button"
+              >
+                Remove tag
+              </button>
+            </form>
+          ))}
+          <form
+            className="tag-row add-tag-row"
+            key={`add-other-tag-${question.id}-${question.otherTags?.length ?? 0}`}
+            onSubmit={(event) => void onAddOtherTag(event, question)}
+          >
+            <TagFields
+              existingTags={(question.otherTags ?? []).map((item) => ({
+                tagKey: item.tagKey,
+                tagValue: item.tagValue
+              }))}
+              tagPresets={tagPresets}
+            />
+            <button
+              className="button-link compact-button primary-button"
+              disabled={isSubmitting || isPublished}
+              type="submit"
+            >
+              Add hidden tag
+            </button>
+          </form>
         </div>
       ) : null}
     </section>

@@ -442,15 +442,13 @@ function AnswerValue({ answer }: { answer: AdminAttemptAnswer }) {
             </span>
           ))}
         </div>
-        {answer.otherText ? (
-          <p className="results-answer-value">Other: {answer.otherText}</p>
-        ) : null}
+        {answer.otherText ? <OtherAnswerValue answer={answer} /> : null}
       </>
     );
   }
 
   if (answer.otherText) {
-    return <p className="results-answer-value">Other: {answer.otherText}</p>;
+    return <OtherAnswerValue answer={answer} />;
   }
 
   if (answer.answerText !== null || answer.answerInteger !== null) {
@@ -471,6 +469,23 @@ function AnswerValue({ answer }: { answer: AdminAttemptAnswer }) {
   }
 
   return null;
+}
+
+function OtherAnswerValue({ answer }: { answer: AdminAttemptAnswer }) {
+  return (
+    <>
+      <p className="results-answer-value">Other: {answer.otherText}</p>
+      {answer.otherTags.length > 0 ? (
+        <div className="results-selected-options">
+          {answer.otherTags.map((tag) => (
+            <span className="results-hidden-tag" key={`${tag.tagKey}:${tag.tagValue}`}>
+              {tag.tagKey}: {tag.tagValue}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function formatAttemptStatus(status: SurveyAttemptStatus): string {
@@ -504,7 +519,8 @@ function OptionDistribution({ optionStats }: { optionStats: SurveyReportOptionSt
   );
 }
 
-// Admin-only rollup of hidden tag pairs implied by selected options.
+// Admin-only rollup of hidden tag pairs implied by selected options, Other
+// answers, and value-tagged text/integer answers.
 function TagRollup({ tagStats }: { tagStats: SurveyReportTagStat[] }) {
   if (tagStats.length === 0) {
     return null;
@@ -516,8 +532,8 @@ function TagRollup({ tagStats }: { tagStats: SurveyReportTagStat[] }) {
     <div className="results-tag-rollup">
       <h4>Hidden tag rollup</h4>
       <p className="builder-heading-note">
-        How often participants selected options carrying each hidden tag pair.
-        Respondents counts each attempt once. Never shown to participants.
+        How often participant answers carried each hidden tag pair. Respondents
+        counts each attempt once. Never shown to participants.
       </p>
       {tagStats.map((stat) => (
         <div className="results-question-stat-row" key={`${stat.tagKey}:${stat.tagValue}`}>

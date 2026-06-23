@@ -1,0 +1,193 @@
+# Claude Review Handoff — Phase 24
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_24.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 24 for:
+
+- data-model separation from normal answer options
+- hidden-tag visibility and participant non-disclosure
+- report detail, CSV, and hidden-tag rollup behavior
+- tag catalog consistency
+- backward compatibility with Phase 21 Other responses
+- unsupported question type and disabled-Allow-Other boundaries
+- no conditional-logic drift
+- product UX alignment in the admin question editor
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_24.txt`
+- `prompts/prompt_21.txt`
+- `notes/claude_handoff_phase_21.txt`
+- `notes/claude_review_phase_21.txt`
+- `database/migrations/0024_choice_other_answers.sql`
+- `database/migrations/0025_question_other_tags.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/surveyStructure.ts`
+- `apps/api/src/routes/surveyBuilderRoutes.ts`
+- `apps/api/src/services/surveyReporting.ts`
+- `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+- `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+
+## Phase Scope
+
+Implemented:
+
+- Added migration `0025_question_other_tags.sql`.
+  - `question_other_tags` stores hidden tags directly against `survey_questions`.
+  - It has an FK to `survey_questions`, unique `(question_id, tag_key, tag_value)`, length/nonblank checks, and a question index.
+- Added shared/admin-only contracts:
+  - `QuestionOtherTag`
+  - `SurveyQuestion.otherTags`
+  - `AdminAttemptAnswer.otherTags`
+- Extended admin survey structure loading to include Other tags only when `includeHiddenTags` is true.
+- Added draft-only admin builder routes:
+  - `POST /api/surveys/:id/questions/:questionId/other-tags`
+  - `PUT /api/surveys/:id/questions/:questionId/other-tags/:tagId`
+  - `DELETE /api/surveys/:id/questions/:questionId/other-tags/:tagId`
+- Create/update routes reject Other tags unless the question is `single_select` or `multi_select` and `allow_other = true`.
+- Other tag writes register the key/value pair in `tag_definitions`.
+- Survey duplication copies Other hidden tags to the cloned draft.
+- Admin Questions UI renders add/edit/remove controls for Other hidden tags only on persisted choice questions with Allow Other enabled.
+- Admin Results attempt detail displays Other hidden tags when `otherText` is present.
+- CSV hidden-tag export includes Other hidden tags only on rows where Other was answered.
+- Hidden-tag rollup counts Other tag events/respondents when `other_text` is non-null.
+- Participant survey/start/answer payloads still omit Other hidden tags because public reads do not request hidden tags.
+- Updated:
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+- Added focused tests in `apps/api/test/choiceOtherAnswers.test.ts`.
+
+Non-goals respected:
+
+- No normal `answer_options` row for Other.
+- No editable Other label/copy.
+- No conditional logic triggered by Other.
+- No hidden tags based on matching specific Other text values.
+- No Other support for `scale`, `text`, or `integer`.
+- No aggregation/normalization of identical Other text values.
+- No changes to Phase 20 admin-user/profile/contact tooling or `/api/profile`.
+
+Known tradeoffs:
+
+- Other tags are resolved from current survey metadata at report time, matching existing answer-option/value-tag behavior. Adding/editing tags later can affect historical Other responses on the same survey.
+- Disabling Allow Other hides the UI and create/update routes for Other tags, but existing rows are not deleted. If Allow Other is re-enabled on that draft question, previously configured tags return.
+- Delete is allowed by tag id/question id for cleanup even if Allow Other is later disabled.
+
+Deferred work:
+
+- Manual browser pass was not run in this implementation turn.
+- Claude review output is pending at `notes/claude_review_phase_24.txt`.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `database/migrations/0025_question_other_tags.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/routes/surveyBuilderRoutes.ts`
+- `apps/api/src/services/surveyBuilder.ts`
+- `apps/api/src/services/surveyRecords.ts`
+- `apps/api/src/services/surveyReporting.ts`
+- `apps/api/src/services/surveyStructure.ts`
+- `apps/api/test/choiceOtherAnswers.test.ts`
+- `apps/api/test/helpers/factories.ts`
+- `apps/api/test/helpers/setup.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+- `apps/web/src/components/admin/tagPresets.ts`
+- `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+- `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_24.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm test -w apps/api -- choiceOtherAnswers
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- choiceOtherAnswers` (13 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 204 tests across 20 API files
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser.
+
+## Specific Questions
+
+- Does `question_other_tags` keep Other sufficiently separate from normal answer options?
+- Are create/update/delete boundaries correct when Allow Other is disabled or unsupported?
+- Should delete remain possible for cleanup when Allow Other is disabled, or should it also require current `allow_other = true`?
+- Does the hidden-tag rollup correctly count Other events and distinct respondents without double-counting standard-only responses?
+- Does CSV/admin detail include Other hidden tags only when `other_text` is present?
+- Do participant-facing survey and attempt payloads remain free of `otherTags` and tag values?
+- Is preserving Other tags through survey duplication desirable, matching option/value tag behavior?
+- Is the admin UI placement clear enough without implying that Other is a normal answer option or conditional trigger?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_24.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

@@ -16,6 +16,7 @@ const dataTables = [
   "conditional_logic_rules",
   "answer_tags",
   "question_value_tags",
+  "question_other_tags",
   "answer_options",
   "survey_questions",
   "survey_pages",

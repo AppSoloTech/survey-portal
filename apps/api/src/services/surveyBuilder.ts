@@ -793,6 +793,14 @@ export function isAnswerTagUniqueViolation(error: unknown): boolean {
   );
 }
 
+export function isQuestionOtherTagUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof DatabaseError &&
+    error.code === "23505" &&
+    error.constraint === "question_other_tags_key_value_unique"
+  );
+}
+
 export function isTagDefinitionUniqueViolation(error: unknown): boolean {
   return (
     error instanceof DatabaseError &&
@@ -1024,6 +1032,33 @@ export async function duplicateSurveyTree(
       `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value)
        values ($1, $2, $3, $4, $5)`,
       [newQuestionId, valueTag.integer_min, valueTag.integer_max, valueTag.tag_key, valueTag.tag_value]
+    );
+  }
+
+  const otherTagsResult = await queryable.query<{
+    question_id: number;
+    tag_key: string;
+    tag_value: string;
+  }>(
+    `select question_other_tags.question_id, question_other_tags.tag_key, question_other_tags.tag_value
+     from question_other_tags
+     join survey_questions on survey_questions.id = question_other_tags.question_id
+     where survey_questions.survey_id = $1
+     order by question_other_tags.id`,
+    [surveyId]
+  );
+
+  for (const otherTag of otherTagsResult.rows) {
+    const newQuestionId = questionIdMap.get(otherTag.question_id);
+
+    if (!newQuestionId) {
+      continue;
+    }
+
+    await queryable.query(
+      `insert into question_other_tags (question_id, tag_key, tag_value)
+       values ($1, $2, $3)`,
+      [newQuestionId, otherTag.tag_key, otherTag.tag_value]
     );
   }
 

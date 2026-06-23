@@ -515,6 +515,48 @@ export async function deleteAnswerTag(input: {
   );
 }
 
+export async function createQuestionOtherTag(input: {
+  surveyId: number;
+  questionId: number;
+  tagKey: string;
+  tagValue: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/other-tags`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey, tagValue: input.tagValue }),
+      method: "POST"
+    }
+  );
+}
+
+export async function updateQuestionOtherTag(input: {
+  surveyId: number;
+  questionId: number;
+  tagId: number;
+  tagKey: string;
+  tagValue: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/other-tags/${input.tagId}`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey, tagValue: input.tagValue }),
+      method: "PUT"
+    }
+  );
+}
+
+export async function deleteQuestionOtherTag(input: {
+  surveyId: number;
+  questionId: number;
+  tagId: number;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/other-tags/${input.tagId}`,
+    { method: "DELETE" }
+  );
+}
+
 export type ConditionalRuleActionType =
   | "JUMP_TO_QUESTION"
   | "JUMP_TO_PAGE"

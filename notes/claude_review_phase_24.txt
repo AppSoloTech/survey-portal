@@ -1,0 +1,124 @@
+# Claude Review — Phase 24 (Other Hidden Tags Foundation)
+
+Reviewer: Claude Code
+Scope: current phase diff only (git diff + untracked 0025 migration)
+Method: static review of the diff against prompt_24, handoff_24, DATA_MODEL_VISION,
+and the surrounding Phase 21 / answer-option / value-tag code. The DB-backed test
+suite was not re-run in this turn; the handoff reports it green (204 API tests,
+including the 13 new choiceOtherAnswers cases).
+
+Verdict: Ready to commit after the deferred manual browser pass. No critical issues.
+
+---
+
+## 1. Critical issues
+
+None found. The phase meets its acceptance criteria:
+
+- Other tags live in a dedicated `question_other_tags` table hanging off
+  `survey_questions`, never an `answer_options` row. Other stays absent from
+  `selectedAnswerOptionIds` (confirmed in the reporting test).
+- Participant non-disclosure holds. Every public/participant read
+  (surveyReadRoutes for non-admins, surveyAttemptRoutes, anonymousSurveyRoutes,
+  surveyAttempts service) passes `includeHiddenTags: false`, and the structure
+  loader only queries/attaches `otherTags` when `includeHiddenTags` is true. The
+  visibility test asserts the admin read contains the tag while the participant
+  read, attempt start, and post-answer payloads do not.
+- Create/update routes correctly reject unless the question is
+  `single_select`/`multi_select` AND `allow_other = true`, and are guarded by
+  `rejectStructurallyLockedSurvey` (draft-only) + `requireRole("admin")`.
+- Reporting, CSV, and attempt detail include Other tags only when `other_text`
+  is non-null, and the rollup counts distinct respondents without sweeping in
+  standard-only responses (verified: respondentCount 1, standard row excludes
+  the pair).
+
+## 2. Suggested improvements (non-blocking)
+
+1. Rollup vs. attempt-detail gating are asymmetric on `allow_other`.
+   - The hidden-tag rollup query (surveyReporting.ts) reads `question_other_tags`
+     directly with no `allow_other` predicate, so it counts Other tags whenever
+     `other_text` is non-null.
+   - Attempt detail and CSV derive tags from `question.otherTags`, which
+     `fetchSurveyStructures` gates on `mappedQuestion.allowOther` (returns `[]`
+     when Allow Other is off).
+   - Consequence: a survey that once had Allow Other on (with submitted
+     other_text), then Allow Other off, would still count those tags in the
+     rollup but show none in per-attempt detail/CSV.
+   - Severity: low / largely unreachable. `rejectStructurallyLockedSurvey`
+     blocks all structure edits (including `allow_other`) on non-draft surveys,
+     and reports run against published surveys, so the divergence cannot occur
+     for normally-reported data. Still worth aligning for defensiveness: either
+     drop the `allowOther` gate in the structure loader (Other tags are already
+     admin-only via `includeHiddenTags`), or add the same `allow_other` filter
+     to the rollup branch so both views agree.
+
+2. `duplicateSurveyTree` copies Other tags but does not call
+   `registerTagDefinition` for the cloned pairs. This is consistent with how
+   answer-option tag duplication behaves (the global `tag_definitions` catalog
+   already holds the pair from the original create), so it is a no-op in
+   practice. Noting only so the symmetry is intentional, not accidental.
+
+3. Cosmetic: the new POST block leaves a double blank line before the
+   "Value tags:" comment in surveyBuilderRoutes.ts (one added `+` blank line on
+   top of the existing one). Lint passed, so harmless; tidy if touching the file.
+
+## 3. Acceptable tradeoffs
+
+- Report-time tag resolution from current survey metadata (editing tags later
+  affects historical Other responses on the same survey) matches existing
+  answer-option/value-tag semantics. Correct and consistent.
+- Disabling Allow Other hides the UI/routes but retains existing rows; re-enabling
+  restores them. Reasonable — avoids destructive deletes on a toggle, and the
+  draft-only edit lock keeps this from leaking into reports.
+- DELETE intentionally does not require current `allow_other = true`, allowing
+  cleanup after the toggle is turned off. It is still scoped by
+  `(tagId, questionId, surveyId)` via the EXISTS subquery, so it cannot reach
+  another survey's rows. Good.
+- `validateAnswerTagBody` is reused for Other tags; its 80/180 char limits
+  exactly match the new `question_other_tags` check constraint, so oversized
+  input returns a clean 400 rather than a 500 from a constraint violation, and
+  the unique-violation handler returns 409. Consistent with answer tags.
+
+## 4. Questions / assumptions
+
+- Confirm the intended behavior for the asymmetry in (2.1): should a
+  no-longer-Allow-Other question's historical Other tags appear in the rollup?
+  My read is the practical answer is "cannot happen for published surveys," so
+  no functional change is required this phase — flagging for explicit sign-off.
+- `other_text` is trimmed to a non-empty string or stored as NULL on submit
+  (surveyAttempts validation), so the rollup's `other_text is not null` and the
+  detail/CSV truthy `response.otherText` checks agree — no empty-string
+  edge case. Assuming Phase 21's normalization is not revisited.
+- Migration `0025` is picked up automatically by `listMigrationFiles`
+  (readdir + localeCompare sort) and tracked via `schema_migrations` checksum,
+  so no change to migrate-db / migrate-hosted is needed. Confirmed the numbering
+  follows 0024 as required.
+
+## 5. Product UX alignment notes
+
+- Editor placement is clear and correctly bounded: the "Hidden tags for Other"
+  block renders only for selection questions with Allow Other enabled, separate
+  from the answer-option tag editor, with copy that explicitly states Other is
+  not an answer option and cannot drive jump rules. This directly satisfies the
+  prompt's "don't imply Other is a normal option or conditional trigger" goal.
+- Results page now routes both Other-answer cases through a single
+  `OtherAnswerValue` component and renders the configured tags using the same
+  `results-hidden-tag` styling as option tags — consistent admin presentation.
+- The rollup help text was generalized from "selected options" to "participant
+  answers carried each hidden tag pair," which now accurately covers option,
+  Other, and value-tag sources. Good.
+- `buildTagPresets` now also harvests `valueTags` and `otherTags` (previously
+  only option `answerTags`), so the builder dropdown suggestions stay grounded
+  in real, catalog-visible data. Note this is a small scope addition beyond
+  Other (value tags were not previously surfaced as presets) — appears
+  intentional and beneficial, but worth a one-line call-out at commit.
+
+## 6. Commit readiness
+
+Ready to commit. No blocking issues. Before merge:
+- Run the deferred manual browser pass listed in prompt_24 (enable Allow Other +
+  add tags, submit an Other response as a participant, confirm Results shows the
+  Other text + hidden tag, CSV includes both, and the participant runner never
+  shows tags; confirm turning Allow Other off hides the editor).
+- Optionally address suggestion 2.1 (align rollup/detail `allow_other` gating)
+  now or log it in FOLLOW_UPS for a later pass.

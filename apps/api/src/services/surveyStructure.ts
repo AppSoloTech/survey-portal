@@ -3,6 +3,7 @@ import type {
   AnswerTag,
   ConditionalLogicRule,
   QuestionValueTag,
+  QuestionOtherTag,
   Survey,
   SurveyQuestion
 } from "@survey-portal/shared";
@@ -12,6 +13,7 @@ import {
   mapAnswerOptionRecord,
   mapAnswerTagRecord,
   mapConditionalLogicRuleRecord,
+  mapQuestionOtherTagRecord,
   mapQuestionValueTagRecord,
   mapSurveyPageRecord,
   mapSurveyQuestionRecord,
@@ -19,6 +21,7 @@ import {
   type AnswerOptionRecord,
   type AnswerTagRecord,
   type ConditionalLogicRuleRecord,
+  type QuestionOtherTagRecord,
   type QuestionValueTagRecord,
   type SurveyPageRecord,
   type SurveyQuestionRecord,
@@ -180,6 +183,23 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
         )
       : { rows: [] as QuestionValueTagRecord[] };
 
+  const otherTagsResult =
+    options.includeHiddenTags && questionIds.length > 0
+      ? await pool.query<QuestionOtherTagRecord>(
+          `select
+             id,
+             question_id,
+             tag_key,
+             tag_value,
+             created_at,
+             updated_at
+           from question_other_tags
+           where question_id = any($1::int[])
+           order by question_id, tag_key, tag_value, id`,
+          [questionIds]
+        )
+      : { rows: [] as QuestionOtherTagRecord[] };
+
   const rulesResult = await pool.query<ConditionalLogicRuleRecord>(
     `select
        id,
@@ -208,6 +228,15 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     const tags = valueTagsByQuestionId.get(valueTag.question_id) ?? [];
     tags.push(mapped);
     valueTagsByQuestionId.set(valueTag.question_id, tags);
+  }
+
+  const otherTagsByQuestionId = new Map<number, QuestionOtherTag[]>();
+
+  for (const otherTag of otherTagsResult.rows) {
+    const mapped = mapQuestionOtherTagRecord(otherTag);
+    const tags = otherTagsByQuestionId.get(otherTag.question_id) ?? [];
+    tags.push(mapped);
+    otherTagsByQuestionId.set(otherTag.question_id, tags);
   }
 
   const tagsByOptionId = new Map<number, AnswerTag[]>();
@@ -243,6 +272,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
 
     if (options.includeHiddenTags) {
       mappedQuestion.valueTags = valueTagsByQuestionId.get(question.id) ?? [];
+      mappedQuestion.otherTags = otherTagsByQuestionId.get(question.id) ?? [];
     }
 
     const questionsForSurvey = questionsBySurveyId.get(question.survey_id) ?? [];

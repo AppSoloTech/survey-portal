@@ -92,6 +92,17 @@ export interface QuestionValueTag {
   updatedAt: string;
 }
 
+// Hidden tags attached to the system-generated Other choice on a selection
+// question. Admin-only — Other remains response text, not an answer option.
+export interface QuestionOtherTag {
+  id: number;
+  questionId: number;
+  tagKey: string;
+  tagValue: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // True when a saved response satisfies a value-tag's condition. Shared so
 // reporting (SQL-side aggregate mirrors this) and per-attempt views agree.
 export function valueTagMatchesResponse(
@@ -148,6 +159,8 @@ export interface SurveyQuestion {
   answerOptions: AnswerOption[];
   // Populated for admins only, mirroring answerTags on options.
   valueTags?: QuestionValueTag[];
+  // Populated for admins only when Allow Other is enabled on selection questions.
+  otherTags?: QuestionOtherTag[];
 }
 
 export interface ConditionalLogicRule {
@@ -499,6 +512,9 @@ export interface AdminAttemptAnswer {
   answerInteger: number | null;
   selectedOptions: AdminAttemptAnswerOption[];
   otherText: string | null;
+  // Hidden tags attached to the question's system-generated Other choice.
+  // Present only when otherText is non-null.
+  otherTags: { tagKey: string; tagValue: string }[];
   // Hidden value tags whose condition this answer satisfies (text/integer
   // questions). Admin-only, like selectedOptions[].hiddenTags.
   valueTags: { tagKey: string; tagValue: string }[];

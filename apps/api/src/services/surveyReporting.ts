@@ -216,6 +216,22 @@ export async function fetchSurveyReportSummary(
          on survey_attempts.id = survey_response_answers.survey_attempt_id
        union all
        select
+         question_other_tags.tag_key,
+         question_other_tags.tag_value,
+         survey_response_answers.id as event_id,
+         survey_attempts.id as attempt_id,
+         survey_attempts.started_at
+       from question_other_tags
+       join survey_questions
+         on survey_questions.id = question_other_tags.question_id
+        and survey_questions.survey_id = $1
+       left join survey_response_answers
+         on survey_response_answers.question_id = survey_questions.id
+        and survey_response_answers.other_text is not null
+       left join survey_attempts
+         on survey_attempts.id = survey_response_answers.survey_attempt_id
+       union all
+       select
          question_value_tags.tag_key,
          question_value_tags.tag_value,
          survey_response_answers.id as event_id,
@@ -456,6 +472,7 @@ export async function buildSurveyCsvExport(
           ...answer.selectedOptions.flatMap((option) =>
             option.hiddenTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`)
           ),
+          ...answer.otherTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`),
           ...answer.valueTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`)
         ].join("; "),
         answer.onFinalPath
@@ -529,6 +546,9 @@ export function buildAdminAttemptAnswers(
       answerInteger: response?.answerInteger ?? null,
       selectedOptions,
       otherText: response?.otherText ?? null,
+      otherTags: response?.otherText
+        ? (question.otherTags ?? []).map((tag) => ({ tagKey: tag.tagKey, tagValue: tag.tagValue }))
+        : [],
       valueTags: (question.valueTags ?? [])
         .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
         .map((valueTag) => ({ tagKey: valueTag.tagKey, tagValue: valueTag.tagValue })),

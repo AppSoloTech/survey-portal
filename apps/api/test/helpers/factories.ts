@@ -197,6 +197,23 @@ export async function addValueTag(
   );
 }
 
+export async function addOtherTag(
+  app: Express,
+  admin: TestSession,
+  surveyId: number,
+  questionId: number,
+  tagKey: string,
+  tagValue: string
+): Promise<Survey> {
+  return expectSurveyResponse(
+    request(app)
+      .post(`/api/surveys/${surveyId}/questions/${questionId}/other-tags`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey, tagValue }),
+    201
+  );
+}
+
 export async function addRule(
   app: Express,
   admin: TestSession,

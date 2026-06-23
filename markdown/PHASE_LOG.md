@@ -4649,3 +4649,182 @@ Findings and disposition:
 - Review findings addressed or deferred: Yes
 - Manual testing complete: Yes
 - Ready to commit: Yes
+
+---
+
+## Phase 24 — Other Hidden Tags Foundation
+
+Date:
+2026-06-23
+
+Status:
+Implemented; Claude review complete; manual browser pass pending
+
+Prompt:
+`prompts/prompt_24.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_24.txt`
+- Claude review: `notes/claude_review_phase_24.txt`
+
+## Goals
+
+- Allow admins to attach hidden tags to the system-generated Other choice when
+  `allowOther` is enabled on `single_select` and `multi_select` questions.
+- Keep Other separate from normal answer options.
+- Resolve Other hidden tags in admin report detail, hidden-tag rollup, and CSV
+  when a response has non-null `other_text`.
+- Keep Other tags out of participant-facing survey and attempt payloads.
+
+## Built
+
+- Added migration `0025_question_other_tags.sql` with a `question_other_tags`
+  table keyed to `survey_questions`.
+- Added shared/admin-only types for `QuestionOtherTag`,
+  `SurveyQuestion.otherTags`, and `AdminAttemptAnswer.otherTags`.
+- Extended admin survey structure loading to include Other tags only when hidden
+  tags are requested.
+- Added draft-only builder routes to create, update, and delete Other hidden
+  tags:
+  - `POST /api/surveys/:id/questions/:questionId/other-tags`
+  - `PUT /api/surveys/:id/questions/:questionId/other-tags/:tagId`
+  - `DELETE /api/surveys/:id/questions/:questionId/other-tags/:tagId`
+- Registered Other hidden tags in the shared tag catalog, matching answer-option
+  hidden-tag behavior.
+- Copied Other hidden tags when duplicating surveys.
+- Added admin Questions UI controls for Other hidden tags only when a persisted
+  choice question has Allow Other enabled.
+- Included Other tags in:
+  - admin attempt detail when `otherText` is present
+  - CSV hidden-tag export when `other_text` is present
+  - hidden-tag report rollup counts
+- Updated data-model and follow-up documentation.
+- Added focused API tests in `apps/api/test/choiceOtherAnswers.test.ts`.
+
+## Important Decisions
+
+### Separate Question-Level Model
+
+Decision:
+Store Other hidden tags in `question_other_tags`, keyed to `survey_questions`.
+
+Reason:
+Other is system-generated and must not become an `answer_options` row. A
+question-level table lets reporting resolve tags from `other_text` without
+creating fake option IDs or conditional-logic targets.
+
+Tradeoff:
+The same tag pair can exist on a real option and on Other independently. The
+report rollup intentionally combines by key/value pair, as existing tag rollups
+already do.
+
+### Other Tags Apply By Current Metadata
+
+Decision:
+Reports resolve Other hidden tags from current survey metadata when
+`other_text` is non-null.
+
+Reason:
+This follows existing answer-option hidden-tag behavior for the reported survey.
+
+Tradeoff:
+Adding or editing Other tags later can affect reports for historical Other
+responses on the same survey, matching the current metadata-driven reporting
+model.
+
+## Architecture Notes
+
+- Database/schema impact: migration `0025_question_other_tags.sql` is additive.
+- API contract impact: admin survey responses can include
+  `SurveyQuestion.otherTags`; admin attempt detail can include
+  `AdminAttemptAnswer.otherTags`.
+- Auth or authorization impact: Other tag mutations are admin-only and
+  draft-only through the existing structural lock guard.
+- Data privacy or visibility impact: Other hidden tags are omitted when
+  participant-facing endpoints load survey structures without hidden tags.
+- Frontend UX impact: Other hidden-tag controls appear only on draft choice
+  questions where Allow Other is enabled.
+- Environment or deployment impact: run migration `0025` before using Other
+  hidden tags in any environment.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm test -w apps/api -- choiceOtherAnswers
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- choiceOtherAnswers` (13 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 204 tests across 20 API files
+- Passed: `git diff --check`
+- Passed after Claude review fix: `npm run typecheck`
+- Passed after Claude review fix: `npm run lint`
+- Passed after Claude review fix with approved local PostgreSQL access:
+  `npm test -w apps/api -- choiceOtherAnswers` (13 tests)
+- Passed after Claude review fix: `git diff --check`
+
+Manual tests:
+
+- Completed by developer on 2026-06-23. Browser pass covered admin enabling
+  Allow Other, adding Other hidden tags, submitting a participant Other
+  response, verifying Results detail/rollup and CSV output, confirming
+  participant non-disclosure, and confirming turning Allow Other off hides the
+  Other hidden-tag editor.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_24.txt`
+
+Status:
+
+- Completed. Claude approved for commit after the deferred manual browser pass,
+  with no critical issues.
+
+Findings and disposition:
+
+- Addressed suggestion 2.1: admin structure loading now attaches
+  `otherTags` whenever hidden tags are requested, regardless of current
+  `allowOther`, so admin attempt detail/CSV and the hidden-tag rollup resolve
+  Other tags from the same metadata source.
+- Accepted note 2.2: survey duplication does not re-register copied tag pairs
+  in the catalog, matching answer-option tag duplication; the original tag
+  writes already register the pair.
+- Addressed cosmetic note 2.3: removed the extra blank line before the value-tag
+  route block.
+
+## Follow-Up Tasks
+
+- Claude review completed and accepted findings were addressed.
+- Manual browser pass completed on 2026-06-23.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical issues and automated
+  hidden-tag non-disclosure checks were added
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes

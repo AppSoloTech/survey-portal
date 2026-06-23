@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   addOption,
+  addOtherTag,
   addPage,
   addQuestion,
   addTag,
@@ -313,5 +314,184 @@ describe("choice Other reporting", () => {
     expect(lines[0].split(",")).toContain("other_text");
     expect(lines[1]).toContain("Custom report answer");
     expect(lines[1]).not.toContain("risk=tagged");
+  });
+});
+
+describe("choice Other hidden tags", () => {
+  it("creates, updates, deletes, and catalogs hidden tags for Other", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Other tag lifecycle");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Choose",
+      questionType: "single_select",
+      allowOther: true
+    });
+    const question = findQuestion(survey, "Choose");
+
+    const createResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${question.id}/other-tags`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "source", tagValue: "other" });
+    expect(createResponse.status).toBe(201);
+    expect(findQuestion(createResponse.body.survey, "Choose").otherTags).toEqual([
+      expect.objectContaining({ tagKey: "source", tagValue: "other" })
+    ]);
+
+    const tagId = findQuestion(createResponse.body.survey, "Choose").otherTags[0].id;
+    const updateResponse = await request(app)
+      .put(`/api/surveys/${survey.id}/questions/${question.id}/other-tags/${tagId}`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "source", tagValue: "custom-other" });
+    expect(updateResponse.status).toBe(200);
+    expect(findQuestion(updateResponse.body.survey, "Choose").otherTags).toEqual([
+      expect.objectContaining({ tagKey: "source", tagValue: "custom-other" })
+    ]);
+
+    const catalogResponse = await request(app).get("/api/tags").set("Cookie", admin.cookie);
+    expect(catalogResponse.body.tags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "source", tagValue: "other" }),
+        expect.objectContaining({ tagKey: "source", tagValue: "custom-other" })
+      ])
+    );
+
+    const deleteResponse = await request(app)
+      .delete(`/api/surveys/${survey.id}/questions/${question.id}/other-tags/${tagId}`)
+      .set("Cookie", admin.cookie);
+    expect(deleteResponse.status).toBe(200);
+    expect(findQuestion(deleteResponse.body.survey, "Choose").otherTags).toEqual([]);
+  });
+
+  it("rejects Other hidden tags on unsupported questions and when Allow Other is disabled", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Invalid Other tag survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Text",
+      questionType: "text"
+    });
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Choice",
+      questionType: "multi_select",
+      allowOther: false
+    });
+
+    for (const questionText of ["Text", "Choice"]) {
+      const question = findQuestion(survey, questionText);
+      const response = await request(app)
+        .post(`/api/surveys/${survey.id}/questions/${question.id}/other-tags`)
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "invalid", tagValue: questionText });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe(
+        "Other hidden tags require Allow Other on a single-select or multi-select question"
+      );
+    }
+  });
+
+  it("does not expose Other hidden tags in participant survey or attempt payloads", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    let survey = await createDraftSurvey(app, admin, "Other tag visibility");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Choose",
+      questionType: "single_select",
+      allowOther: true
+    });
+    const questionId = findQuestion(survey, "Choose").id;
+    survey = await addOption(app, admin, survey.id, questionId, "Standard");
+    survey = await addOtherTag(app, admin, survey.id, questionId, "visibility", "admin-only");
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const adminRead = await request(app).get(`/api/surveys/${survey.id}`).set("Cookie", admin.cookie);
+    expect(JSON.stringify(adminRead.body)).toContain("admin-only");
+
+    const participantRead = await request(app)
+      .get(`/api/surveys/${survey.id}`)
+      .set("Cookie", user.cookie);
+    expect(participantRead.status).toBe(200);
+    expect(JSON.stringify(participantRead.body)).not.toContain("admin-only");
+
+    const started = await startAttempt(app, user, survey.id);
+    expect(JSON.stringify(started)).not.toContain("admin-only");
+
+    const afterAnswer = await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId,
+      isOtherSelected: true,
+      otherText: "Custom text"
+    });
+    expect(JSON.stringify(afterAnswer)).not.toContain("admin-only");
+  });
+
+  it("rolls Other hidden tags into admin detail, summary, and CSV only when Other is answered", async () => {
+    const admin = await registerAdmin(app);
+    const otherUser = await registerUser(app);
+    const standardUser = await registerUser(app);
+    let survey = await createDraftSurvey(app, admin, "Other tag reporting");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Choose",
+      questionType: "multi_select",
+      allowOther: true
+    });
+    const questionId = findQuestion(survey, "Choose").id;
+    survey = await addOption(app, admin, survey.id, questionId, "Standard");
+    const standardOptionId = findQuestion(survey, "Choose").answerOptions[0].id;
+    survey = await addOtherTag(app, admin, survey.id, questionId, "source", "other");
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const otherAttempt = await startAttempt(app, otherUser, survey.id);
+    await submitAnswer(app, otherUser, survey.id, {
+      attemptId: otherAttempt.attempt.id,
+      questionId,
+      selectedAnswerOptionIds: [standardOptionId],
+      isOtherSelected: true,
+      otherText: "Custom source"
+    });
+    await completeAttempt(app, otherUser, survey.id, otherAttempt.attempt.id);
+
+    const standardAttempt = await startAttempt(app, standardUser, survey.id);
+    await submitAnswer(app, standardUser, survey.id, {
+      attemptId: standardAttempt.attempt.id,
+      questionId,
+      selectedAnswerOptionIds: [standardOptionId]
+    });
+    await completeAttempt(app, standardUser, survey.id, standardAttempt.attempt.id);
+
+    const reportResponse = await request(app)
+      .get(`/api/surveys/${survey.id}/report`)
+      .set("Cookie", admin.cookie);
+    expect(reportResponse.status).toBe(200);
+    expect(reportResponse.body.report.tagStats).toEqual([
+      {
+        tagKey: "source",
+        tagValue: "other",
+        selectionCount: 1,
+        respondentCount: 1
+      }
+    ]);
+
+    const detailResponse = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${otherAttempt.attempt.id}`)
+      .set("Cookie", admin.cookie);
+    expect(detailResponse.status).toBe(200);
+    const detailAnswer = detailResponse.body.answers.find(
+      (item: { questionId: number }) => item.questionId === questionId
+    );
+    expect(detailAnswer.otherText).toBe("Custom source");
+    expect(detailAnswer.otherTags).toEqual([{ tagKey: "source", tagValue: "other" }]);
+    expect(detailAnswer.selectedOptions[0].answerOptionId).toBe(standardOptionId);
+
+    const csvResponse = await request(app)
+      .get(`/api/surveys/${survey.id}/export.csv`)
+      .set("Cookie", admin.cookie);
+    expect(csvResponse.status).toBe(200);
+    const rows = csvResponse.text.trimEnd().split("\r\n");
+    const otherRow = rows.find((row) => row.includes("Custom source"));
+    const standardRow = rows.find(
+      (row) => row.includes("Standard") && !row.includes("Custom source")
+    );
+    expect(otherRow).toContain("source=other");
+    expect(standardRow).not.toContain("source=other");
   });
 });
