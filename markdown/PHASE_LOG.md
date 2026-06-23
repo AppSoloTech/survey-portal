@@ -6,6 +6,184 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 27 — Running Dynamic Time Remaining Instrumentation
+
+Date:
+2026-06-23
+
+Status:
+Post-review fixes applied; pending DB-backed validation and manual checks
+
+Prompt:
+`prompts/prompt_27.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_27.txt`
+- Claude review: `notes/claude_review_phase_27.txt`
+
+## Goals
+
+- Add lightweight participant attempt activity instrumentation for future
+  dynamic remaining-time estimates.
+- Keep the Phase 26 participant display powered by static effective survey
+  estimate plus question-weight proportions.
+- Validate authenticated and anonymous ownership before accepting activity
+  writes.
+- Provide capped active-time aggregation helpers by attempt and survey.
+
+## Built
+
+- Added migration `0027_survey_attempt_activity_events.sql`.
+  - Stores attempt id, survey id, optional page/question context, event type,
+    visible question ids, and timestamps.
+  - Event types are `page_entry`, `answer_save`, `resume`, `completion`, and
+    `heartbeat`.
+  - No raw answer text, selected option values, hidden tags, or participant
+    contact data are stored in activity rows.
+- Added shared activity request/response contracts.
+- Added `apps/api/src/services/surveyActivity.ts`.
+  - `surveyAttemptActivityIdleGapCapSeconds` is centralized at 300 seconds.
+  - Active seconds sum gaps between consecutive events with each gap capped.
+  - Helpers summarize active seconds for a single attempt and for a survey.
+- Added authenticated activity endpoint:
+  - `POST /api/surveys/:id/activity`
+  - Requires logged-in ownership of the attempt and rejects completed or
+    abandoned attempts.
+- Added anonymous activity endpoint:
+  - `POST /api/anonymous-surveys/:token/activity`
+  - Requires valid anonymous link token, attempt id, and attempt access token.
+- Added backend activity records for answer saves and completion in both
+  authenticated and anonymous flows.
+  - Post-review fix: server-emitted answer-save and completion telemetry is
+    best-effort and cannot roll back answer transactions or 500 an already
+    completed attempt.
+- Instrumented the participant runner with non-blocking resume, page-entry, and
+  one-minute heartbeat activity writes while preserving Phase 26 remaining-time
+  display behavior.
+- Added focused API/service tests in `apps/api/test/surveyActivity.test.ts`.
+- Updated `markdown/DATA_MODEL_VISION.md` and `markdown/FOLLOW_UPS.md`.
+
+## Important Decisions
+
+### Idle Gap Cap
+
+Decision:
+Cap each event-to-event gap at five minutes when computing active seconds.
+
+Reason:
+This avoids counting overnight pauses or long idle browser sessions as
+continuous survey work while preserving useful short pauses between page entry,
+answer save, heartbeat, resume, and completion events.
+
+Tradeoff:
+The cap is conservative and intentionally approximate. It is operational
+metadata for later modeling, not a participant-facing prediction in this phase.
+
+### Participant Payload Isolation
+
+Decision:
+Activity endpoints return only `{ ok: true }`, and existing participant survey
+and attempt payloads do not expose activity rows or active seconds.
+
+Reason:
+Activity timing is operational metadata. Phase 26's display should remain
+participant-safe and driven by `Survey.effectiveEstimateSeconds`.
+
+Tradeoff:
+Admin timeline and diagnostic views remain out of scope until a future phase
+explicitly asks for them.
+
+### Server-Side Telemetry Durability
+
+Decision:
+Record server-emitted answer-save and completion events best-effort, outside the
+participant-critical answer transaction and completion response path.
+
+Reason:
+Claude review identified that telemetry failures could otherwise roll back saved
+answers or return a 500 after a successful completion update. Activity metadata
+must not affect response or completion durability.
+
+Tradeoff:
+A rare telemetry insert failure may leave a missing activity event, but the
+participant's actual answer/completion remains correct.
+
+## Architecture Notes
+
+- Database/schema impact: adds one activity table with explicit FKs and indexes
+  for attempt-time and survey-time aggregation.
+- API contract impact: adds participant activity write endpoints for
+  authenticated and anonymous attempts.
+- Auth or authorization impact: authenticated activity uses the same attempt
+  ownership lookup as answer saves; anonymous activity uses the same link +
+  access-token ownership check as anonymous answer saves.
+- Data privacy or visibility impact: activity rows store no raw answer content
+  and are not included in participant payloads.
+- Frontend UX impact: no visible UI change; telemetry writes are fire-and-forget
+  and do not block answering, navigation, or completion.
+- Reporting impact: Admin Results, reporting counts, hidden tags, and CSV remain
+  unchanged.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm run test -w packages/shared -- surveyRemainingTime
+npm run test -w apps/web -- SurveyAttemptPage
+npm test -w apps/api -- surveyActivity
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed: `npm run test -w packages/shared -- surveyRemainingTime`
+  - 7 tests
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage`
+  - 1 test
+- Passed after post-review fix: `git diff --check`
+- Not completed: `npm test -w apps/api -- surveyActivity`
+  - Sandboxed run could not connect to PostgreSQL at `127.0.0.1:5432`.
+  - Escalated rerun was rejected because the API test global setup drops and
+    recreates the PostgreSQL `public` schema, which requires explicit human
+    approval.
+
+Manual tests:
+
+- Not run in browser.
+
+## Follow-Up Tasks
+
+- Run the focused DB-backed activity test file after explicit approval for the
+  test database reset.
+- Run the Phase 27 manual browser pass for authenticated and anonymous
+  activity writes plus 375/768/1280px responsive checks.
+- Build any participant-facing dynamic remaining-time model in a later phase
+  using the new capped active-time data.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Claude review complete
+- Review findings addressed or deferred: Critical C1/C2 coupling issues fixed;
+  non-blocking findings deferred or documented
+- Manual testing complete: No
+- Ready to commit: No, pending DB-backed tests, manual checks, and branch
+  confirmation
+
+---
+
 ## Baseline — Documentation Audit
 
 Date:

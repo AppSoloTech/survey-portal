@@ -78,7 +78,15 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Replace `THREE.Clock` in `apps/web/src/components/AmbientBackdrop.tsx` with the supported Three.js timing API or a local `performance.now()` timer. Manual Phase 25 browser testing surfaced the console warning: `THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.`
 - Phase 28-30 glossary prompts drafted: build the Admin glossary first, then optional dictionary-assist, then participant inline rendering. Validate that the rendering phase exposes only participant-safe glossary fields and does not affect response data, skip logic, reports, hidden tags, or CSV.
 - Phase 26 test hardening: the current participant numeric-progress regression test is a source-text tripwire. Consider adding a render-level web test if the project adopts React Testing Library or another DOM test harness.
-- Phase 27 should add lightweight attempt activity instrumentation and active-time aggregation. Phase 26 intentionally uses backend-owned effective survey estimates plus question-weight proportions only; it does not implement running elapsed-time instrumentation.
+- Future dynamic remaining-time model: Phase 27 records lightweight attempt
+  activity and capped active-time aggregates, but Phase 26's participant display
+  still intentionally uses backend-owned effective survey estimates plus
+  question-weight proportions. Build any running prediction model in a later,
+  separately reviewed phase.
+- Phase 27 manual browser pass remains pending: authenticated and anonymous
+  attempts should save page-entry/resume/heartbeat activity while preserving
+  current answer, completion, Admin Results, CSV, hidden-tag, and mobile
+  behavior.
 - Phase 25 scaling note: `fetchSurveyStructures` computes effective timing on every survey-structure read, including participant/anonymous hot paths, and the median query sorts valid completed attempts. Revisit caching/materializing effective estimates once Phase 26 consumes the field heavily or high-volume surveys make timing reads expensive.
 
 ---

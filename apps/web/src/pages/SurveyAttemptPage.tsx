@@ -5,6 +5,7 @@ import {
   resolveProgressivePageState,
   type Survey,
   type SurveyAttempt,
+  type SurveyAttemptActivityEventType,
   type SurveyAttemptStatus,
   type SurveyPage,
   type SurveyQuestion,
@@ -12,6 +13,7 @@ import {
 } from "@survey-portal/shared";
 import {
   useEffect,
+  useCallback,
   useRef,
   useState,
   type CSSProperties,
@@ -29,6 +31,8 @@ import {
   fetchAnonymousSurvey,
   fetchMySurvey,
   fetchMySurveys,
+  recordAnonymousSurveyActivity,
+  recordSurveyActivity,
   startAnonymousSurvey,
   startSurvey,
   submitAnonymousContactEmail
@@ -82,6 +86,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   const [contactEmailError, setContactEmailError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const recordedResumeAttemptIdsRef = useRef<Set<number>>(new Set());
+  const recordedPageEntryKeysRef = useRef<Set<string>>(new Set());
 
   // The page recovers its full state from the server on mount (and refresh):
   // resume an existing attempt when one exists, otherwise start fresh.
@@ -154,6 +160,85 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       isActive = false;
     };
   }, [anonymousToken, mode, surveyId]);
+
+  const sendActivityEvent = useCallback(
+    (eventType: SurveyAttemptActivityEventType) => {
+      if (!activeSurvey || activeSurvey.attempt.status !== "in_progress") {
+        return;
+      }
+
+      const payload = {
+        attemptId: activeSurvey.attempt.id,
+        eventType,
+        pageId: activeSurvey.currentPage?.id ?? null,
+        questionId: activeSurvey.currentQuestion?.id ?? null,
+        visibleQuestionIds: activeSurvey.currentPageQuestionIds
+      };
+      const request =
+        mode === "anonymous" && anonymousToken && activeSurvey.attemptAccessToken
+          ? recordAnonymousSurveyActivity({
+              ...payload,
+              token: anonymousToken,
+              attemptAccessToken: activeSurvey.attemptAccessToken
+            })
+          : recordSurveyActivity({
+              ...payload,
+              surveyId: activeSurvey.survey.id
+            });
+
+      void request.catch(() => undefined);
+    },
+    [activeSurvey, anonymousToken, mode]
+  );
+
+  useEffect(() => {
+    if (!activeSurvey || activeSurvey.attempt.status !== "in_progress") {
+      return;
+    }
+
+    if (recordedResumeAttemptIdsRef.current.has(activeSurvey.attempt.id)) {
+      return;
+    }
+
+    recordedResumeAttemptIdsRef.current.add(activeSurvey.attempt.id);
+    sendActivityEvent("resume");
+  }, [activeSurvey?.attempt.id, activeSurvey?.attempt.status, sendActivityEvent]);
+
+  useEffect(() => {
+    if (!activeSurvey?.currentPage || activeSurvey.attempt.status !== "in_progress") {
+      return;
+    }
+
+    const pageEntryKey = `${activeSurvey.attempt.id}:${activeSurvey.currentPage.id}`;
+
+    if (recordedPageEntryKeysRef.current.has(pageEntryKey)) {
+      return;
+    }
+
+    recordedPageEntryKeysRef.current.add(pageEntryKey);
+    sendActivityEvent("page_entry");
+  }, [
+    activeSurvey?.attempt.id,
+    activeSurvey?.attempt.status,
+    activeSurvey?.currentPage?.id,
+    sendActivityEvent
+  ]);
+
+  useEffect(() => {
+    if (!activeSurvey || activeSurvey.attempt.status !== "in_progress") {
+      return;
+    }
+
+    const heartbeatId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        sendActivityEvent("heartbeat");
+      }
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(heartbeatId);
+    };
+  }, [activeSurvey?.attempt.id, activeSurvey?.attempt.status, sendActivityEvent]);
 
   useEffect(() => {
     if (!activeSurvey) {

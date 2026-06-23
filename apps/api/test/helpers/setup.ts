@@ -6,6 +6,7 @@ import { applyTestEnvironment } from "./testDatabaseUrl.js";
 applyTestEnvironment();
 
 const dataTables = [
+  "survey_attempt_activity_events",
   "survey_response_selected_options",
   "survey_response_answers",
   "survey_attempts",

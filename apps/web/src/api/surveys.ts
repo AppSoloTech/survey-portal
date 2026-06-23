@@ -12,6 +12,8 @@ import type {
   StartAnonymousSurveyResponse,
   StartSurveyResponse,
   SurveyAnswerRequestPayload,
+  SurveyAttemptActivityRequestPayload,
+  SurveyAttemptActivityResponse,
   SurveyAttemptsListResponse,
   SurveyListResponse,
   SurveyQuestionType,
@@ -91,6 +93,21 @@ export async function completeSurvey(input: {
   });
 }
 
+export async function recordSurveyActivity(input: {
+  surveyId: number;
+} & SurveyAttemptActivityRequestPayload): Promise<SurveyAttemptActivityResponse> {
+  return apiRequest<SurveyAttemptActivityResponse>(`/api/surveys/${input.surveyId}/activity`, {
+    body: JSON.stringify({
+      attemptId: input.attemptId,
+      eventType: input.eventType,
+      pageId: input.pageId,
+      questionId: input.questionId,
+      visibleQuestionIds: input.visibleQuestionIds
+    }),
+    method: "POST"
+  });
+}
+
 export async function fetchAnonymousSurvey(token: string): Promise<AnonymousSurveyResponse> {
   return apiRequest<AnonymousSurveyResponse>(
     `/api/anonymous-surveys/${encodeURIComponent(token)}`
@@ -137,6 +154,26 @@ export async function completeAnonymousSurvey(input: {
       body: JSON.stringify({
         attemptAccessToken: input.attemptAccessToken,
         attemptId: input.attemptId
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function recordAnonymousSurveyActivity(input: {
+  token: string;
+  attemptAccessToken: string;
+} & SurveyAttemptActivityRequestPayload): Promise<SurveyAttemptActivityResponse> {
+  return apiRequest<SurveyAttemptActivityResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(input.token)}/activity`,
+    {
+      body: JSON.stringify({
+        attemptAccessToken: input.attemptAccessToken,
+        attemptId: input.attemptId,
+        eventType: input.eventType,
+        pageId: input.pageId,
+        questionId: input.questionId,
+        visibleQuestionIds: input.visibleQuestionIds
       }),
       method: "POST"
     }

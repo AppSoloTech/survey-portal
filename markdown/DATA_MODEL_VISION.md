@@ -192,6 +192,43 @@ Notes:
 
 ---
 
+## Survey Attempt Activity Event
+
+Represents lightweight operational timing telemetry for a participant's survey
+attempt.
+
+Suggested fields:
+
+```txt
+id
+survey_attempt_id
+survey_id
+page_id
+question_id
+event_type
+visible_question_ids
+occurred_at
+created_at
+```
+
+Notes:
+
+* Activity events are backend metadata used to improve future running time
+  estimates; they should not affect response validation, completion, reporting
+  counts, hidden tags, or CSV exports.
+* Event types should stay coarse and safe, such as page entry, answer save,
+  resume, heartbeat, and completion.
+* Activity events must not store raw answer text, selected answer option values,
+  hidden tags, contact email, or participant-identifying metadata beyond the
+  owning attempt relationship.
+* Anonymous activity writes must validate the anonymous link and per-attempt
+  access token before inserting rows.
+* Active-time aggregation should cap idle gaps between events before those gaps
+  contribute to attempt or survey-level active seconds.
+* Participant payloads should not expose activity rows or active-time internals.
+
+---
+
 ## Survey Question
 
 Represents a single question in a survey.

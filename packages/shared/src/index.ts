@@ -367,6 +367,25 @@ export interface SurveyPageAnswerRequestPayload {
   answers: SurveyAnswerRequestPayload[];
 }
 
+export type SurveyAttemptActivityEventType =
+  | "page_entry"
+  | "answer_save"
+  | "resume"
+  | "completion"
+  | "heartbeat";
+
+export interface SurveyAttemptActivityRequestPayload {
+  attemptId: number;
+  eventType: SurveyAttemptActivityEventType;
+  pageId: number | null;
+  questionId: number | null;
+  visibleQuestionIds: number[];
+}
+
+export interface SurveyAttemptActivityResponse {
+  ok: true;
+}
+
 export interface MySurveysResponse {
   surveys: SurveyAttemptSummary[];
 }

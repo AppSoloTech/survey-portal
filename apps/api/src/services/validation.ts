@@ -1,4 +1,8 @@
-import type { SurveyQuestionType, SurveyStatus } from "@survey-portal/shared";
+import type {
+  SurveyAttemptActivityEventType,
+  SurveyQuestionType,
+  SurveyStatus
+} from "@survey-portal/shared";
 
 const surveyTitleMaxLength = 180;
 const surveyDescriptionMaxLength = 1200;
@@ -568,6 +572,14 @@ export interface PageAnswerRequestValue {
   answers: AnswerRequestValue[];
 }
 
+export interface SurveyAttemptActivityRequestValue {
+  attemptId: number;
+  eventType: SurveyAttemptActivityEventType;
+  pageId: number | null;
+  questionId: number | null;
+  visibleQuestionIds: number[];
+}
+
 export interface NormalizedAnswerValue {
   answerText: string | null;
   answerInteger: number | null;
@@ -712,6 +724,57 @@ export function validateCompleteBody(body: unknown): ValidationResult<{ attemptI
   };
 }
 
+export function validateSurveyAttemptActivityBody(
+  body: unknown
+): ValidationResult<SurveyAttemptActivityRequestValue> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const attemptId = readPositiveIntegerField(body, "attemptId");
+  const eventType = readTextField(body, "eventType");
+  const pageId = readOptionalPositiveIntegerField(body, "pageId");
+  const questionId = readOptionalPositiveIntegerField(body, "questionId");
+  const visibleQuestionIds = readPositiveIntegerArray(
+    body.visibleQuestionIds,
+    "visibleQuestionIds"
+  );
+
+  if (!attemptId) {
+    return { ok: false, error: "Attempt id is required" };
+  }
+
+  if (!isSurveyAttemptActivityEventType(eventType)) {
+    return {
+      ok: false,
+      error: "eventType must be page_entry, answer_save, resume, completion, or heartbeat"
+    };
+  }
+
+  if (pageId === false) {
+    return { ok: false, error: "pageId must be a positive integer" };
+  }
+
+  if (questionId === false) {
+    return { ok: false, error: "questionId must be a positive integer" };
+  }
+
+  if (!visibleQuestionIds.ok) {
+    return { ok: false, error: visibleQuestionIds.error };
+  }
+
+  return {
+    ok: true,
+    value: {
+      attemptId,
+      eventType,
+      pageId,
+      questionId,
+      visibleQuestionIds: visibleQuestionIds.value
+    }
+  };
+}
+
 export function validateAnonymousContactEmailBody(
   body: unknown
 ): ValidationResult<{ attemptId: number; email: string }> {
@@ -845,6 +908,18 @@ export function isSurveyQuestionType(value: string): value is SurveyQuestionType
     value === "single_select" ||
     value === "multi_select" ||
     value === "scale"
+  );
+}
+
+export function isSurveyAttemptActivityEventType(
+  value: string
+): value is SurveyAttemptActivityEventType {
+  return (
+    value === "page_entry" ||
+    value === "answer_save" ||
+    value === "resume" ||
+    value === "completion" ||
+    value === "heartbeat"
   );
 }
 

@@ -1,4 +1,8 @@
-import type { CompleteSurveyResponse } from "@survey-portal/shared";
+import {
+  getQuestionsForPage,
+  type CompleteSurveyResponse,
+  type SurveyAttemptActivityResponse
+} from "@survey-portal/shared";
 import express from "express";
 
 import { pool } from "../db.js";
@@ -21,13 +25,97 @@ import {
 import { fetchQuestionForSurvey, type SurveyAttemptRecord } from "../services/surveyRecords.js";
 import { fetchSurveyStructures } from "../services/surveyStructure.js";
 import {
+  recordSurveyAttemptActivity,
+  recordSurveyAttemptActivityBestEffort,
+  touchSurveyAttemptActivity,
+  validateSurveyAttemptActivityContext,
+  type SurveyAttemptActivityContext
+} from "../services/surveyActivity.js";
+import {
   readPositiveIntegerParam,
   validateAnswerBody,
   validateCompleteBody,
-  validatePageAnswerBody
+  validatePageAnswerBody,
+  validateSurveyAttemptActivityBody
 } from "../services/validation.js";
 
 export const surveyAttemptRouter = express.Router();
+
+surveyAttemptRouter.post("/:id/activity", requireAuth, async (req, res, next) => {
+  const surveyId = readPositiveIntegerParam(req.params.id);
+
+  if (!surveyId) {
+    res.status(400).json({ error: "Survey id must be a positive integer" });
+    return;
+  }
+
+  const validation = validateSurveyAttemptActivityBody(req.body);
+
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const user = (req as AuthenticatedRequest).user;
+
+  try {
+    const surveyRow = await pool.query<{ deleted_at: Date | null }>(
+      `select deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+
+    if (surveyRow.rows[0]?.deleted_at) {
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
+
+    const attempt = await fetchAttemptForUser(pool, validation.value.attemptId, user.id, surveyId);
+
+    if (!attempt) {
+      res.status(404).json({ error: "Survey attempt not found" });
+      return;
+    }
+
+    if (attempt.status === "completed") {
+      res.status(409).json({ error: "Completed attempts cannot accept activity events" });
+      return;
+    }
+
+    if (attempt.status === "abandoned") {
+      res.status(409).json({ error: "Abandoned attempts cannot accept activity events" });
+      return;
+    }
+
+    const contextIsValid = await validateSurveyAttemptActivityContext(pool, {
+      surveyId,
+      pageId: validation.value.pageId,
+      questionId: validation.value.questionId,
+      visibleQuestionIds: validation.value.visibleQuestionIds
+    });
+
+    if (!contextIsValid) {
+      res.status(400).json({ error: "Activity context does not belong to this survey" });
+      return;
+    }
+
+    await recordSurveyAttemptActivity(pool, {
+      attemptId: attempt.id,
+      surveyId,
+      eventType: validation.value.eventType,
+      pageId: validation.value.pageId,
+      questionId: validation.value.questionId,
+      visibleQuestionIds: validation.value.visibleQuestionIds
+    });
+    await touchSurveyAttemptActivity(pool, attempt.id);
+
+    const response: SurveyAttemptActivityResponse = { ok: true };
+    res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
 
 surveyAttemptRouter.post("/:id/start", requireAuth, async (req, res, next) => {
   try {
@@ -160,6 +248,14 @@ surveyAttemptRouter.post("/:id/answer", requireAuth, async (req, res, next) => {
     }
 
     await saveAnswer(client, attempt.id, question, answerValidation.value);
+    const activityContext: SurveyAttemptActivityContext = {
+      attemptId: attempt.id,
+      surveyId,
+      eventType: "answer_save",
+      pageId: question.page_id,
+      questionId: question.id,
+      visibleQuestionIds: [question.id]
+    };
 
     // Drop any answers stranded off the final path by this answer (e.g. a
     // changed branch jump) so stored data matches the respondent's real path.
@@ -181,6 +277,7 @@ surveyAttemptRouter.post("/:id/answer", requireAuth, async (req, res, next) => {
       [attempt.id]
     );
     await client.query("commit");
+    recordSurveyAttemptActivityBestEffort(activityContext);
 
     const response = await buildAnswerSurveyResponse(attempt.id, user.id);
     res.json(response);
@@ -273,6 +370,15 @@ surveyAttemptRouter.post("/:id/pages/:pageId/answer", requireAuth, async (req, r
       return;
     }
 
+    const activityContext: SurveyAttemptActivityContext = {
+      attemptId: attempt.id,
+      surveyId,
+      eventType: "answer_save",
+      pageId,
+      questionId: null,
+      visibleQuestionIds: getQuestionsForPage(survey, pageId).map((question) => question.id)
+    };
+
     // Drop any answers stranded off the final path by this submit (e.g. a
     // changed branch jump) so stored data matches the respondent's real path.
     await pruneOffPathAnswers(client, survey, attempt.id);
@@ -285,6 +391,7 @@ surveyAttemptRouter.post("/:id/pages/:pageId/answer", requireAuth, async (req, r
       [attempt.id]
     );
     await client.query("commit");
+    recordSurveyAttemptActivityBestEffort(activityContext);
 
     const response = await buildAnswerSurveyResponse(attempt.id, user.id);
     res.json(response);
@@ -382,6 +489,14 @@ surveyAttemptRouter.post("/:id/complete", requireAuth, async (req, res, next) =>
          updated_at`,
       [attempt.id, user.id]
     );
+    recordSurveyAttemptActivityBestEffort({
+      attemptId: updateResult.rows[0].id,
+      surveyId,
+      eventType: "completion",
+      pageId: null,
+      questionId: null,
+      visibleQuestionIds: []
+    });
 
     const completedAttempt = await fetchAttemptWithResponses(updateResult.rows[0].id, user.id);
 

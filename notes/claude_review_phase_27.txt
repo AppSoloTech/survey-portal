@@ -1,0 +1,149 @@
+# Claude Review — Phase 27 (Survey Attempt Activity Instrumentation)
+
+Reviewer: Claude Code
+Scope: current phase diff only (git diff + untracked 0027 migration,
+surveyActivity service, and surveyActivity test).
+Method: static review against prompt_27, handoff_27, prompt_25/26, and the
+surrounding attempt-route / anonymous-route / runner code. The phase's own
+API test (surveyActivity) was NOT executed — see Commit readiness.
+
+Verdict: Sound foundation, but there is one coupling issue I'd fix before merge:
+server-side telemetry inserts are inside the answer transaction and inline on
+completion, so a telemetry failure can roll back a participant's answer or 500 a
+successful completion. That directly contradicts the phase's "no coupling to
+response validation" goal. Everything else looks good.
+
+---
+
+## 1. Critical issues
+
+C1. Answer-save telemetry runs inside the answer transaction.
+   In all four answer paths — surveyAttemptRoutes `/:id/answer` (line ~249) and
+   `/:id/pages/:pageId/answer` (~370), plus the two anonymous equivalents —
+   `recordSurveyAttemptActivity(client, { event_type: 'answer_save' })` executes
+   on the same transaction `client`, before commit. If that insert throws (lock,
+   disk, a future constraint, a bad page/question id), the whole transaction
+   rolls back and the participant's real answer is discarded along with it, and
+   they receive a 500. Telemetry should never be able to fail a response write.
+   In normal operation the insert won't fail (the FKs are valid), so this is a
+   low-probability but high-impact data-integrity coupling. Recommend recording
+   answer_save outside the transaction (after commit, best-effort) or wrapping
+   the insert so its failure cannot abort the answer.
+
+C2. Completion telemetry is inline after the (already-committed) completion
+   update. surveyAttemptRoutes `/:id/complete` (~488) and the anonymous
+   `/complete` run the status update via a standalone `pool.query` (auto-commit),
+   then `await recordSurveyAttemptActivity(pool, { 'completion' })`. If that
+   insert throws, the route catch returns 500 even though the attempt is already
+   completed; a participant retry then hits the 409 "completed" guard, so they
+   see a failure for a completion that actually succeeded. The handoff explicitly
+   asks about this. Recommendation: since completion has already committed, make
+   the completion event best-effort (catch-and-ignore) rather than letting it
+   surface as a request failure — or fold both the update and the event into one
+   transaction so they truly succeed/fail together.
+
+Both are the same root cause: the browser instrumentation is correctly
+fire-and-forget, but the server-emitted answer_save/completion events are on the
+critical path. Decoupling them satisfies the stated non-goal ("activity writes
+... do not block participant flow").
+
+## 2. Suggested improvements (non-blocking)
+
+1. Summary helpers are currently unused by any route. `fetchAttemptActivitySummary`
+   and `fetchSurveyActivitySummary` are exercised only by tests (no Admin read
+   endpoint this phase, by design). Fine as foundation, but worth a one-line note
+   so a future reviewer doesn't think they're wired up; otherwise they read as
+   dead code.
+
+2. No explicit length cap on `visibleQuestionIds`. The validator dedupes (Set)
+   and the context check rejects the request unless every id maps to a real
+   survey/page question, so the effective bound is the survey's question count —
+   safe. A small hard cap would still be a cheap guard against oversized arrays
+   reaching the count query. Low priority.
+
+3. Heartbeat timer resets on every `activeSurvey` change. The 60s interval effect
+   depends on `sendActivityEvent`, whose identity changes whenever `activeSurvey`
+   changes (i.e. on every answer). So during active answering the heartbeat
+   rarely fires; idle-time is captured only after 60s with no state change. This
+   is actually reasonable (active engagement is already captured via answer_save
+   gaps), but it means "heartbeat" is effectively an idle-detector, not a
+   liveness tick — worth documenting so the activity trail isn't misread later.
+
+4. Authenticated `/activity` does not check survey status (only deleted). A user
+   with an attempt on a since-retired survey could still post activity. Harmless
+   telemetry, but note it if status-scoping is expected to be uniform.
+
+## 3. Acceptable tradeoffs
+
+- Idle-gap cap of 300s, centralized in `surveyAttemptActivityIdleGapCapSeconds`
+  and applied identically in both summary queries via `least(gap, cap)` with
+  null/non-positive gaps treated as 0. The per-attempt `lag(...) partition by`
+  windowing is correct, and the test math (60 + 300 + 60 per attempt; survey
+  rollup 60+300+60+30+90 over 7 events / 2 attempts) validates it — modulo the
+  unrun suite.
+- Server-side recording of answer_save/completion (vs. trusting the browser to
+  emit them) is a reasonable reliability choice — the only problem is the
+  coupling in C1/C2, not the decision to record them server-side.
+- Browser page_entry/resume de-duplication via refs means back-navigation is
+  represented by heartbeat/resume context rather than unbounded page_entry rows.
+  Sensible noise control.
+- No down migration (consistent with repo's checksum-tracked forward-only
+  migrations).
+
+## 4. Questions / assumptions
+
+- Migration safety: the schema is appropriately narrow — attempt/survey FKs
+  cascade, page/question FKs `set null` (so deleting structure preserves the
+  event with reduced context), an `event_type` CHECK restricts to the five
+  types, and `visible_question_ids` stores ids only (no answer text). No raw
+  participant content is stored. Indexes on `(attempt, occurred_at, id)` and
+  `(survey, occurred_at, id)` match the two summary read patterns. Good.
+- Ownership boundaries are correctly reused: authenticated uses
+  `fetchAttemptForUser(pool, attemptId, userId, surveyId)` (other-user → 404,
+  tested); anonymous uses the existing `resolveAnonymousOwner` +
+  `fetchAttemptForAnonymousOwner` link/access-token resolution (bad token → 404,
+  tested). Both reject completed/abandoned with 409 (tested).
+- Participant isolation holds: no participant route returns events or summaries,
+  and the my-surveys payload excludes activity internals (tested:
+  activityEvents/activeSeconds/visibleQuestionIds/eventType absent). Extra body
+  fields like a stray `answerText` are ignored by the validator (tested).
+- Phase 26 remaining-time display is untouched: the runner still computes
+  `calculateSurveyRemainingTimeEstimate`; this phase only adds fire-and-forget
+  instrumentation effects. No dynamic prediction model was introduced.
+- No reporting/CSV/hidden-tag/navigation changes — confirmed; the diff is limited
+  to the new table, shared types, validation, the activity service, the two
+  routes' activity additions, and the runner effects.
+- Process note: the working tree shows these changes on `main`, whereas
+  prompt_27 instructs implementing on a fresh `phase-27-...` branch. Confirm this
+  is intended before committing (likely should be moved to a phase branch).
+
+## 5. Product UX alignment notes
+
+- Instrumentation is invisible to participants and non-blocking on the client
+  (`void request.catch(() => undefined)`), so it cannot degrade the survey-taking
+  experience — the right call for telemetry.
+- Resume fires once per in-progress attempt load, page_entry once per
+  attempt/page, heartbeat only while `document.visibilityState === 'visible'`,
+  and all events short-circuit unless the attempt is `in_progress` — clean,
+  low-noise behavior consistent with the "lightweight activity trail" intent.
+- No Admin timeline/dashboard or CSV was added, matching the non-goals; this is
+  purely the data-capture foundation for a later dynamic estimate.
+
+## 6. Commit readiness
+
+Not quite ready — address C1 (and preferably C2) first so telemetry cannot affect
+answer/completion durability, then:
+
+- Run the deferred `npm test -w apps/api -- surveyActivity` with approved DB
+  access. This phase's API suite was NOT executed (sandbox could not reach local
+  PostgreSQL and the schema-reset escalation was declined), so the idle-gap
+  aggregation and ownership/isolation assertions are currently verified by static
+  review only, not by a passing run. Confirm green before merge.
+- Run the deferred manual browser pass (resume/page_entry/heartbeat emit as
+  expected; answer_save/completion recorded; participant flow unaffected when the
+  activity endpoint is slow/unavailable).
+- Confirm the branch question in 4 (move off `main` to a phase branch if that is
+  the intended workflow).
+
+Once C1/C2 are decoupled and the API suite passes, this is a clean, well-scoped
+foundation.

@@ -1,0 +1,234 @@
+# Claude Review Handoff — Phase 27
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_27.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 27 for:
+
+- telemetry schema and write volume
+- authenticated and anonymous ownership checks
+- idle-gap aggregation correctness
+- participant metadata isolation
+- no coupling to response validation, reporting counts, hidden tags, or CSV
+- migration safety
+- no accidental replacement of the Phase 26 remaining-time display with a
+  dynamic prediction model
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_27.txt`
+- `prompts/prompt_26.txt`
+- `prompts/prompt_25.txt`
+- `notes/claude_handoff_phase_25.txt`
+- `notes/claude_review_phase_25.txt`
+- `notes/claude_handoff_phase_26.txt`
+- `notes/claude_review_phase_26.txt`
+- `database/migrations/0026_survey_timing_overrides.sql`
+- `database/migrations/0027_survey_attempt_activity_events.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/surveyActivity.ts`
+- `apps/api/src/services/surveyAttempts.ts`
+- `apps/api/src/routes/surveyAttemptRoutes.ts`
+- `apps/api/src/routes/anonymousSurveyRoutes.ts`
+- `apps/api/test/surveyActivity.test.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+
+## Phase Scope
+
+Implemented:
+
+- Added migration `0027_survey_attempt_activity_events.sql`.
+  - Columns: attempt id, survey id, optional page/question context,
+    `event_type`, `visible_question_ids`, `occurred_at`, and `created_at`.
+  - Event type check allows only `page_entry`, `answer_save`, `resume`,
+    `completion`, and `heartbeat`.
+  - Indexes support attempt-time and survey-time reads.
+- Added shared contracts:
+  - `SurveyAttemptActivityEventType`
+  - `SurveyAttemptActivityRequestPayload`
+  - `SurveyAttemptActivityResponse`
+- Added `apps/api/src/services/surveyActivity.ts`.
+  - `surveyAttemptActivityIdleGapCapSeconds` is 300 seconds.
+  - `recordSurveyAttemptActivity` inserts event rows.
+  - `validateSurveyAttemptActivityContext` confirms page/question/visible
+    question ids belong to the survey, with page scoping when a page id is sent.
+  - `fetchAttemptActivitySummary` summarizes active seconds for one attempt.
+  - `fetchSurveyActivitySummary` summarizes active seconds across all attempts
+    for a survey.
+- Added body validation for activity writes in `validation.ts`.
+- Added authenticated endpoint:
+  - `POST /api/surveys/:id/activity`
+  - Requires `requireAuth`, validates attempt ownership through
+    `fetchAttemptForUser`, rejects completed/abandoned attempts, validates
+    context, records the event, and updates `last_activity_at`.
+- Added anonymous endpoint:
+  - `POST /api/anonymous-surveys/:token/activity`
+  - Reuses anonymous public rate limiting and existing link + attempt access
+    token ownership resolution, rejects completed/abandoned attempts, validates
+    context, records the event, and updates `last_activity_at`.
+- Added backend activity records for answer saves and completion in both
+  authenticated and anonymous routes.
+- Instrumented the shared participant runner:
+  - resume event once per in-progress attempt load
+  - page-entry event once per attempt/page
+  - heartbeat every 60 seconds while visible and in progress
+  - activity writes are fire-and-forget so they do not block participant flow
+- Added `apps/api/test/surveyActivity.test.ts` covering:
+  - authenticated attempt ownership validation
+  - anonymous attempt token validation
+  - completed/abandoned activity rejection
+  - idle-gap capping and aggregation across page entry, answer save, resume,
+    and completion events
+  - participant payload isolation
+- Updated:
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+  - `notes/claude_handoff_phase_27.txt`
+
+Non-goals respected:
+
+- No complex prediction model.
+- No Admin dashboards for activity timelines.
+- No per-question Admin timing overrides.
+- No CSV export of timing telemetry.
+- No completion validation or navigation changes.
+- No replacement of the Phase 26 remaining-time helper or copy thresholds.
+- No raw text answers stored in timing events.
+- No participant exposure of timing event internals.
+
+Known tradeoffs:
+
+- The idle gap cap is a conservative five minutes. It is centralized and
+  documented for later tuning.
+- Activity writes for answer saves and completion are recorded server-side
+  instead of relying on the browser to emit those action events.
+- Resume/page-entry de-duplication in the browser reduces noise, but it means
+  repeated back-navigation to the same page is represented by heartbeat/resume
+  context rather than unlimited page-entry rows.
+- Completion event recording currently happens immediately after the completion
+  update rather than as part of a refactored completion transaction. Review
+  whether this is acceptable operational metadata behavior or should be
+  transactional before merge.
+
+Deferred work:
+
+- Dynamic participant remaining-time prediction model remains a future phase.
+- No Admin activity timeline or export was added.
+- Manual browser pass remains pending.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `database/migrations/0027_survey_attempt_activity_events.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/validation.ts`
+- `apps/api/src/services/surveyActivity.ts`
+- `apps/api/src/routes/surveyAttemptRoutes.ts`
+- `apps/api/src/routes/anonymousSurveyRoutes.ts`
+- `apps/api/test/helpers/setup.ts`
+- `apps/api/test/surveyActivity.test.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_27.txt`
+
+Also note:
+
+- `prompts/prompt_27.txt` was already modified before implementation and was
+  treated as the source prompt. It is not an implementation edit from this pass.
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm test -w apps/api -- surveyActivity
+npm run lint
+npm run build
+npm run test -w packages/shared -- surveyRemainingTime
+npm run test -w apps/web -- SurveyAttemptPage
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed: `npm run test -w packages/shared -- surveyRemainingTime` (7 tests)
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage` (1 test)
+- Not completed: `npm test -w apps/api -- surveyActivity`
+  - Sandboxed attempt failed to connect to local PostgreSQL at
+    `127.0.0.1:5432`.
+  - Escalated rerun was rejected because the API global setup drops and
+    recreates the PostgreSQL `public` schema. Explicit human approval is needed
+    before running that destructive test reset in this environment.
+
+Manual testing:
+
+- Not run in browser.
+
+## Specific Questions
+
+- Is the `survey_attempt_activity_events` schema appropriately narrow and safe
+  for future dynamic estimates without storing participant answer content?
+- Are the authenticated and anonymous activity endpoints correctly reusing the
+  existing ownership boundaries?
+- Is the five-minute idle gap cap reasonable for the first active-time
+  aggregation helper?
+- Should completion activity insertion be folded into the completion update
+  transaction before merge, or is best-effort operational metadata acceptable?
+- Does browser-side page-entry/resume/heartbeat instrumentation avoid noisy
+  writes while still giving a useful activity trail?
+- Did this phase keep reporting, CSV, hidden tags, navigation, and Phase 26
+  remaining-time display behavior unchanged?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_27.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

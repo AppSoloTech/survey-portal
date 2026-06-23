@@ -1,4 +1,8 @@
-import type { CompleteSurveyResponse } from "@survey-portal/shared";
+import {
+  getQuestionsForPage,
+  type CompleteSurveyResponse,
+  type SurveyAttemptActivityResponse
+} from "@survey-portal/shared";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 
@@ -35,12 +39,20 @@ import {
 import { fetchSurveyStructures } from "../services/surveyStructure.js";
 import { PostgresRateLimitStore } from "../services/rateLimitStore.js";
 import {
+  recordSurveyAttemptActivity,
+  recordSurveyAttemptActivityBestEffort,
+  touchSurveyAttemptActivity,
+  validateSurveyAttemptActivityContext,
+  type SurveyAttemptActivityContext
+} from "../services/surveyActivity.js";
+import {
   isRecord,
   validateAnonymousContactEmailBody,
   readPositiveIntegerParam,
   validateAnswerBody,
   validateCompleteBody,
-  validatePageAnswerBody
+  validatePageAnswerBody,
+  validateSurveyAttemptActivityBody
 } from "../services/validation.js";
 
 export const anonymousSurveyAdminRouter = express.Router();
@@ -256,6 +268,74 @@ anonymousSurveyPublicRouter.post("/:token/start", async (req, res, next) => {
   }
 });
 
+anonymousSurveyPublicRouter.post("/:token/activity", async (req, res, next) => {
+  const validation = validateSurveyAttemptActivityBody(req.body);
+
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  try {
+    const owner = await resolveAnonymousOwner(req.params.token, req.body);
+
+    if (!owner.ok) {
+      res.status(owner.status).json({ error: owner.error });
+      return;
+    }
+
+    const attempt = await fetchAttemptForAnonymousOwner(
+      pool,
+      validation.value.attemptId,
+      owner.link.id,
+      owner.accessTokenHash,
+      owner.link.survey_id
+    );
+
+    if (!attempt) {
+      res.status(404).json({ error: "Survey attempt not found" });
+      return;
+    }
+
+    if (attempt.status === "completed") {
+      res.status(409).json({ error: "Completed attempts cannot accept activity events" });
+      return;
+    }
+
+    if (attempt.status === "abandoned") {
+      res.status(409).json({ error: "Abandoned attempts cannot accept activity events" });
+      return;
+    }
+
+    const contextIsValid = await validateSurveyAttemptActivityContext(pool, {
+      surveyId: owner.link.survey_id,
+      pageId: validation.value.pageId,
+      questionId: validation.value.questionId,
+      visibleQuestionIds: validation.value.visibleQuestionIds
+    });
+
+    if (!contextIsValid) {
+      res.status(400).json({ error: "Activity context does not belong to this survey" });
+      return;
+    }
+
+    await recordSurveyAttemptActivity(pool, {
+      attemptId: attempt.id,
+      surveyId: owner.link.survey_id,
+      eventType: validation.value.eventType,
+      pageId: validation.value.pageId,
+      questionId: validation.value.questionId,
+      visibleQuestionIds: validation.value.visibleQuestionIds
+    });
+    await touchSurveyAttemptActivity(pool, attempt.id);
+
+    const response: SurveyAttemptActivityResponse = { ok: true };
+    res.json(response);
+  } catch (error) {
+    handleAnonymousPublicError(error, res, next);
+  }
+});
+
 anonymousSurveyPublicRouter.post("/:token/answer", async (req, res, next) => {
   const validation = validateAnswerBody(req.body);
 
@@ -330,6 +410,14 @@ anonymousSurveyPublicRouter.post("/:token/answer", async (req, res, next) => {
     }
 
     await saveAnswer(client, attempt.id, question, answerValidation.value);
+    const activityContext: SurveyAttemptActivityContext = {
+      attemptId: attempt.id,
+      surveyId: owner.link.survey_id,
+      eventType: "answer_save",
+      pageId: question.page_id,
+      questionId: question.id,
+      visibleQuestionIds: [question.id]
+    };
 
     const [survey] = await fetchSurveyStructures({
       surveyId: owner.link.survey_id,
@@ -343,6 +431,7 @@ anonymousSurveyPublicRouter.post("/:token/answer", async (req, res, next) => {
 
     await touchAttempt(client, attempt.id);
     await client.query("commit");
+    recordSurveyAttemptActivityBestEffort(activityContext);
 
     const response = await buildAnonymousAnswerSurveyResponse(
       attempt.id,
@@ -445,8 +534,17 @@ anonymousSurveyPublicRouter.post("/:token/pages/:pageId/answer", async (req, res
     }
 
     await pruneOffPathAnswers(client, survey, attempt.id);
+    const activityContext: SurveyAttemptActivityContext = {
+      attemptId: attempt.id,
+      surveyId: owner.link.survey_id,
+      eventType: "answer_save",
+      pageId,
+      questionId: null,
+      visibleQuestionIds: getQuestionsForPage(survey, pageId).map((question) => question.id)
+    };
     await touchAttempt(client, attempt.id);
     await client.query("commit");
+    recordSurveyAttemptActivityBestEffort(activityContext);
 
     const response = await buildAnonymousAnswerSurveyResponse(
       attempt.id,
@@ -543,6 +641,14 @@ anonymousSurveyPublicRouter.post("/:token/complete", async (req, res, next) => {
          updated_at`,
       [attempt.id, owner.link.id, owner.accessTokenHash]
     );
+    recordSurveyAttemptActivityBestEffort({
+      attemptId: updateResult.rows[0].id,
+      surveyId: owner.link.survey_id,
+      eventType: "completion",
+      pageId: null,
+      questionId: null,
+      visibleQuestionIds: []
+    });
 
     const completedAttempt = await buildAnonymousAttemptDetail(
       updateResult.rows[0].id,
