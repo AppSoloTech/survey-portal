@@ -1,0 +1,204 @@
+# Claude Review Handoff — Phase 26
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_26.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 26 for:
+
+- remaining-time calculation and path alignment
+- participant-safe timing payload use
+- removal of numeric participant labels
+- mobile layout and accessibility copy
+- no regression to Admin pagination
+- no accidental navigation, reporting, backend, or Phase 27 instrumentation changes
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_26.txt`
+- `prompts/prompt_25.txt`
+- `prompts/prompt_23.txt`
+- `notes/claude_handoff_phase_25.txt`
+- `notes/claude_review_phase_25.txt`
+- `packages/shared/src/index.ts`
+- `packages/shared/test/resolveAttemptPagePath.test.ts`
+- `packages/shared/test/surveyRemainingTime.test.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/pages/SurveyAttemptPage.test.ts`
+- `apps/api/src/services/surveyTiming.ts`
+
+## Phase Scope
+
+Implemented:
+
+- Added shared timing weights for participant remaining-time proportions:
+  - text 90s
+  - integer 30s
+  - single-select 45s
+  - multi-select 60s
+  - scale 30s
+- Updated `apps/api/src/services/surveyTiming.ts` so backend default survey
+  estimates use the same shared weight lookup. This avoids backend/frontend
+  timing-weight drift.
+- Added `calculateSurveyRemainingTimeEstimate`.
+  - Uses `Survey.effectiveEstimateSeconds` as the total estimate.
+  - Uses `resolveAttemptPagePath` output, including `visibleQuestionIdsByPageId`.
+  - Scales remaining visible question weight against the visible path's total
+    question weight.
+  - Counts unanswered visible current-page questions as remaining.
+  - Counts all visible future-page questions as remaining.
+  - Uses the existing progressive response semantics for whether a current-page
+    question has been answered.
+- Added `formatRemainingTimeCopy`.
+  - `<= 15s`: `Almost done`
+  - `< 60s`: `Less than 1 min remaining`
+  - otherwise: rounded `About N min remaining`
+- Updated the participant runner.
+  - Replaced visible `Page X of Y` heading with remaining-time copy.
+  - Kept the visual progress bar, but made it decorative with `aria-hidden`.
+  - Added `aria-live="polite"` to the remaining-time heading.
+  - Applies equally to authenticated and anonymous runner modes because they
+    share `SurveyRunner`.
+- Added focused tests:
+  - `packages/shared/test/surveyRemainingTime.test.ts`
+  - `apps/web/src/pages/SurveyAttemptPage.test.ts`
+- Updated:
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+  - `notes/claude_handoff_phase_26.txt`
+
+Non-goals respected:
+
+- No Admin timing override controls.
+- No statistical timing derivation changes.
+- No per-attempt activity instrumentation.
+- No dynamic elapsed-time estimate.
+- No survey navigation changes.
+- No dashboard/Admin pagination label changes.
+- No completion-screen total elapsed-time display.
+
+Known tradeoffs:
+
+- The estimate remains approximate. It distributes the survey-level effective
+  estimate across question-type weights and the currently resolved visible path.
+- Future branching behind unanswered questions is necessarily projected by the
+  existing path helpers; Phase 27 is still the place for running/dynamic
+  activity instrumentation.
+- Manual browser checks were not run in this implementation turn.
+
+Deferred work:
+
+- Manual Phase 26 browser pass remains pending:
+  - straight survey estimate decreases
+  - branch/page-jump/skip updates estimate after path changes
+  - multi-question page accounts for remaining visible questions
+  - no visible participant `Page X of Y` or `Question X of Y`
+  - Admin pagination labels still render normally
+  - anonymous public survey matches authenticated behavior
+  - responsive checks at 375/768/1280px
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `packages/shared/src/index.ts`
+- `packages/shared/test/surveyRemainingTime.test.ts`
+- `apps/api/src/services/surveyTiming.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/pages/SurveyAttemptPage.test.ts`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_26.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test -w packages/shared -- surveyRemainingTime
+npm run test -w apps/web -- SurveyAttemptPage
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run test -w packages/shared -- surveyRemainingTime`
+  - 6 tests
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage`
+  - 1 test
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed `npm test` passed shared and web, then failed because the
+  API test harness could not connect to local PostgreSQL at `127.0.0.1:5432`.
+- Passed after rerun with approved local PostgreSQL access: `npm test`
+  - shared: 53 tests
+  - web: 53 tests
+  - API: 210 tests across 21 API files
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser.
+
+## Specific Questions
+
+- Does the remaining-time helper align cleanly with progressive page path
+  semantics, especially current-page unanswered questions and future projected
+  pages?
+- Is making the visual bar decorative the right accessibility tradeoff to avoid
+  screen-reader numeric page count exposure?
+- Should the "Almost done" threshold remain at 15 seconds, or be adjusted?
+- Is the small source-level web guard sufficient for the "no Page X of Y /
+  Question X of Y" regression check given the current web test setup?
+- Did the shared weight extraction keep Phase 25 default estimates behaviorally
+  unchanged?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_26.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

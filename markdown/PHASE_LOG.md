@@ -4866,6 +4866,181 @@ Findings and disposition:
 
 ---
 
+## Phase 26 — Participant Estimated Completion Display
+
+Date:
+2026-06-23
+
+Status:
+Completed
+
+Prompt:
+`prompts/prompt_26.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_26.txt`
+- Claude review: `notes/claude_review_phase_26.txt`
+
+## Goals
+
+- Replace participant-facing numeric progress labels with estimated time
+  remaining.
+- Power the estimate from participant-safe `Survey.effectiveEstimateSeconds`.
+- Keep calculations aligned with the resolved visible page path, including
+  branching, page jumps, hide-page behavior, and skips.
+- Keep Admin pagination and Admin workflow labels unchanged.
+
+## Built
+
+- Added shared participant timing helpers:
+  - `surveyQuestionTypeEstimateWeightsSeconds`
+  - `getSurveyQuestionTypeEstimateWeightSeconds`
+  - `calculateSurveyRemainingTimeEstimate`
+  - `formatRemainingTimeCopy`
+- Moved the backend default timing weight lookup to the shared weight helper so
+  Phase 25 survey defaults and Phase 26 participant proportions stay aligned.
+- Updated the authenticated and anonymous participant runner header to show
+  copy such as "About 3 min remaining", "Less than 1 min remaining", or
+  "Almost done" instead of "Page X of Y".
+- Kept the visual progress bar, but made it decorative so participant-facing
+  accessible copy is the remaining-time label rather than numeric page counts.
+- Added focused shared tests for:
+  - text, integer, single-select, multi-select, and scale question weights
+  - scaling remaining time from the effective total estimate
+  - decreasing estimates across a straight page path
+  - multi-question current-page remaining questions plus future pages
+  - branch/path changes using existing path helpers
+  - defensive unknown-current-page handling
+  - less-than-one-minute and almost-done copy
+- Added a web source guard ensuring the participant runner does not reintroduce
+  "Page X of Y" or "Question X of Y" style labels.
+
+## Important Decisions
+
+### Shared Timing Weights
+
+Decision:
+Use shared question-type timing weights for both backend default estimates and
+participant remaining-time proportions.
+
+Reason:
+Phase 26 needs to scale remaining question weight against the Phase 25
+effective survey estimate. Keeping the weights in shared code prevents backend
+and frontend estimates from drifting.
+
+Tradeoff:
+The weights remain code-owned constants. Admin-configurable per-type weights
+are still out of scope.
+
+### Resolved Path Projection
+
+Decision:
+Calculate remaining time from `resolveAttemptPagePath` output and the
+progressive response helper semantics.
+
+Reason:
+This keeps the participant display aligned with the runner's existing
+branching, page-jump, hide-page, skip, and progressive reveal behavior.
+
+Tradeoff:
+The estimate remains approximate. It does not use active elapsed time or
+per-attempt behavior until Phase 27.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none beyond consuming the existing participant-safe
+  `Survey.effectiveEstimateSeconds`.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: participant UI uses only the effective
+  estimate and does not expose Admin timing audit metadata.
+- Frontend UX impact: authenticated and anonymous participant runners now show
+  remaining-time copy instead of numeric page progress.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run test -w packages/shared -- surveyRemainingTime
+npm run test -w apps/web -- SurveyAttemptPage
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run test -w packages/shared -- surveyRemainingTime`
+  - 7 tests after Claude review fixes
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage`
+  - 1 test
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed `npm test` passed shared and web, then failed when the API
+  harness was blocked from connecting to local PostgreSQL on
+  `127.0.0.1:5432`.
+- Passed after rerun with approved local PostgreSQL access: `npm test`
+  - shared: 54 tests after Claude review fixes
+  - web: 53 tests
+  - API: 210 tests across 21 API files
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Completed by developer on 2026-06-23. Browser pass covered the remaining-time
+  participant display, timing derivation/sample behavior, and anonymous
+  token-link completion timing. Developer reported manual testing passes.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_26.txt`
+
+Status:
+
+- Completed. Claude found no blocking issues and marked the phase ready to
+  commit after the deferred manual browser and responsive pass.
+
+Findings and disposition:
+
+- Addressed decorative bar divergence: the progress fill now follows the
+  remaining-time estimate instead of page position.
+- Addressed heading semantics: the visible heading is now the stable page title,
+  and the time estimate lives in a polite live region.
+- Addressed defensive edge: an unknown current page id now treats the path as
+  not-yet-complete rather than immediately reporting "Almost done".
+- Deferred render-test hardening: current web guard remains a source-text
+  tripwire; a render-level assertion is tracked in `markdown/FOLLOW_UPS.md`
+  if/when the web test harness adds DOM rendering utilities.
+
+## Follow-Up Tasks
+
+- Phase 27 should add lightweight activity instrumentation and active-time
+  aggregation.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Participant UI consumes only
+  `effectiveEstimateSeconds`; Admin timing audit metadata remains untouched
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 24 — Other Hidden Tags Foundation
 
 Date:
