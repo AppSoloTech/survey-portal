@@ -18,7 +18,7 @@ const app = createApp();
 describe("current user profile routes", () => {
   it("requires authentication for profile reads and updates", async () => {
     const read = await request(app).get("/api/profile");
-    const update = await request(app).put("/api/profile").send({ organization: "Operations" });
+    const update = await request(app).put("/api/profile").send({ contactNumber: "555-0100" });
 
     expect(read.status).toBe(401);
     expect(update.status).toBe(401);
@@ -32,24 +32,24 @@ describe("current user profile routes", () => {
     expect(initial.status).toBe(200);
     expect(initial.body.user.id).toBe(session.user.id);
     expect(initial.body.profile).toMatchObject({
-      organization: null,
-      jobTitle: null,
-      location: null,
+      contactNumber: null,
+      preferredContactMethod: null,
+      contactNotes: null,
       createdAt: null,
       updatedAt: null
     });
 
     const update = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
-      organization: "  Compliance  ",
-      jobTitle: "Risk Analyst",
-      location: "Northeast"
+      contactNumber: "  555-0100  ",
+      preferredContactMethod: "Phone",
+      contactNotes: "Weekday mornings"
     });
 
     expect(update.status).toBe(200);
     expect(update.body.profile).toMatchObject({
-      organization: "Compliance",
-      jobTitle: "Risk Analyst",
-      location: "Northeast"
+      contactNumber: "555-0100",
+      preferredContactMethod: "Phone",
+      contactNotes: "Weekday mornings"
     });
     expect(update.body.profile.updatedAt).toEqual(expect.any(String));
 
@@ -59,14 +59,14 @@ describe("current user profile routes", () => {
     expect(reload.body.profile).toMatchObject(update.body.profile);
 
     const partial = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
-      jobTitle: "Senior Risk Analyst"
+      preferredContactMethod: "Text message"
     });
 
     expect(partial.status).toBe(200);
     expect(partial.body.profile).toMatchObject({
-      organization: "Compliance",
-      jobTitle: "Senior Risk Analyst",
-      location: "Northeast"
+      contactNumber: "555-0100",
+      preferredContactMethod: "Text message",
+      contactNotes: "Weekday mornings"
     });
   });
 
@@ -75,9 +75,9 @@ describe("current user profile routes", () => {
     const second = await registerUser(app);
 
     await request(app).put("/api/profile").set("Cookie", first.cookie).send({
-      organization: "First Org",
-      jobTitle: "First Role",
-      location: "First Region",
+      contactNumber: "555-0101",
+      preferredContactMethod: "Phone",
+      contactNotes: "Call before noon",
       userId: second.user.id
     });
 
@@ -86,10 +86,10 @@ describe("current user profile routes", () => {
     const guessedUpdate = await request(app)
       .put(`/api/profile/${first.user.id}`)
       .set("Cookie", second.cookie)
-      .send({ organization: "Second Edit" });
+      .send({ contactNumber: "555-0202" });
 
     expect(secondRead.status).toBe(200);
-    expect(secondRead.body.profile.organization).toBeNull();
+    expect(secondRead.body.profile.contactNumber).toBeNull();
     expect(guessedRead.status).toBe(404);
     expect(guessedUpdate.status).toBe(404);
   });
@@ -100,20 +100,20 @@ describe("current user profile routes", () => {
     const tooLong = await request(app)
       .put("/api/profile")
       .set("Cookie", session.cookie)
-      .send({ organization: "x".repeat(121), jobTitle: "", location: "" });
+      .send({ contactNumber: "x".repeat(121), preferredContactMethod: "", contactNotes: "" });
     const wrongType = await request(app)
       .put("/api/profile")
       .set("Cookie", session.cookie)
-      .send({ organization: 42, jobTitle: "", location: "" });
+      .send({ contactNumber: 42, preferredContactMethod: "", contactNotes: "" });
     const arrayBody = await request(app)
       .put("/api/profile")
       .set("Cookie", session.cookie)
       .send([]);
 
     expect(tooLong.status).toBe(400);
-    expect(tooLong.body.error).toBe("Organization must be 120 characters or fewer");
+    expect(tooLong.body.error).toBe("Contact number must be 120 characters or fewer");
     expect(wrongType.status).toBe(400);
-    expect(wrongType.body.error).toBe("Organization must be text");
+    expect(wrongType.body.error).toBe("Contact number must be text");
     expect(arrayBody.status).toBe(400);
     expect(arrayBody.body.error).toBe("Request body is required");
   });

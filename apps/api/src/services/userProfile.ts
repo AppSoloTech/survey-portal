@@ -11,9 +11,9 @@ import { pool } from "../db.js";
 const profileFieldMaxLength = 120;
 
 interface UserProfileRecord {
-  organization: string | null;
-  job_title: string | null;
-  location: string | null;
+  contact_number: string | null;
+  preferred_contact_method: string | null;
+  contact_notes: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -26,9 +26,9 @@ interface UserSurveyStatsRecord {
 }
 
 interface NormalizedProfileInput {
-  organization?: string | null;
-  jobTitle?: string | null;
-  location?: string | null;
+  contactNumber?: string | null;
+  preferredContactMethod?: string | null;
+  contactNotes?: string | null;
 }
 
 export type ProfileValidationResult =
@@ -40,7 +40,7 @@ export async function buildCurrentUserProfileResponse(
 ): Promise<CurrentUserProfileResponse> {
   const [profile, surveyStats] = await Promise.all([
     fetchUserProfile(user.id),
-    fetchCurrentUserSurveyStats(user.id)
+    fetchRegisteredUserSurveyStats(user.id)
   ]);
 
   return {
@@ -57,26 +57,26 @@ export async function updateCurrentUserProfile(
   const result = await pool.query<UserProfileRecord>(
     `insert into user_profiles (
        user_id,
-       organization,
-       job_title,
-       location
+       contact_number,
+       preferred_contact_method,
+       contact_notes
      )
      values ($1, $2, $3, $4)
      on conflict (user_id)
      do update
-     set organization = case when $5 then excluded.organization else user_profiles.organization end,
-         job_title = case when $6 then excluded.job_title else user_profiles.job_title end,
-         location = case when $7 then excluded.location else user_profiles.location end,
+     set contact_number = case when $5 then excluded.contact_number else user_profiles.contact_number end,
+         preferred_contact_method = case when $6 then excluded.preferred_contact_method else user_profiles.preferred_contact_method end,
+         contact_notes = case when $7 then excluded.contact_notes else user_profiles.contact_notes end,
          updated_at = now()
-     returning organization, job_title, location, created_at, updated_at`,
+     returning contact_number, preferred_contact_method, contact_notes, created_at, updated_at`,
     [
       userId,
-      input.organization ?? null,
-      input.jobTitle ?? null,
-      input.location ?? null,
-      "organization" in input,
-      "jobTitle" in input,
-      "location" in input
+      input.contactNumber ?? null,
+      input.preferredContactMethod ?? null,
+      input.contactNotes ?? null,
+      "contactNumber" in input,
+      "preferredContactMethod" in input,
+      "contactNotes" in input
     ]
   );
 
@@ -90,37 +90,43 @@ export function validateProfileUpdateBody(body: unknown): ProfileValidationResul
     return { ok: false, error: "Request body is required" };
   }
 
-  const organization = readOptionalProfileField(body, "organization", "Organization");
+  const contactNumber = readOptionalProfileField(body, "contactNumber", "Contact number");
 
-  if (!organization.ok) {
-    return organization;
+  if (!contactNumber.ok) {
+    return contactNumber;
   }
 
-  const jobTitle = readOptionalProfileField(body, "jobTitle", "Job title");
+  const preferredContactMethod = readOptionalProfileField(
+    body,
+    "preferredContactMethod",
+    "Preferred contact method"
+  );
 
-  if (!jobTitle.ok) {
-    return jobTitle;
+  if (!preferredContactMethod.ok) {
+    return preferredContactMethod;
   }
 
-  const location = readOptionalProfileField(body, "location", "Location");
+  const contactNotes = readOptionalProfileField(body, "contactNotes", "Contact notes");
 
-  if (!location.ok) {
-    return location;
+  if (!contactNotes.ok) {
+    return contactNotes;
   }
 
   return {
     ok: true,
     value: {
-      ...("value" in organization ? { organization: organization.value } : {}),
-      ...("value" in jobTitle ? { jobTitle: jobTitle.value } : {}),
-      ...("value" in location ? { location: location.value } : {})
+      ...("value" in contactNumber ? { contactNumber: contactNumber.value } : {}),
+      ...("value" in preferredContactMethod
+        ? { preferredContactMethod: preferredContactMethod.value }
+        : {}),
+      ...("value" in contactNotes ? { contactNotes: contactNotes.value } : {})
     }
   };
 }
 
-async function fetchUserProfile(userId: number): Promise<UserProfile> {
+export async function fetchUserProfile(userId: number): Promise<UserProfile> {
   const result = await pool.query<UserProfileRecord>(
-    `select organization, job_title, location, created_at, updated_at
+    `select contact_number, preferred_contact_method, contact_notes, created_at, updated_at
      from user_profiles
      where user_id = $1`,
     [userId]
@@ -129,7 +135,9 @@ async function fetchUserProfile(userId: number): Promise<UserProfile> {
   return result.rows[0] ? mapUserProfileRecord(result.rows[0]) : emptyUserProfile();
 }
 
-async function fetchCurrentUserSurveyStats(userId: number): Promise<CurrentUserSurveyStats> {
+export async function fetchRegisteredUserSurveyStats(
+  userId: number
+): Promise<CurrentUserSurveyStats> {
   const result = await pool.query<UserSurveyStatsRecord>(
     `with active_or_completed_attempts as (
        select survey_id, status, last_activity_at, completed_at, updated_at, started_at
@@ -197,9 +205,9 @@ async function fetchCurrentUserSurveyStats(userId: number): Promise<CurrentUserS
 
 function mapUserProfileRecord(record: UserProfileRecord): UserProfile {
   return {
-    organization: record.organization,
-    jobTitle: record.job_title,
-    location: record.location,
+    contactNumber: record.contact_number,
+    preferredContactMethod: record.preferred_contact_method,
+    contactNotes: record.contact_notes,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -207,9 +215,9 @@ function mapUserProfileRecord(record: UserProfileRecord): UserProfile {
 
 function emptyUserProfile(): UserProfile {
   return {
-    organization: null,
-    jobTitle: null,
-    location: null,
+    contactNumber: null,
+    preferredContactMethod: null,
+    contactNotes: null,
     createdAt: null,
     updatedAt: null
   };

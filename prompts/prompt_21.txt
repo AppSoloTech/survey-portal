@@ -5,6 +5,11 @@
 Add system-generated "Other" answer support for applicable choice-based
 questions, storing custom text separately from normal answer options.
 
+This phase should start after Phase 20 is merged to `main`, including the
+Phase 20 admin user tools and migration `0023_user_profile_contact_fields.sql`.
+Phase 21 schema work should therefore use the next migration number after
+`0023`.
+
 Source feedback or planning note:
 
 ```txt
@@ -48,8 +53,15 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
+* `prompts/prompt_20.txt`
+* `notes/claude_handoff_phase_20.txt`
+* `notes/claude_review_phase_20.txt`
+* `database/migrations/0023_user_profile_contact_fields.sql` for current
+  migration numbering context only.
 * Current survey question, answer option, answer save, reporting, CSV, and
   participant runner code.
+* Current page-based survey runner, page-answer save endpoint, and reporting
+  final-path pruning behavior.
 
 ---
 
@@ -108,6 +120,10 @@ Do not implement:
 * conditional logic triggered by Other
 * Other support for `scale` unless explicitly approved
 * new question types
+* any changes to Phase 20 admin user tools, admin password reset, user profile
+  contact fields, or `/api/profile`
+* cleanup of the old Phase 19 profile columns; that is tracked separately in
+  `markdown/FOLLOW_UPS.md`
 
 ## Assumptions
 
@@ -115,6 +131,10 @@ Do not implement:
 * Other text should be trimmed and bounded like other user-entered text.
 * Existing responses remain valid after migration with Other disabled by
   default.
+* Phase 21 migrations should be additive and preserve existing Phase 20
+  migration order.
+* Other answer text is participant-entered response data, not admin profile or
+  contact metadata.
 
 ## Open Questions
 
@@ -156,8 +176,11 @@ Add focused tests for:
 * single-select Other validation
 * multi-select standard + Other validation
 * required empty Other text rejection
+* page-answer endpoint Other save/validation behavior
 * reporting and CSV Other output
 * hidden-tag isolation for Other
+* migration/backward compatibility with existing responses and disabled Other
+  by default
 
 Manual checks:
 
@@ -183,10 +206,12 @@ Ask Claude Code to review:
 
 * data model separation
 * required validation
+* page-based runner/page-answer compatibility
 * reporting and CSV behavior
 * hidden-tag isolation
 * backward compatibility
 * accidental implementation of Other for unsupported question types
+* accidental drift into Phase 20 admin-user/profile/contact tooling
 
 Claude Code must write review output to:
 

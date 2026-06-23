@@ -111,9 +111,9 @@ Suggested fields:
 ```txt
 id
 user_id
-organization
-job_title
-location
+contact_number
+preferred_contact_method
+contact_notes
 created_at
 updated_at
 ```
@@ -122,6 +122,8 @@ Notes:
 
 * Profile metadata belongs to one user and should use a foreign key to `users`.
 * Core profile fields should remain relational columns, not JSON blobs.
+* Contact fields are optional account metadata used for survey follow-up and
+  should avoid broad CRM/account-management scope.
 * Standard users may read and update only their own profile metadata.
 * Admin profile viewing or editing is a separate admin-user-management concern,
   not part of the user-owned profile model.

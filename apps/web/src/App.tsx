@@ -17,7 +17,7 @@ import { ThemeToggle } from "./components/ThemeToggle.js";
 import { ToastProvider } from "./components/ToastProvider.js";
 import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
 import { AdminTagsPage } from "./pages/admin/AdminTagsPage.js";
-import { AdminUsersPage } from "./pages/admin/AdminUsersPage.js";
+import { AdminUserDetailPage, AdminUsersPage } from "./pages/admin/AdminUsersPage.js";
 import { SurveyLogicPage } from "./pages/admin/SurveyLogicPage.js";
 import { SurveyOrganizePage } from "./pages/admin/SurveyOrganizePage.js";
 import { SurveyPreviewPage } from "./pages/admin/SurveyPreviewPage.js";
@@ -70,6 +70,7 @@ export function App() {
                   <Route element={<AdminRoute />}>
                     <Route element={<AdminSurveysOverview />} path="/admin" />
                     <Route element={<AdminUsersPage />} path="/admin/users" />
+                    <Route element={<AdminUserDetailPage />} path="/admin/users/:userId" />
                     <Route element={<AdminTagsPage />} path="/admin/tags" />
                     <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
                       <Route element={<Navigate replace to="setup" />} index />

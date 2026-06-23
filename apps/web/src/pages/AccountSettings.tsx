@@ -10,9 +10,9 @@ import { useAuth } from "../auth/AuthContext.js";
 import { useReveal } from "../motion/motion.js";
 
 const emptyProfileForm = {
-  organization: "",
-  jobTitle: "",
-  location: ""
+  contactNumber: "",
+  preferredContactMethod: "",
+  contactNotes: ""
 };
 
 export function AccountSettings() {
@@ -42,9 +42,9 @@ export function AccountSettings() {
         setProfile(response.profile);
         setSurveyStats(response.surveyStats);
         setProfileForm({
-          organization: response.profile.organization ?? "",
-          jobTitle: response.profile.jobTitle ?? "",
-          location: response.profile.location ?? ""
+          contactNumber: response.profile.contactNumber ?? "",
+          preferredContactMethod: response.profile.preferredContactMethod ?? "",
+          contactNotes: response.profile.contactNotes ?? ""
         });
       })
       .catch((loadError) => {
@@ -103,9 +103,9 @@ export function AccountSettings() {
       const savedProfile = await updateCurrentUserProfile(profileForm);
       setProfile(savedProfile);
       setProfileForm({
-        organization: savedProfile.organization ?? "",
-        jobTitle: savedProfile.jobTitle ?? "",
-        location: savedProfile.location ?? ""
+        contactNumber: savedProfile.contactNumber ?? "",
+        preferredContactMethod: savedProfile.preferredContactMethod ?? "",
+        contactNotes: savedProfile.contactNotes ?? ""
       });
       setMessage("Profile saved.");
     } catch (submitError) {
@@ -163,40 +163,43 @@ export function AccountSettings() {
 
         <form className="profile-panel profile-form" onSubmit={handleSaveProfile}>
           <div>
-            <h3>Profile</h3>
-            <p>Optional demographic details for your account.</p>
+            <h3>Contact details</h3>
+            <p>Optional details for reaching you about survey follow-up.</p>
           </div>
           <label>
-            <span>Organization or department</span>
+            <span>Contact number</span>
             <input
               maxLength={120}
               onChange={(event) =>
-                setProfileForm((current) => ({ ...current, organization: event.target.value }))
+                setProfileForm((current) => ({ ...current, contactNumber: event.target.value }))
               }
               type="text"
-              value={profileForm.organization}
+              value={profileForm.contactNumber}
             />
           </label>
           <label>
-            <span>Job title or role</span>
+            <span>Preferred contact method</span>
             <input
               maxLength={120}
               onChange={(event) =>
-                setProfileForm((current) => ({ ...current, jobTitle: event.target.value }))
+                setProfileForm((current) => ({
+                  ...current,
+                  preferredContactMethod: event.target.value
+                }))
               }
               type="text"
-              value={profileForm.jobTitle}
+              value={profileForm.preferredContactMethod}
             />
           </label>
           <label>
-            <span>Location or region</span>
+            <span>Contact notes</span>
             <input
               maxLength={120}
               onChange={(event) =>
-                setProfileForm((current) => ({ ...current, location: event.target.value }))
+                setProfileForm((current) => ({ ...current, contactNotes: event.target.value }))
               }
               type="text"
-              value={profileForm.location}
+              value={profileForm.contactNotes}
             />
           </label>
           <button

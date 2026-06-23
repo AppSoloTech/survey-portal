@@ -4182,3 +4182,244 @@ Accepted tradeoffs:
 - Manual testing complete: Pending browser pass
 - Ready to commit: Yes with the documented manual browser follow-up, at the
   developer's discretion
+
+---
+
+## Phase 20 — Admin User Tools Foundation
+
+Date:
+2026-06-23
+
+Status:
+Completed; ready to commit with manual-browser follow-up
+
+Prompt:
+`prompts/prompt_20.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_20.txt`
+- Claude review: `notes/claude_review_phase_20.txt`
+
+## Goals
+
+- Add admin-only user detail visibility under the admin API namespace.
+- Show safe user account metadata, read-only profile demographics, and
+  registered-user survey statistics.
+- Let admins initiate password reset email delivery for a user without exposing
+  reset tokens, reset URLs, password hashes, or reset storage fields.
+- Keep `/api/profile` self-service-only and avoid admin profile editing.
+
+## Built
+
+- Added shared admin user detail/reset response contracts:
+  `AdminUserDetailResponse` and `AdminUserPasswordResetResponse`.
+- Exported the Phase 19 profile/stat read helpers as reusable registered-user
+  helpers without changing `/api/profile`.
+- Added admin-only endpoints:
+  - `GET /api/admin/users/:id`
+  - `POST /api/admin/users/:id/password-reset`
+- Admin detail returns a safe user projection, existing-or-null profile fields,
+  and registered survey stats using the same semantics as Phase 19.
+- Admin reset uses the Phase 18 password reset service and returns only the
+  generic reset message. Token and reset URL material are discarded by the
+  admin route.
+- Added role-filtering to the admin user list API so the UI can show accurate,
+  separately paginated administrator and standard-user sections.
+- Added migration `0023_user_profile_contact_fields.sql` and replaced the
+  professional profile fields on active API/UI surfaces with contact-focused
+  fields: contact number, preferred contact method, and contact notes.
+- Added `/admin/users/:userId` detail UI linked from the existing admin users
+  table, with a bifurcated `/admin/users` list, read-only profile details,
+  survey stat tiles, back navigation, and reset initiation feedback.
+- Added focused API tests for admin-only access, unknown users, secret-field
+  exclusion, no-profile null fields, registered-only stats with anonymous
+  isolation, admin-triggered reset token creation, and admin self-reset.
+
+## Important Decisions
+
+### Admin Namespace Only
+
+Decision:
+Add user detail/reset under `/api/admin/users/:id` and leave `/api/profile`
+unchanged.
+
+Reason:
+Profile endpoints remain self-service-only, while admin user tools have their
+own authorization boundary.
+
+Tradeoff:
+Admin detail mirrors some profile read behavior through shared service helpers,
+but the write/update surface remains separate and does not add admin profile
+editing.
+
+### Reset Response Non-Disclosure
+
+Decision:
+Reuse the password reset service for token creation/email dispatch, but return
+only the generic reset message to admins.
+
+Reason:
+Admins should be able to initiate recovery without seeing reset tokens or links.
+
+Tradeoff:
+In disabled/no-op email mode, the route still creates the reset token row but
+does not expose a development link through the admin response.
+
+### Registered Stats Semantics
+
+Decision:
+Reuse Phase 19 registered-user survey stat semantics for admin detail.
+
+Reason:
+The admin surface should not invent a second definition for available,
+in-progress, completed, last activity, or completion rate.
+
+Tradeoff:
+Completion rate remains completed divided by available + in-progress +
+completed survey units, and anonymous attempts remain excluded.
+
+## Architecture Notes
+
+- Database/schema impact: migration `0023_user_profile_contact_fields.sql` adds
+  optional contact-focused profile columns.
+- API contract impact: added admin user detail and admin password reset
+  initiation responses.
+- Auth or authorization impact: new endpoints require `requireAuth` and
+  `requireRole("admin")`; standard users receive 403 and unauthenticated
+  requests receive 401.
+- Data privacy or visibility impact: admin detail returns only approved user,
+  profile, and registered stat fields; no password or reset secret fields are
+  returned.
+- Frontend UX impact: admin users table is visually split into Administrators
+  and Standard users, links to a detail view, and the detail view can initiate
+  reset email delivery. Settings profile fields now ask for contact details
+  instead of organization/job-title/location details.
+- Environment or deployment impact: run migration `0023` on deploy/local dev
+  databases before using profile settings or admin user detail.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test -w apps/api -- test/adminUsers.test.ts
+npm test -w apps/api -- test/profile.test.ts test/adminUsers.test.ts
+npm test
+npm run db:migrate
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Initial sandboxed targeted API test failed with `EPERM 127.0.0.1:5432`
+  because local PostgreSQL access was blocked; the filter also used a filename
+  pattern before the harness initialized.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/adminUsers.test.ts` (12 admin user tests)
+- Passed after bifurcated user-list adjustment with approved local PostgreSQL
+  access: `npm test -w apps/api -- test/adminUsers.test.ts` (13 admin user tests)
+- Passed after contact-field adjustment with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/profile.test.ts test/adminUsers.test.ts`
+  (17 profile/admin tests)
+- Passed with approved local PostgreSQL access: `npm test` (shared 47, web 52,
+  API 190 tests across 19 API files)
+- Passed after contact-field adjustment with approved local PostgreSQL access:
+  `npm test` (shared 47, web 52, API 190 tests across 19 API files)
+- Passed after bifurcated user-list adjustment with approved local PostgreSQL
+  access: `npm test` (shared 47, web 52, API 191 tests across 19 API files)
+- Passed with approved local PostgreSQL access: `npm run db:migrate`
+  (applied `0023_user_profile_contact_fields.sql` to the local dev database)
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Not run in browser. Follow-up logged for admin user list/detail/reset
+  workflows and responsive checks at 375/768/1280px.
+
+## Problems Encountered
+
+- Problem:
+  The sandbox blocked local PostgreSQL access for API tests.
+  Resolution:
+  Reran targeted and full tests with approved local PostgreSQL access.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_20.txt`
+
+Status:
+
+- Completed. Claude approved for commit with no critical or blocking issues.
+
+Findings and disposition:
+
+- Accepted tradeoff: admin reset returns the existing generic reset message
+  even though the route returns 404 for unknown users. This keeps the response
+  consistent with the existing self-service reset routes and secret-free.
+- Accepted pre-existing pattern: password reset token creation happens before
+  email send, so email-send failure can return 500 after a token row is written.
+  This is shared with the existing reset service and not a Phase 20 regression.
+- Accepted tradeoff: admin reset has no separate rate limiter, matching the
+  authenticated self-service reset route and relying on trusted admin access.
+- Deferred optional cleanup: centralize the duplicated safe admin user
+  projection if future admin user routes expand.
+- Follow-up review approved the post-approval contact-field change and the
+  bifurcated admin user list with no blocking issues.
+- Accepted product decision: contact number, preferred contact method, and
+  contact notes are more sensitive than the original professional fields, but
+  they are intentionally user-entered, short, optional, and scoped to survey
+  follow-up rather than broad CRM/account management.
+- Deferred cleanup: migration `0023` leaves the original
+  `organization`/`job_title`/`location` columns in place. Drop them in a later
+  cleanup migration after confirming no pre-deploy profile data needs backfill
+  or retention.
+
+Review highlights:
+
+- Admin-only enforcement, PII minimization, token non-disclosure, and secret
+  exclusion passed review.
+- Phase 19 profile/stat semantics are consistent because `/api/profile` and
+  admin detail now share the same read helpers.
+- Anonymous attempts remain isolated from registered-user stats.
+- `/api/profile` remains self-service-only and no CRM-style admin workflow was
+  introduced.
+
+Post-review product adjustment:
+
+- After manual testing, the profile/detail fields were changed from the overly
+  professional organization/job-title/location set to contact number, preferred
+  contact method, and contact notes. This added migration `0023` and updated the
+  shared profile contract, profile API service, Settings UI, admin detail UI,
+  data model vision, and focused profile/admin tests.
+- A follow-up Claude review was appended to `notes/claude_review_phase_20.txt`
+  after this contact-field adjustment and after the bifurcated admin user list.
+  Claude approved with no blocking issues.
+
+## Follow-Up Tasks
+
+- Run the logged Phase 20 manual browser pass for admin user detail/reset and
+  responsive widths.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical or blocking issues
+- Review findings addressed or deferred: Yes; optional suggestions accepted or
+  deferred as noted above
+- Manual testing complete: Pending browser pass
+- Ready to commit: Yes with the documented manual browser follow-up, at the
+  developer's discretion

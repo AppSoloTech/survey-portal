@@ -52,6 +52,8 @@ Review this file before starting each implementation phase. When a follow-up is 
 ### API And Code Quality
 
 - Centralize repeated user SELECT projections if auth query reuse grows.
+- Consider a cleanup migration to drop the now-unused `user_profiles.organization`, `user_profiles.job_title`, and `user_profiles.location` columns after confirming no pre-deploy data needs backfill or retention. Phase 20 replaced active profile fields with contact number, preferred contact method, and contact notes.
+- Confirm the contact profile fields remain intentionally limited to survey follow-up and do not expand into CRM/account-management workflows; phone number and free-text contact notes are more sensitive PII than the original Phase 19 professional fields.
 - Avoid the redundant `/api/auth/me` fetch immediately after login/register.
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Confirm with the client that the enforced attempt policy matches the business need: a completed attempt blocks new starts (409), while an abandoned attempt allows a fresh start and stays visible in reports as history.
@@ -70,7 +72,8 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Run the Phase 8 manual browser checklist from `prompts/prompt_8.txt` (Results tab, attempt detail, CSV spot-check, 360px width).
 - Add React component tests when UI behavior grows beyond what pure-helper unit tests cover.
 - Run a manual browser pass over the Phase 10 UI changes: centered auth card, integer stepper, scale slider snapping, dashboard category grouping/pagination, attempt route breadcrumbs and refresh recovery, toasts, admin users/tags pages, and survey delete/duplicate flows (including 360/768px widths).
-- Run the Phase 19 manual browser pass: Account dropdown to `/settings` at 375/768/1280px, save/reload optional profile fields, verify survey stats after starting/completing a registered survey, confirm anonymous attempts do not change the registered user's profile stats, and confirm the Settings password reset cooldown still works.
+- Run the Phase 19 manual browser pass: Account dropdown to `/settings` at 375/768/1280px, save/reload optional contact profile fields, verify survey stats after starting/completing a registered survey, confirm anonymous attempts do not change the registered user's profile stats, and confirm the Settings password reset cooldown still works.
+- Run the Phase 20 manual browser pass: admin reviews the bifurcated Administrators/Standard users sections in `/admin/users`, opens user detail and returns to the list, reviews contact profile/stat tiles, initiates a password reset without seeing token data, confirms standard-user 403 behavior from admin detail/reset endpoints, and checks the admin user list/detail/reset UI at 375/768/1280px.
 
 ---
 

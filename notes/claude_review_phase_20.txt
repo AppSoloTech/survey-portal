@@ -1,0 +1,171 @@
+# Claude Review — Phase 20 (Admin User Tools Foundation)
+
+Reviewer: Claude Code
+Scope reviewed: current phase diff only (admin.ts, userProfile.ts, adminUsers.test.ts,
+App.tsx, admin.ts API client, AdminUsersPage.tsx, styles.css, packages/shared/src/index.ts,
+FOLLOW_UPS.md, PHASE_LOG.md).
+
+Verdict: Approve for commit. No critical or blocking issues found. Suggestions below are
+optional polish; all are either pre-existing patterns or documented tradeoffs.
+
+---
+
+## 1. Critical issues
+
+None.
+
+Authorization, PII exposure, token disclosure, secret exclusion, profile-boundary, and
+anonymous-isolation checks all pass. Specifically:
+
+- Both new routes (`GET /api/admin/users/:id`, `POST /api/admin/users/:id/password-reset`)
+  are guarded by `requireAuth` + `requireRole("admin")`, identical to the existing admin
+  routes. Tests confirm 401 (unauthenticated) and 403 (standard user) for both.
+- `fetchAdminUserById` selects only id/first_name/last_name/email/role/created_at — no
+  `password_hash`. The detail response carries only the safe `AdminUserSummary` projection
+  plus read-only profile fields and registered survey stats.
+- The admin reset route discards the `PasswordResetRequestResult` (which contains token /
+  resetUrl) and returns only `genericPasswordResetMessage`. No token, lookup key, secret
+  hash, reset URL, or password hash reaches the client — verified by tests asserting absent
+  keys and by the `prt.` substring assertion in the self-reset test.
+- 404 for unknown users on both routes, with a plain `{ error: "User not found" }` and no
+  secret leakage. Tests cover this.
+
+## 2. Suggested improvements (optional)
+
+- S1 (UX wording): Admin reset returns the public generic message
+  "If an account exists for that email, a password reset link will be sent." But the admin
+  route has already confirmed the user exists (it 404s otherwise), so the conditional phrasing
+  is slightly misleading in the admin context. The frontend toast ("Password reset email
+  requested") reads better. Consider an admin-specific success string. Low priority — the
+  handoff already documents this as an intentional tradeoff, and this exactly mirrors the
+  existing authenticated `/api/auth/me/password-reset/request` route, so it is consistent.
+
+- S2 (error semantics): `requestPasswordResetForUser` -> `createPasswordResetForUser` inserts
+  the token row and THEN calls `client.send(...)`. If email delivery throws, the request
+  returns 500 even though the token row was already written. This is identical to the existing
+  self-service reset route (pre-existing, not a regression). If admin reset reliability matters,
+  consider distinguishing "token created" from "email sent" — but not required for this phase.
+
+- S3 (no rate limit on admin reset): Unlike the public `/api/auth/password-reset/request`
+  route, the admin reset route has no rate limiter, so repeated POSTs accumulate unconsumed
+  `password_reset_tokens` rows. This matches the authenticated `/me/password-reset/request`
+  route (also unlimited) and the actor is a trusted admin, so risk is low. Note only.
+
+- S4 (minor reuse): `fetchAdminUserById` duplicates the SELECT/column list and mapping used
+  by the `GET /users` list route. Harmless, but a shared user-projection helper would reduce
+  drift if the safe column set ever changes.
+
+## 3. Acceptable tradeoffs
+
+- Reusing the public generic reset message (S1) keeps the response secret-free and the code
+  simple, and is consistent with the existing self-service reset surface.
+- Admin self-reset is allowed (matching the prompt's open-question default). The session
+  cookie is not cleared (test asserts no `set-cookie`) and no token material is exposed.
+- In dev/no-op email mode the token row is created but the admin response includes no dev
+  reset link. This intentionally preserves token non-disclosure at the cost of admin-side
+  delivery convenience in dev. Reasonable.
+
+## 4. Questions / assumptions
+
+- Confirm the desired admin-facing reset copy (S1). If "If an account exists..." is acceptable
+  to the product owner, no change needed.
+- Profile/stat semantics: the renamed `fetchRegisteredUserSurveyStats` (was
+  `fetchCurrentUserSurveyStats`) is now the single shared implementation used by BOTH
+  `/api/profile` and admin detail. This guarantees Phase 19 parity (completion-rate definition,
+  abandoned-attempt last-activity behavior, available/in-progress/completed tiles) and is the
+  right call. Confirmed no behavioral change to the Phase 19 calculation.
+
+## 5. Product UX alignment notes
+
+- Stays cleanly within "admin user tools": read-only detail view + reset initiation. No
+  demographic editing, no impersonation, no bulk actions, no CRM-style workflow.
+- `/api/profile` remains self-service-only — profile.ts is unchanged and still derives the
+  user from the auth context (no user-id params, no admin branch). The test suite asserts no
+  guessed `/api/profile/:id`-style route exists.
+- Detail view PII is minimized to the prompt's allowed set (name, email, role, registration
+  timestamp, approved profile metadata, registered stats). No-profile users correctly render
+  null fields without creating a `user_profiles` row on read.
+- Anonymous attempts are isolated: the stats query filters `user_id = $1` (anonymous attempts
+  carry a null user_id), and the new test seeds an anonymous attempt plus another user's
+  attempt and confirms the target user's tiles are unaffected (available: 2, inProgress: 1,
+  completed: 1, completionRate: 25).
+- Responsive CSS adds a 2-column detail layout collapsing to single column with full-width
+  reset button at the existing mobile breakpoint. Manual 375/768/1280px pass still pending
+  (logged in FOLLOW_UPS.md) — recommended before tagging the phase done.
+
+## 6. Commit readiness
+
+- Requirements implemented: Yes.
+- Admin-only enforcement: Yes (verified + tested).
+- PII minimization: Yes.
+- Token / secret non-disclosure: Yes (verified + tested).
+- Phase 19 stat/profile semantics consistency: Yes (shared helpers, single source of truth).
+- Anonymous isolation: Yes (verified + tested).
+- No CRM/account-management drift; `/api/profile` boundary preserved: Yes.
+- Tests: comprehensive coverage of access control, unknown user, secret exclusion, no-profile
+  nulls, anonymous isolation, token row creation, and admin self-reset.
+- Outstanding: manual browser pass at 375/768/1280px (documented follow-up). Not a blocker.
+
+Ready to commit, with the manual responsive browser pass recommended as the remaining
+follow-up.
+
+---
+
+## Follow-up review — post-approval changes (contact fields + bifurcated user list)
+
+Scope: changes made after the original approval above. Two distinct changes:
+(1) profile fields swapped from organization/jobTitle/location to
+contactNumber/preferredContactMethod/contactNotes (migration 0023, shared types,
+userProfile service, AccountSettings, auth client, admin detail, tests, DATA_MODEL_VISION);
+(2) the admin user list bifurcated into role-filtered "Administrators" and
+"Standard users" sections backed by a new `role` query param on GET /api/admin/users.
+
+Verdict: Approve. No blocking issues. The diff is internally consistent across all layers
+and covered by updated tests. Items below are notes / product confirmations, not defects.
+
+### Bifurcated user list
+
+- Backend role filter is safe and correct: `readOptionalRoleParam` returns null (no filter)
+  for undefined, rejects anything other than "user"/"admin" with a 400, and the SQL uses a
+  parameterized `where ($1::text is null or role = $1)`. No injection surface. Both count and
+  page queries apply the same predicate. New test asserts each section returns only its role.
+- Frontend correctly fetches both sections in parallel, paginates them independently, and
+  refetches both on a role change via `reloadKey` — necessary because a promoted/demoted user
+  moves between sections. Functional state updates avoid stale-closure bugs.
+- Self-role protection preserved end to end: button disabled + titled when `isSelf`, and the
+  backend 409 self-role guard is unchanged.
+- Minor (not blocking): the shared effect depends on both `adminList.page` and
+  `standardList.page`, so paging one section refetches the other too. Harmless extra fetch.
+
+### Contact fields
+
+- Rename is applied consistently across shared types, service (insert/update/select/validate,
+  partial-merge semantics preserved), admin detail, self-service AccountSettings form, auth
+  client, and both test suites. All three fields keep the existing 120-char cap and remain
+  optional/self-service via /api/profile. The self-service boundary is still intact.
+- Note A (orphaned data/columns): migration 0023 ADDs the three contact columns but does not
+  drop the old organization/job_title/location columns. Any Phase 19 demographic data is now
+  stranded (no longer read or displayed) and the old columns are dead. Acceptable pre-deploy,
+  but confirm this is intentional — if so, consider a later cleanup migration to drop them.
+- Note B (PII surface): this is a semantic shift, not just a rename. A contact phone number
+  and free-text contact notes are arguably more sensitive PII than organization/title/region,
+  and admin detail now exposes them to any admin. This is in mild tension with the phase's
+  "avoid additional PII" goal. Mitigated because the user self-enters the data, the purpose is
+  survey follow-up, and DATA_MODEL_VISION.md documents the non-CRM intent. Flagging for
+  explicit product sign-off rather than as a code defect.
+- Note C (scope): contact_number / preferred_contact_method / contact_notes lean closer to the
+  "no broad CRM/account management" non-goal than demographics did. The DATA_MODEL_VISION note
+  ("optional account metadata for survey follow-up... avoid broad CRM/account-management
+  scope") consciously addresses this, and the fields stay read-only on the admin side and
+  short (120 chars). Reads as an accepted product decision; just confirm it was intended.
+
+### Follow-up commit readiness
+
+- Code correctness: Yes. Authorization, self-service boundary, partial-merge, and role filter
+  all verified; tests updated for contact fields, role filtering, and null-profile cases.
+- Recommend running `npm run typecheck && npm run lint && npm test` (and applying migration
+  0023 to the test/dev DB) once more after the swap, since the field rename touches the
+  shared package and many call sites — I reviewed statically but did not run the suite.
+- Confirm Notes A–C (drop old columns later; PII/scope sign-off) with the product owner.
+- Manual responsive browser pass (375/768/1280px) over the bifurcated list and detail still
+  pending, as already logged.

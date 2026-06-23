@@ -43,9 +43,9 @@ export async function fetchCurrentUserProfile(): Promise<CurrentUserProfileRespo
 }
 
 export async function updateCurrentUserProfile(input: {
-  organization: string;
-  jobTitle: string;
-  location: string;
+  contactNumber: string;
+  preferredContactMethod: string;
+  contactNotes: string;
 }): Promise<CurrentUserProfileResponse["profile"]> {
   const response = await apiRequest<{ profile: CurrentUserProfileResponse["profile"] }>(
     "/api/profile",

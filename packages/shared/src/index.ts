@@ -23,9 +23,9 @@ export interface PasswordResetMessageResponse {
 }
 
 export interface UserProfile {
-  organization: string | null;
-  jobTitle: string | null;
-  location: string | null;
+  contactNumber: string | null;
+  preferredContactMethod: string | null;
+  contactNotes: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -245,6 +245,16 @@ export interface AdminUsersListResponse {
 
 export interface AdminUserRoleResponse {
   user: AdminUserSummary;
+}
+
+export interface AdminUserDetailResponse {
+  user: AdminUserSummary;
+  profile: UserProfile;
+  surveyStats: CurrentUserSurveyStats;
+}
+
+export interface AdminUserPasswordResetResponse {
+  message: string;
 }
 
 export interface SurveyListResponse {
