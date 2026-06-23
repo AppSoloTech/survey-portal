@@ -17,6 +17,7 @@ import type {
   SurveyQuestionType,
   SurveyReportResponse,
   SurveyResponse,
+  SurveyTimingResponse,
   SurveyStatus
 } from "@survey-portal/shared";
 
@@ -266,6 +267,28 @@ export async function updateSurveyStatus(input: {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/status`, {
     body: JSON.stringify({ status: input.status }),
     method: "PATCH"
+  });
+}
+
+export async function fetchSurveyTiming(surveyId: number): Promise<SurveyTimingResponse> {
+  return apiRequest<SurveyTimingResponse>(`/api/surveys/${surveyId}/timing`);
+}
+
+export async function updateSurveyTimingOverride(input: {
+  surveyId: number;
+  adminOverrideMinutes: number;
+}): Promise<SurveyTimingResponse> {
+  return apiRequest<SurveyTimingResponse>(`/api/surveys/${input.surveyId}/timing`, {
+    body: JSON.stringify({ adminOverrideMinutes: input.adminOverrideMinutes }),
+    method: "PUT"
+  });
+}
+
+export async function clearSurveyTimingOverride(
+  surveyId: number
+): Promise<SurveyTimingResponse> {
+  return apiRequest<SurveyTimingResponse>(`/api/surveys/${surveyId}/timing`, {
+    method: "DELETE"
   });
 }
 

@@ -204,10 +204,28 @@ export interface Survey {
   publishedAt: string | null;
   retiredAt: string | null;
   deletedAt: string | null;
+  // Participant-safe survey-level completion estimate. Admin-only timing
+  // audit fields are exposed separately through the Admin timing endpoint.
+  effectiveEstimateSeconds: number;
   pages: SurveyPage[];
   // Flattened compatibility list sorted by page order, then question order.
   questions: SurveyQuestion[];
   conditionalLogicRules: ConditionalLogicRule[];
+}
+
+export type SurveyTimingEstimateSource = "admin_override" | "statistical" | "default";
+
+export interface SurveyTimingSummary {
+  derivedEstimateSeconds: number | null;
+  defaultEstimateSeconds: number;
+  adminOverrideSeconds: number | null;
+  effectiveEstimateSeconds: number;
+  sampleCount: number;
+  estimateSource: SurveyTimingEstimateSource;
+}
+
+export interface SurveyTimingResponse {
+  timing: SurveyTimingSummary;
 }
 
 export interface SurveyCategory {

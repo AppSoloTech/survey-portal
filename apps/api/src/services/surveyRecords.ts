@@ -149,7 +149,8 @@ export function mapSurveyRecord(
   record: SurveyRecord,
   pages: SurveyPage[],
   questions: SurveyQuestion[],
-  conditionalLogicRules: ConditionalLogicRule[]
+  conditionalLogicRules: ConditionalLogicRule[],
+  effectiveEstimateSeconds: number
 ): Survey {
   return {
     id: record.id,
@@ -164,6 +165,7 @@ export function mapSurveyRecord(
     publishedAt: record.published_at?.toISOString() ?? null,
     retiredAt: record.retired_at?.toISOString() ?? null,
     deletedAt: record.deleted_at?.toISOString() ?? null,
+    effectiveEstimateSeconds,
     pages,
     questions,
     conditionalLogicRules

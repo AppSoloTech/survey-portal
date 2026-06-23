@@ -1,0 +1,209 @@
+# Claude Review Handoff — Phase 25
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_25.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 25 for:
+
+- statistical estimate correctness
+- override precedence
+- Admin-only authorization boundaries
+- participant-safe payload isolation
+- published-survey timing override behavior
+- default question-type weights and fallback behavior
+- outlier/sample handling choice
+- Admin Setup UX and mobile layout risk
+- accidental drift into Phase 26 participant progress labels or Phase 27 activity instrumentation
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_25.txt`
+- `prompts/prompt_23.txt`
+- `prompts/prompt_21.txt`
+- `notes/claude_handoff_phase_21.txt`
+- `notes/claude_review_phase_21.txt`
+- `prompts/prompt_24.txt`
+- `notes/claude_handoff_phase_24.txt`
+- `notes/claude_review_phase_24.txt`
+- `database/migrations/0024_choice_other_answers.sql`
+- `database/migrations/0025_question_other_tags.sql`
+- `database/migrations/0026_survey_timing_overrides.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/surveyTiming.ts`
+- `apps/api/src/services/surveyStructure.ts`
+- `apps/api/src/routes/surveyBuilderRoutes.ts`
+- `apps/web/src/pages/admin/SurveySetupPage.tsx`
+- `apps/api/test/surveyTiming.test.ts`
+
+## Phase Scope
+
+Implemented:
+
+- Added migration `0026_survey_timing_overrides.sql`.
+  - `survey_timing_overrides.survey_id` is a one-to-one FK to `surveys`.
+  - `admin_override_seconds` is positive and capped at 24 hours.
+  - creator/updater user ids are stored for Admin audit context.
+- Added shared contracts:
+  - `SurveyTimingEstimateSource`
+  - `SurveyTimingSummary`
+  - `SurveyTimingResponse`
+  - `Survey.effectiveEstimateSeconds`
+- Added `apps/api/src/services/surveyTiming.ts`.
+  - Backend default estimate is the sum of question-type weights with a 60-second minimum.
+  - Weights: text 90s, integer 30s, single-select 45s, multi-select 60s, scale 30s.
+  - Statistical estimate uses same-survey completed attempts only.
+  - Valid samples require both timestamps, `completed_at > started_at`, and duration <= four hours.
+  - Estimate uses the median valid duration.
+  - Precedence is Admin override, then statistical, then default.
+- Extended survey structure reads to attach only `effectiveEstimateSeconds` to every `Survey`.
+- Added Admin-only timing APIs:
+  - `GET /api/surveys/:id/timing`
+  - `PUT /api/surveys/:id/timing`
+  - `DELETE /api/surveys/:id/timing`
+- Timing mutations are allowed on published surveys because this is metadata, not structural content.
+- Added Admin Setup timing panel:
+  - derived estimate
+  - statistical sample count
+  - default estimate
+  - effective estimate
+  - estimate source
+  - override input in minutes
+  - clear override action
+- Added focused API tests covering derivation, invalid-sample ignoring, default fallback, override save/clear, precedence, authorization, published-survey override, and participant payload isolation.
+- Updated `markdown/DATA_MODEL_VISION.md`, `markdown/FOLLOW_UPS.md`, and `markdown/PHASE_LOG.md`.
+
+Non-goals respected:
+
+- No participant progress-label replacement.
+- No running/dynamic time remaining display.
+- No per-page/per-question instrumentation.
+- No per-question Admin overrides.
+- No per-question-type Admin override settings.
+- No analytics based on abandoned or in-progress attempts.
+- No live dashboard or trend chart.
+- No survey navigation, skip logic, reporting count, hidden tag, or CSV behavior changes.
+
+Known tradeoffs:
+
+- Statistical estimate uses a median and a four-hour cap. This is documented in the phase log as the first robust outlier policy while Phase 27 active-time instrumentation is pending.
+- Default weights are code-owned constants for Phase 25; Admin-configurable per-question-type defaults are explicitly out of scope.
+- `fetchSurveyTimingSummary` currently loads the survey structure and recomputes timing from the shared helper. This keeps behavior centralized, at the cost of one extra calculation in that endpoint.
+- Participant-safe `Survey.effectiveEstimateSeconds` is now present on Admin and participant survey reads. Rich timing fields remain only on the Admin timing endpoint.
+
+Deferred work:
+
+- Manual browser pass was not run in this implementation turn.
+- Phase 26 should consume `Survey.effectiveEstimateSeconds` and replace participant numeric progress labels.
+- Phase 27 should add lightweight activity instrumentation and active-time aggregation.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `database/migrations/0026_survey_timing_overrides.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/surveyTiming.ts`
+- `apps/api/src/services/surveyRecords.ts`
+- `apps/api/src/services/surveyStructure.ts`
+- `apps/api/src/services/validation.ts`
+- `apps/api/src/routes/surveyBuilderRoutes.ts`
+- `apps/api/test/surveyTiming.test.ts`
+- `apps/api/test/helpers/setup.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/pages/admin/SurveySetupPage.tsx`
+- `apps/web/src/components/admin/surveyFlowGraph.test.ts`
+- `apps/web/src/styles.css`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_25.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm test -w apps/api -- surveyTiming
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- surveyTiming` (6 tests)
+- Initial `npm run typecheck` failed because
+  `apps/web/src/components/admin/surveyFlowGraph.test.ts` had a `Survey` fixture
+  missing the new `effectiveEstimateSeconds` field.
+- Fixed the fixture.
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 210 tests across 21 API files
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser. Please review the Admin Setup timing panel statically;
+  a manual browser pass remains pending before final merge.
+
+## Specific Questions
+
+- Is the median-plus-four-hour-cap statistical policy a reasonable first pass for `started_at` to `completed_at` durations?
+- Are the default question-type weights reasonable enough for Phase 25, or should any weights be adjusted before Phase 26 consumes the effective estimate?
+- Do the Admin timing endpoints stay within metadata editing and avoid published-survey structural unlocks?
+- Are participant payloads correctly limited to `effectiveEstimateSeconds` without exposing timing audit metadata?
+- Is the Admin Setup timing UI clear enough without becoming a dashboard or trend chart?
+- Did the implementation avoid accidental Phase 26 or Phase 27 scope?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_25.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

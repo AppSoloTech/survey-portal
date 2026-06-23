@@ -53,8 +53,14 @@ import {
   validateReorderBody,
   validateSurveyPageBody,
   validateSurveyBody,
-  validateSurveyStatusBody
+  validateSurveyStatusBody,
+  validateSurveyTimingOverrideBody
 } from "../services/validation.js";
+import {
+  clearSurveyTimingOverride,
+  fetchSurveyTimingSummary,
+  setSurveyTimingOverride
+} from "../services/surveyTiming.js";
 
 export const surveyBuilderRouter = express.Router();
 
@@ -390,6 +396,90 @@ surveyBuilderRouter.patch("/:id/status", requireAuth, requireRole("admin"), reje
     next(error);
   } finally {
     client.release();
+  }
+});
+
+surveyBuilderRouter.get("/:id/timing", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
+  try {
+    const id = readPositiveIntegerParam(req.params.id);
+
+    if (!id) {
+      res.status(400).json({ error: "Survey id must be a positive integer" });
+      return;
+    }
+
+    const timing = await fetchSurveyTimingSummary(id);
+
+    if (!timing) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    res.json({ timing });
+  } catch (error) {
+    next(error);
+  }
+});
+
+surveyBuilderRouter.put("/:id/timing", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
+  try {
+    const id = readPositiveIntegerParam(req.params.id);
+
+    if (!id) {
+      res.status(400).json({ error: "Survey id must be a positive integer" });
+      return;
+    }
+
+    const validation = validateSurveyTimingOverrideBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    const survey = await fetchSurveyRecord(pool, id);
+
+    if (!survey) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    const user = (req as AuthenticatedRequest).user;
+    await setSurveyTimingOverride({
+      surveyId: id,
+      userId: user.id,
+      adminOverrideSeconds: validation.value.adminOverrideMinutes * 60
+    });
+
+    const timing = await fetchSurveyTimingSummary(id);
+    res.json({ timing });
+  } catch (error) {
+    next(error);
+  }
+});
+
+surveyBuilderRouter.delete("/:id/timing", requireAuth, requireRole("admin"), rejectDeletedSurvey, async (req, res, next) => {
+  try {
+    const id = readPositiveIntegerParam(req.params.id);
+
+    if (!id) {
+      res.status(400).json({ error: "Survey id must be a positive integer" });
+      return;
+    }
+
+    const survey = await fetchSurveyRecord(pool, id);
+
+    if (!survey) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    await clearSurveyTimingOverride(id);
+
+    const timing = await fetchSurveyTimingSummary(id);
+    res.json({ timing });
+  } catch (error) {
+    next(error);
   }
 });
 

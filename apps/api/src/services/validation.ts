@@ -13,6 +13,7 @@ const categoryNameMaxLength = 120;
 const surveyPageTitleMaxLength = 180;
 const surveyPageDescriptionMaxLength = 600;
 const anonymousContactEmailMaxLength = 320;
+const surveyTimingOverrideMinutesMax = 24 * 60;
 
 export function validateSurveyBody(body: unknown): ValidationResult<{
   title: string;
@@ -93,6 +94,31 @@ export function validateSurveyStatusBody(body: unknown): ValidationResult<{ stat
   }
 
   return { ok: true, value: { status } };
+}
+
+export function validateSurveyTimingOverrideBody(
+  body: unknown
+): ValidationResult<{ adminOverrideMinutes: number }> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const value = body.adminOverrideMinutes;
+  const adminOverrideMinutes =
+    typeof value === "number" && Number.isInteger(value) ? value : null;
+
+  if (adminOverrideMinutes === null) {
+    return { ok: false, error: "adminOverrideMinutes must be a whole number" };
+  }
+
+  if (adminOverrideMinutes < 1 || adminOverrideMinutes > surveyTimingOverrideMinutesMax) {
+    return {
+      ok: false,
+      error: `adminOverrideMinutes must be between 1 and ${surveyTimingOverrideMinutesMax}`
+    };
+  }
+
+  return { ok: true, value: { adminOverrideMinutes } };
 }
 
 export interface QuestionBodyValue {

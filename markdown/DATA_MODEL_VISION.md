@@ -164,6 +164,34 @@ Notes:
 
 ---
 
+## Survey Timing Override
+
+Represents an Admin-entered total completion-time override for one survey.
+
+Suggested fields:
+
+```txt
+survey_id
+admin_override_seconds
+created_by_user_id
+updated_by_user_id
+created_at
+updated_at
+```
+
+Notes:
+
+* Statistical and default estimates are derived by the backend at read time,
+  not stored as duplicated survey metadata.
+* Admin overrides are operational survey metadata and may be edited on
+  published surveys without unlocking structural survey edits.
+* Admin override seconds take precedence over statistical estimates, which take
+  precedence over backend defaults.
+* Participant-safe survey payloads may expose only the effective estimate, not
+  derived/default/admin override audit fields, sample counts, or source labels.
+
+---
+
 ## Survey Question
 
 Represents a single question in a survey.

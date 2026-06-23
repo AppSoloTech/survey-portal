@@ -27,6 +27,7 @@ import {
   type SurveyQuestionRecord,
   type SurveyRecord
 } from "./surveyRecords.js";
+import { buildSurveyTimingSummaries } from "./surveyTiming.js";
 
 export interface FetchSurveyStructuresOptions {
   surveyId?: number;
@@ -297,12 +298,20 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     pagesBySurveyId.set(page.survey_id, pagesForSurvey);
   }
 
-  return surveysResult.rows.map((survey) =>
+  const surveys = surveysResult.rows.map((survey) =>
     mapSurveyRecord(
       survey,
       pagesBySurveyId.get(survey.id) ?? [],
       questionsBySurveyId.get(survey.id) ?? [],
-      rulesBySurveyId.get(survey.id) ?? []
+      rulesBySurveyId.get(survey.id) ?? [],
+      0
     )
   );
+  const timingBySurveyId = await buildSurveyTimingSummaries(surveys);
+
+  return surveys.map((survey) => ({
+    ...survey,
+    effectiveEstimateSeconds:
+      timingBySurveyId.get(survey.id)?.effectiveEstimateSeconds ?? survey.effectiveEstimateSeconds
+  }));
 }

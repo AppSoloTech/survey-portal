@@ -1,0 +1,140 @@
+# Claude Review — Phase 25 (Survey Completion Time Stats + Admin Override)
+
+Reviewer: Claude Code
+Scope: current phase diff only (git diff + untracked 0026 migration, surveyTiming
+service, and surveyTiming test).
+Method: static review against prompt_25, handoff_25, DATA_MODEL_VISION, and the
+surrounding attempt-lifecycle / survey-structure / Admin Setup code. The DB-backed
+suite was not re-run this turn; the handoff reports it green (210 API tests,
+including the 6 new surveyTiming cases).
+
+Verdict: Ready to commit after the deferred manual browser + mobile pass. No
+critical issues. One performance note worth a follow-up.
+
+---
+
+## 1. Critical issues
+
+None found. The phase meets its acceptance criteria:
+
+- Precedence is correct: composeSurveyTimingSummary starts at `default`, lets a
+  non-null statistical estimate win, then lets a non-null admin override win
+  last (admin_override > statistical > default). The save/clear test confirms
+  the effective value and source flip as expected.
+- Statistical estimate uses same-survey, status='completed' attempts with both
+  timestamps, strictly positive duration, and a 4-hour cap, then takes the
+  median (percentile_cont 0.5). The derivation test confirms invalid samples
+  (in_progress, abandoned, null started_at, null completed_at, equal timestamps,
+  5-hour outlier) are all excluded and the median of 120/180/240 = 180 with
+  sampleCount 3.
+- Authorization is sound: GET/PUT/DELETE `/:id/timing` all require
+  requireAuth + requireRole("admin") + rejectDeletedSurvey. Non-admin GET/PUT
+  return 403 (tested).
+- Participant payload isolation holds: only `Survey.effectiveEstimateSeconds`
+  reaches participant/anonymous reads; the audit fields (derived/default/
+  override/sampleCount/source) live only on the Admin timing endpoint. The
+  isolation test asserts those five keys are absent from the participant survey
+  and attempt-start payloads while effectiveEstimateSeconds is present (300).
+- Published-survey behavior is correct: the timing routes use rejectDeletedSurvey
+  (not rejectStructurallyLockedSurvey), so overrides save on a published survey
+  while a structural edit still returns 409 (tested).
+- Migration safety: `survey_timing_overrides.survey_id` is a one-to-one PK FK to
+  surveys with on-delete-cascade; audit FKs set-null on user delete; the
+  positive/<=86400s check exactly matches the validator's 1..1440-minute bound,
+  so out-of-range input is a clean 400 and never a constraint 500. Numbering
+  (0026) follows 0025 and is auto-discovered by listMigrationFiles.
+
+## 2. Suggested improvements (non-blocking)
+
+1. Performance — timing is recomputed on every survey-structure read.
+   `fetchSurveyStructures` now calls `buildSurveyTimingSummaries` unconditionally,
+   which runs two queries including a `percentile_cont` median that sorts every
+   completed attempt for the survey. This fires on hot participant/anonymous read
+   paths (buildMySurveyResponse, anonymous attempt reads) as well as Admin lists.
+   For a high-volume survey the median sort runs on each read. Because
+   `effectiveEstimateSeconds` is participant-facing it can't simply be gated off
+   like `includeHiddenTags`, but consider memoizing/caching the derived value or
+   materializing it (e.g., refresh on completion) rather than recomputing per
+   read. Additionally, `fetchSurveyTimingSummary` computes timing twice — once
+   inside its `fetchSurveyStructures` call (which already sets
+   effectiveEstimateSeconds) and again via the explicit
+   `buildSurveyTimingSummaries([survey])`. The handoff acknowledges the second
+   point; the broader per-read cost is the one I'd track in FOLLOW_UPS.
+
+2. Redundant validation guard. In `validateSurveyTimingOverrideBody`,
+   `!Number.isInteger(value) || typeof value !== "number"` — `Number.isInteger`
+   already returns false for non-numbers, so the `typeof` half is unreachable.
+   Harmless (TS narrowing still works); simplify to just `Number.isInteger`.
+
+3. Sub-second median rounds to 0. `Math.round(Number(derived))` on a duration
+   below 0.5s yields 0, which is non-null and so reports source `statistical`
+   with effectiveEstimateSeconds 0. The frontend masks this via
+   `Math.max(1, ...)`, and real surveys won't hit it, but flooring the derived
+   value to >= 1s in `buildSurveyTimingSummaries` would make the API self-
+   consistent. Very low priority.
+
+4. Mobile layout risk on the override form. `.timing-override-form` is a fixed
+   two-column grid (`minmax(180px, 280px) auto`) with no stacking rule, and
+   `.inline-actions` holds two buttons (Save + Clear). At 375px the 180px input
+   column plus the two-button action column risks horizontal overflow. The
+   summary grid (`auto-fit minmax(130px, 1fr)`) is fine. Confirm in the deferred
+   375/768/1280 pass, or add a stack rule under the project's 767.98px
+   breakpoint.
+
+## 3. Acceptable tradeoffs
+
+- Median + 4-hour cap as the first outlier policy directly follows the prompt's
+  open-question guidance ("conservative cap or median-based approach, document
+  it"). Reasonable and documented.
+- `started_at`..`completed_at` duration includes idle time. Acknowledged
+  assumption; Phase 27 active-time instrumentation is the intended refinement.
+- `effectiveEstimateSeconds` is now on every Survey payload (participant
+  included). It is participant-safe and the audit metadata stays Admin-only, so
+  this is fine even though Phase 26 is the consumer.
+- Code-owned question-type weights (text 90 / integer 30 / single 45 / multi 60 /
+  scale 30, 60s floor). Admin-configurable defaults are explicitly out of scope.
+- Upsert audit behavior is good: `created_by_user_id` is set once and preserved,
+  `updated_by_user_id` and `updated_at` refresh on conflict.
+
+## 4. Questions / assumptions
+
+- Median-plus-4-hour cap is a sound first pass for started→completed durations;
+  recommend revisiting alongside Phase 27 active-time data before relying on it
+  for participant-facing labels.
+- The default weights are reasonable for Phase 25 (multi_select > single_select >
+  integer/scale, text highest). No change needed before Phase 26 consumes them;
+  if anything, validate against a few real derived medians once samples exist.
+- Confirm the intent to expose `effectiveEstimateSeconds` on participant reads
+  now rather than in Phase 26 — the handoff states this is deliberate
+  (participant-safe field now, label replacement later), which I read as in
+  scope.
+- `getQuestionTypeDefaultSeconds` falls back to the `text` weight for an unknown
+  type. Given `SurveyQuestionType` is a closed union this is dead defensively;
+  fine to keep.
+
+## 5. Product UX alignment notes
+
+- The Setup timing panel shows exactly the required fields — effective, derived
+  (with "No sample"), sample count, default, override (with "None"), and a
+  color-coded source pill — plus a minutes override input and a Clear action.
+  It reads as metadata, not a dashboard or trend chart, matching the non-goals.
+- The heading note ("Effective time is used by participant-facing survey
+  payloads") correctly frames the field without promising a participant label,
+  so no drift into Phase 26.
+- Save is disabled on empty input; Clear is disabled when no override exists;
+  `reloadSurvey()` after save/clear keeps the workspace's effective estimate in
+  sync. Good.
+- No participant progress-label changes and no per-page/per-question
+  instrumentation — Phase 26/27 scope was respected.
+- Only UX caveat is the mobile override-form overflow risk in (2.4); confirm in
+  the deferred mobile pass.
+
+## 6. Commit readiness
+
+Ready to commit. No blocking issues. Before merge:
+- Run the deferred manual browser pass from prompt_25 (no-sample default →
+  derived-with-samples → override wins → clear returns to statistical/default;
+  non-admin cannot reach controls) and the 375/768/1280 mobile check on the
+  timing panel.
+- Recommend logging the per-read timing recomputation (2.1) in FOLLOW_UPS as a
+  scaling item for when timing is consumed on hot participant paths in Phase 26.

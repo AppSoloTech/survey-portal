@@ -12,6 +12,7 @@ const dataTables = [
   "password_reset_tokens",
   "user_profiles",
   "anonymous_rate_limits",
+  "survey_timing_overrides",
   "anonymous_survey_links",
   "conditional_logic_rules",
   "answer_tags",

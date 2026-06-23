@@ -1,20 +1,23 @@
-import type { AnonymousSurveyLink, SurveyCategory } from "@survey-portal/shared";
+import type { AnonymousSurveyLink, SurveyCategory, SurveyTimingSummary } from "@survey-portal/shared";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { createCategory, fetchCategories } from "../../api/categories.js";
 import {
   createAnonymousSurveyLink,
+  clearSurveyTimingOverride,
   disableAnonymousSurveyLink,
   fetchAnonymousSurveyLinks,
+  fetchSurveyTiming,
   rotateAnonymousSurveyLink,
-  updateSurveyMetadata
+  updateSurveyMetadata,
+  updateSurveyTimingOverride
 } from "../../api/surveys.js";
 import { readFormText, readNullableFormText } from "../../components/admin/builderForm.js";
 import { StatusActionPanel } from "../../components/admin/SurveyBuilderComponents.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 
 export function SurveySetupPage() {
-  const { changeStatus, isSubmitting, runSurveyMutation, setFeedback, survey } =
+  const { changeStatus, isSubmitting, reloadSurvey, runSurveyMutation, setFeedback, survey } =
     useSurveyWorkspace();
   const [categories, setCategories] = useState<SurveyCategory[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(survey.categoryId);
@@ -27,6 +30,10 @@ export function SurveySetupPage() {
   const [copiedAnonymousLinkId, setCopiedAnonymousLinkId] = useState<number | null>(null);
   const [isLoadingLinks, setIsLoadingLinks] = useState(false);
   const [isMutatingLink, setIsMutatingLink] = useState(false);
+  const [timing, setTiming] = useState<SurveyTimingSummary | null>(null);
+  const [timingOverrideMinutes, setTimingOverrideMinutes] = useState("");
+  const [isLoadingTiming, setIsLoadingTiming] = useState(false);
+  const [isSavingTiming, setIsSavingTiming] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -71,6 +78,40 @@ export function SurveySetupPage() {
       .finally(() => {
         if (isActive) {
           setIsLoadingLinks(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [survey.id]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    setIsLoadingTiming(true);
+    setTiming(null);
+    setTimingOverrideMinutes("");
+
+    fetchSurveyTiming(survey.id)
+      .then((response) => {
+        if (isActive) {
+          setTiming(response.timing);
+          setTimingOverrideMinutes(
+            response.timing.adminOverrideSeconds === null
+              ? ""
+              : String(Math.round(response.timing.adminOverrideSeconds / 60))
+          );
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setTiming(null);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingTiming(false);
         }
       });
 
@@ -224,6 +265,56 @@ export function SurveySetupPage() {
     }
   }
 
+  async function handleSaveTimingOverride(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const minutes = Number(timingOverrideMinutes);
+
+    if (!Number.isInteger(minutes) || minutes < 1) {
+      setFeedback({ error: "Override minutes must be a positive whole number", notice: null });
+      return;
+    }
+
+    setIsSavingTiming(true);
+
+    try {
+      const response = await updateSurveyTimingOverride({
+        surveyId: survey.id,
+        adminOverrideMinutes: minutes
+      });
+      setTiming(response.timing);
+      setTimingOverrideMinutes(String(Math.round((response.timing.adminOverrideSeconds ?? 0) / 60)));
+      setFeedback({ error: null, notice: "Survey timing override saved" });
+      await reloadSurvey();
+    } catch (timingError) {
+      setFeedback({
+        error: timingError instanceof Error ? timingError.message : "Could not save timing override",
+        notice: null
+      });
+    } finally {
+      setIsSavingTiming(false);
+    }
+  }
+
+  async function handleClearTimingOverride() {
+    setIsSavingTiming(true);
+
+    try {
+      const response = await clearSurveyTimingOverride(survey.id);
+      setTiming(response.timing);
+      setTimingOverrideMinutes("");
+      setFeedback({ error: null, notice: "Survey timing override cleared" });
+      await reloadSurvey();
+    } catch (timingError) {
+      setFeedback({
+        error: timingError instanceof Error ? timingError.message : "Could not clear timing override",
+        notice: null
+      });
+    } finally {
+      setIsSavingTiming(false);
+    }
+  }
+
   const enabledAnonymousLinks = anonymousLinks.filter((link) => link.enabled);
   const disabledAnonymousLinks = anonymousLinks.filter((link) => !link.enabled);
 
@@ -298,6 +389,85 @@ export function SurveySetupPage() {
         onStatusChange={changeStatus}
         survey={survey}
       />
+
+      <section className="builder-form survey-timing-panel">
+        <div className="builder-section-heading">
+          <div>
+            <p className="eyebrow">Completion estimate</p>
+            <h3>Survey timing</h3>
+            <p className="builder-heading-note">
+              Effective time is used by participant-facing survey payloads.
+            </p>
+          </div>
+          {timing ? (
+            <span className={`status-pill timing-source-${timing.estimateSource}`}>
+              {formatTimingSource(timing.estimateSource)}
+            </span>
+          ) : null}
+        </div>
+
+        {isLoadingTiming ? <p className="status muted">Loading timing estimate...</p> : null}
+
+        {timing ? (
+          <>
+            <dl className="timing-summary-grid">
+              <div>
+                <dt>Effective</dt>
+                <dd>{formatDuration(timing.effectiveEstimateSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Derived</dt>
+                <dd>{formatDerivedDuration(timing.derivedEstimateSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Samples</dt>
+                <dd>{timing.sampleCount}</dd>
+              </div>
+              <div>
+                <dt>Default</dt>
+                <dd>{formatDuration(timing.defaultEstimateSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Override</dt>
+                <dd>{formatOverrideDuration(timing.adminOverrideSeconds)}</dd>
+              </div>
+            </dl>
+
+            <form className="timing-override-form" onSubmit={handleSaveTimingOverride}>
+              <label>
+                Override minutes
+                <input
+                  min={1}
+                  name="adminOverrideMinutes"
+                  onChange={(event) => setTimingOverrideMinutes(event.target.value)}
+                  placeholder="e.g. 8"
+                  type="number"
+                  value={timingOverrideMinutes}
+                />
+              </label>
+              <div className="inline-actions">
+                <button
+                  className="button-link compact-button primary-button"
+                  disabled={isSavingTiming || !timingOverrideMinutes.trim()}
+                  type="submit"
+                >
+                  {isSavingTiming ? "Saving..." : "Save override"}
+                </button>
+                <button
+                  className="button-link compact-button secondary-button"
+                  disabled={isSavingTiming || timing.adminOverrideSeconds === null}
+                  onClick={() => void handleClearTimingOverride()}
+                  type="button"
+                >
+                  Clear override
+                </button>
+              </div>
+            </form>
+          </>
+        ) : !isLoadingTiming ? (
+          <p className="status muted">Timing estimate is unavailable.</p>
+        ) : null}
+      </section>
 
       <section className="builder-form anonymous-links-panel">
         <div className="builder-section-heading">
@@ -488,6 +658,28 @@ function formatDateTime(isoDate: string | null): string {
 
 function formatAnonymousLinkExpiry(isoDate: string | null): string {
   return isoDate ? formatDateTime(isoDate) : "never";
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+
+  return minutes === 1 ? "1 min" : `${minutes} min`;
+}
+
+function formatDerivedDuration(seconds: number | null): string {
+  return seconds === null ? "No sample" : formatDuration(seconds);
+}
+
+function formatOverrideDuration(seconds: number | null): string {
+  return seconds === null ? "None" : formatDuration(seconds);
+}
+
+function formatTimingSource(source: SurveyTimingSummary["estimateSource"]): string {
+  if (source === "admin_override") {
+    return "admin override";
+  }
+
+  return source;
 }
 
 function getAnonymousLinkExpiresAt(preset: AnonymousLinkExpiryPreset): string | null {

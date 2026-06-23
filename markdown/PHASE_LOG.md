@@ -4652,6 +4652,220 @@ Findings and disposition:
 
 ---
 
+## Phase 25 — Survey Completion Time Stats And Admin Override Foundation
+
+Date:
+2026-06-23
+
+Status:
+Completed
+
+Prompt:
+`prompts/prompt_25.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_25.txt`
+- Claude review: `notes/claude_review_phase_25.txt`
+
+## Goals
+
+- Build backend-owned survey completion estimates from completed attempts.
+- Add Admin override support for total estimated survey completion minutes.
+- Show timing metadata and override controls on Admin Setup.
+- Expose only the participant-safe effective estimate on survey payloads.
+- Leave participant progress label replacement and dynamic timing
+  instrumentation to Phases 26 and 27.
+
+## Built
+
+- Added migration `0026_survey_timing_overrides.sql` with a
+  `survey_timing_overrides` table keyed one-to-one to `surveys`.
+- Added shared timing contracts:
+  - `SurveyTimingSummary`
+  - `SurveyTimingResponse`
+  - `SurveyTimingEstimateSource`
+  - participant-safe `Survey.effectiveEstimateSeconds`
+- Added `apps/api/src/services/surveyTiming.ts`.
+  - derives statistical estimates from valid completed attempts for the same
+    survey
+  - ignores missing timestamps, non-positive durations, non-completed
+    attempts, and samples over four hours
+  - uses the median valid duration
+  - computes backend defaults from question-type weights
+  - applies precedence: Admin override, statistical estimate, default estimate
+- Added Admin-only timing endpoints:
+  - `GET /api/surveys/:id/timing`
+  - `PUT /api/surveys/:id/timing`
+  - `DELETE /api/surveys/:id/timing`
+- Timing override edits use the metadata/deleted-survey guard rather than the
+  structural lock, so published surveys can receive timing overrides without
+  allowing structural question/page edits.
+- Extended survey structure loading so authenticated and anonymous participant
+  payloads receive only `effectiveEstimateSeconds`.
+- Added Admin Setup timing controls showing derived estimate, sample count,
+  default estimate, effective estimate, source, override input, and clear
+  action.
+- Added focused API tests in `apps/api/test/surveyTiming.test.ts`.
+- Updated `markdown/DATA_MODEL_VISION.md` and `markdown/FOLLOW_UPS.md`.
+
+## Important Decisions
+
+### Median Statistical Estimate
+
+Decision:
+Use the median of valid completed-attempt durations for the same survey.
+
+Reason:
+The prompt left outlier handling open. Median is a simple robust statistic that
+does not require a complex analytics model.
+
+Tradeoff:
+Small samples can still be noisy, but the Admin override can correct values
+that do not match operational intuition.
+
+### Four-Hour Sample Cap
+
+Decision:
+Ignore completed-attempt durations over four hours for the first statistical
+estimate.
+
+Reason:
+`completed_at - started_at` can include idle browser time. The cap removes
+obvious long-pause samples while Phase 27 is still pending.
+
+Tradeoff:
+Very long legitimate surveys would fall back to the remaining valid samples,
+or to Admin override/default if every sample is capped. This should be revisited
+if the client expects multi-hour survey sessions.
+
+### Participant-Safe Effective Estimate
+
+Decision:
+Attach only `effectiveEstimateSeconds` to the shared `Survey` payload.
+
+Reason:
+Phase 26 needs a participant-safe total estimate, but Admin audit metadata
+(`derivedEstimateSeconds`, `defaultEstimateSeconds`, `adminOverrideSeconds`,
+`sampleCount`, `estimateSource`) should remain Admin-only.
+
+Tradeoff:
+Admin Setup uses a dedicated timing endpoint for the richer metadata instead
+of relying on the general survey read.
+
+## Architecture Notes
+
+- Database/schema impact: additive override table only; derived/default values
+  are computed at read time.
+- API contract impact: surveys now carry `effectiveEstimateSeconds`; Admins
+  can read/set/clear full timing metadata through Admin-only endpoints.
+- Auth or authorization impact: timing metadata and mutations are guarded by
+  `requireAuth` plus `requireRole("admin")`.
+- Data privacy or visibility impact: participant payloads exclude timing audit
+  fields and expose only the effective estimate.
+- Frontend UX impact: Admin Setup now has a separate timing panel.
+- Environment or deployment impact: run migration `0026` before using timing
+  overrides in any environment.
+
+## Validation
+
+Commands run:
+
+```bash
+npm test -w apps/api -- surveyTiming
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- surveyTiming` (6 tests)
+- Initial `npm run typecheck` failed because one web test fixture lacked the
+  new required `Survey.effectiveEstimateSeconds` field.
+- Fixed the fixture in
+  `apps/web/src/components/admin/surveyFlowGraph.test.ts`.
+- Passed after fix: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 210 tests across 21 API files
+- Passed: `git diff --check`
+- Passed after Claude review fixes: `npm run typecheck`
+- Passed after Claude review fixes: `npm run lint`
+- Passed after Claude review fixes: `npm run build` (Vite emitted the
+  existing large chunk warning)
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm test -w apps/api -- surveyTiming` (6 tests)
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 210 tests across 21 API files
+- Passed after Claude review fixes: `git diff --check`
+
+Manual tests:
+
+- Completed by developer on 2026-06-23. Browser pass covered the Admin Setup
+  timing workflow and responsive checks. Developer reported manual testing is
+  good.
+- Non-blocking console warning observed during manual testing:
+  `THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.`
+  This comes from `apps/web/src/components/AmbientBackdrop.tsx`, is unrelated
+  to Phase 25 timing, and is tracked in `markdown/FOLLOW_UPS.md`.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_25.txt`
+
+Status:
+
+- Completed. Claude approved for commit after the deferred manual browser pass,
+  with no critical issues.
+
+Findings and disposition:
+
+- Accepted scaling note: timing is recomputed on every survey-structure read,
+  including participant and anonymous hot paths. Logged in
+  `markdown/FOLLOW_UPS.md` for caching/materialization review once Phase 26
+  consumes timing more heavily or high-volume surveys make reads expensive.
+- Addressed validator cleanup: simplified the override minutes type check.
+- Addressed sub-second edge case: statistical medians are clamped to at least
+  one second before becoming an effective estimate.
+- Addressed mobile layout risk: the timing override form now stacks under the
+  existing mobile breakpoint.
+
+## Follow-Up Tasks
+
+- Manual Admin Setup timing checks completed on 2026-06-23.
+- Phase 26 should consume `Survey.effectiveEstimateSeconds` for participant
+  remaining-time copy and remove numeric progress labels.
+- Phase 27 should add lightweight attempt activity instrumentation and active
+  time aggregation.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Automated Admin-only and participant payload
+  isolation checks added; Claude found no critical issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 24 — Other Hidden Tags Foundation
 
 Date:

@@ -80,6 +80,7 @@ function makeSurvey(
     publishedAt: null,
     retiredAt: null,
     deletedAt: null,
+    effectiveEstimateSeconds: 60,
     pages: pageIds.map((pageId) => ({
       id: pageId,
       surveyId: 1,
