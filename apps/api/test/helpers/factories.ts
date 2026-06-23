@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   Survey,
+  SurveyAttempt,
   SurveyPage,
   SurveyQuestion,
   SurveyQuestionType,
@@ -103,6 +104,7 @@ export async function addQuestion(
     displayOrder?: number;
     scaleMin?: number;
     scaleMax?: number;
+    allowOther?: boolean;
   }
 ): Promise<Survey> {
   return expectSurveyResponse(
@@ -468,7 +470,7 @@ export async function startAttempt(
   }
 
   return response.body as {
-    attempt: { id: number; status: string };
+    attempt: SurveyAttempt;
     survey: Survey;
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
@@ -486,6 +488,8 @@ export async function submitAnswer(
     answerText?: string | null;
     answerInteger?: number | null;
     selectedAnswerOptionIds?: number[];
+    isOtherSelected?: boolean;
+    otherText?: string | null;
   },
   expectedStatus = 200
 ) {
@@ -499,7 +503,7 @@ export async function submitAnswer(
   }
 
   return response.body as {
-    attempt: { id: number; status: string };
+    attempt: SurveyAttempt;
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
     currentPageQuestionIds: number[];
@@ -519,6 +523,8 @@ export async function submitPageAnswers(
       answerText?: string | null;
       answerInteger?: number | null;
       selectedAnswerOptionIds?: number[];
+      isOtherSelected?: boolean;
+      otherText?: string | null;
     }[];
   },
   expectedStatus = 200
@@ -533,7 +539,7 @@ export async function submitPageAnswers(
   }
 
   return response.body as {
-    attempt: { id: number; status: string };
+    attempt: SurveyAttempt;
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
     currentPageQuestionIds: number[];

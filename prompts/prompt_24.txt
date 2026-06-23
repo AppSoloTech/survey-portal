@@ -1,0 +1,227 @@
+# Phase 24 — Other Hidden Tags Foundation
+
+## Purpose
+
+Allow admins to attach hidden tags to the system-generated "Other" choice
+without turning Other into a normal answer option.
+
+This phase should start after Phase 21 is merged to `main`, including migration
+`0024_choice_other_answers.sql`. Phase 24 schema work should therefore use the
+next migration number after `0024`.
+
+Source feedback or planning note:
+
+```txt
+Phase 21 follow-up discussion: admins only need hidden tags for Other, not
+editable labels, normal answer-option behavior, or conditional logic.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` on a fresh phase branch. Do not implement this
+phase directly on `main`.
+
+```bash
+git checkout main
+git checkout -b phase-24-other-hidden-tags
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_24.txt`
+* Claude review: `notes/claude_review_phase_24.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `prompts/prompt_21.txt`
+* `notes/claude_handoff_phase_21.txt`
+* `notes/claude_review_phase_21.txt`
+* `database/migrations/0024_choice_other_answers.sql`
+* Current answer option hidden-tag editor, tag catalog, reporting, CSV, and
+  participant runner code.
+
+---
+
+# Received Feedback
+
+After Phase 21, the product direction is that admins should be able to attach
+hidden tags to the system-generated Other choice when Allow Other is enabled.
+Admins do not need to edit the Other label, create Other as a normal answer
+option, or use Other for conditional logic.
+
+---
+
+# Intake Classification
+
+* feature request
+* database schema and API contract change
+* admin hidden-tag workflow
+* reporting/export behavior
+* hidden-tag visibility risk
+
+Expected impact:
+
+* Other-tag storage
+* admin question editor
+* tag catalog registration
+* report hidden-tag rollup
+* CSV hidden-tag export
+* admin attempt detail
+
+---
+
+# Scope
+
+Implement:
+
+* A separate relational model for hidden tags attached to the system-generated
+  Other choice, likely `question_other_tags`.
+* Admin add/remove/edit UI for Other hidden tags only when:
+  * question type is `single_select` or `multi_select`
+  * `allowOther` is enabled
+  * survey is an editable draft
+* Tag catalog behavior consistent with normal answer-option hidden tags.
+* Report/detail/CSV hidden-tag behavior:
+  * when `other_text` is non-null, include the question's Other hidden tags
+  * keep selected real option tags and Other tags distinct in the implementation
+  * roll up Other tags in the existing hidden-tag summary
+* Shared/admin response types for Other hidden tags as needed.
+* Focused tests for storage, validation, reporting, CSV, and participant
+  hidden-tag non-disclosure.
+
+## Non-Goals
+
+Do not implement:
+
+* a normal `answer_options` row for Other
+* editable Other label/copy
+* conditional logic triggered by Other
+* hidden tags based on matching specific Other text values
+* Other support for `scale`, `text`, or `integer`
+* aggregation or normalization of identical Other text values
+* changes to Phase 20 admin-user/profile/contact tooling or `/api/profile`
+
+## Assumptions
+
+* Other hidden tags apply when any nonblank `other_text` is saved for the
+  question.
+* Other hidden tags are admin-only metadata and must never be sent to
+  participant-facing survey APIs.
+* Existing Phase 21 responses remain valid; adding tags later may affect future
+  reports for historical Other responses because reporting resolves tags from
+  current survey metadata.
+* Other remains system-generated response behavior, not a normal answer option.
+
+## Open Questions
+
+* Should adding/removing Other hidden tags on a draft copy affect historical
+  reports for the original published survey? If unanswered, follow the existing
+  hidden-tag behavior for answer-option tags on the survey being reported.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can add/edit/remove hidden tags for Other on applicable draft questions
+  with Allow Other enabled.
+* Other hidden tags are not available on unsupported question types or when
+  Allow Other is disabled.
+* Participant APIs do not expose Other hidden tags.
+* Admin attempt detail and CSV include Other hidden tags when `other_text` is
+  present.
+* Hidden-tag rollup counts Other tag events/respondents correctly.
+* Other still is not represented as an answer option ID.
+* Conditional logic remains unaffected by Other.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* creating/updating/deleting Other hidden tags
+* rejecting Other hidden tags on unsupported question types
+* rejecting Other hidden tags when `allowOther` is disabled
+* tag catalog registration for Other hidden tags
+* participant response payloads excluding Other hidden tags
+* admin attempt detail showing Other hidden tags only when Other was answered
+* hidden-tag rollup counting Other tags
+* CSV hidden-tag output for Other responses
+* ensuring Other remains absent from `selectedAnswerOptionIds`
+
+Manual checks:
+
+* Admin enables Allow Other, adds Other hidden tags, and saves.
+* Participant submits an Other response.
+* Admin Results shows the Other answer and the configured hidden tag.
+* CSV includes the Other text and hidden tag.
+* Participant runner never shows hidden tags.
+* Turning Allow Other off hides or blocks Other hidden-tag editing as designed.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_24.txt
+```
+
+Ask Claude Code to review:
+
+* data-model separation from normal answer options
+* hidden-tag visibility/non-disclosure
+* reporting and CSV tag behavior
+* tag catalog consistency
+* backward compatibility with Phase 21 responses
+* unsupported question type boundaries
+* no conditional-logic drift
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_24.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

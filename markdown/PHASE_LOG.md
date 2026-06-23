@@ -4423,3 +4423,229 @@ Post-review product adjustment:
 - Manual testing complete: Pending browser pass
 - Ready to commit: Yes with the documented manual browser follow-up, at the
   developer's discretion
+
+---
+
+## Phase 21 — Choice Other Answer Foundation
+
+Date:
+2026-06-23
+
+Status:
+Completed
+
+Prompt:
+`prompts/prompt_21.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_21.txt`
+- Claude review: `notes/claude_review_phase_21.txt`
+
+## Goals
+
+- Add an admin-controlled Allow Other setting for `single_select` and
+  `multi_select` questions.
+- Render a system-generated Other option in the participant runner when enabled.
+- Store custom Other text separately from normal answer options.
+- Keep hidden tags and conditional logic attached only to real answer options.
+- Show Other text separately in admin reporting and CSV export.
+
+## Built
+
+- Added migration `0024_choice_other_answers.sql`:
+  - `survey_questions.allow_other boolean not null default false`
+  - database check limiting `allow_other` to `single_select` and `multi_select`
+  - `survey_response_answers.other_text text`
+  - database check requiring nonblank Other text and capping it at 240 chars
+- Added shared contracts for `allowOther`, `otherText`, answer request payloads,
+  admin attempt detail Other text, and report `otherResponseCount`.
+- Added builder create/update validation and admin UI toggles for applicable
+  draft questions only.
+- Preserved `allow_other` through survey duplication.
+- Added participant runner state and UI for the system-generated Other row and
+  free-text input.
+- Added server-side validation for single-answer and page-answer saves:
+  - single-select accepts exactly one standard option or one nonblank Other
+    response
+  - single-select rejects mixed standard + Other responses
+  - multi-select accepts standard-only, Other-only, or mixed standard + Other
+    responses
+  - selected Other with blank text is rejected
+  - unsupported question types and non-Other-enabled questions reject Other data
+  - stray Other fields on text, integer, and scale answers are rejected
+- Updated answer saving/loading to persist `other_text` on
+  `survey_response_answers` while keeping `survey_response_selected_options`
+  limited to real option IDs.
+- Updated progressive completion/meaningful-response logic to count nonblank
+  Other text as an answered choice response.
+- Updated reporting and CSV:
+  - aggregate question stats count Other responses separately
+  - attempt detail includes `otherText`
+  - Results UI displays mixed multi-select standard options plus Other text
+  - CSV adds an `other_text` column separate from `selected_options`
+  - hidden-tag rollup remains based only on real selected options and value tags
+- Added focused API tests in `apps/api/test/choiceOtherAnswers.test.ts`.
+- Updated `markdown/DATA_MODEL_VISION.md` and `markdown/FOLLOW_UPS.md`.
+
+## Important Decisions
+
+### Other Is Not An Answer Option
+
+Decision:
+Represent selected Other in persisted responses by non-null
+`survey_response_answers.other_text`; do not create an `answer_options` row.
+
+Reason:
+The phase prompt requires Other to be system-generated and stored separately
+from standard option IDs.
+
+Tradeoff:
+There is no persisted boolean for "Other selected"; a saved Other response is
+represented by nonblank text. Request validation still accepts a separate
+`isOtherSelected` flag so the API can reject checked-but-empty Other input.
+
+### Option-Based Logic Ignores Other
+
+Decision:
+Conditional logic continues to match only `selectedAnswerOptionIds` from real
+answer options.
+
+Reason:
+Other responses have no option ID and are explicitly out of scope for hidden
+tags or conditional logic.
+
+Tradeoff:
+Admins cannot branch on Other text in this phase. If needed later, that should
+be designed as a separate text/value rule feature.
+
+### Raw Other Reporting
+
+Decision:
+Display/export raw Other text per response and count Other responses per
+question; do not aggregate identical custom strings.
+
+Reason:
+The prompt left aggregation open and said to defer it if unanswered.
+
+Tradeoff:
+Reports remain correct and transparent, but do not yet normalize equivalent
+custom strings for charts.
+
+## Architecture Notes
+
+- Database/schema impact: migration `0024_choice_other_answers.sql` is additive
+  and default-disabled for existing questions/responses.
+- API contract impact: answer request payloads include `isOtherSelected` and
+  `otherText`; responses include `otherText`; reports include
+  `otherResponseCount`.
+- Auth or authorization impact: no auth/role boundary changes.
+- Data privacy or visibility impact: Other text is participant-entered response
+  data visible in admin reports/CSV like other answers; hidden tags remain
+  admin-only and are not attached to Other.
+- Frontend UX impact: admins see Allow Other only for choice questions;
+  participants see a generated Other row only when enabled.
+- Environment or deployment impact: run migration `0024` before using Allow
+  Other in any environment.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm test -w apps/api -- choiceOtherAnswers
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Initial sandboxed targeted API test failed with `EPERM 127.0.0.1:5432`
+  because local PostgreSQL access was blocked; the first filter also used an
+  overly specific workspace path.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- choiceOtherAnswers` (8 tests)
+- Passed after addressing Claude S1 with approved local PostgreSQL access:
+  `npm test -w apps/api -- choiceOtherAnswers` (9 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 199 tests across 20 API files
+- Passed after addressing Claude S1 with approved local PostgreSQL access:
+  `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 200 tests across 20 API files
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Completed by developer on 2026-06-23. Browser pass covered admin Allow Other
+  toggles, participant standard-only/Other-only/mixed submissions, empty Other
+  validation, Results/CSV display, hidden-tag isolation, and responsive checks.
+
+## Problems Encountered
+
+- Problem:
+  Sandboxed API tests could not connect to local PostgreSQL.
+  Resolution:
+  Reran targeted and full test suites with approved local PostgreSQL access.
+
+- Problem:
+  Adding required shared fields exposed a few test fixture defaults and literal
+  inference issues.
+  Resolution:
+  Added `allowOther: false` and `otherText: null` defaults in shared/web test
+  builders and made the participant runner generic setter calls explicit.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_21.txt`
+
+Status:
+
+- Completed. Claude approved for commit with no critical or blocking issues.
+
+Findings and disposition:
+
+- Approved: data-model separation, required validation, page-answer parity,
+  reporting/CSV separation, hidden-tag isolation, backward compatibility,
+  unsupported-type UI boundaries, and no Phase 20 drift.
+- Addressed S1: text and integer answers now reject stray
+  `isOtherSelected`/`otherText` fields instead of silently dropping them. Added
+  a regression test covering text and integer unsupported Other answer fields.
+- Accepted note S2: the unsupported-type guard now lives at the top of
+  `validateAnswerForQuestion`, so it is the active guard for text, integer,
+  scale, and future unsupported types.
+- Accepted low-severity S3: the builder checkbox remains uncontrolled for now;
+  submit behavior is correctly gated client-side and server-side, so no invalid
+  data can persist. This can be revisited as visual polish if it proves
+  confusing during manual testing.
+
+## Follow-Up Tasks
+
+- Phase 21 manual browser pass completed on 2026-06-23.
+- Have Claude Code write `notes/claude_review_phase_21.txt` and address any
+  accepted findings. Done: review completed and S1 addressed.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical or blocking issues
+  and automated hidden-tag isolation checks were added
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes

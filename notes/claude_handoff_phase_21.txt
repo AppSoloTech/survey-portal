@@ -1,0 +1,204 @@
+# Claude Review Handoff — Phase 21
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_21.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 21 for:
+
+- data model separation between real answer options and system-generated Other
+- required validation for single-select and multi-select Other responses
+- page-based runner and page-answer endpoint compatibility
+- reporting and CSV display of Other text separately from standard options
+- hidden-tag isolation for Other responses
+- backward compatibility with existing responses and disabled-by-default behavior
+- accidental support for unsupported question types
+- accidental drift into Phase 20 admin-user/profile/contact tooling
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_21.txt`
+- `prompts/prompt_20.txt`
+- `notes/claude_handoff_phase_20.txt`
+- `notes/claude_review_phase_20.txt`
+- `database/migrations/0023_user_profile_contact_fields.sql`
+- `database/migrations/0024_choice_other_answers.sql`
+- `apps/api/src/services/surveyAttempts.ts`
+- `apps/api/src/services/surveyReporting.ts`
+- `apps/api/src/routes/surveyBuilderRoutes.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+- `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+- `packages/shared/src/index.ts`
+
+## Phase Scope
+
+Implemented:
+
+- Added migration `0024_choice_other_answers.sql`.
+  - `survey_questions.allow_other boolean not null default false`
+  - check constraint limiting `allow_other` to `single_select` and `multi_select`
+  - `survey_response_answers.other_text text`
+  - check constraint bounding nonblank Other text to 240 characters
+- Added shared contracts:
+  - `SurveyQuestion.allowOther`
+  - `SurveyResponseAnswer.otherText`
+  - `SurveyAnswerRequestPayload`
+  - `SurveyPageAnswerRequestPayload`
+  - `AdminAttemptAnswer.otherText`
+  - `SurveyReportQuestionStat.otherResponseCount`
+- Added builder create/update validation for `allowOther`.
+  - Allowed only on `single_select` and `multi_select`
+  - Defaults false for existing and newly created unsupported questions
+  - Preserved through survey duplication
+- Added admin UI Allow Other toggle on draft single-select and multi-select questions only.
+- Added participant UI system-generated Other row and text input when enabled.
+- Added answer validation:
+  - single-select required accepts exactly one standard option or one nonblank Other response
+  - single-select rejects standard + Other
+  - multi-select required accepts at least one standard option or nonblank Other response
+  - multi-select accepts standard + Other together
+  - selected Other with blank text is rejected
+  - Other answers are rejected on unsupported question types or questions without `allowOther`
+- Stored Other text in `survey_response_answers.other_text`, not in `answer_options`.
+- Reporting changes:
+  - response content checks include `other_text`
+  - per-question stats include `otherResponseCount`
+  - attempt detail returns `otherText`
+  - CSV adds an `other_text` column separate from `selected_options`
+  - hidden tags are still derived only from selected real answer options and value tags
+- Updated docs:
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+
+Non-goals respected:
+
+- No normal `answer_options` row is created for Other.
+- No hidden tags on Other.
+- No conditional logic triggered by Other.
+- No Other support for `scale`, `text`, or `integer`.
+- No changes to Phase 20 admin user tools, password reset, profile contact fields, or `/api/profile`.
+- No cleanup of old Phase 19 profile columns.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `database/migrations/0024_choice_other_answers.sql`
+- `packages/shared/src/index.ts`
+- `packages/shared/test/resolveAttemptPath.test.ts`
+- `packages/shared/test/resolveAttemptPagePath.test.ts`
+- `packages/shared/test/resolveNextQuestion.test.ts`
+- `apps/api/src/services/validation.ts`
+- `apps/api/src/services/surveyRecords.ts`
+- `apps/api/src/services/surveyStructure.ts`
+- `apps/api/src/services/surveyBuilder.ts`
+- `apps/api/src/routes/surveyBuilderRoutes.ts`
+- `apps/api/src/services/surveyAttempts.ts`
+- `apps/api/src/services/surveyReporting.ts`
+- `apps/api/test/helpers/factories.ts`
+- `apps/api/test/choiceOtherAnswers.test.ts`
+- `apps/api/test/reporting.test.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+- `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+- `apps/web/src/components/admin/surveyFlowGraph.test.ts`
+- `apps/web/src/styles.css`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_21.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm test -w apps/api -- choiceOtherAnswers
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Initial sandboxed targeted API test was blocked by local PostgreSQL access
+  (`EPERM 127.0.0.1:5432`) and also used an overly specific filter path.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- choiceOtherAnswers` (8 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 47 tests
+  - web: 52 tests
+  - API: 199 tests across 20 files
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser. Follow-up logged for Allow Other editor, runner, Results,
+  CSV, and responsive checks at 375/768/1280px.
+
+## Specific Questions
+
+- Is storing only `other_text` sufficient to represent selected Other, with
+  non-null text meaning selected in persisted responses?
+- Are the single-select and multi-select required-validation rules correct and
+  consistently applied to both single-answer and page-answer endpoints?
+- Does the migration preserve backward compatibility and block unsupported
+  `allow_other` usage at the database layer?
+- Does reporting keep Other text separate enough from selected real options?
+- Are hidden tags isolated from Other responses in report detail, rollups, and
+  CSV?
+- Did the UI avoid implying Other support for scale/text/integer questions?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_21.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

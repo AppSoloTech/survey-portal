@@ -1,0 +1,130 @@
+# Claude Review — Phase 21 (Choice "Other" Answer Foundation)
+
+Reviewer: Claude Code
+Scope reviewed: current phase diff only — migration 0024, shared types, validation.ts,
+surveyAttempts.ts, surveyReporting.ts, surveyRecords.ts, surveyStructure.ts, surveyBuilder.ts,
+surveyBuilderRoutes.ts, web API client, SurveyAttemptPage.tsx, SurveyQuestionsPage.tsx,
+SurveyBuilderComponents.tsx, SurveyResultsPage.tsx, styles, tests, and docs.
+
+Verdict: Approve for commit. No critical or blocking issues. The data-model separation,
+required-validation rules, dual-endpoint parity, reporting/CSV separation, hidden-tag
+isolation, and backward compatibility all hold. Suggestions below are low-severity polish.
+
+---
+
+## 1. Critical issues
+
+None.
+
+Verified against each review goal:
+
+- Data model separation: Other text is stored only in `survey_response_answers.other_text`.
+  No `answer_options` row is created for Other (duplicateSurveyTree and the builder insert/
+  update only carry `allow_other`; the answer-save path writes `other_text` on the response
+  row, never a synthetic option). Selected real options and Other are independent columns.
+- Required validation (single-select): `selectionCount = standardOptions + (otherSelected?1:0)`;
+  required rejects `!= 1`, optional rejects `> 1`. Standard + Other is correctly rejected for
+  single-select. Other-only (count 1) is accepted with an empty option-id list.
+- Required validation (multi-select): required is satisfied by `>= 1` standard option OR a
+  valid Other; standard + Other together is allowed. Correct.
+- Blank Other: `validateOtherSelection` rejects "Other selected with blank text" because
+  `validateAnswerBody` trims `otherText` to null and `isOtherSelected` is tracked separately
+  (`isOtherSelectedValue === true || otherText !== null`). Empty Other never persists.
+- Dual-endpoint parity: `savePageAnswers` builds the same `AnswerRequestValue` (defaulting
+  Other fields) and calls the identical `validateAnswerForQuestion`, so the single-answer and
+  page-answer endpoints share one validation path. Test `saves Other through the page-answer
+  endpoint` covers this.
+- Reporting/CSV: `meaningfulResponseSql` now counts `other_text is not null`; per-question
+  `otherResponseCount` is a separate filtered count; CSV adds a dedicated `other_text` column
+  positioned between `selected_options` and `hidden_tags` (header and row stay aligned);
+  attempt detail returns `otherText`. Other is displayed separately from real options.
+- Hidden-tag isolation: hidden tags are still derived only from selected real answer options
+  (`selectedOptions[].hiddenTags`) and value tags. `otherText` is never joined to tags in
+  rollups, attempt detail, or CSV. Results UI renders Other as plain "Other: <text>" with no
+  tag chips. Confirmed.
+- Backward compatibility: migration 0024 is additive. `allow_other boolean not null default
+  false` backfills existing rows to false, satisfying the new CHECK
+  (`allow_other = false or question_type in (...)`) regardless of type. `other_text` is
+  nullable and its CHECK permits null. `drop constraint if exists` before each `add constraint`
+  makes the migration re-runnable/idempotent. Existing responses remain valid.
+- Unsupported types: builder validation rejects `allowOther` on non-choice types; the toggle
+  renders only for single/multi (builder, preview, runner); scale explicitly rejects Other.
+
+## 2. Suggested improvements (low severity)
+
+- S1 (validation consistency): In `validateAnswerForQuestion`, the `text` and `integer`
+  branches return early and therefore SILENTLY IGNORE any `isOtherSelected`/`otherText` sent
+  by a misbehaving client (Other is dropped, stored null). By contrast, `scale` and the
+  generic guard at the end explicitly reject Other. The handoff states Other is "rejected on
+  unsupported question types," so text/integer are inconsistent with that wording. Outcome is
+  safe (no corruption, no fake option, Other dropped), and the UI never sends Other for these
+  types — but for parity consider rejecting in the text/integer branches too, or documenting
+  the leniency. Not blocking.
+
+- S2 (dead-ish guard): The generic guard at surveyAttempts.ts (the
+  `question_type !== single_select && !== multi_select && (isOtherSelected || otherText)`
+  block) is unreachable for the current concrete types — text/integer return earlier and scale
+  is handled inline. It only protects hypothetical future types. Harmless as defense-in-depth;
+  noting so it is not mistaken for the primary text/integer guard (see S1).
+
+- S3 (uncontrolled checkbox): `QuestionEditor`'s "Allow Other" checkbox uses uncontrolled
+  `defaultChecked`. If an admin changes the question type in the dropdown mid-edit, the
+  checkbox visibility (`supportsOther`) updates from the live type but the checked state will
+  not reset (uncontrolled inputs ignore prop changes after mount). Submit is correctly gated
+  on the live `questionType` both client-side (`supportsOther(questionType) && ...`) and
+  server-side, so no bad data is written — purely a transient visual nit. Low.
+
+## 3. Acceptable tradeoffs
+
+- Persisted representation of "Other selected" is simply `other_text is not null`. The
+  transient `isOtherSelected` request flag exists only to reject a selected-but-blank Other at
+  validation time; since blank Other never persists, non-null `other_text` is a sufficient and
+  unambiguous stored signal (answers handoff open question #1).
+- No aggregation of identical Other text values in reports — raw text per response/export, as
+  the prompt's open-question default specifies. Reasonable to defer.
+- `otherAnswerTextMaxLength` reuses `answerOptionTextMaxLength` (240) and the DB CHECK caps at
+  240 as well — server and database bounds are consistent. (This intentionally differs from the
+  Phase 20 contact fields' 120 cap; Other text is participant response data, sized like option
+  text, which is appropriate.)
+
+## 4. Questions / assumptions
+
+- Confirm S1: is silently ignoring Other on text/integer acceptable, or should it 400 for
+  parity with scale? Either is defensible; flagging for an explicit decision.
+- Confirm raw (non-aggregated) Other reporting is the intended MVP behavior.
+- Assumption verified: Other text is treated strictly as participant response data, not as
+  admin profile/contact metadata — no overlap with Phase 20 surfaces.
+
+## 5. Product UX alignment notes
+
+- "Allow Other" appears only for single/multi questions and only on draft surveys
+  (`disabled={!isDraft}` / `disabled={isPublished}`), preserving published read-only behavior.
+- Runner renders the system-generated Other row only when `allowOther`, as a radio for
+  single-select (mutually exclusive with standard options via both DOM `name` grouping and
+  paired state clearing) and a checkbox for multi-select, with a required free-text input that
+  is disabled until Other is selected. Hydration restores Other from saved `other_text`, so
+  resume works.
+- Results page shows "<n> other" in question counts and renders Other text separately from
+  selected options, with no hidden-tag chips on Other. CSV mirrors this.
+- No drift into Phase 20 admin-user/profile/contact tooling; `/api/profile` untouched; no new
+  question types; no conditional logic triggered by Other; no hidden tags on Other.
+
+## 6. Commit readiness
+
+- Requirements implemented: Yes.
+- Data-model separation / no synthetic option: Yes (verified + tested).
+- Required validation (single/multi/blank): Yes (verified + tested).
+- Single-answer and page-answer endpoint parity: Yes (shared validator; tested).
+- Reporting + CSV separation of Other text: Yes (verified + tested).
+- Hidden-tag isolation: Yes (verified + tested).
+- Backward compatibility / disabled-by-default / idempotent migration: Yes.
+- No unsupported-type Other in the UI; no Phase 20 drift: Yes.
+- Tests: 8 focused choiceOtherAnswers tests plus reporting CSV update cover create/update,
+  non-choice rejection, single-select Other-only, standard+Other rejection, multi-select
+  mixed, blank-text rejection, the page-answer endpoint, and reporting/CSV without fake ids or
+  hidden tags. Full suite reported green (shared 47, web 52, API 199).
+- Outstanding: manual browser pass over the Allow Other editor, runner, Results, CSV, and
+  responsive widths (375/768/1280px), already logged as a follow-up. Not a blocker.
+
+Ready to commit, with the manual responsive browser pass recommended as the remaining
+follow-up and the S1 text/integer-rejection decision optionally addressed.

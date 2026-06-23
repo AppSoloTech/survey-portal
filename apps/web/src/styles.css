@@ -1771,6 +1771,17 @@ main {
   animation: check-pop var(--speed-base) var(--ease-spring);
 }
 
+.option-row-other {
+  flex-wrap: wrap;
+}
+
+.option-row input[type="text"] {
+  block-size: auto;
+  flex: 1 1 12rem;
+  inline-size: auto;
+  min-inline-size: min(100%, 12rem);
+}
+
 @keyframes check-pop {
   0% {
     transform: scale(0.7);

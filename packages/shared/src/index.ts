@@ -137,6 +137,7 @@ export interface SurveyQuestion {
   pageId: number;
   questionText: string;
   questionType: SurveyQuestionType;
+  allowOther: boolean;
   scaleMin: number | null;
   scaleMax: number | null;
   displayOrder: number;
@@ -272,6 +273,7 @@ export interface SurveyResponseAnswer {
   answerText: string | null;
   answerInteger: number | null;
   selectedAnswerOptionIds: number[];
+  otherText: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -302,6 +304,21 @@ export interface SurveyAttemptDetail {
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
+}
+
+export interface SurveyAnswerRequestPayload {
+  attemptId: number;
+  questionId: number;
+  answerText: string | null;
+  answerInteger: number | null;
+  selectedAnswerOptionIds: number[];
+  isOtherSelected: boolean;
+  otherText: string | null;
+}
+
+export interface SurveyPageAnswerRequestPayload {
+  attemptId: number;
+  answers: SurveyAnswerRequestPayload[];
 }
 
 export interface MySurveysResponse {
@@ -410,6 +427,8 @@ export interface SurveyReportQuestionStat {
   // Present for option-backed questions (selects and scales); empty for
   // text and integer questions.
   optionStats: SurveyReportOptionStat[];
+  // Counts saved custom "Other" responses separately from real answer options.
+  otherResponseCount: number;
 }
 
 // Admin-only rollup of hidden tag pairs implied by participants' selected
@@ -479,6 +498,7 @@ export interface AdminAttemptAnswer {
   answerText: string | null;
   answerInteger: number | null;
   selectedOptions: AdminAttemptAnswerOption[];
+  otherText: string | null;
   // Hidden value tags whose condition this answer satisfies (text/integer
   // questions). Admin-only, like selectedOptions[].hiddenTags.
   valueTags: { tagKey: string; tagValue: string }[];
@@ -1040,12 +1060,12 @@ function hasProgressiveResponseForQuestion(
   }
 
   if (question.questionType === "single_select") {
-    return response.selectedAnswerOptionIds.length === 1;
+    return response.selectedAnswerOptionIds.length === 1 || Boolean(response.otherText?.trim());
   }
 
   if (question.questionType === "scale") {
     return response.selectedAnswerOptionIds.length === 1 && Number.isInteger(response.answerInteger);
   }
 
-  return response.selectedAnswerOptionIds.length > 0;
+  return response.selectedAnswerOptionIds.length > 0 || Boolean(response.otherText?.trim());
 }

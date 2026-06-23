@@ -68,6 +68,10 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   const [selectedAnswerOptionIdsByQuestionId, setSelectedAnswerOptionIdsByQuestionId] = useState<
     DraftAnswerMap<number[]>
   >({});
+  const [isOtherSelectedByQuestionId, setIsOtherSelectedByQuestionId] = useState<
+    DraftAnswerMap<boolean>
+  >({});
+  const [otherTextByQuestionId, setOtherTextByQuestionId] = useState<DraftAnswerMap<string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isContactEmailSubmitting, setIsContactEmailSubmitting] = useState(false);
@@ -155,6 +159,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       setAnswerTextByQuestionId({});
       setAnswerIntegerByQuestionId({});
       setSelectedAnswerOptionIdsByQuestionId({});
+      setIsOtherSelectedByQuestionId({});
+      setOtherTextByQuestionId({});
       setContactEmailDraft("");
       setContactEmailMessage(null);
       setContactEmailError(null);
@@ -177,6 +183,14 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         ...response.selectedAnswerOptionIds
       ])
     );
+    setIsOtherSelectedByQuestionId((current) =>
+      hydrateDrafts(current, activeSurvey.attempt, (response) =>
+        Boolean(response.otherText?.trim())
+      )
+    );
+    setOtherTextByQuestionId((current) =>
+      hydrateDrafts(current, activeSurvey.attempt, (response) => response.otherText ?? "")
+    );
   }, [activeSurvey?.attempt]);
 
   useEffect(() => {
@@ -197,6 +211,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
     const answerText = answerTextByQuestionId[question.id] ?? "";
     const answerInteger = answerIntegerByQuestionId[question.id] ?? "";
     const selectedAnswerOptionIds = selectedAnswerOptionIdsByQuestionId[question.id] ?? [];
+    const isOtherSelected = isOtherSelectedByQuestionId[question.id] ?? false;
+    const otherText = otherTextByQuestionId[question.id] ?? "";
     const integerValue = answerInteger.trim() ? Number(answerInteger) : null;
 
     if (
@@ -232,7 +248,18 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
           question.questionType === "multi_select" ||
           question.questionType === "scale"
             ? selectedAnswerOptionIds
-            : []
+            : [],
+        isOtherSelected:
+          (question.questionType === "single_select" || question.questionType === "multi_select") &&
+          question.allowOther
+            ? isOtherSelected
+            : false,
+        otherText:
+          (question.questionType === "single_select" || question.questionType === "multi_select") &&
+          question.allowOther &&
+          isOtherSelected
+            ? otherText
+            : null
       };
       const response =
         mode === "anonymous" && anonymousToken && activeSurvey.attemptAccessToken
@@ -420,6 +447,9 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         ...current,
         [question.id]: [optionId]
       }));
+      if (question.questionType === "single_select") {
+        setDraftAnswer<boolean>(setIsOtherSelectedByQuestionId, question.id, false);
+      }
       return;
     }
 
@@ -441,6 +471,18 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
 
   function handleIntegerChange(questionId: number, value: string) {
     setDraftAnswer(setAnswerIntegerByQuestionId, questionId, value);
+  }
+
+  function handleOtherSelection(question: SurveyQuestion, checked: boolean) {
+    setDraftAnswer(setIsOtherSelectedByQuestionId, question.id, checked);
+
+    if (checked && question.questionType === "single_select") {
+      setDraftAnswer<number[]>(setSelectedAnswerOptionIdsByQuestionId, question.id, []);
+    }
+  }
+
+  function handleOtherTextChange(questionId: number, value: string) {
+    setDraftAnswer(setOtherTextByQuestionId, questionId, value);
   }
 
   function handleClose() {
@@ -490,12 +532,16 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
             onComplete={() => void handleComplete()}
             onOpenContactEmailModal={handleOpenContactEmailModal}
             onIntegerChange={handleIntegerChange}
+            onOtherSelectionChange={handleOtherSelection}
+            onOtherTextChange={handleOtherTextChange}
             onPrevious={handlePrevious}
             onResume={handleResume}
             onSelectionChange={handleSelection}
             onSubmit={handleSubmitAnswer}
             onTextChange={handleTextChange}
             selectedAnswerOptionIdsByQuestionId={selectedAnswerOptionIdsByQuestionId}
+            isOtherSelectedByQuestionId={isOtherSelectedByQuestionId}
+            otherTextByQuestionId={otherTextByQuestionId}
           />
           {mode === "anonymous" && activeSurvey.attempt.status === "completed" ? (
             <AnonymousContactEmailModal
@@ -524,16 +570,20 @@ function SurveyRunner({
   answerTextByQuestionId,
   contactEmailMessage,
   isAnonymous,
+  isOtherSelectedByQuestionId,
   isSubmitting,
   onClose,
   onComplete,
   onOpenContactEmailModal,
   onIntegerChange,
+  onOtherSelectionChange,
+  onOtherTextChange,
   onPrevious,
   onResume,
   onSelectionChange,
   onSubmit,
   onTextChange,
+  otherTextByQuestionId,
   selectedAnswerOptionIdsByQuestionId
 }: {
   activeSurvey: ActiveSurveyState;
@@ -541,17 +591,21 @@ function SurveyRunner({
   answerTextByQuestionId: DraftAnswerMap<string>;
   contactEmailMessage: string | null;
   isAnonymous: boolean;
+  isOtherSelectedByQuestionId: DraftAnswerMap<boolean>;
   isSubmitting: boolean;
   onClose: () => void;
   onComplete: () => void;
   onOpenContactEmailModal: () => void;
   onIntegerChange: (questionId: number, value: string) => void;
+  onOtherSelectionChange: (question: SurveyQuestion, checked: boolean) => void;
+  onOtherTextChange: (questionId: number, value: string) => void;
   onPrevious: () => void;
   onResume: () => void;
   onSelectionChange: (question: SurveyQuestion, optionId: number, checked: boolean) => void;
   onSubmit: (question: SurveyQuestion, event: FormEvent<HTMLFormElement>) => void;
   onTextChange: (questionId: number, value: string) => void;
   selectedAnswerOptionIdsByQuestionId: DraftAnswerMap<number[]>;
+  otherTextByQuestionId: DraftAnswerMap<string>;
 }) {
   const { survey, attempt, currentPage, currentQuestion, currentPageQuestionIds } = activeSurvey;
   // Each question (and the completion panel) cascades in as it appears.
@@ -710,9 +764,13 @@ function SurveyRunner({
               answerText: answerTextByQuestionId[question.id] ?? "",
               currentQuestion: question,
               onIntegerChange,
+              onOtherSelectionChange,
+              onOtherTextChange,
               onSelectionChange,
               onTextChange,
-              selectedAnswerOptionIds: selectedAnswerOptionIdsByQuestionId[question.id] ?? []
+              selectedAnswerOptionIds: selectedAnswerOptionIdsByQuestionId[question.id] ?? [],
+              isOtherSelected: isOtherSelectedByQuestionId[question.id] ?? false,
+              otherText: otherTextByQuestionId[question.id] ?? ""
             })}
             {!isActiveQuestion ? (
               <div className="question-step-actions">
@@ -847,17 +905,25 @@ function renderQuestionControl({
   answerInteger,
   answerText,
   currentQuestion,
+  isOtherSelected,
   onIntegerChange,
+  onOtherSelectionChange,
+  onOtherTextChange,
   onSelectionChange,
   onTextChange,
+  otherText,
   selectedAnswerOptionIds
 }: {
   answerInteger: string;
   answerText: string;
   currentQuestion: SurveyQuestion;
+  isOtherSelected: boolean;
   onIntegerChange: (questionId: number, value: string) => void;
+  onOtherSelectionChange: (question: SurveyQuestion, checked: boolean) => void;
+  onOtherTextChange: (questionId: number, value: string) => void;
   onSelectionChange: (question: SurveyQuestion, optionId: number, checked: boolean) => void;
   onTextChange: (questionId: number, value: string) => void;
+  otherText: string;
   selectedAnswerOptionIds: number[];
 }) {
   if (currentQuestion.questionType === "text") {
@@ -913,6 +979,34 @@ function renderQuestionControl({
           <span>{option.optionText}</span>
         </label>
       ))}
+      {currentQuestion.allowOther ? (
+        <label className="option-row option-row-other" data-reveal>
+          <input
+            checked={isOtherSelected}
+            name={`question-${currentQuestion.id}`}
+            onChange={(event) =>
+              onOtherSelectionChange(currentQuestion, event.target.checked)
+            }
+            required={
+              currentQuestion.questionType === "single_select" &&
+              currentQuestion.isRequired &&
+              selectedAnswerOptionIds.length === 0 &&
+              !isOtherSelected
+            }
+            type={currentQuestion.questionType === "single_select" ? "radio" : "checkbox"}
+          />
+          <span>Other</span>
+          <input
+            aria-label="Other answer"
+            disabled={!isOtherSelected}
+            onChange={(event) => onOtherTextChange(currentQuestion.id, event.target.value)}
+            placeholder="Enter your answer"
+            required={isOtherSelected}
+            type="text"
+            value={otherText}
+          />
+        </label>
+      ) : null}
     </div>
   );
 }

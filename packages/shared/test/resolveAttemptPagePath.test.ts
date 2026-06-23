@@ -39,6 +39,7 @@ function makeQuestion(
     pageId,
     questionText: `Question ${id}`,
     questionType: "single_select",
+    allowOther: false,
     scaleMin: null,
     scaleMax: null,
     displayOrder,
@@ -77,6 +78,7 @@ function makeResponse(questionId: number, selectedAnswerOptionIds: number[]): Su
     answerText: null,
     answerInteger: null,
     selectedAnswerOptionIds,
+    otherText: null,
     createdAt: timestamp,
     updatedAt: timestamp
   };

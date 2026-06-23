@@ -434,6 +434,7 @@ describe("GET /api/surveys/:id/export.csv", () => {
       "answer_text",
       "answer_integer",
       "selected_options",
+      "other_text",
       "hidden_tags",
       "on_final_path"
     ]);

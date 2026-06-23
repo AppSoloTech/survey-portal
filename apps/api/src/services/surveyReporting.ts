@@ -34,6 +34,7 @@ interface QuestionStatRecord {
   question_id: number;
   answered_count: string;
   blank_count: string;
+  other_response_count: string;
 }
 
 interface ParticipantRecord {
@@ -58,6 +59,7 @@ function buildAnonymousParticipant(contactEmail: string | null): ReportParticipa
 const meaningfulResponseSql = `(
   survey_response_answers.answer_text is not null
   or survey_response_answers.answer_integer is not null
+  or survey_response_answers.other_text is not null
   or exists (
     select 1
     from survey_response_selected_options
@@ -138,10 +140,13 @@ export async function fetchSurveyReportSummary(
   const statsValues: unknown[] = [surveyId];
   const statsRange = attemptRangeFilterSql("survey_attempts", range, statsValues);
   const statsResult = await pool.query<QuestionStatRecord>(
-    `select
+     `select
        survey_questions.id as question_id,
        count(survey_response_answers.id) filter (where ${meaningfulResponseSql} and ${statsRange})::text as answered_count,
-       count(survey_response_answers.id) filter (where not ${meaningfulResponseSql} and ${statsRange})::text as blank_count
+       count(survey_response_answers.id) filter (where not ${meaningfulResponseSql} and ${statsRange})::text as blank_count,
+       count(survey_response_answers.id) filter (
+         where survey_response_answers.other_text is not null and ${statsRange}
+       )::text as other_response_count
      from survey_questions
      left join survey_response_answers
        on survey_response_answers.question_id = survey_questions.id
@@ -272,7 +277,8 @@ export async function fetchSurveyReportSummary(
           optionText: option.optionText,
           displayOrder: option.displayOrder,
           selectionCount: selectionCountByOptionId.get(option.id) ?? 0
-        }))
+        })),
+      otherResponseCount: Number(statsByQuestionId.get(question.id)?.other_response_count ?? 0)
     })),
     tagStats: tagResult.rows.map((row) => ({
       tagKey: row.tag_key,
@@ -411,6 +417,7 @@ export async function buildSurveyCsvExport(
     "answer_text",
     "answer_integer",
     "selected_options",
+    "other_text",
     "hidden_tags",
     "on_final_path"
   ];
@@ -444,6 +451,7 @@ export async function buildSurveyCsvExport(
         answer.answerText,
         answer.answerInteger,
         answer.selectedOptions.map((option) => option.optionText).join("; "),
+        answer.otherText,
         [
           ...answer.selectedOptions.flatMap((option) =>
             option.hiddenTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`)
@@ -520,6 +528,7 @@ export function buildAdminAttemptAnswers(
       answerText: response?.answerText ?? null,
       answerInteger: response?.answerInteger ?? null,
       selectedOptions,
+      otherText: response?.otherText ?? null,
       valueTags: (question.valueTags ?? [])
         .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
         .map((valueTag) => ({ tagKey: valueTag.tagKey, tagValue: valueTag.tagValue })),
@@ -532,7 +541,8 @@ function responseHasContent(response: SurveyResponseAnswer): boolean {
   return (
     Boolean(response.answerText?.trim()) ||
     response.answerInteger !== null ||
-    response.selectedAnswerOptionIds.length > 0
+    response.selectedAnswerOptionIds.length > 0 ||
+    Boolean(response.otherText?.trim())
   );
 }
 
@@ -583,6 +593,7 @@ async function fetchAttemptsWithResponsesForSurvey(
        question_id,
        answer_text,
        answer_integer,
+       other_text,
        created_at,
        updated_at
      from survey_response_answers

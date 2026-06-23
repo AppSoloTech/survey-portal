@@ -150,7 +150,8 @@ export function SurveyQuestionsPage() {
           scaleMin: questionType === "scale" ? readFormInteger(data, "scaleMin") : null,
           scaleMax: questionType === "scale" ? readFormInteger(data, "scaleMax") : null,
           isRequired: data.get("isRequired") === "on",
-          helpText: readNullableFormText(data, "helpText")
+          helpText: readNullableFormText(data, "helpText"),
+          allowOther: supportsOther(questionType) && data.get("allowOther") === "on"
         }),
       "Question added"
     );
@@ -196,7 +197,8 @@ export function SurveyQuestionsPage() {
           scaleMin: questionType === "scale" ? readFormInteger(data, "scaleMin") : null,
           scaleMax: questionType === "scale" ? readFormInteger(data, "scaleMax") : null,
           isRequired: data.get("isRequired") === "on",
-          helpText: readNullableFormText(data, "helpText")
+          helpText: readNullableFormText(data, "helpText"),
+          allowOther: supportsOther(questionType) && data.get("allowOther") === "on"
         }),
       `${formatQuestionLocator(survey, question)} saved`
     );
@@ -579,6 +581,12 @@ export function SurveyQuestionsPage() {
               <input defaultChecked disabled={!isDraft} name="isRequired" type="checkbox" />
               Required
             </label>
+            {supportsOther(newQuestionType) ? (
+              <label className="checkbox-label">
+                <input disabled={!isDraft} name="allowOther" type="checkbox" />
+                Allow Other
+              </label>
+            ) : null}
             <button
               className="button-link compact-button primary-button"
               disabled={isSubmitting || !isDraft}
@@ -655,4 +663,8 @@ export function SurveyQuestionsPage() {
       </div>
     </div>
   );
+}
+
+function supportsOther(questionType: SurveyQuestionType): boolean {
+  return questionType === "single_select" || questionType === "multi_select";
 }

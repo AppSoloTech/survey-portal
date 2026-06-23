@@ -108,6 +108,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
        survey_questions.page_id,
        question_text,
        question_type,
+       allow_other,
        survey_questions.display_order,
        is_required,
        help_text,

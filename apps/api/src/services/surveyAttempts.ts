@@ -515,6 +515,7 @@ async function fetchAttemptsByCondition(
        question_id,
        answer_text,
        answer_integer,
+       other_text,
        created_at,
        updated_at
      from survey_response_answers
@@ -569,6 +570,14 @@ export async function validateAnswerForQuestion(
   question: SurveyQuestionRecord,
   value: AnswerRequestValue
 ): Promise<ValidationResult<NormalizedAnswerValue>> {
+  if (
+    question.question_type !== "single_select" &&
+    question.question_type !== "multi_select" &&
+    (value.isOtherSelected || value.otherText)
+  ) {
+    return { ok: false, error: "Other is only supported for single-select and multi-select questions" };
+  }
+
   if (question.question_type === "text") {
     if (question.is_required && !value.answerText) {
       return { ok: false, error: "A text answer is required" };
@@ -579,7 +588,8 @@ export async function validateAnswerForQuestion(
       value: {
         answerText: value.answerText,
         answerInteger: null,
-        selectedAnswerOptionIds: []
+        selectedAnswerOptionIds: [],
+        otherText: null
       }
     };
   }
@@ -594,23 +604,43 @@ export async function validateAnswerForQuestion(
       value: {
         answerText: null,
         answerInteger: value.answerInteger,
-        selectedAnswerOptionIds: []
+        selectedAnswerOptionIds: [],
+        otherText: null
       }
     };
   }
 
   if (question.question_type === "single_select") {
-    if (question.is_required && value.selectedAnswerOptionIds.length !== 1) {
+    const otherValidation = validateOtherSelection(question, value);
+
+    if (!otherValidation.ok) {
+      return otherValidation;
+    }
+
+    const selectionCount =
+      value.selectedAnswerOptionIds.length + (otherValidation.value ? 1 : 0);
+
+    if (question.is_required && selectionCount !== 1) {
       return { ok: false, error: "Select exactly one answer option" };
     }
 
-    if (!question.is_required && value.selectedAnswerOptionIds.length > 1) {
+    if (!question.is_required && selectionCount > 1) {
       return { ok: false, error: "Select no more than one answer option" };
     }
   }
 
   if (question.question_type === "multi_select") {
-    if (question.is_required && value.selectedAnswerOptionIds.length === 0) {
+    const otherValidation = validateOtherSelection(question, value);
+
+    if (!otherValidation.ok) {
+      return otherValidation;
+    }
+
+    if (
+      question.is_required &&
+      value.selectedAnswerOptionIds.length === 0 &&
+      !otherValidation.value
+    ) {
       return { ok: false, error: "Select at least one answer option" };
     }
   }
@@ -652,7 +682,8 @@ export async function validateAnswerForQuestion(
         value: {
           answerText: null,
           answerInteger: scaleValue,
-          selectedAnswerOptionIds: value.selectedAnswerOptionIds
+          selectedAnswerOptionIds: value.selectedAnswerOptionIds,
+          otherText: null
         }
       };
     }
@@ -663,9 +694,32 @@ export async function validateAnswerForQuestion(
     value: {
       answerText: null,
       answerInteger: null,
-      selectedAnswerOptionIds: value.selectedAnswerOptionIds
+      selectedAnswerOptionIds: value.selectedAnswerOptionIds,
+      otherText:
+        question.question_type === "single_select" || question.question_type === "multi_select"
+          ? value.otherText
+          : null
     }
   };
+}
+
+function validateOtherSelection(
+  question: SurveyQuestionRecord,
+  value: AnswerRequestValue
+): ValidationResult<boolean> {
+  if (!value.isOtherSelected && !value.otherText) {
+    return { ok: true, value: false };
+  }
+
+  if (!question.allow_other) {
+    return { ok: false, error: "Other is not enabled for this question" };
+  }
+
+  if (!value.otherText) {
+    return { ok: false, error: "Other text is required when Other is selected" };
+  }
+
+  return { ok: true, value: true };
 }
 
 export async function savePageAnswers(
@@ -700,7 +754,9 @@ export async function savePageAnswers(
         questionId: question.id,
         answerText: null,
         answerInteger: null,
-        selectedAnswerOptionIds: []
+        selectedAnswerOptionIds: [],
+        isOtherSelected: false,
+        otherText: null
       } satisfies AnswerRequestValue);
     const questionRecord = {
       id: question.id,
@@ -708,6 +764,7 @@ export async function savePageAnswers(
       page_id: question.pageId,
       question_text: question.questionText,
       question_type: question.questionType,
+      allow_other: question.allowOther,
       display_order: question.displayOrder,
       is_required: question.isRequired,
       help_text: question.helpText,
@@ -737,16 +794,18 @@ export async function saveAnswer(
        survey_attempt_id,
        question_id,
        answer_text,
-       answer_integer
+       answer_integer,
+       other_text
      )
-     values ($1, $2, $3, $4)
+     values ($1, $2, $3, $4, $5)
      on conflict (survey_attempt_id, question_id)
      do update
      set answer_text = excluded.answer_text,
          answer_integer = excluded.answer_integer,
+         other_text = excluded.other_text,
          updated_at = now()
      returning id`,
-    [attemptId, question.id, value.answerText, value.answerInteger]
+    [attemptId, question.id, value.answerText, value.answerInteger, value.otherText]
   );
   const responseAnswerId = responseResult.rows[0].id;
 
@@ -783,6 +842,7 @@ async function fetchAttemptResponses(
        question_id,
        answer_text,
        answer_integer,
+       other_text,
        created_at,
        updated_at
      from survey_response_answers
@@ -979,14 +1039,14 @@ function hasMeaningfulResponse(
   }
 
   if (question.questionType === "single_select") {
-    return response.selectedAnswerOptionIds.length === 1;
+    return response.selectedAnswerOptionIds.length === 1 || Boolean(response.otherText?.trim());
   }
 
   if (question.questionType === "scale") {
     return response.selectedAnswerOptionIds.length === 1 && Number.isInteger(response.answerInteger);
   }
 
-  return response.selectedAnswerOptionIds.length > 0;
+  return response.selectedAnswerOptionIds.length > 0 || Boolean(response.otherText?.trim());
 }
 
 function isActiveAttemptUniqueViolation(error: unknown): boolean {

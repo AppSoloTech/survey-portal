@@ -37,6 +37,7 @@ export interface SurveyQuestionRecord {
   page_id: number;
   question_text: string;
   question_type: SurveyQuestionType;
+  allow_other: boolean;
   display_order: number;
   is_required: boolean;
   help_text: string | null;
@@ -120,6 +121,7 @@ export interface SurveyResponseAnswerRecord {
   question_id: number;
   answer_text: string | null;
   answer_integer: number | null;
+  other_text: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -170,6 +172,7 @@ export function mapSurveyQuestionRecord(
     pageId: record.page_id,
     questionText: record.question_text,
     questionType: record.question_type,
+    allowOther: record.allow_other,
     scaleMin: scaleRange?.min ?? null,
     scaleMax: scaleRange?.max ?? null,
     displayOrder: record.display_order,
@@ -421,6 +424,7 @@ export async function fetchQuestionForSurvey(
        page_id,
        question_text,
        question_type,
+       allow_other,
        display_order,
        is_required,
        help_text,
@@ -499,6 +503,7 @@ export function mapSurveyResponseAnswerRecord(
     answerText: record.answer_text,
     answerInteger: record.answer_integer,
     selectedAnswerOptionIds,
+    otherText: record.other_text,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };

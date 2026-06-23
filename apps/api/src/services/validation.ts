@@ -5,6 +5,7 @@ const surveyDescriptionMaxLength = 1200;
 const questionTextMaxLength = 500;
 const questionHelpTextMaxLength = 500;
 const answerOptionTextMaxLength = 240;
+const otherAnswerTextMaxLength = answerOptionTextMaxLength;
 const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
 const scaleRangeMaxValueCount = 21;
@@ -97,6 +98,7 @@ export function validateSurveyStatusBody(body: unknown): ValidationResult<{ stat
 export interface QuestionBodyValue {
   questionText: string;
   questionType: SurveyQuestionType;
+  allowOther: boolean;
   scaleMin: number | null;
   scaleMax: number | null;
   pageId: number | null;
@@ -118,6 +120,7 @@ export function validateQuestionBody(body: unknown): ValidationResult<QuestionBo
   const scaleMin = readOptionalIntegerField(body, "scaleMin");
   const scaleMax = readOptionalIntegerField(body, "scaleMax");
   const isRequired = body.isRequired === undefined ? true : body.isRequired;
+  const allowOther = body.allowOther === undefined ? false : body.allowOther;
 
   if (!questionText) {
     return { ok: false, error: "Question text is required" };
@@ -161,6 +164,14 @@ export function validateQuestionBody(body: unknown): ValidationResult<QuestionBo
     }
   }
 
+  if (typeof allowOther !== "boolean") {
+    return { ok: false, error: "allowOther must be true or false" };
+  }
+
+  if (allowOther && !isOtherSupportedQuestionType(questionType)) {
+    return { ok: false, error: "allowOther is only supported for single_select and multi_select questions" };
+  }
+
   if (typeof isRequired !== "boolean") {
     return { ok: false, error: "isRequired must be true or false" };
   }
@@ -170,6 +181,7 @@ export function validateQuestionBody(body: unknown): ValidationResult<QuestionBo
     value: {
       questionText,
       questionType,
+      allowOther,
       scaleMin: questionType === "scale" ? scaleMin : null,
       scaleMax: questionType === "scale" ? scaleMax : null,
       pageId,
@@ -521,6 +533,8 @@ export interface AnswerRequestValue {
   answerText: string | null;
   answerInteger: number | null;
   selectedAnswerOptionIds: number[];
+  isOtherSelected: boolean;
+  otherText: string | null;
 }
 
 export interface PageAnswerRequestValue {
@@ -532,6 +546,7 @@ export interface NormalizedAnswerValue {
   answerText: string | null;
   answerInteger: number | null;
   selectedAnswerOptionIds: number[];
+  otherText: string | null;
 }
 
 export function validateAnswerBody(body: unknown): ValidationResult<AnswerRequestValue> {
@@ -549,6 +564,8 @@ export function validateAnswerBody(body: unknown): ValidationResult<AnswerReques
   const answerTextValue = body.answerText;
   const answerIntegerValue = body.answerInteger;
   const selectedAnswerOptionIdsValue = body.selectedAnswerOptionIds;
+  const isOtherSelectedValue = body.isOtherSelected;
+  const otherTextValue = body.otherText;
 
   if (
     answerTextValue !== undefined &&
@@ -572,6 +589,30 @@ export function validateAnswerBody(body: unknown): ValidationResult<AnswerReques
     return { ok: false, error: selectedAnswerOptionIds.error };
   }
 
+  if (
+    isOtherSelectedValue !== undefined &&
+    typeof isOtherSelectedValue !== "boolean"
+  ) {
+    return { ok: false, error: "isOtherSelected must be true or false" };
+  }
+
+  if (
+    otherTextValue !== undefined &&
+    otherTextValue !== null &&
+    typeof otherTextValue !== "string"
+  ) {
+    return { ok: false, error: "otherText must be a string" };
+  }
+
+  const otherText =
+    typeof otherTextValue === "string" && otherTextValue.trim()
+      ? otherTextValue.trim()
+      : null;
+
+  if (otherText && otherText.length > otherAnswerTextMaxLength) {
+    return { ok: false, error: `Other text must be ${otherAnswerTextMaxLength} characters or fewer` };
+  }
+
   return {
     ok: true,
     value: {
@@ -585,7 +626,9 @@ export function validateAnswerBody(body: unknown): ValidationResult<AnswerReques
         typeof answerIntegerValue === "number" && Number.isInteger(answerIntegerValue)
           ? answerIntegerValue
           : null,
-      selectedAnswerOptionIds: selectedAnswerOptionIds.value
+      selectedAnswerOptionIds: selectedAnswerOptionIds.value,
+      isOtherSelected: isOtherSelectedValue === true || otherText !== null,
+      otherText
     }
   };
 }
@@ -780,6 +823,10 @@ export function isSurveyQuestionType(value: string): value is SurveyQuestionType
 }
 
 export function isSelectionQuestionType(value: SurveyQuestionType): boolean {
+  return value === "single_select" || value === "multi_select";
+}
+
+export function isOtherSupportedQuestionType(value: SurveyQuestionType): boolean {
   return value === "single_select" || value === "multi_select";
 }
 

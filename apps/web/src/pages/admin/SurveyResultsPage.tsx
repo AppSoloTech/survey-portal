@@ -259,6 +259,9 @@ export function SurveyResultsPage() {
                   <span className="results-question-counts">
                     {formatCount(stat.answeredCount, "answer")}
                     {stat.blankCount > 0 ? `, ${stat.blankCount} blank` : ""}
+                    {stat.otherResponseCount > 0
+                      ? `, ${stat.otherResponseCount} other`
+                      : ""}
                   </span>
                   <span aria-hidden="true" className="results-question-bar">
                     <span
@@ -426,19 +429,28 @@ function AnswerValue({ answer }: { answer: AdminAttemptAnswer }) {
 
   if (answer.selectedOptions.length > 0) {
     return (
-      <div className="results-selected-options">
-        {answer.selectedOptions.map((option) => (
-          <span className="results-selected-option" key={option.answerOptionId}>
-            <span>{option.optionText}</span>
-            {option.hiddenTags.map((tag) => (
-              <span className="results-hidden-tag" key={`${tag.tagKey}:${tag.tagValue}`}>
-                {tag.tagKey}: {tag.tagValue}
-              </span>
-            ))}
-          </span>
-        ))}
-      </div>
+      <>
+        <div className="results-selected-options">
+          {answer.selectedOptions.map((option) => (
+            <span className="results-selected-option" key={option.answerOptionId}>
+              <span>{option.optionText}</span>
+              {option.hiddenTags.map((tag) => (
+                <span className="results-hidden-tag" key={`${tag.tagKey}:${tag.tagValue}`}>
+                  {tag.tagKey}: {tag.tagValue}
+                </span>
+              ))}
+            </span>
+          ))}
+        </div>
+        {answer.otherText ? (
+          <p className="results-answer-value">Other: {answer.otherText}</p>
+        ) : null}
+      </>
     );
+  }
+
+  if (answer.otherText) {
+    return <p className="results-answer-value">Other: {answer.otherText}</p>;
   }
 
   if (answer.answerText !== null || answer.answerInteger !== null) {

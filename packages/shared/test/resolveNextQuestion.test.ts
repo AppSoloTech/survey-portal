@@ -16,6 +16,7 @@ function makeQuestion(overrides: Partial<SurveyQuestion> & { id: number }): Surv
     pageId: overrides.id,
     questionText: `Question ${overrides.id}`,
     questionType: "single_select",
+    allowOther: false,
     scaleMin: null,
     scaleMax: null,
     displayOrder: overrides.id,
@@ -94,6 +95,7 @@ function makeResponse(
     answerText: null,
     answerInteger: null,
     selectedAnswerOptionIds,
+    otherText: null,
     createdAt: timestamp,
     updatedAt: timestamp
   };

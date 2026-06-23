@@ -11,6 +11,7 @@ import type {
   RotateAnonymousSurveyLinkResponse,
   StartAnonymousSurveyResponse,
   StartSurveyResponse,
+  SurveyAnswerRequestPayload,
   SurveyAttemptsListResponse,
   SurveyListResponse,
   SurveyQuestionType,
@@ -37,19 +38,16 @@ export async function startSurvey(surveyId: number): Promise<StartSurveyResponse
 
 export async function answerSurvey(input: {
   surveyId: number;
-  attemptId: number;
-  questionId: number;
-  answerText: string | null;
-  answerInteger: number | null;
-  selectedAnswerOptionIds: number[];
-}): Promise<AnswerSurveyResponse> {
+} & SurveyAnswerRequestPayload): Promise<AnswerSurveyResponse> {
   return apiRequest<AnswerSurveyResponse>(`/api/surveys/${input.surveyId}/answer`, {
     body: JSON.stringify({
       attemptId: input.attemptId,
       questionId: input.questionId,
       answerText: input.answerText,
       answerInteger: input.answerInteger,
-      selectedAnswerOptionIds: input.selectedAnswerOptionIds
+      selectedAnswerOptionIds: input.selectedAnswerOptionIds,
+      isOtherSelected: input.isOtherSelected,
+      otherText: input.otherText
     }),
     method: "POST"
   });
@@ -64,6 +62,8 @@ export async function answerSurveyPage(input: {
     answerText: string | null;
     answerInteger: number | null;
     selectedAnswerOptionIds: number[];
+    isOtherSelected: boolean;
+    otherText: string | null;
   }[];
 }): Promise<AnswerSurveyResponse> {
   return apiRequest<AnswerSurveyResponse>(
@@ -106,12 +106,7 @@ export async function startAnonymousSurvey(token: string): Promise<StartAnonymou
 export async function answerAnonymousSurvey(input: {
   token: string;
   attemptAccessToken: string;
-  attemptId: number;
-  questionId: number;
-  answerText: string | null;
-  answerInteger: number | null;
-  selectedAnswerOptionIds: number[];
-}): Promise<AnswerSurveyResponse> {
+} & SurveyAnswerRequestPayload): Promise<AnswerSurveyResponse> {
   return apiRequest<AnswerSurveyResponse>(
     `/api/anonymous-surveys/${encodeURIComponent(input.token)}/answer`,
     {
@@ -121,7 +116,9 @@ export async function answerAnonymousSurvey(input: {
         questionId: input.questionId,
         answerText: input.answerText,
         answerInteger: input.answerInteger,
-        selectedAnswerOptionIds: input.selectedAnswerOptionIds
+        selectedAnswerOptionIds: input.selectedAnswerOptionIds,
+        isOtherSelected: input.isOtherSelected,
+        otherText: input.otherText
       }),
       method: "POST"
     }
@@ -331,6 +328,7 @@ export async function createQuestion(input: {
   scaleMax?: number | null;
   isRequired: boolean;
   helpText: string | null;
+  allowOther?: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(`/api/surveys/${input.surveyId}/questions`, {
     body: JSON.stringify({
@@ -340,7 +338,8 @@ export async function createQuestion(input: {
       scaleMin: input.scaleMin ?? null,
       scaleMax: input.scaleMax ?? null,
       isRequired: input.isRequired,
-      helpText: input.helpText
+      helpText: input.helpText,
+      allowOther: input.allowOther ?? false
     }),
     method: "POST"
   });
@@ -355,6 +354,7 @@ export async function updateQuestion(input: {
   scaleMax?: number | null;
   isRequired: boolean;
   helpText: string | null;
+  allowOther?: boolean;
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(
     `/api/surveys/${input.surveyId}/questions/${input.questionId}`,
@@ -365,7 +365,8 @@ export async function updateQuestion(input: {
         scaleMin: input.scaleMin ?? null,
         scaleMax: input.scaleMax ?? null,
         isRequired: input.isRequired,
-        helpText: input.helpText
+        helpText: input.helpText,
+        allowOther: input.allowOther ?? false
       }),
       method: "PUT"
     }

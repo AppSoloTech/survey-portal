@@ -179,6 +179,7 @@ survey_id
 page_id
 question_text
 question_type
+allow_other
 display_order
 is_required
 help_text
@@ -200,6 +201,9 @@ Notes:
 * `display_order` determines order within the owning page.
 * The MVP should avoid hardcoded survey-specific questions.
 * All survey questions should be database-driven.
+* `allow_other` applies only to `single_select` and `multi_select`.
+  It causes the participant UI to render a system-generated Other input without
+  creating a normal answer option row.
 
 ---
 
@@ -438,6 +442,7 @@ survey_attempt_id
 question_id
 answer_text
 answer_integer
+other_text
 created_at
 updated_at
 ```
@@ -446,6 +451,9 @@ Notes:
 
 * Text questions store the response in `answer_text`.
 * Integer questions store the response in `answer_integer`.
+* Choice-question custom Other responses store the participant-entered text in
+  `other_text`. This text is response data, not an answer option, and should be
+  null when Other is not selected.
 * Selection-based questions should use a join table instead of storing selected option IDs as JSON.
 
 ---
@@ -468,6 +476,8 @@ Notes:
 * Single-select questions should have one selected option.
 * Multi-select questions may have multiple selected options.
 * This table allows answer tags to be resolved through the selected answer options.
+* System-generated Other responses are not stored in this table and cannot carry
+  hidden tags or trigger option-based conditional logic.
 
 ---
 
@@ -643,6 +653,7 @@ The data model should support:
 * viewing completed responses
 * viewing in-progress responses
 * resolving hidden tags for selected answers
+* displaying Other text separately from selected answer options
 * exporting response data
 * filtering by hidden tags later
 

@@ -868,11 +868,12 @@ export async function duplicateSurveyTree(
     page_id: number;
     question_text: string;
     question_type: string;
+    allow_other: boolean;
     display_order: number;
     is_required: boolean;
     help_text: string | null;
   }>(
-    `select id, page_id, question_text, question_type, display_order, is_required, help_text
+    `select id, page_id, question_text, question_type, allow_other, display_order, is_required, help_text
      from survey_questions
      where survey_id = $1
      order by page_id, display_order, id`,
@@ -917,17 +918,19 @@ export async function duplicateSurveyTree(
          page_id,
          question_text,
          question_type,
+         allow_other,
          display_order,
          is_required,
          help_text
        )
-       values ($1, $2, $3, $4, $5, $6, $7)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        returning id`,
       [
         newSurveyId,
         newPageId,
         question.question_text,
         question.question_type,
+        question.allow_other,
         question.display_order,
         question.is_required,
         question.help_text

@@ -792,17 +792,19 @@ surveyBuilderRouter.post("/:id/questions", requireAuth, requireRole("admin"), re
          page_id,
          question_text,
          question_type,
+         allow_other,
          display_order,
          is_required,
          help_text
        )
-       values ($1, $2, $3, $4, $5, $6, $7)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        returning id`,
       [
         surveyId,
         page.id,
         validation.value.questionText,
         validation.value.questionType,
+        validation.value.allowOther,
         displayOrder,
         validation.value.isRequired,
         validation.value.helpText
@@ -947,8 +949,9 @@ surveyBuilderRouter.put(
         `update survey_questions
          set question_text = $3,
              question_type = $4,
-             is_required = $5,
-             help_text = $6,
+             allow_other = $5,
+             is_required = $6,
+             help_text = $7,
              updated_at = now()
          where survey_id = $1
            and id = $2`,
@@ -957,6 +960,7 @@ surveyBuilderRouter.put(
           questionId,
           validation.value.questionText,
           validation.value.questionType,
+          validation.value.allowOther,
           validation.value.isRequired,
           validation.value.helpText
         ]

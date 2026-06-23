@@ -187,6 +187,7 @@ export function QuestionEditor({
 }) {
   const [selectedQuestionType, setSelectedQuestionType] = useState(question.questionType);
   const isScale = selectedQuestionType === "scale";
+  const supportsOther = selectedQuestionType === "single_select" || selectedQuestionType === "multi_select";
   const isOptionBacked = isSelectionQuestion(question) || question.questionType === "scale";
 
   useEffect(() => {
@@ -277,6 +278,21 @@ export function QuestionEditor({
           />
           Required
         </label>
+        {supportsOther ? (
+          <label className="checkbox-label">
+            <input
+              defaultChecked={
+                question.allowOther &&
+                (question.questionType === "single_select" ||
+                  question.questionType === "multi_select")
+              }
+              disabled={isPublished}
+              name="allowOther"
+              type="checkbox"
+            />
+            Allow Other
+          </label>
+        ) : null}
         <div className="inline-actions">
           <button
             className="button-link compact-button primary-button"
@@ -698,6 +714,14 @@ function PreviewQuestionControl({ question }: { question: SurveyQuestion }) {
             <span>{option.optionText}</span>
           </div>
         ))}
+      {question.allowOther ? (
+        <div className="preview-option-row">
+          <span aria-hidden="true">
+            {question.questionType === "single_select" ? "( )" : "[ ]"}
+          </span>
+          <span>Other</span>
+        </div>
+      ) : null}
     </div>
   );
 }
