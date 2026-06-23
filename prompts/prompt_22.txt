@@ -1,189 +1,55 @@
-# Phase 22 — Question Definitions Tooltip Foundation
+# Phase 22 — Superseded: Question Definitions Tooltip Foundation
 
-## Purpose
+## Status
 
-Surface optional question definition/help text through an accessible participant
-tooltip or popover.
+Do not implement this prompt as originally written.
 
-This phase should reuse the existing `helpText` field unless implementation
-inspection proves it is insufficient.
+The original Phase 22 idea was a small per-question `helpText` tooltip. Client
+review changed the product direction to a global Admin-managed glossary that
+detects matching terms in participant-facing question text and renders inline
+definitions.
 
-Source feedback or planning note:
+The global glossary work is larger than a single tooltip pass, so it has been
+split into staged follow-up prompts:
 
-```txt
-notes/next_phases.txt item 7
-```
+* `prompts/prompt_28.txt` — Global Glossary Data Model And Admin Foundation
+* `prompts/prompt_29.txt` — Dictionary-Assisted Glossary Definitions
+* `prompts/prompt_30.txt` — Participant Inline Glossary Rendering
 
-## Role Note
-
-Default arrangement:
-
-* Codex is the implementation assistant.
-* Claude Code is the review assistant.
-
-Branch:
-
-Start implementation from `main` on a fresh phase branch. Do not implement this
-phase directly on `main`.
-
-```bash
-git checkout main
-git checkout -b phase-22-question-definitions
-```
-
-Closeout artifacts:
-
-* implementation handoff: `notes/claude_handoff_phase_22.txt`
-* Claude review: `notes/claude_review_phase_22.txt`
+Keep this file as a historical marker so future phase planning does not
+accidentally revive the older per-question tooltip scope.
 
 ---
 
-# Required Reading
+# Superseded Scope
 
-Read before implementation:
+The old scope would have:
 
-* `notes/next_phases.txt`
-* `prompts/MASTER_PRODUCT_CONTEXT.txt`
-* `markdown/ARCHITECTURE_PRINCIPLES.md`
-* `markdown/DATA_MODEL_VISION.md`
-* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
-* `markdown/FLOW.md`
-* `markdown/FOLLOW_UPS.md`
-* `markdown/PHASE_LOG.md`
-* `markdown/REVIEW_CHECKLIST.md`
-* Current question editor, preview, participant runner, shared question types,
-  and existing `helpText` persistence.
+* reused `survey_questions.help_text`
+* shown an info icon beside a question prompt
+* displayed manually entered per-question help text in a tooltip/popover
+
+That is no longer the intended direction for this feature.
 
 ---
 
-# Received Feedback
+# Current Product Direction
 
-Add optional question definitions/help text. Administrators should be able to
-enter explanatory text for each question. If provided, the survey-taking
-interface should display an information icon adjacent to the question text.
-Selecting the icon should display the definition/help text in a tooltip or
-popover without navigating away. The definition is informational only and should
-not affect survey logic or reporting.
+Admins should be able to maintain a global glossary. Each glossary entry should
+have a canonical term, optional match strings/aliases, and an Admin-approved
+definition. Participant-facing survey text should automatically identify
+matching glossary strings and render accessible inline definition affordances.
 
----
-
-# Intake Classification
-
-* UX feature
-* participant-facing survey behavior
-* likely frontend-only if existing `helpText` persistence is sufficient
-
-Expected impact:
-
-* admin question editor copy
-* participant runner display
-* accessible tooltip/popover component
-* possibly preview display
-
-No database change is expected because `survey_questions.help_text` already
-exists.
+The definition popup should be generated at render time from the latest
+participant-safe glossary payload, not manually embedded into each question.
 
 ---
 
-# Scope
+# Notes For Future Implementation
 
-Implement:
-
-* Confirm existing `helpText` persists through create/update/read APIs.
-* Rename or clarify admin UI copy to "Definition/help text" where useful.
-* Participant info icon adjacent to the question prompt when help text exists.
-* Accessible tooltip/popover that works with click/tap and keyboard focus.
-* Admin preview behavior consistent with the participant runner where practical.
-
-## Non-Goals
-
-Do not implement:
-
-* a new schema field if `helpText` is sufficient
-* changes to validation, conditional logic, reporting, or exports
-* participant navigation away from the survey
-* help text as answer data
-* rich text/HTML definitions
-
-## Assumptions
-
-* `helpText` is the durable storage field for definitions.
-* Definition text is plain text.
-* Tooltip/popover content should be visible only when text exists.
-
-## Open Questions
-
-* None unless inspection shows `helpText` cannot support this behavior.
-
----
-
-# Acceptance Criteria
-
-The phase is ready for review when:
-
-* Admins can create and edit definition/help text.
-* Participant runner shows an info icon only for questions with help text.
-* Tooltip/popover displays help text without changing survey state.
-* Keyboard and mobile interactions work.
-* Survey logic, reporting, and exports are unchanged.
-
----
-
-# Testing Requirements
-
-Run:
-
-```bash
-npm run typecheck
-npm run lint
-npm run build
-npm test
-git diff --check
-```
-
-Add focused tests where practical for:
-
-* `helpText` persistence if not already covered
-* tooltip rendering helper/component behavior if component tests exist nearby
-
-Manual checks:
-
-* Admin creates/edits help text on draft questions.
-* Participant sees an info icon only when help text exists.
-* Tooltip opens/closes by click/tap and keyboard focus.
-* No help text appears in reporting as answer data.
-* Mobile pass at 375/768/1280px.
-
----
-
-# Claude Review Handoff
-
-Before implementation closeout, create:
-
-```txt
-notes/claude_handoff_phase_22.txt
-```
-
-Ask Claude Code to review:
-
-* accessibility
-* mobile behavior
-* no survey-logic coupling
-* consistency with existing builder fields
-* whether any unnecessary schema was introduced
-
-Claude Code must write review output to:
-
-```txt
-notes/claude_review_phase_22.txt
-```
-
----
-
-# Documentation And Closeout
-
-Update as needed:
-
-* `markdown/FOLLOW_UPS.md`
-* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
-  review status, and commit readiness
+* Do not store glossary terms as answer options.
+* Do not couple glossary definitions to response validation, skip logic,
+  hidden tags, reporting, or CSV exports.
+* Do not expose Admin-only glossary metadata to participant APIs.
+* Verify the current dictionary/Webster provider documentation, terms, and API
+  key requirements before implementing the dictionary-assist phase.

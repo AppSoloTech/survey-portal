@@ -1,0 +1,260 @@
+# Phase 25 — Survey Completion Time Stats And Admin Override Foundation
+
+## Purpose
+
+Create backend-owned survey completion time estimates derived from actual
+completed survey attempts, with a simple Admin override for total estimated
+survey completion time.
+
+This phase supersedes the smaller frontend-only estimate direction from
+`prompts/prompt_23.txt`. It should build the durable timing foundation but
+should not yet replace participant progress labels.
+
+Source feedback or planning note:
+
+```txt
+Client Phase 23 re-scope: estimate completion time from real completed survey
+or attempt data where possible, while allowing Admins to override derived
+values with their own intuition.
+```
+
+## Sequencing Note
+
+This phase can be implemented directly after Phase 24. Glossary phases 28
+through 30 are not prerequisites for the survey timing foundation.
+
+Use the next available migration number in the active branch state. Do not
+reserve migration numbers for later prompt files.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` on a fresh phase branch. Do not implement this
+phase directly on `main`.
+
+```bash
+git checkout main
+git checkout -b phase-25-survey-time-estimates
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_25.txt`
+* Claude review: `notes/claude_review_phase_25.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_23.txt`
+* `prompts/prompt_21.txt`
+* `notes/claude_handoff_phase_21.txt`
+* `notes/claude_review_phase_21.txt`
+* `prompts/prompt_24.txt`
+* `notes/claude_handoff_phase_24.txt` if Phase 24 has been completed
+* `notes/claude_review_phase_24.txt` if Phase 24 has been completed
+* `database/migrations/0024_choice_other_answers.sql`
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current survey attempt lifecycle, Admin Setup page, survey metadata APIs,
+  shared survey types, participant-safe survey payloads, and reporting date
+  range helpers.
+
+---
+
+# Received Feedback
+
+The estimated time to complete a survey should be derived from statistical data
+gathered from actual surveys completed, or eventually attempts. Admins should
+also be able to override any statistically derived value with their own input.
+
+---
+
+# Intake Classification
+
+* Admin feature
+* database schema and API contract change
+* statistical survey metadata foundation
+* participant display dependency for a later phase
+
+Expected impact:
+
+* survey timing metadata storage
+* shared timing response types
+* Admin-only timing APIs or survey metadata extension
+* Admin Setup UI
+* backend estimate service/helper
+* tests for derivation, overrides, fallback, and authorization
+
+---
+
+# Scope
+
+Implement:
+
+* Backend-owned effective survey completion estimate.
+* Survey-level statistical estimate from valid completed attempts:
+  * use `completed_at - started_at`
+  * include only attempts with both timestamps
+  * ignore non-positive durations
+  * use completed attempts for the same survey only
+* Admin override for total estimated survey completion minutes.
+* Override precedence:
+  * Admin override wins first
+  * statistical estimate wins second
+  * backend default estimate is last fallback
+* Backend default estimate based on current survey question type weights.
+* Admin Setup UI showing:
+  * derived estimate
+  * statistical sample count
+  * default estimate
+  * effective estimate
+  * estimate source: `admin_override`, `statistical`, or `default`
+  * override input in minutes
+  * clear-override action
+* Shared/Admin timing types for:
+  * `derivedEstimateSeconds`
+  * `defaultEstimateSeconds`
+  * `adminOverrideSeconds`
+  * `effectiveEstimateSeconds`
+  * `sampleCount`
+  * `estimateSource`
+* Participant-safe survey payload support for only the effective estimate if
+  needed by later phases.
+
+Use the next available migration number at implementation time. Do not hard-code
+the migration number in the prompt or docs because earlier phases may change the
+sequence.
+
+## Non-Goals
+
+Do not implement:
+
+* participant progress label replacement
+* running/dynamic time remaining display
+* per-page or per-question activity instrumentation
+* per-question Admin overrides
+* per-question-type Admin override settings
+* analytics based on abandoned or in-progress attempts
+* live dashboards or historical trend charts
+* changes to survey navigation, skip logic, reporting counts, hidden tags, or CSV
+
+## Assumptions
+
+* The first robust estimate is survey-level, not per-question or per-page.
+* The first Admin override is total survey minutes.
+* Admin override always beats statistical and default estimates.
+* Completion duration from `started_at` to `completed_at` is acceptable for this
+  foundation even though it may include idle time.
+* Timing override is survey metadata, not structural survey content, so it can
+  be edited on published surveys.
+
+## Open Questions
+
+* Should very large outlier completed durations be trimmed from the statistical
+  estimate? If unanswered, use a conservative cap or median-based approach and
+  document it in the implementation handoff.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can view the effective survey completion estimate on Admin Setup.
+* Admins can set and clear a total estimated completion time override.
+* Derived estimates use completed attempts for the same survey.
+* The effective estimate source is clearly identified to Admins.
+* Surveys with no completed-attempt sample use a backend default estimate.
+* Non-admin users cannot access Admin timing metadata or override mutations.
+* Published surveys can receive timing override metadata without unlocking
+  structural edits.
+* Participant APIs do not expose Admin audit metadata.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* derived estimate from completed attempts
+* ignoring incomplete, abandoned, timestamp-missing, and non-positive-duration
+  attempts
+* fallback default estimate when no sample exists
+* Admin override save and clear
+* override precedence over statistical and default estimates
+* non-admin authorization rejection
+* editing timing metadata on a published survey
+* participant payload excluding Admin timing audit fields
+
+Manual checks:
+
+* Admin opens Setup for a survey with no attempts and sees a default estimate.
+* Admin completes sample attempts and sees a derived estimate with sample count.
+* Admin sets an override and sees the effective estimate switch to the override.
+* Admin clears the override and sees the effective estimate return to
+  statistical or default.
+* Non-admin users cannot reach timing controls.
+* Mobile pass at 375/768/1280px for the Admin Setup timing controls.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_25.txt
+```
+
+Ask Claude Code to review:
+
+* statistical estimate correctness
+* override precedence
+* Admin-only authorization boundaries
+* participant-safe payload isolation
+* published-survey metadata edit behavior
+* migration safety
+* default estimate helper behavior
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_25.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

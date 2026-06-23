@@ -1,191 +1,68 @@
-# Phase 23 — Estimated Time Remaining Foundation
+# Phase 23 — Superseded: Estimated Time Remaining Foundation
 
-## Purpose
+## Status
 
-Replace participant numeric progress labels with an estimated time remaining
-display based on remaining visible survey path.
+Do not implement this prompt as originally written.
 
-This phase affects the participant runner only. Admin pagination and admin
-workflow labels should remain unchanged.
+The original Phase 23 idea was a frontend-only participant runner change that
+would replace numeric progress labels with a simple estimated time remaining
+value based on code-configured question-type averages. Client review changed
+the product direction to backend-owned statistical timing with Admin overrides
+and a later running/dynamic estimate.
 
-Source feedback or planning note:
+The robust timing work is larger than a single participant display pass, so it
+has been split into staged follow-up prompts:
 
-```txt
-notes/next_phases.txt item 8
-```
+* `prompts/prompt_25.txt` — Survey Completion Time Stats And Admin Override
+  Foundation
+* `prompts/prompt_26.txt` — Participant Estimated Completion Display
+* `prompts/prompt_27.txt` — Running Dynamic Time Remaining Instrumentation
 
-## Role Note
-
-Default arrangement:
-
-* Codex is the implementation assistant.
-* Claude Code is the review assistant.
-
-Branch:
-
-Start implementation from `main` on a fresh phase branch. Do not implement this
-phase directly on `main`.
-
-```bash
-git checkout main
-git checkout -b phase-23-estimated-time-remaining
-```
-
-Closeout artifacts:
-
-* implementation handoff: `notes/claude_handoff_phase_23.txt`
-* Claude review: `notes/claude_review_phase_23.txt`
+Keep this file as a historical marker so future phase planning does not
+accidentally revive the smaller frontend-only estimate scope.
 
 ---
 
-# Required Reading
+# Superseded Scope
 
-Read before implementation:
+The old scope would have:
 
-* `notes/next_phases.txt`
-* `prompts/MASTER_PRODUCT_CONTEXT.txt`
-* `markdown/ARCHITECTURE_PRINCIPLES.md`
-* `markdown/DATA_MODEL_VISION.md`
-* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
-* `markdown/FLOW.md`
-* `markdown/FOLLOW_UPS.md`
-* `markdown/PHASE_LOG.md`
-* `markdown/REVIEW_CHECKLIST.md`
-* Current participant runner, shared page path resolver, and progress UI.
+* removed participant-facing "Page X of Y" and "Question X of Y" labels
+* added a reusable estimate helper based on remaining visible
+  path/questions
+* used configurable-in-code averages by question type with a fallback average
+* avoided database or backend API changes
+* avoided analytics based on actual completion time
+
+That is no longer the intended direction for this feature.
 
 ---
 
-# Received Feedback
+# Current Product Direction
 
-On the survey question page, replace numeric progress indicators with an
-estimated time remaining display. The survey-taking interface should no longer
-show "Question X of Y" or "Page X of Y" labels. Instead, display an estimated
-time remaining value based on the number and type of remaining questions/pages.
+Estimated survey completion time should be backend-owned and derived from real
+survey attempt data where possible. Admins should be able to override a
+statistically derived value with their own total estimated completion time.
 
----
+The product direction has two separate timing concepts:
 
-# Intake Classification
+* estimated time to complete a survey before or at the start of an attempt
+* running estimated time remaining while a participant is taking the survey
 
-* participant-facing UX feature
-* shared/client helper logic
-* no expected database or backend API change
-
-Expected impact:
-
-* participant runner display
-* time estimate helper
-* tests for estimate calculation and path handling
+The first robust pass should use survey-level completed-at minus started-at
+statistics from completed attempts, with a backend default estimate when no
+statistical sample exists. Admin override values should win over statistical
+and default values.
 
 ---
 
-# Scope
+# Notes For Future Implementation
 
-Implement:
-
-* Remove participant-facing "Page X of Y" and "Question X of Y" labels from the
-  survey-taking interface.
-* Add a simple reusable estimate helper using remaining visible path/questions.
-* Use configurable-in-code averages by question type with a fallback average.
-* Respect branching/page-jump/skip behavior by using the existing resolved page
-  path.
-* Display copy such as "About 3 min remaining" or "Less than 1 min remaining".
-* Keep the visual progress bar if it remains useful, but avoid numeric
-  page/question copy.
-
-## Non-Goals
-
-Do not implement:
-
-* survey navigation changes
-* server-owned estimates unless explicitly required
-* changes to admin pagination labels
-* removal of dashboard/admin "Page X of Y" pagination
-* analytics based on actual completion time
-
-## Assumptions
-
-* Estimated time can be approximate.
-* The current page's unanswered visible questions count as remaining.
-* Question type averages can live in frontend/shared code rather than
-  environment config for this foundation phase.
-
-## Open Questions
-
-* Should completed/review states show total time spent? If unanswered, do not
-  add elapsed-time tracking in this phase.
-
----
-
-# Acceptance Criteria
-
-The phase is ready for review when:
-
-* Participant runner shows estimated time remaining instead of numeric progress
-  labels.
-* Straight survey estimates decrease as the participant advances.
-* Branching/page-jump/skip behavior updates the estimate after path changes.
-* Admin pagination labels remain unchanged.
-* Survey navigation and completion behavior are unchanged.
-
----
-
-# Testing Requirements
-
-Run:
-
-```bash
-npm run typecheck
-npm run lint
-npm run build
-npm test
-git diff --check
-```
-
-Add focused tests for:
-
-* estimate helper with text, integer, select, multi-select, and scale questions
-* remaining-page/question calculation on straight paths
-* branch/path changes if helper can be tested without browser automation
-
-Manual checks:
-
-* Straight survey shows decreasing estimate across pages.
-* Branching/page-jump survey updates estimate after path changes.
-* Multi-question page estimate accounts for all remaining visible questions.
-* Participant UI no longer shows "Page X of Y" or "Question X of Y".
-* Admin pagination still shows its normal page labels.
-* Mobile pass at 375/768/1280px.
-
----
-
-# Claude Review Handoff
-
-Before implementation closeout, create:
-
-```txt
-notes/claude_handoff_phase_23.txt
-```
-
-Ask Claude Code to review:
-
-* path calculation
-* removal of numeric participant labels
-* mobile layout
-* no regression to admin pagination
-* no accidental navigation or backend behavior changes
-
-Claude Code must write review output to:
-
-```txt
-notes/claude_review_phase_23.txt
-```
-
----
-
-# Documentation And Closeout
-
-Update as needed:
-
-* `markdown/FOLLOW_UPS.md`
-* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
-  review status, and commit readiness
+* Do not use a frontend-only hard-coded estimate as the long-term source of
+  truth.
+* Do not expose Admin statistical audit fields to participant APIs unless a
+  prompt explicitly calls for them.
+* Treat Admin total-time override as survey metadata, not structural survey
+  content, so it can be edited on published surveys.
+* Do not squeeze running/dynamic activity instrumentation into the first
+  statistical foundation phase.

@@ -1,0 +1,220 @@
+# Phase 29 — Dictionary-Assisted Glossary Definitions
+
+## Purpose
+
+Add an Admin-only dictionary lookup flow that suggests definitions for glossary
+terms before the Admin saves or updates the final glossary definition.
+
+This phase should build on Phase 28. It should not implement participant inline
+glossary rendering.
+
+Source feedback or planning note:
+
+```txt
+Client Phase 22 re-scope: when an Admin enters a glossary term, use a
+Webster/dictionary API to suggest a definition. If no definition is found, the
+Admin should enter their own definition.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` after Phase 28 is merged.
+
+```bash
+git checkout main
+git checkout -b phase-29-glossary-dictionary-assist
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_29.txt`
+* Claude review: `notes/claude_review_phase_29.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_28.txt`
+* `notes/claude_handoff_phase_28.txt`
+* `notes/claude_review_phase_28.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current glossary APIs/UI from Phase 28.
+* Current official documentation for the approved dictionary/Webster provider.
+
+---
+
+# Received Feedback
+
+The Admin-entered term should be sent to a Webster/dictionary API so the system
+can suggest a definition. If no definition is found, the Admin should provide
+their own definition.
+
+---
+
+# Intake Classification
+
+* Admin workflow enhancement
+* backend integration
+* environment/configuration change
+* external API dependency
+
+Expected impact:
+
+* environment variables for provider configuration
+* server-side dictionary client
+* Admin lookup endpoint
+* Admin glossary form suggestion UI
+* tests with mocked provider responses
+
+---
+
+# Scope
+
+Implement:
+
+* Select and document the approved dictionary/Webster provider after verifying
+  current official provider docs, terms, authentication, and response shape.
+* Server-side lookup endpoint available only to Admins.
+* Environment-driven provider configuration with no secrets committed.
+* Graceful states for:
+  * definition found
+  * multiple definitions found
+  * no definition found
+  * provider unavailable/rate-limited
+  * provider not configured
+* Admin UI that lets the Admin accept, edit, or ignore a suggested definition.
+* Store source metadata on glossary entries where Phase 28 schema supports it,
+  such as `manual`, `dictionary_suggested`, provider name, and lookup timestamp.
+* Tests that mock provider responses instead of calling the live service.
+
+The Admin must remain in control of the saved glossary definition. Suggestions
+should never overwrite existing definitions without explicit Admin action.
+
+## Non-Goals
+
+Do not implement:
+
+* participant inline term rendering
+* automatic glossary entry creation without Admin confirmation
+* client-side direct calls to the dictionary provider
+* live-network tests
+* storing API keys in source files, migrations, fixtures, or snapshots
+* rich text or HTML dictionary output
+* non-English dictionary behavior unless explicitly requested
+
+## Assumptions
+
+* The dictionary provider is optional. The glossary must remain usable when the
+  provider is not configured.
+* Dictionary definitions are suggestions only and may be edited before save.
+* Provider responses should be normalized to plain text before reaching the UI.
+
+## Open Questions
+
+* Which dictionary/Webster provider and plan should be used? If not decided,
+  implement the client behind a small provider interface and document the
+  required environment variables as placeholders.
+* Should lookup results be cached? If unanswered, avoid durable caching beyond
+  saved source metadata in this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can request a definition suggestion for a glossary term.
+* Admins can accept, edit, or ignore the suggested definition.
+* No-match and provider-error states are clear and do not block manual entry.
+* Non-admin users cannot call the lookup endpoint.
+* Dictionary provider secrets are read from environment configuration only.
+* Tests do not depend on live network access.
+* Participant-facing survey behavior remains unchanged.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* Admin-only lookup authorization
+* successful provider response normalization
+* no-match fallback
+* provider error/rate-limit fallback
+* provider-not-configured behavior
+* accepting/editing/ignoring a suggested definition in the Admin form
+* no live API calls during automated tests
+
+Manual checks:
+
+* With provider disabled, Admin can still manually create/edit glossary entries.
+* With mocked or configured provider, Admin can request a suggestion and edit it
+  before save.
+* No-match terms show manual-entry fallback.
+* Existing saved definitions are not overwritten unless the Admin explicitly
+  applies a suggestion.
+* Mobile pass at 375/768/1280px for the lookup UI.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_29.txt
+```
+
+Ask Claude Code to review:
+
+* provider secret handling
+* server-side-only dictionary access
+* external API failure modes
+* Admin approval/editing flow
+* test mocking and no live-network dependency
+* no participant-rendering drift
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_29.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `.env.example`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

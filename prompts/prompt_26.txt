@@ -1,0 +1,219 @@
+# Phase 26 — Participant Estimated Completion Display
+
+## Purpose
+
+Replace participant-facing numeric progress labels with an estimated time
+remaining display powered by the backend effective survey completion estimate
+from Phase 25.
+
+This phase should build on `prompts/prompt_25.txt`. It should not add new
+activity instrumentation; running/dynamic instrumentation is planned separately
+in `prompts/prompt_27.txt`.
+
+Source feedback or planning note:
+
+```txt
+Client Phase 23 re-scope: participant UI should show estimated time remaining,
+but the estimate should come from backend-owned survey timing data rather than
+frontend-only constants.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` after Phase 25 is merged.
+
+```bash
+git checkout main
+git checkout -b phase-26-participant-time-display
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_26.txt`
+* Claude review: `notes/claude_review_phase_26.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_23.txt`
+* `prompts/prompt_25.txt`
+* `notes/claude_handoff_phase_25.txt`
+* `notes/claude_review_phase_25.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current participant runner, anonymous participant runner, shared page path
+  resolver, progressive page state helper, and progress UI.
+
+---
+
+# Received Feedback
+
+The survey-taking interface should no longer show numeric "Question X of Y" or
+"Page X of Y" labels. It should show estimated time remaining. The estimate
+should respect the participant's visible path, including branching and page
+jump behavior.
+
+---
+
+# Intake Classification
+
+* participant-facing UX feature
+* shared/client helper logic
+* participant API payload consumption
+* accessibility and mobile layout risk
+
+Expected impact:
+
+* participant runner display
+* participant-safe timing payload usage
+* shared remaining-time helper
+* tests for estimate calculation and path handling
+
+---
+
+# Scope
+
+Implement:
+
+* Remove participant-facing numeric progress labels from the survey-taking
+  interface, including "Page X of Y" and "Question X of Y" style copy.
+* Use the Phase 25 effective survey estimate as the total survey estimate.
+* Calculate remaining time from the resolved visible page path and remaining
+  question weights.
+* Respect branching, page-jump, hide-page, and skip behavior by using the
+  existing resolved page path helpers.
+* Count the current page's unanswered visible questions as remaining.
+* Display concise copy such as:
+  * "About 3 min remaining"
+  * "Less than 1 min remaining"
+  * "Almost done"
+* Keep the visual progress bar if useful, but avoid numeric page/question copy.
+* Keep Admin pagination and Admin workflow labels unchanged.
+* Handle authenticated and anonymous participant flows consistently.
+
+## Non-Goals
+
+Do not implement:
+
+* Admin timing override controls
+* statistical timing derivation
+* per-attempt activity instrumentation
+* dynamic estimates based on active elapsed time
+* survey navigation changes
+* dashboard/admin pagination label changes
+* completed/review total elapsed-time display unless explicitly required
+
+## Assumptions
+
+* Phase 25 exposes an effective total estimate to participant-safe payloads or
+  a helper can derive it from the participant-safe survey object.
+* Remaining-time distribution can use backend/default question-type weights as
+  proportions while scaling to the effective survey estimate.
+* The estimate is approximate and should use user-friendly rounded copy.
+
+## Open Questions
+
+* Should the completion/review screen show total estimated survey time? If
+  unanswered, do not add completion-screen timing beyond any existing summary
+  needed for consistency.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Participant runner shows estimated time remaining instead of numeric progress
+  labels.
+* Straight survey estimates decrease as the participant advances.
+* Branching/page-jump/skip behavior updates the estimate after path changes.
+* Anonymous and authenticated runners display timing consistently.
+* Admin pagination labels remain unchanged.
+* Survey navigation and completion behavior are unchanged.
+* Participant UI does not expose Admin timing audit metadata.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* remaining-time helper with text, integer, select, multi-select, and scale
+  questions
+* scaling remaining time from effective total estimate
+* straight path estimates decreasing across pages
+* branch/path changes using existing path helpers
+* less-than-one-minute and almost-done copy
+* participant payload using only effective estimate fields
+* no participant-facing "Page X of Y" or "Question X of Y" copy in the runner
+
+Manual checks:
+
+* Straight survey shows decreasing estimate across pages.
+* Branching/page-jump survey updates estimate after path changes.
+* Multi-question page estimate accounts for all remaining visible questions.
+* Participant UI no longer shows "Page X of Y" or "Question X of Y".
+* Admin pagination still shows its normal page labels.
+* Anonymous public survey displays the same estimate behavior.
+* Mobile pass at 375/768/1280px.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_26.txt
+```
+
+Ask Claude Code to review:
+
+* remaining-time calculation and path alignment
+* participant-safe timing payload use
+* removal of numeric participant labels
+* mobile layout and accessibility copy
+* no regression to Admin pagination
+* no accidental navigation, reporting, or backend behavior changes
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_26.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

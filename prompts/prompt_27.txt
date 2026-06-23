@@ -1,0 +1,226 @@
+# Phase 27 — Running Dynamic Time Remaining Instrumentation
+
+## Purpose
+
+Add lightweight participant attempt activity timing so future time remaining
+estimates can improve beyond coarse `started_at` to `completed_at` survey
+duration.
+
+This phase should build on the statistical foundation from Phase 25 and the
+participant display from Phase 26. It should collect safer active-time data but
+should avoid overfitting a complex prediction model in the same pass.
+
+Source feedback or planning note:
+
+```txt
+Client Phase 23 re-scope: separate the estimated time to complete a survey from
+the running and dynamic estimated time to survey completion.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` after Phase 26 is merged.
+
+```bash
+git checkout main
+git checkout -b phase-27-dynamic-time-instrumentation
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_27.txt`
+* Claude review: `notes/claude_review_phase_27.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_25.txt`
+* `prompts/prompt_26.txt`
+* `notes/claude_handoff_phase_25.txt`
+* `notes/claude_review_phase_25.txt`
+* `notes/claude_handoff_phase_26.txt`
+* `notes/claude_review_phase_26.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current authenticated and anonymous participant attempt routes, attempt
+  ownership checks, progressive page runner, and survey timing helpers.
+
+---
+
+# Received Feedback
+
+Survey timing should have two parts: the estimated time it would take to
+complete a survey, and a running dynamic estimated time to completion while the
+participant is taking the survey. The dynamic estimate needs better attempt
+activity data than coarse attempt start and completion timestamps.
+
+---
+
+# Intake Classification
+
+* participant telemetry foundation
+* database schema and API contract change
+* authenticated and anonymous ownership-sensitive routes
+* future dynamic estimate dependency
+
+Expected impact:
+
+* attempt timing/activity storage
+* participant heartbeat or activity endpoint
+* authenticated and anonymous route ownership validation
+* active-time aggregation helper
+* tests for authorization, idle-gap handling, and participant payload safety
+
+---
+
+# Scope
+
+Implement:
+
+* Lightweight activity timing for participant attempts.
+* Track authenticated and anonymous participant activity without exposing Admin
+  metadata to participants.
+* Record enough context to support future dynamic remaining-time estimates, such
+  as attempt id, page id, visible question ids or current question id, event
+  timestamp, and event type.
+* Use capped active-time gaps so overnight pauses or long idle browser sessions
+  do not count as continuous active survey time.
+* Provide backend helpers that can aggregate active seconds by attempt and by
+  survey.
+* Keep instrumentation safe for anonymous attempts by validating the
+  anonymous-link id and attempt access token.
+* Avoid noisy writes where possible, such as by throttling heartbeats or only
+  sending events on page entry, answer save, resume, and completion.
+* Document how this data should feed a later dynamic estimate model.
+
+Use the next available migration number at implementation time. Do not hard-code
+the migration number in the prompt or docs because earlier phases may change the
+sequence.
+
+## Non-Goals
+
+Do not implement:
+
+* a complex prediction model
+* Admin dashboards for activity timelines
+* per-question Admin timing overrides
+* exporting timing telemetry to CSV
+* changing survey completion validation or navigation
+* storing raw text answers in timing events
+* participant exposure of timing event internals
+
+## Assumptions
+
+* Running estimates require activity instrumentation before they can become
+  meaningfully dynamic.
+* Idle gaps should be capped before contributing to active-time statistics.
+* Activity timing is operational metadata and should not affect response
+  storage, reporting counts, hidden tags, or CSV.
+* Completed and abandoned/in-progress attempts can eventually inform dynamic
+  models, but this phase focuses on data quality and safe collection.
+
+## Open Questions
+
+* What idle-gap cap should be used? If unanswered, choose a conservative cap,
+  document it, and centralize it in the backend timing helper.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Authenticated participant activity events are recorded for owned attempts.
+* Anonymous participant activity events require valid anonymous attempt access.
+* Long idle gaps are capped in active-time aggregation.
+* Activity helpers can summarize active seconds for an attempt and survey.
+* Activity writes do not expose Admin-only or timing-internal metadata to
+  participant payloads.
+* Survey answering, completion, reporting, CSV, hidden tags, and navigation
+  behavior remain unchanged.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* authenticated attempt ownership validation
+* anonymous attempt token validation
+* rejecting timing events for completed or abandoned attempts if the
+  implementation treats them as closed
+* idle-gap capping in active-time aggregation
+* aggregation across page entry, answer save, resume, and completion events
+* participant payloads excluding raw timing event internals
+* no regression to existing attempt lifecycle tests
+
+Manual checks:
+
+* Authenticated participant can take a survey while activity events are saved.
+* Anonymous participant can take a survey while activity events are saved.
+* Invalid anonymous access token cannot write activity.
+* Refresh/resume does not create visibly broken participant state.
+* Admin Results and CSV remain unchanged.
+* Mobile pass at 375/768/1280px.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_27.txt
+```
+
+Ask Claude Code to review:
+
+* telemetry schema and write volume
+* authenticated and anonymous ownership checks
+* idle-gap aggregation correctness
+* participant metadata isolation
+* no coupling to response validation, reporting counts, hidden tags, or CSV
+* migration safety
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_27.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness
