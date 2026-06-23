@@ -58,6 +58,21 @@ export type SurveyStatus = "draft" | "published" | "retired";
 
 export type SurveyQuestionType = "text" | "integer" | "single_select" | "multi_select" | "scale";
 
+export const surveyQuestionTypeEstimateWeightsSeconds: Record<SurveyQuestionType, number> = {
+  text: 90,
+  integer: 30,
+  single_select: 45,
+  multi_select: 60,
+  scale: 30
+};
+
+export function getSurveyQuestionTypeEstimateWeightSeconds(
+  questionType: SurveyQuestionType
+): number {
+  return surveyQuestionTypeEstimateWeightsSeconds[questionType] ??
+    surveyQuestionTypeEstimateWeightsSeconds.text;
+}
+
 export type ConditionalLogicConditionOperator = "equals" | "is_blank";
 
 export type ConditionalLogicActionType =
@@ -728,6 +743,94 @@ export interface ProgressivePageState extends AttemptPagePathResult {
   currentPageQuestionIds: number[];
 }
 
+export interface SurveyRemainingTimeEstimate {
+  copy: string;
+  remainingPathWeightSeconds: number;
+  remainingQuestionIds: number[];
+  remainingSeconds: number;
+  totalEstimateSeconds: number;
+  totalPathWeightSeconds: number;
+}
+
+export function calculateSurveyRemainingTimeEstimate(input: {
+  currentPageId: number | null;
+  pagePath?: AttemptPagePathResult;
+  responses: SurveyResponseAnswer[];
+  survey: Survey;
+}): SurveyRemainingTimeEstimate {
+  const pagePath = input.pagePath ?? resolveAttemptPagePath(input.survey, input.responses);
+  const questionsById = new Map(input.survey.questions.map((question) => [question.id, question]));
+  const responsesByQuestionId = new Map(
+    input.responses.map((response) => [response.questionId, response])
+  );
+  const pathPageIds = pagePath.path.map((page) => page.id);
+  const currentPageIndex =
+    input.currentPageId === null ? pathPageIds.length : pathPageIds.indexOf(input.currentPageId);
+  const firstRemainingPageIndex = currentPageIndex >= 0 ? currentPageIndex : 0;
+  const totalQuestionIds = uniqueNumbers(
+    pagePath.path.flatMap((page) => pagePath.visibleQuestionIdsByPageId[page.id] ?? [])
+  );
+  const remainingQuestionIds = uniqueNumbers(
+    pagePath.path.flatMap((page, pageIndex) => {
+      if (pageIndex < firstRemainingPageIndex) {
+        return [];
+      }
+
+      const visibleQuestionIds = pagePath.visibleQuestionIdsByPageId[page.id] ?? [];
+
+      if (page.id !== input.currentPageId) {
+        return visibleQuestionIds;
+      }
+
+      return visibleQuestionIds.filter((questionId) => {
+        const question = questionsById.get(questionId);
+
+        return question
+          ? !hasProgressiveResponseForQuestion(question, responsesByQuestionId.get(questionId))
+          : false;
+      });
+    })
+  );
+  const totalPathWeightSeconds = sumQuestionWeights(totalQuestionIds, questionsById);
+  const remainingPathWeightSeconds = sumQuestionWeights(remainingQuestionIds, questionsById);
+  const totalEstimateSeconds = Math.max(1, Math.round(input.survey.effectiveEstimateSeconds));
+  const remainingSeconds =
+    totalPathWeightSeconds > 0 && remainingPathWeightSeconds > 0
+      ? Math.min(
+          totalEstimateSeconds,
+          Math.max(
+            1,
+            Math.round((remainingPathWeightSeconds / totalPathWeightSeconds) * totalEstimateSeconds)
+          )
+        )
+      : 0;
+
+  return {
+    copy: formatRemainingTimeCopy(remainingSeconds),
+    remainingPathWeightSeconds,
+    remainingQuestionIds,
+    remainingSeconds,
+    totalEstimateSeconds,
+    totalPathWeightSeconds
+  };
+}
+
+export function formatRemainingTimeCopy(remainingSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.round(remainingSeconds));
+
+  if (safeSeconds <= 15) {
+    return "Almost done";
+  }
+
+  if (safeSeconds < 60) {
+    return "Less than 1 min remaining";
+  }
+
+  const minutes = Math.max(1, Math.round(safeSeconds / 60));
+
+  return `About ${minutes} min remaining`;
+}
+
 export function resolveAttemptPagePath(
   survey: Survey,
   responses: SurveyResponseAnswer[]
@@ -872,6 +975,23 @@ export function getOrderedQuestions(survey: Survey): SurveyQuestion[] {
 
 export function getQuestionsForPage(survey: Survey, pageId: number): SurveyQuestion[] {
   return getOrderedQuestions(survey).filter((question) => question.pageId === pageId);
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return [...new Set(values)];
+}
+
+function sumQuestionWeights(
+  questionIds: number[],
+  questionsById: ReadonlyMap<number, SurveyQuestion>
+): number {
+  return questionIds.reduce((sum, questionId) => {
+    const question = questionsById.get(questionId);
+
+    return question
+      ? sum + getSurveyQuestionTypeEstimateWeightSeconds(question.questionType)
+      : sum;
+  }, 0);
 }
 
 function compareQuestionOrder(

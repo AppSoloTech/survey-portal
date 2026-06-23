@@ -1,22 +1,15 @@
-import type {
-  Survey,
-  SurveyQuestionType,
-  SurveyTimingEstimateSource,
-  SurveyTimingSummary
+import {
+  getSurveyQuestionTypeEstimateWeightSeconds,
+  type Survey,
+  type SurveyQuestionType,
+  type SurveyTimingEstimateSource,
+  type SurveyTimingSummary
 } from "@survey-portal/shared";
 
 import { pool } from "../db.js";
 import type { Queryable } from "./surveyRecords.js";
 
 export const maxStatisticalSampleDurationSeconds = 4 * 60 * 60;
-
-const questionTypeDefaultSeconds: Record<SurveyQuestionType, number> = {
-  text: 90,
-  integer: 30,
-  single_select: 45,
-  multi_select: 60,
-  scale: 30
-};
 
 const minimumSurveyDefaultSeconds = 60;
 const maxAdminOverrideMinutes = 24 * 60;
@@ -37,7 +30,7 @@ export function getMaxAdminOverrideMinutes(): number {
 }
 
 export function getQuestionTypeDefaultSeconds(questionType: SurveyQuestionType): number {
-  return questionTypeDefaultSeconds[questionType] ?? questionTypeDefaultSeconds.text;
+  return getSurveyQuestionTypeEstimateWeightSeconds(questionType);
 }
 
 export function calculateDefaultEstimateSeconds(

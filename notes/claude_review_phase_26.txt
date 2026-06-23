@@ -1,0 +1,132 @@
+# Claude Review — Phase 26 (Participant Estimated Completion Display)
+
+Reviewer: Claude Code
+Scope: current phase diff only (git diff + untracked surveyRemainingTime test and
+SurveyAttemptPage test).
+Method: static review against prompt_26, handoff_26, prompt_25, and the
+surrounding path-resolver / progressive-page / runner code. The DB-backed suite
+was not re-run this turn; the handoff reports it green (shared 53, web 53,
+API 210).
+
+Verdict: Ready to commit after the deferred manual browser + responsive pass. No
+critical issues.
+
+---
+
+## 1. Critical issues
+
+None found. The phase meets its acceptance criteria:
+
+- Numeric participant labels are removed. The runner's `Page X of Y` heading is
+  replaced by `remainingEstimate.copy`, and the progress bar lost `role`,
+  `aria-valuemin/max/now` and is now `aria-hidden="true"`, so no numeric page
+  count reaches the accessibility tree. The source-regex test guards against the
+  `Page {..} of {..}` / `Question {..} of {..}` JSX patterns returning.
+- Remaining-time calculation aligns with the resolved visible path:
+  `calculateSurveyRemainingTimeEstimate` uses `resolveAttemptPagePath` +
+  `visibleQuestionIdsByPageId`, counts only unanswered current-page questions
+  (via the shared `hasProgressiveResponseForQuestion`) plus all future visible
+  pages, scales `remainingPathWeight / totalPathWeight` against
+  `survey.effectiveEstimateSeconds`, and clamps to `[1, total]` (or 0 when
+  nothing remains). The tests confirm weighting, scaling (165/255 × 510 = 330 →
+  "About 6 min"), monotonic decrease across pages, current-page unanswered +
+  future-page counting, and branch-path divergence ([1,2] vs [3]).
+- Participant-safe payload use: the helper reads only `effectiveEstimateSeconds`
+  (Phase 25 participant-safe field) and `attempt.responses`; no admin timing
+  audit fields are referenced.
+- Backend behavior unchanged: weights moved to shared
+  `surveyQuestionTypeEstimateWeightsSeconds` (text 90 / integer 30 /
+  single 45 / multi 60 / scale 30) — identical values, so
+  `calculateDefaultEstimateSeconds` and `getQuestionTypeDefaultSeconds` are
+  behaviorally unchanged. No statistical-derivation, navigation, reporting, or
+  instrumentation changes; the diff touches only the runner, the shared helper,
+  and the timing-weight refactor.
+- Auth and anonymous flows share `SurveyRunner`, so the change applies to both
+  consistently.
+
+## 2. Suggested improvements (non-blocking)
+
+1. Decorative bar vs. heading can visibly diverge. The progress-fill width is
+   still page-position based (`progressPercent` from `currentIndex`), while the
+   heading is weight/time based. On a survey where page count and question-weight
+   distribution differ (e.g., one heavy page then several light ones), the bar
+   and the "About N min" text advance at different rates. Since the bar is now
+   purely decorative, consider driving its width from the estimate
+   (`1 - remainingSeconds / totalEstimateSeconds`) so the two visuals agree, or
+   accept the divergence as cosmetic. Low priority.
+
+2. The web regression test is a source-text tripwire, not a render assertion. It
+   reads SurveyAttemptPage.tsx and regex-matches the literal JSX patterns, so it
+   would miss a runtime-composed or reworded numeric label (e.g.,
+   `{n} of {total}` built in a variable, or "Step 2/5"). It is a reasonable
+   cheap guard, but a React Testing Library render asserting the runner shows the
+   estimate copy and contains no "of"-style count would be more durable.
+   (Directly answers the handoff's question: adequate as a tripwire, not robust.)
+
+3. Heading semantics. The visible `<h3>` now holds a constantly-changing time
+   estimate rather than a stable title, while the page title sits in a muted
+   `<p>`. Functionally fine with `aria-live="polite"`, but it shifts the document
+   outline so the section heading is no longer stable for screen-reader heading
+   navigation. Consider keeping a stable heading (survey/page title) and moving
+   the live estimate to a non-heading `aria-live` region. Minor a11y/UX.
+
+4. Defensive edges. If `currentPageId` is non-null but not present in the
+   resolved path (`indexOf` → -1), `firstRemainingPageIndex` falls back to
+   `pathPageIds.length`, so everything is treated as past → `remainingSeconds`
+   0 → "Almost done" prematurely. Likewise a zero-question / zero-weight survey
+   reads "Almost done" from the first page. Both are unlikely for a published
+   survey (the resolver should always include the current page), so this is
+   defensive-only — optionally guard the -1 case.
+
+## 3. Acceptable tradeoffs
+
+- The estimate is approximate: it distributes the survey-level effective estimate
+  across question-type weights over the currently resolved visible path. This
+  matches the phase scope and the "user-friendly rounded copy" assumption.
+- Future branching behind unanswered questions is projected by the existing path
+  helpers; running/dynamic active-time is correctly left to Phase 27.
+- The helper counts path-visible current-page questions (conditional-logic
+  visibility), not progressive within-page reveal. For an estimate this is the
+  right granularity — questions not yet revealed will still be shown.
+- 15s "Almost done" / <60s "Less than 1 min" thresholds are sensible defaults.
+
+## 4. Questions / assumptions
+
+- Path alignment: yes — current-page questions use
+  `hasProgressiveResponseForQuestion` for answered-state, future pages are
+  counted whole, and past pages are excluded by index. This is clean and matches
+  progressive semantics.
+- Decorative-bar accessibility tradeoff: yes — `aria-hidden` on the bar plus an
+  `aria-live` estimate heading removes screen-reader numeric page exposure while
+  keeping the visual cue. Good call.
+- "Almost done" at 15s: reasonable; this is a product preference and could be
+  tuned later without code risk.
+- Source-guard sufficiency: see 2.2 — fine as a tripwire, consider a render test.
+- Shared weight extraction behaviorally unchanged: confirmed; values are
+  identical to Phase 25's inline map.
+
+## 5. Product UX alignment notes
+
+- Numeric "Page X of Y" copy is gone and replaced by concise estimate copy with
+  a polite live region; the page title is retained (not a numeric label), which
+  is within scope.
+- The visual progress bar is kept but made decorative per "keep the bar if
+  useful, but avoid numeric page/question copy." Good.
+- Applies identically to authenticated and anonymous participants via the shared
+  `SurveyRunner` — satisfies the consistency requirement.
+- No completion/review-screen total-time display was added, matching the open
+  question's default ("do not add completion-screen timing").
+- Only UX caveats are the decorative-bar/heading divergence (2.1) and heading
+  semantics (2.3); confirm wording and the 375/768/1280 layout in the deferred
+  manual pass.
+
+## 6. Commit readiness
+
+Ready to commit. No blocking issues. Before merge:
+- Run the deferred manual pass from prompt_26 (straight survey decreases;
+  branch/page-jump/skip updates the estimate; multi-question page accounts for
+  remaining visible questions; no "Page/Question X of Y" anywhere; Admin
+  pagination labels unchanged; anonymous matches authenticated; 375/768/1280
+  responsive check).
+- Optionally adopt 2.1 (bar driven by the estimate) and/or 2.2 (render test)
+  now or log them in FOLLOW_UPS.

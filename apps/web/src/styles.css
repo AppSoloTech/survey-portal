@@ -1564,6 +1564,13 @@ main {
   font-size: var(--text-xl);
 }
 
+.remaining-time-label {
+  color: var(--text-label);
+  font-size: var(--text-sm);
+  font-weight: 750;
+  margin: 0.35rem 0 0;
+}
+
 /* Custom animated progress bar (replaces <progress>). */
 .progress-track {
   background: var(--surface-2);

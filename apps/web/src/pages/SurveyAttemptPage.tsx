@@ -1,4 +1,5 @@
 import {
+  calculateSurveyRemainingTimeEstimate,
   getQuestionsForPage,
   resolveAttemptPagePath,
   resolveProgressivePageState,
@@ -615,7 +616,8 @@ function SurveyRunner({
   // The resolved path counts only questions the participant actually visits:
   // skip-logic targets excluded from the normal flow are not part of the
   // total unless an answer jumps to them.
-  const { path } = resolveAttemptPagePath(survey, attempt.responses);
+  const pagePath = resolveAttemptPagePath(survey, attempt.responses);
+  const { path } = pagePath;
   const currentIndex = currentPage
     ? path.findIndex((page) => page.id === currentPage.id)
     : path.length;
@@ -705,7 +707,17 @@ function SurveyRunner({
     );
   }
 
-  const progressValue = currentIndex >= 0 ? currentIndex + 1 : 1;
+  const remainingEstimate = calculateSurveyRemainingTimeEstimate({
+    currentPageId: currentPage.id,
+    pagePath,
+    responses: attempt.responses,
+    survey
+  });
+  const progressPercent = Math.round(
+    ((remainingEstimate.totalEstimateSeconds - remainingEstimate.remainingSeconds) /
+      remainingEstimate.totalEstimateSeconds) *
+      100
+  );
   const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
   const pageQuestions = currentPageQuestionIds
     .map((questionId) => questionsById.get(questionId))
@@ -722,21 +734,18 @@ function SurveyRunner({
       <div className="question-progress" data-reveal>
         <div>
           <p className="eyebrow">{survey.title}</p>
-          <h3>
-            Page {progressValue} of {path.length}
-          </h3>
-          <p className="muted">{currentPage.title}</p>
+          <h3>{currentPage.title}</h3>
+          <p aria-live="polite" className="remaining-time-label">
+            {remainingEstimate.copy}
+          </p>
         </div>
         <div
-          aria-valuemax={path.length}
-          aria-valuemin={0}
-          aria-valuenow={progressValue}
+          aria-hidden="true"
           className="progress-track"
-          role="progressbar"
         >
           <span
             className="progress-fill"
-            style={{ width: `${Math.round((progressValue / Math.max(path.length, 1)) * 100)}%` }}
+            style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
