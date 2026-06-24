@@ -876,27 +876,27 @@ function TagFields({
   return (
     <>
       <label>
-        Tag key
+        Tag category
         <select
           name={isCustomKey ? undefined : "tagKey"}
           onChange={(event) => handleKeyChange(event.target.value)}
           required
           value={selectedKey}
         >
-          <option value="">Choose tag key</option>
+          <option value="">Choose tag category</option>
           {keyOptions.map((tagKey) => (
             <option key={tagKey} value={tagKey}>
               {tagKey}
             </option>
           ))}
-          <option value={customTagOptionValue}>Custom key...</option>
+          <option value={customTagOptionValue}>Custom category...</option>
         </select>
         {isCustomKey ? (
           <input
             autoComplete="off"
             name="tagKey"
             onChange={(event) => setCustomKey(event.target.value)}
-            placeholder="Enter tag key"
+            placeholder="Enter tag category"
             required
             value={customKey}
           />
@@ -934,7 +934,7 @@ function TagFields({
       </label>
       {isDuplicatePair ? (
         <p className="tag-duplicate-warning" role="alert">
-          This key/value pair already exists on this option.
+          This category/value pair already exists here.
         </p>
       ) : null}
     </>

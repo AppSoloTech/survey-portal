@@ -301,11 +301,11 @@ export function validateAnswerTagBody(body: unknown): ValidationResult<{
   const tagValue = readTextField(body, "tagValue");
 
   if (!tagKey || !tagValue) {
-    return { ok: false, error: "Tag key and value are required" };
+    return { ok: false, error: "Tag category and value are required" };
   }
 
   if (tagKey.length > answerTagKeyMaxLength) {
-    return { ok: false, error: `Tag key must be ${answerTagKeyMaxLength} characters or fewer` };
+    return { ok: false, error: `Tag category must be ${answerTagKeyMaxLength} characters or fewer` };
   }
 
   if (tagValue.length > answerTagValueMaxLength) {

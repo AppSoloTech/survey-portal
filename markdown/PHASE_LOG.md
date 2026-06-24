@@ -6,6 +6,148 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 28 — Tag Category Terminology Alignment
+
+Date:
+2026-06-24
+
+Status:
+Complete; ready to commit
+
+Prompt:
+`prompts/prompt_28.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_28.txt`
+- Claude review: `notes/claude_review_phase_28.txt`
+
+## Goals
+
+- Present the user/admin-facing `tagKey` concept as "Tag category".
+- Keep "Tag value" terminology unchanged.
+- Preserve API fields, shared types, database columns, hidden-tag behavior,
+  report semantics, and CSV data shape.
+
+## Built
+
+- Updated Admin tag catalog labels, helper copy, and duplicate warning copy to
+  use "Tag category" and "category/value pair" language.
+- Updated the shared survey-builder hidden-tag editor used by answer-option
+  tags, Other tags, and value tags:
+  - label now says "Tag category"
+  - placeholder now says "Choose tag category"
+  - custom option/input now say "Custom category..." and "Enter tag category"
+  - duplicate warning now says "category/value pair"
+- Updated user-facing API validation copy for hidden tag bodies:
+  - "Tag category and value are required"
+  - "Tag category must be 80 characters or fewer"
+- Updated the focused tag catalog validation test to assert the new error copy.
+- Updated Results hidden-tag rollup helper copy to describe hidden tag
+  category/value pairs.
+- Updated `markdown/ADMIN_DEMO_GUIDE.md`, `markdown/DATA_MODEL_VISION.md`, and
+  `markdown/FOLLOW_UPS.md` for current terminology.
+- Created the Claude review handoff at `notes/claude_handoff_phase_28.txt`.
+- Claude review found no critical issues, no API/type/database drift, no missed
+  user-facing "Tag key" copy, and no requested code changes.
+
+## Important Decisions
+
+### Internal Contract Stability
+
+Decision:
+Keep `tagKey`, `tagValue`, and `tag_key` unchanged in API contracts, shared
+types, SQL, and tests that assert payload shape.
+
+Reason:
+The client feedback is terminology alignment, not a data-model migration.
+Changing contracts or columns would create needless compatibility and migration
+risk.
+
+Tradeoff:
+The code still uses the historical internal name while visible admin copy uses
+"Tag category".
+
+### Historical Phase Log References
+
+Decision:
+Leave older `markdown/PHASE_LOG.md` entries that mention key/value terminology
+as historical records.
+
+Reason:
+Those entries describe past implementation phases and are not current
+admin-facing product copy.
+
+Tradeoff:
+Repository-wide text searches still find old historical wording, but current
+UI, validation copy, and active docs have been updated.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: no field or payload shape changes; only validation
+  message copy changed.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: hidden tags remain admin-only metadata and
+  are still never shown to participants.
+- Frontend UX impact: admin-facing terminology now says tag category/value.
+- Reporting impact: hidden-tag rollup behavior and counts are unchanged; only
+  helper copy changed.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Initial sandboxed `npm test` partially passed and then failed on API global
+  setup because the sandbox blocked PostgreSQL at `127.0.0.1:5432`.
+  - Shared tests passed: 4 files, 54 tests.
+  - Web tests passed: 4 files, 53 tests.
+- Passed on escalated rerun: `npm test`
+  - Shared tests: 4 files, 54 tests.
+  - Web tests: 4 files, 53 tests.
+  - API tests: 22 files, 215 tests.
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Passed by developer on 2026-06-24:
+  - `/admin/tags` shows "Tag category" and "Tag value".
+  - Admin tag add/edit still works and hidden tags still appear as suggestions.
+  - Builder answer-option, Other, and value hidden-tag forms show "Tag category".
+  - Admin Results and CSV behavior remain unchanged.
+
+## Follow-Up Tasks
+
+- Claude Code review is complete with no requested fixes.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes
+- Review findings addressed or deferred: No requested fixes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 27 — Running Dynamic Time Remaining Instrumentation
 
 Date:

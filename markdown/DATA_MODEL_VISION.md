@@ -353,6 +353,9 @@ Notes:
 * Tags are primarily for admin reporting and analytics.
 * Tags belong to answer options, not to the displayed question text.
 * A single answer option may have zero, one, or many tags.
+* The persisted `tag_key` field is presented to administrators as the tag
+  category; user-facing admin copy should describe pairs as tag category/value
+  pairs.
 
 ---
 

@@ -253,7 +253,7 @@ Open `Tags`.
 
 Show:
 
-- Reusable hidden tag key/value pairs.
+- Reusable hidden tag category/value pairs.
 - Add tag.
 - Edit tag.
 - Delete tag.

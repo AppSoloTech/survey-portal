@@ -74,7 +74,7 @@ describe("tag catalog", () => {
     expect(finalList.body.tags.some((item: { id: number }) => item.id === tag.id)).toBe(false);
   });
 
-  it("rejects duplicate key/value pairs with a 409", async () => {
+  it("rejects duplicate category/value pairs with a 409", async () => {
     const admin = await registerAdmin(app);
     const pair = uniquePair("dup");
     await createTagDefinition(app, admin, pair.tagKey, pair.tagValue);
@@ -160,6 +160,6 @@ describe("tag catalog", () => {
       .send({ tagKey: "", tagValue: "" });
 
     expect(response.status).toBe(400);
-    expect(response.body).toEqual({ error: "Tag key and value are required" });
+    expect(response.body).toEqual({ error: "Tag category and value are required" });
   });
 });

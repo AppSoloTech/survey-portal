@@ -14,7 +14,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 - Email provider selection and real delivery adapter: Phase 16 added a disabled/no-op foundation only. Choose an approved provider (Azure Communication Services, SendGrid, SMTP, or another service), define credential handling in Azure App Service settings, then implement password-reset, anonymous-invite, assignment, or receipt sending in their own phases with opt-in/opt-out handling where applicable.
 - Review and merge feature/templates-and-reporting (stacked on the dark-mode branch): duplicate-as-template, resume nudge, report date range + option distribution + tag rollup. Manual browser pass over the Results tab with real data before merging.
-- Cross-survey tag rollup: aggregate a hidden tag key across all surveys (e.g. compliance_result everywhere) — per-survey rollup shipped first.
+- Cross-survey tag rollup: aggregate a hidden tag category across all surveys (internally stored as `tag_key`, e.g. compliance_result everywhere) — per-survey rollup shipped first.
 - Global glossary feature: prompt_22's original per-question tooltip scope is superseded. The client-reviewed glossary direction is parked in deferred staged prompts: Admin glossary foundation (`prompts/deferred_global_glossary_admin_foundation.txt`), dictionary-assisted definition suggestions (`prompts/deferred_glossary_dictionary_assist.txt`), and participant inline glossary rendering (`prompts/deferred_participant_inline_glossary_rendering.txt`).
 
 ---

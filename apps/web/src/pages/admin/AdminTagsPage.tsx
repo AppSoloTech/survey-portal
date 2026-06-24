@@ -135,7 +135,7 @@ export function AdminTagsPage() {
         <p className="eyebrow">Admin portal</p>
         <h2>Tag catalog</h2>
         <p>
-          Reusable hidden tag keys and values. Tags saved on answer options in the survey
+          Reusable hidden tag categories and values. Tags saved on answer options in the survey
           builder register here automatically; entries added here appear as suggestions in
           every survey.
         </p>
@@ -153,7 +153,7 @@ export function AdminTagsPage() {
           </div>
           <div className="builder-grid two-columns">
             <label>
-              Tag key
+              Tag category
               <input
                 name="tagKey"
                 onChange={(event) => setNewTagKey(event.target.value)}
@@ -173,7 +173,7 @@ export function AdminTagsPage() {
           </div>
           {isDuplicateNewPair ? (
             <p className="tag-duplicate-warning" role="alert">
-              This key/value pair already exists in the catalog.
+              This category/value pair already exists in the catalog.
             </p>
           ) : null}
           <div className="inline-actions">
@@ -214,7 +214,7 @@ export function AdminTagsPage() {
                 onSubmit={(event) => void handleSave(event, tag)}
               >
                 <label>
-                  Tag key
+                  Tag category
                   <input
                     name="tagKey"
                     onChange={(event) => setEditingTagKey(event.target.value)}
@@ -233,7 +233,7 @@ export function AdminTagsPage() {
                 </label>
                 {isDuplicateEditPair ? (
                   <p className="tag-duplicate-warning" role="alert">
-                    This key/value pair already exists in the catalog.
+                    This category/value pair already exists in the catalog.
                   </p>
                 ) : null}
                 <div className="inline-actions">

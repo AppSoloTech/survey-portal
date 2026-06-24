@@ -1,0 +1,79 @@
+# Claude Review — Phase 28 (Tag Category Terminology Alignment)
+
+Reviewer: Claude Code
+Scope: current phase diff only (git diff of validation.ts, tagCatalog.test.ts,
+SurveyBuilderComponents.tsx, AdminTagsPage.tsx, SurveyResultsPage.tsx, and the
+four markdown docs; plus repo-wide grep for residual "tag key" / "key/value"
+copy and confirmation that tagKey/tagValue/tag_key are untouched).
+Method: static review against prompt_28 and claude_handoff_phase_28. The test
+suite was not re-executed; the handoff reports typecheck/lint/build/test green
+on an escalated run.
+
+Verdict: Clean, correctly scoped terminology pass. No API/type/database drift,
+no behavior change, no missed user-facing "Tag key" copy. Recommend commit once
+the manual browser pass is done.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Review-request findings
+
+a. Accidental API/type/database renames — none. `tagKey`/`tagValue` remain the
+   shared-type fields (packages/shared/src/index.ts), request fields are
+   unchanged (AdminTagsPage inputs still `name="tagKey"`; builder select/input
+   still `name="tagKey"`), and the persisted `tag_key` column is untouched. The
+   only +/- `tagKey` lines in the diff are documentation prose, not field
+   declarations. The validation internal constant `answerTagKeyMaxLength` was
+   correctly left as an internal name.
+
+b. Missed user-facing "Tag key" copy — none found. Repo-wide grep for "tag key"
+   and "key/value" in apps/web/src + apps/api/src returns only:
+     - surveyBuilder.ts:833 — internal code comment ("their key/value"); not
+       user-facing, correctly left.
+     - PHASE_LOG.md:2830 — historical phase-log entry; correctly left as
+       history.
+   All admin-visible surfaces (tag catalog labels/helper, builder label +
+   select placeholder + custom option + custom input placeholder, all three
+   duplicate warnings, Results rollup helper/comment, API validation messages)
+   now read "Tag category". "Tag value" is preserved as specified.
+
+c. Hidden-tag behavior stability — confirmed. The diff is string-only. Duplicate
+   detection logic, catalog suggestion registration, hidden-tag rollups, and CSV
+   output are all untouched. The CSV header remains `hidden_tags` and values
+   remain `key=value` (e.g. `severity=high`), so data shape and reporting counts
+   are unchanged — matching the non-goals.
+
+d. Test/doc alignment — consistent. tagCatalog.test.ts asserts the new
+   "Tag category and value are required" message and renames the duplicate test
+   title; DATA_MODEL_VISION/FOLLOW_UPS/ADMIN_DEMO_GUIDE describe category/value
+   pairs while noting the persisted field stays `tag_key`. No stale web test
+   asserts the old "Tag key" copy.
+
+## 3. Minor observations (non-blocking)
+
+1. Builder duplicate warning changed "...already exists on this option." to
+   "...already exists here." This is slightly beyond a literal key→category
+   swap, but it is an accuracy improvement: TagFields is shared by answer-option,
+   Other, and value-tag forms, so "on this option" was already inaccurate for
+   two of the three. Fine to keep.
+
+2. The Results rollup helper rewrite also fixed a pre-existing grammar issue
+   ("Respondents counts each attempt once" -> "The respondent count includes
+   each attempt once"). Reasonable to fold into this copy pass.
+
+3. Historical PHASE_LOG.md "tag key" reference (line ~2830) is correctly left as
+   history; no action needed. The forward-looking FOLLOW_UPS cross-survey item
+   was appropriately updated to "tag category (internally stored as tag_key)".
+
+## 4. Commit readiness
+
+Ready to commit after the prompt's manual browser checks are completed:
+  - /admin/tags shows "Tag category" / "Tag value"; add/edit still registers
+    catalog suggestions.
+  - Builder answer-option, Other, and value hidden-tag forms show "Tag category".
+  - Results display and CSV behavior unchanged.
+
+No code changes requested from this review.

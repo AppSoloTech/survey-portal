@@ -1,0 +1,94 @@
+# Claude Handoff — Phase 28 Tag Category Terminology Alignment
+
+Date:
+2026-06-24
+
+Branch:
+`phase-28-tag-category-terminology`
+
+Prompt:
+`prompts/prompt_28.txt`
+
+## Scope
+
+Phase 28 is a terminology-only pass. User/admin-facing hidden-tag wording now
+presents `tagKey` as "Tag category" while keeping internal API, shared types,
+database columns, and reporting semantics stable.
+
+## Changes Made
+
+- Updated `/admin/tags` visible labels and helper copy:
+  - "Tag key" -> "Tag category"
+  - "Reusable hidden tag keys and values" -> "Reusable hidden tag categories
+    and values"
+  - duplicate warning -> "category/value pair"
+- Updated the shared builder tag form used for answer-option hidden tags, Other
+  hidden tags, and value tags:
+  - label, select placeholder, custom option, and custom input placeholder now
+    say "Tag category"
+  - duplicate warning now says "category/value pair"
+- Updated API validation text exposed to admins:
+  - missing key/value -> "Tag category and value are required"
+  - key length -> "Tag category must be 80 characters or fewer"
+- Updated the tag catalog validation test to assert the new user-facing error.
+- Updated Admin Results hidden-tag rollup helper copy to describe hidden tag
+  category/value pairs and corrected the respondent-count sentence.
+- Updated documentation:
+  - `markdown/ADMIN_DEMO_GUIDE.md`
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+
+## Intentional Non-Changes
+
+- No `tagKey` API field rename.
+- No `tagValue` API field rename.
+- No database column rename; `tag_key` remains the persisted field.
+- No shared type rename.
+- No tag behavior, duplicate detection semantics, report rollup logic, CSV data
+  shape, or participant-facing survey behavior changes.
+- Historical `markdown/PHASE_LOG.md` references from older phases remain as
+  history; current admin-facing surfaces were updated.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Initial sandboxed `npm test` partially passed, then failed when the API test
+  global setup could not connect to PostgreSQL at `127.0.0.1:5432`.
+  - Shared tests passed: 4 files, 54 tests.
+  - Web tests passed: 4 files, 53 tests.
+- Passed on escalated rerun: `npm test`
+  - Shared tests: 4 files, 54 tests.
+  - Web tests: 4 files, 53 tests.
+  - API tests: 22 files, 215 tests.
+- Passed: `git diff --check`
+
+Manual checks:
+
+- Not run in browser.
+
+## Review Requests
+
+Please review for:
+
+- accidental API/type/database renames
+- missed user-facing "Tag key" copy
+- hidden-tag behavior stability
+- test/doc alignment
+- whether any old historical phase-log references should be left as history or
+  clarified further
+

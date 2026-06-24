@@ -519,8 +519,8 @@ function OptionDistribution({ optionStats }: { optionStats: SurveyReportOptionSt
   );
 }
 
-// Admin-only rollup of hidden tag pairs implied by selected options, Other
-// answers, and value-tagged text/integer answers.
+// Admin-only rollup of hidden tag category/value pairs implied by selected
+// options, Other answers, and value-tagged text/integer answers.
 function TagRollup({ tagStats }: { tagStats: SurveyReportTagStat[] }) {
   if (tagStats.length === 0) {
     return null;
@@ -532,8 +532,8 @@ function TagRollup({ tagStats }: { tagStats: SurveyReportTagStat[] }) {
     <div className="results-tag-rollup">
       <h4>Hidden tag rollup</h4>
       <p className="builder-heading-note">
-        How often participant answers carried each hidden tag pair. Respondents
-        counts each attempt once. Never shown to participants.
+        How often participant answers carried each hidden tag category/value pair.
+        The respondent count includes each attempt once. Never shown to participants.
       </p>
       {tagStats.map((stat) => (
         <div className="results-question-stat-row" key={`${stat.tagKey}:${stat.tagValue}`}>
