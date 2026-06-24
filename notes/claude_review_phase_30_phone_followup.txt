@@ -1,0 +1,113 @@
+# Claude Review — Phase 30 Phone Follow-Up (E.164 phone validation/normalization)
+
+Reviewer: Claude Code
+Scope: the phone-number follow-up delta only, on top of the already-reviewed
+Phase 30 work (see notes/claude_review_phase_30.txt). Files: userProfile service
+(phone validation/normalization), AccountSettings (PhoneInput), main.tsx + CSS,
+api/web package.json + lock, and the profile/adminUsers tests. Method: static
+review against the follow-up handoff, confirming the client emits E.164 and the
+server validates/normalizes to E.164, plus the test expectations. Suite not
+re-run here; handoff reports typecheck/lint/build/test green with approved local
+PostgreSQL (API 224, web 57, shared 54; focused 20) and `npm audit --omit=dev`
+clean.
+
+Verdict: Clean, well-tested follow-up. Server-side possible-number validation +
+E.164 normalization is correct, blank→null is preserved, the current-user
+boundary is untouched, and admin display is unchanged apart from now showing
+normalized values. No blocking issues. Two small improvements (input accessible
+name; defensive parse) and the bundle-size tradeoff noted below. Recommend commit
+after the pending manual browser + mobile pass.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Suggested improvements (non-blocking)
+
+1. Give the phone text input an explicit accessible name. The Settings markup is
+   `<label><span>Phone number</span><PhoneInput .../></label>`. PhoneInput renders
+   two controls — a country `<select>` and the number `<input>` — and a `<label>`
+   wrapping multiple controls associates only with the first labelable descendant
+   (the country select). The number input then relies on its placeholder for a
+   name, which isn't a reliable accessible name. Pass `aria-label="Phone number"`
+   to `<PhoneInput>` (it forwards unknown props to the underlying input) so the
+   text field has a proper name. Worth confirming the country select also exposes
+   a sensible label during the manual a11y pass.
+
+2. Make the server parse defensive. After `isPossiblePhoneNumber(trimmed)` passes,
+   the code calls `parsePhoneNumber(trimmed).number`. In practice a possible
+   number parses, but `parsePhoneNumber` can throw `ParseError` on edge inputs;
+   here that would surface as a 500 via the route's `next(error)` rather than a
+   clean 400. Wrapping the parse in try/catch and returning the same
+   "must be a valid phone number" 400 would harden the path. Low probability,
+   cheap to add.
+
+3. Minor wording: the error says "must be a valid phone number" while the check
+   is `isPossiblePhoneNumber` (length-based "possible", deliberately lenient, not
+   full validity). The message is fine for users; just noting the semantics so a
+   future reader doesn't expect strict validity checking.
+
+## 3. Acceptable tradeoffs
+
+- Server requires international/E.164 format (no default country on the API). The
+  Settings PhoneInput defaults to US and emits E.164 (with `+`), so the happy
+  path is consistent; the test confirms US `+1 (213) 373-4253` → `+12133734253`
+  and UK `+44 20 7946 0123` → `+442079460123` without server-side country
+  inference. A raw national-format API call (no `+`) would be rejected — an
+  acceptable API contract for an E.164-normalized field.
+- Bundle growth: `react-phone-number-input` (bundles its phone metadata) plus the
+  global `react-phone-number-input/style.css` import enlarge the web main chunk
+  (handoff notes the existing large-chunk warning grew). Acceptable for the UX
+  gain; if it becomes a concern later, Settings could be route-split or a lighter
+  metadata set used. `libphonenumber-js` on the API is server-side and unaffected
+  by bundle limits.
+- Validation ordering (type → maxLength(120) → possible-number) means an
+  over-length junk value reports the length error first; the tests lock each
+  branch. Fine.
+- Phone is stored as E.164 with no migration/backfill of pre-existing values —
+  explicitly out of scope; existing rows keep their old format until next edit.
+
+## 4. Questions or assumptions
+
+- Phone validation/normalization: confirmed correct. `contactNumber` is trimmed,
+  rejected with a 400 ("Phone number must be a valid phone number") when
+  `isPossiblePhoneNumber` is false (test: `+123`), and stored as
+  `parsePhoneNumber(trimmed).number` (E.164) otherwise. Blank normalizes to null
+  (test). The frontend mirrors the same `isPossiblePhoneNumber` pre-submit guard
+  with an identical message, so client and server agree.
+- Current-user-only boundary: unchanged by this delta — still `user.id` from
+  `requireAuth`, no `/api/profile/:id`, body `userId` ignored (the guessed-id
+  test still passes). The phone work only touched field validation.
+- Dependency fit: both libraries are widely used and maintained; production audit
+  is clean. `react-phone-number-input` is client-only and fine in a Vite SPA.
+- Admin read-only: admin code is untouched in this delta; the user-detail page
+  simply displays the now-normalized `contactNumber` read-only. No edit path
+  introduced.
+- No address scope drift: address remains a single plain text input; no
+  autocomplete or structured fields were added (confirmed in the Settings diff).
+
+## 5. Product UX alignment notes
+
+- The country-aware PhoneInput (default US, selectable region,
+  `countryCallingCodeEditable={false}`, `international`) matches "reuse contact
+  number as Phone number" while making valid international entry easy, and the
+  pre-submit invalid-phone message gives immediate feedback before a round trip.
+- Storing E.164 gives a consistent canonical format for admin display and any
+  future outreach, without exposing the legacy contact-method/notes surface.
+- CSS uses flex with `min-width:0` on the input and a focus-within ring on the
+  country control, so it should hold up at narrow widths — confirm in the
+  375/768/1280 manual pass.
+
+## 6. Commit readiness
+
+Ready to commit after the pending manual pass the handoff lists as not yet run:
+  - Settings: select country, enter valid/invalid numbers, confirm inline invalid
+    feedback, save/reload persistence shows E.164;
+  - admin user detail shows the normalized phone read-only;
+  - 375 / 768 / 1280px for Settings (phone control) and admin detail;
+  - quick screen-reader check of the phone field name (ties to improvement 1).
+
+No code changes are requested from this review; improvements 1-2 are optional
+hardening. Automated suite passed per the handoff (not re-run here).

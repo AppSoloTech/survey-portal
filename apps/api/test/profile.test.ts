@@ -24,7 +24,7 @@ describe("current user profile routes", () => {
     expect(update.status).toBe(401);
   });
 
-  it("reads and updates the authenticated user's optional profile fields", async () => {
+  it("reads and updates the authenticated user's name, address, and phone number", async () => {
     const session = await registerUser(app);
 
     const initial = await request(app).get("/api/profile").set("Cookie", session.cookie);
@@ -33,41 +33,77 @@ describe("current user profile routes", () => {
     expect(initial.body.user.id).toBe(session.user.id);
     expect(initial.body.profile).toMatchObject({
       contactNumber: null,
-      preferredContactMethod: null,
-      contactNotes: null,
+      addressStreet: null,
+      addressCity: null,
+      addressState: null,
       createdAt: null,
       updatedAt: null
     });
 
     const update = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
-      contactNumber: "  555-0100  ",
-      preferredContactMethod: "Phone",
-      contactNotes: "Weekday mornings"
+      firstName: "  Ada  ",
+      lastName: "  Lovelace  ",
+      contactNumber: "  +1 (213) 373-4253  ",
+      addressStreet: "  12 Example Lane  ",
+      addressCity: "  Cleveland  ",
+      addressState: "  Ohio  "
     });
 
     expect(update.status).toBe(200);
+    expect(update.body.user).toMatchObject({
+      id: session.user.id,
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: session.user.email
+    });
     expect(update.body.profile).toMatchObject({
-      contactNumber: "555-0100",
-      preferredContactMethod: "Phone",
-      contactNotes: "Weekday mornings"
+      contactNumber: "+12133734253",
+      addressStreet: "12 Example Lane",
+      addressCity: "Cleveland",
+      addressState: "Ohio"
     });
     expect(update.body.profile.updatedAt).toEqual(expect.any(String));
 
     const reload = await request(app).get("/api/profile").set("Cookie", session.cookie);
 
     expect(reload.status).toBe(200);
+    expect(reload.body.user).toMatchObject({
+      firstName: "Ada",
+      lastName: "Lovelace"
+    });
     expect(reload.body.profile).toMatchObject(update.body.profile);
 
     const partial = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
-      preferredContactMethod: "Text message"
+      addressCity: ""
     });
 
     expect(partial.status).toBe(200);
-    expect(partial.body.profile).toMatchObject({
-      contactNumber: "555-0100",
-      preferredContactMethod: "Text message",
-      contactNotes: "Weekday mornings"
+    expect(partial.body.user).toMatchObject({
+      firstName: "Ada",
+      lastName: "Lovelace"
     });
+    expect(partial.body.profile).toMatchObject({
+      contactNumber: "+12133734253",
+      addressStreet: "12 Example Lane",
+      addressCity: null,
+      addressState: "Ohio"
+    });
+  });
+
+  it("normalizes valid international phone numbers and keeps blank phone null", async () => {
+    const session = await registerUser(app);
+
+    const ukPhone = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
+      contactNumber: " +44 20 7946 0123 "
+    });
+    const blankPhone = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
+      contactNumber: ""
+    });
+
+    expect(ukPhone.status).toBe(200);
+    expect(ukPhone.body.profile.contactNumber).toBe("+442079460123");
+    expect(blankPhone.status).toBe(200);
+    expect(blankPhone.body.profile.contactNumber).toBeNull();
   });
 
   it("does not expose or update another user's profile by guessed ids", async () => {
@@ -75,9 +111,10 @@ describe("current user profile routes", () => {
     const second = await registerUser(app);
 
     await request(app).put("/api/profile").set("Cookie", first.cookie).send({
-      contactNumber: "555-0101",
-      preferredContactMethod: "Phone",
-      contactNotes: "Call before noon",
+      contactNumber: "+12133734254",
+      addressStreet: "First user's address",
+      addressCity: "Akron",
+      addressState: "Ohio",
       userId: second.user.id
     });
 
@@ -90,6 +127,9 @@ describe("current user profile routes", () => {
 
     expect(secondRead.status).toBe(200);
     expect(secondRead.body.profile.contactNumber).toBeNull();
+    expect(secondRead.body.profile.addressStreet).toBeNull();
+    expect(secondRead.body.profile.addressCity).toBeNull();
+    expect(secondRead.body.profile.addressState).toBeNull();
     expect(guessedRead.status).toBe(404);
     expect(guessedUpdate.status).toBe(404);
   });
@@ -100,22 +140,73 @@ describe("current user profile routes", () => {
     const tooLong = await request(app)
       .put("/api/profile")
       .set("Cookie", session.cookie)
-      .send({ contactNumber: "x".repeat(121), preferredContactMethod: "", contactNotes: "" });
+      .send({ contactNumber: "x".repeat(121), addressStreet: "" });
     const wrongType = await request(app)
       .put("/api/profile")
       .set("Cookie", session.cookie)
-      .send({ contactNumber: 42, preferredContactMethod: "", contactNotes: "" });
+      .send({ contactNumber: 42, addressStreet: "" });
+    const invalidPhone = await request(app)
+      .put("/api/profile")
+      .set("Cookie", session.cookie)
+      .send({ contactNumber: "+123", addressStreet: "" });
+    const missingName = await request(app)
+      .put("/api/profile")
+      .set("Cookie", session.cookie)
+      .send({ firstName: "", lastName: "Example", contactNumber: "", addressStreet: "" });
+    const tooLongStreet = await request(app)
+      .put("/api/profile")
+      .set("Cookie", session.cookie)
+      .send({ addressStreet: "x".repeat(161) });
+    const tooLongCity = await request(app)
+      .put("/api/profile")
+      .set("Cookie", session.cookie)
+      .send({ addressCity: "x".repeat(81) });
     const arrayBody = await request(app)
       .put("/api/profile")
       .set("Cookie", session.cookie)
       .send([]);
 
     expect(tooLong.status).toBe(400);
-    expect(tooLong.body.error).toBe("Contact number must be 120 characters or fewer");
+    expect(tooLong.body.error).toBe("Phone number must be 120 characters or fewer");
     expect(wrongType.status).toBe(400);
-    expect(wrongType.body.error).toBe("Contact number must be text");
+    expect(wrongType.body.error).toBe("Phone number must be text");
+    expect(invalidPhone.status).toBe(400);
+    expect(invalidPhone.body.error).toBe("Phone number must be a valid phone number");
+    expect(missingName.status).toBe(400);
+    expect(missingName.body.error).toBe("First name is required");
+    expect(tooLongStreet.status).toBe(400);
+    expect(tooLongStreet.body.error).toBe("Street address must be 160 characters or fewer");
+    expect(tooLongCity.status).toBe(400);
+    expect(tooLongCity.body.error).toBe("City must be 80 characters or fewer");
     expect(arrayBody.status).toBe(400);
     expect(arrayBody.body.error).toBe("Request body is required");
+  });
+
+  it("does not expose legacy contact-method metadata in profile responses", async () => {
+    const session = await registerUser(app);
+
+    const update = await request(app).put("/api/profile").set("Cookie", session.cookie).send({
+      contactNumber: "+12133734253",
+      addressStreet: "100 Main Street",
+      addressCity: "Columbus",
+      addressState: "Ohio",
+      preferredContactMethod: "Phone",
+      contactNotes: "Legacy note"
+    });
+    const reload = await request(app).get("/api/profile").set("Cookie", session.cookie);
+
+    expect(update.status).toBe(200);
+    expect(reload.status).toBe(200);
+    expect(update.body.profile).toMatchObject({
+      contactNumber: "+12133734253",
+      addressStreet: "100 Main Street",
+      addressCity: "Columbus",
+      addressState: "Ohio"
+    });
+    expect(update.body.profile.preferredContactMethod).toBeUndefined();
+    expect(update.body.profile.contactNotes).toBeUndefined();
+    expect(reload.body.profile.preferredContactMethod).toBeUndefined();
+    expect(reload.body.profile.contactNotes).toBeUndefined();
   });
 
   it("derives registered current-user survey statistics without anonymous attempts", async () => {
@@ -146,6 +237,17 @@ describe("current user profile routes", () => {
 
     const response = await request(app).get("/api/profile").set("Cookie", user.cookie);
 
+    await request(app).put("/api/profile").set("Cookie", user.cookie).send({
+      firstName: "Stats",
+      lastName: "User",
+      contactNumber: "+12133734255",
+      addressStreet: "1 Stable Stats Way",
+      addressCity: "Dayton",
+      addressState: "Ohio"
+    });
+
+    const afterProfileEdit = await request(app).get("/api/profile").set("Cookie", user.cookie);
+
     expect(response.status).toBe(200);
     expect(response.body.surveyStats).toMatchObject({
       available: 2,
@@ -154,6 +256,8 @@ describe("current user profile routes", () => {
       completionRate: 25
     });
     expect(response.body.surveyStats.lastActivityAt).toEqual(expect.any(String));
+    expect(afterProfileEdit.status).toBe(200);
+    expect(afterProfileEdit.body.surveyStats).toMatchObject(response.body.surveyStats);
     expect(inProgressAttempt.attempt.status).toBe("in_progress");
   });
 });

@@ -2,3 +2,4 @@
 2) Implement grouping feature for tag housing and management. Implementation should be similar to the /admin/surveys/2/organize question grouping and manipulation (drag and drops). The /admin/tags page will need a section to create new groups as well as smartly handle new tag creation.
 3) User demogrphics cleanup: ensure users can update profile with the following fields - address, phone number, and full name.
 4) Public anonymous survey section: Need a seperate page that is safely segregated from the user authenticated side of the site. This page should house all surveys that have a tokenized link for public anonymous survey use.
+5) Update the end of the anonymous survey process to allow a user to register for an account. If they choose not to register, then offer to then just submit an email address. If user registers, save that survey result as if it was then a normal user. If they do not register, but submit an email (or not) keep current save process.

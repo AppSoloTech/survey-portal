@@ -53,8 +53,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 ### API And Code Quality
 
 - Centralize repeated user SELECT projections if auth query reuse grows.
-- Consider a cleanup migration to drop the now-unused `user_profiles.organization`, `user_profiles.job_title`, and `user_profiles.location` columns after confirming no pre-deploy data needs backfill or retention. Phase 20 replaced active profile fields with contact number, preferred contact method, and contact notes.
-- Confirm the contact profile fields remain intentionally limited to survey follow-up and do not expand into CRM/account-management workflows; phone number and free-text contact notes are more sensitive PII than the original Phase 19 professional fields.
+- Consider a cleanup migration to drop the now-unused `user_profiles.organization`, `user_profiles.job_title`, `user_profiles.location`, `user_profiles.preferred_contact_method`, and `user_profiles.contact_notes` columns after confirming no pre-deploy data needs backfill or retention. Phase 30 keeps those columns/data as legacy metadata but removes them from the cleaned-up self-service and admin profile surfaces.
 - Avoid the redundant `/api/auth/me` fetch immediately after login/register.
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Confirm with the client that the enforced attempt policy matches the business need: a completed attempt blocks new starts (409), while an abandoned attempt allows a fresh start and stays visible in reports as history.

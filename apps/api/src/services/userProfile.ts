@@ -5,15 +5,21 @@ import type {
   UpdateCurrentUserProfileResponse,
   UserProfile
 } from "@survey-portal/shared";
+import { isPossiblePhoneNumber, parsePhoneNumber } from "libphonenumber-js";
+import type { QueryResult } from "pg";
 
+import { mapUserRecord, type UserRecord } from "../auth.js";
 import { pool } from "../db.js";
 
 const profileFieldMaxLength = 120;
+const addressStreetMaxLength = 160;
+const addressFieldMaxLength = 80;
 
 interface UserProfileRecord {
   contact_number: string | null;
-  preferred_contact_method: string | null;
-  contact_notes: string | null;
+  address_street: string | null;
+  address_city: string | null;
+  address_state: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -26,9 +32,12 @@ interface UserSurveyStatsRecord {
 }
 
 interface NormalizedProfileInput {
+  firstName?: string;
+  lastName?: string;
   contactNumber?: string | null;
-  preferredContactMethod?: string | null;
-  contactNotes?: string | null;
+  addressStreet?: string | null;
+  addressCity?: string | null;
+  addressState?: string | null;
 }
 
 export type ProfileValidationResult =
@@ -54,35 +63,97 @@ export async function updateCurrentUserProfile(
   userId: number,
   input: NormalizedProfileInput
 ): Promise<UpdateCurrentUserProfileResponse> {
-  const result = await pool.query<UserProfileRecord>(
-    `insert into user_profiles (
-       user_id,
-       contact_number,
-       preferred_contact_method,
-       contact_notes
-     )
-     values ($1, $2, $3, $4)
-     on conflict (user_id)
-     do update
-     set contact_number = case when $5 then excluded.contact_number else user_profiles.contact_number end,
-         preferred_contact_method = case when $6 then excluded.preferred_contact_method else user_profiles.preferred_contact_method end,
-         contact_notes = case when $7 then excluded.contact_notes else user_profiles.contact_notes end,
-         updated_at = now()
-     returning contact_number, preferred_contact_method, contact_notes, created_at, updated_at`,
-    [
-      userId,
-      input.contactNumber ?? null,
-      input.preferredContactMethod ?? null,
-      input.contactNotes ?? null,
-      "contactNumber" in input,
-      "preferredContactMethod" in input,
-      "contactNotes" in input
-    ]
-  );
+  const client = await pool.connect();
 
-  return {
-    profile: mapUserProfileRecord(result.rows[0])
-  };
+  try {
+    await client.query("begin");
+
+    let userResult: QueryResult<UserRecord>;
+
+    if ("firstName" in input || "lastName" in input) {
+      userResult = await client.query<UserRecord>(
+        `update users
+         set first_name = case when $2 then $3 else first_name end,
+             last_name = case when $4 then $5 else last_name end,
+             updated_at = now()
+         where id = $1
+         returning id, first_name, last_name, email, role, created_at, updated_at`,
+        [
+          userId,
+          "firstName" in input,
+          input.firstName ?? "",
+          "lastName" in input,
+          input.lastName ?? ""
+        ]
+      );
+    } else {
+      userResult = await client.query<UserRecord>(
+        `select id, first_name, last_name, email, role, created_at, updated_at
+         from users
+         where id = $1`,
+        [userId]
+      );
+    }
+
+    if (userResult.rowCount === 0) {
+      throw new Error("Authenticated user not found");
+    }
+
+    if (
+      "contactNumber" in input ||
+      "addressStreet" in input ||
+      "addressCity" in input ||
+      "addressState" in input
+    ) {
+      await client.query(
+        `insert into user_profiles (
+           user_id,
+           contact_number,
+           address_street,
+           address_city,
+           address_state
+         )
+         values ($1, $2, $3, $4, $5)
+         on conflict (user_id)
+         do update
+         set contact_number = case when $6 then excluded.contact_number else user_profiles.contact_number end,
+             address_street = case when $7 then excluded.address_street else user_profiles.address_street end,
+             address_city = case when $8 then excluded.address_city else user_profiles.address_city end,
+             address_state = case when $9 then excluded.address_state else user_profiles.address_state end,
+             updated_at = now()`,
+        [
+          userId,
+          input.contactNumber ?? null,
+          input.addressStreet ?? null,
+          input.addressCity ?? null,
+          input.addressState ?? null,
+          "contactNumber" in input,
+          "addressStreet" in input,
+          "addressCity" in input,
+          "addressState" in input
+        ]
+      );
+    }
+
+    const profileResult = await client.query<UserProfileRecord>(
+      `select contact_number, address_street, address_city, address_state, created_at, updated_at
+       from user_profiles
+       where user_id = $1`,
+      [userId]
+    );
+
+    await client.query("commit");
+
+    return {
+      user: mapUserRecord(userResult.rows[0]),
+      profile: profileResult.rows[0] ? mapUserProfileRecord(profileResult.rows[0]) : emptyUserProfile()
+    };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function validateProfileUpdateBody(body: unknown): ProfileValidationResult {
@@ -90,43 +161,73 @@ export function validateProfileUpdateBody(body: unknown): ProfileValidationResul
     return { ok: false, error: "Request body is required" };
   }
 
-  const contactNumber = readOptionalProfileField(body, "contactNumber", "Contact number");
+  const firstName = readOptionalNameField(body, "firstName", "First name");
+
+  if (!firstName.ok) {
+    return firstName;
+  }
+
+  const lastName = readOptionalNameField(body, "lastName", "Last name");
+
+  if (!lastName.ok) {
+    return lastName;
+  }
+
+  const contactNumber = readOptionalProfileField(body, "contactNumber", "Phone number");
 
   if (!contactNumber.ok) {
     return contactNumber;
   }
 
-  const preferredContactMethod = readOptionalProfileField(
+  const addressStreet = readOptionalProfileField(
     body,
-    "preferredContactMethod",
-    "Preferred contact method"
+    "addressStreet",
+    "Street address",
+    addressStreetMaxLength
   );
 
-  if (!preferredContactMethod.ok) {
-    return preferredContactMethod;
+  if (!addressStreet.ok) {
+    return addressStreet;
   }
 
-  const contactNotes = readOptionalProfileField(body, "contactNotes", "Contact notes");
+  const addressCity = readOptionalProfileField(
+    body,
+    "addressCity",
+    "City",
+    addressFieldMaxLength
+  );
 
-  if (!contactNotes.ok) {
-    return contactNotes;
+  if (!addressCity.ok) {
+    return addressCity;
+  }
+
+  const addressState = readOptionalProfileField(
+    body,
+    "addressState",
+    "State",
+    addressFieldMaxLength
+  );
+
+  if (!addressState.ok) {
+    return addressState;
   }
 
   return {
     ok: true,
     value: {
+      ...("value" in firstName ? { firstName: firstName.value } : {}),
+      ...("value" in lastName ? { lastName: lastName.value } : {}),
       ...("value" in contactNumber ? { contactNumber: contactNumber.value } : {}),
-      ...("value" in preferredContactMethod
-        ? { preferredContactMethod: preferredContactMethod.value }
-        : {}),
-      ...("value" in contactNotes ? { contactNotes: contactNotes.value } : {})
+      ...("value" in addressStreet ? { addressStreet: addressStreet.value } : {}),
+      ...("value" in addressCity ? { addressCity: addressCity.value } : {}),
+      ...("value" in addressState ? { addressState: addressState.value } : {})
     }
   };
 }
 
 export async function fetchUserProfile(userId: number): Promise<UserProfile> {
   const result = await pool.query<UserProfileRecord>(
-    `select contact_number, preferred_contact_method, contact_notes, created_at, updated_at
+    `select contact_number, address_street, address_city, address_state, created_at, updated_at
      from user_profiles
      where user_id = $1`,
     [userId]
@@ -206,8 +307,9 @@ export async function fetchRegisteredUserSurveyStats(
 function mapUserProfileRecord(record: UserProfileRecord): UserProfile {
   return {
     contactNumber: record.contact_number,
-    preferredContactMethod: record.preferred_contact_method,
-    contactNotes: record.contact_notes,
+    addressStreet: record.address_street,
+    addressCity: record.address_city,
+    addressState: record.address_state,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -216,17 +318,50 @@ function mapUserProfileRecord(record: UserProfileRecord): UserProfile {
 function emptyUserProfile(): UserProfile {
   return {
     contactNumber: null,
-    preferredContactMethod: null,
-    contactNotes: null,
+    addressStreet: null,
+    addressCity: null,
+    addressState: null,
     createdAt: null,
     updatedAt: null
   };
 }
 
+function readOptionalNameField(
+  body: Record<string, unknown>,
+  field: "firstName" | "lastName",
+  label: string
+): { ok: true; value: string } | { ok: true } | { ok: false; error: string } {
+  const value = body[field];
+
+  if (value === undefined) {
+    return { ok: true };
+  }
+
+  if (typeof value !== "string") {
+    return { ok: false, error: `${label} must be text` };
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return { ok: false, error: `${label} is required` };
+  }
+
+  if (trimmed.length > profileFieldMaxLength) {
+    return { ok: false, error: `${label} must be ${profileFieldMaxLength} characters or fewer` };
+  }
+
+  return { ok: true, value: trimmed };
+}
+
 function readOptionalProfileField(
   body: Record<string, unknown>,
-  field: keyof NormalizedProfileInput,
-  label: string
+  field: keyof Pick<
+    NormalizedProfileInput,
+    "contactNumber" | "addressStreet" | "addressCity" | "addressState"
+  >,
+  label: string,
+  maxLength = profileFieldMaxLength
 ): { ok: true; value: string | null } | { ok: true } | { ok: false; error: string } {
   const value = body[field];
 
@@ -248,8 +383,16 @@ function readOptionalProfileField(
     return { ok: true, value: null };
   }
 
-  if (trimmed.length > profileFieldMaxLength) {
-    return { ok: false, error: `${label} must be ${profileFieldMaxLength} characters or fewer` };
+  if (trimmed.length > maxLength) {
+    return { ok: false, error: `${label} must be ${maxLength} characters or fewer` };
+  }
+
+  if (field === "contactNumber") {
+    if (!isPossiblePhoneNumber(trimmed)) {
+      return { ok: false, error: "Phone number must be a valid phone number" };
+    }
+
+    return { ok: true, value: parsePhoneNumber(trimmed).number };
   }
 
   return { ok: true, value: trimmed };

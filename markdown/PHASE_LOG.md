@@ -6,6 +6,289 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 30 — User Profile Demographics Cleanup
+
+Date:
+2026-06-24
+
+Status:
+Implemented; pending manual browser pass
+
+Prompt:
+`prompts/prompt_30.txt`
+
+Git Commit:
+Ready to commit
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_30.txt`
+- Claude review: `notes/claude_review_phase_30.txt`
+- Phone follow-up handoff: `notes/claude_handoff_phase_30_phone_followup.txt`
+- Phone follow-up review: `notes/claude_review_phase_30_phone_followup.txt`
+- Structured address follow-up handoff:
+  `notes/claude_handoff_phase_30_address_followup.txt`
+- Structured address follow-up review:
+  `notes/claude_review_phase_30_address_followup.txt`
+
+## Goals
+
+- Let users update first name, last name, street address, city, state, and
+  phone number from Settings.
+- Keep profile APIs current-user-only.
+- Keep admin user detail read-only while showing structured address fields and
+  phone when present.
+- Preserve survey stats and Settings password-reset behavior.
+- Treat preferred contact method and contact notes as legacy metadata that is
+  no longer visible/editable.
+
+## Built
+
+- Added migration `0029_user_profile_address.sql` with optional
+  `user_profiles.address_street`, `user_profiles.address_city`, and
+  `user_profiles.address_state` columns plus per-field length checks.
+- Updated shared profile responses so active profile metadata is now
+  `contactNumber` plus `addressStreet`, `addressCity`, and `addressState`;
+  the `PUT /api/profile` response now returns the updated auth user and
+  profile.
+- Extended the current-user profile update service to validate and persist
+  first name, last name, structured address fields, and phone number in one
+  transaction.
+- Preserved partial-merge semantics for profile fields and normalized blank
+  optional profile values to `null`.
+- Kept `/api/profile` self-service only; no id-param or admin branch was added.
+- Updated Settings so users can edit first name, last name, street address,
+  city, state, and "Phone number", while survey stats and password reset
+  remain in place.
+- Updated the auth context so Settings can refresh the client-side current user
+  immediately after a successful profile save.
+- Updated admin user detail to display read-only structured address fields and
+  phone number only, hiding legacy preferred-contact-method and contact-notes
+  metadata.
+- Expanded profile/admin API tests for name updates, address/phone persistence,
+  unauthenticated rejection, guessed-id rejection, validation/null
+  normalization, legacy field non-exposure, admin read-only data, and survey
+  stats staying unchanged by profile edits.
+- Added a post-review structured phone-number follow-up:
+  - Settings now uses `react-phone-number-input` with a country selector and
+    `US` default country.
+  - API validation uses `libphonenumber-js` possible-number checks and stores
+    accepted phone numbers in normalized E.164 format.
+  - Blank phone input still normalizes to `null`.
+  - Focused tests now cover valid US normalization, valid non-US normalization,
+    invalid nonblank rejection, and blank-to-null behavior.
+- Added a post-review structured address follow-up:
+  - Replaced the single `address` API/shared field with `addressStreet`,
+    `addressCity`, and `addressState`.
+  - Replaced the single Settings address input with separate Street address,
+    City, and State inputs.
+  - Updated Admin user detail to show each structured address field read-only.
+  - Focused tests now cover per-field trimming/null normalization, validation
+    bounds, partial-update preservation, and admin read-only display.
+- Fixed local development seed compatibility with Phase 29 tag ordering by
+  assigning stable `tag_definitions.display_order` values in seeded catalog
+  inserts.
+
+## Important Decisions
+
+### Legacy Contact Metadata Remains Stored
+
+Decision:
+Keep existing `preferred_contact_method` and `contact_notes` columns/data but
+remove them from cleaned-up API response types and UI surfaces.
+
+Reason:
+The prompt explicitly asks to preserve existing columns/data unless removal is
+separately scoped.
+
+Tradeoff:
+The database contains legacy profile metadata that is not currently visible.
+Cleanup is tracked in `markdown/FOLLOW_UPS.md`.
+
+### Phone Number Keeps Existing Internal Field
+
+Decision:
+Keep `contactNumber` / `contact_number` internally and present it as
+"Phone number" in user/admin-facing copy.
+
+Reason:
+This keeps the change smaller and matches the prompt's implementation
+assumption.
+
+### Phone Numbers Store As E.164
+
+Decision:
+Use a structured phone input in Settings and normalize any nonblank phone value
+to E.164 before persistence.
+
+Reason:
+The field remains optional, but when a user provides a number the app should
+capture country/region context and store a stable canonical value.
+
+Tradeoff:
+Previously accepted free-form phone strings now fail validation unless they can
+be parsed as a possible international phone number. This is accepted before
+Phase 30 ships because no migration/backfill is required.
+
+### Address Uses Structured Fields
+
+Decision:
+Store address as `address_street`, `address_city`, and `address_state`, exposed
+as `addressStreet`, `addressCity`, and `addressState`.
+
+Reason:
+The single free-text address field was superseded by the follow-up request to
+split the Settings address section into proper street/city/state inputs.
+
+Tradeoff:
+This keeps address capture simple and explicit, but still does not include
+postal code, country, autocomplete, geocoding, or postal validation.
+
+## Architecture Notes
+
+- Database/schema impact: additive migration `0029_user_profile_address.sql`.
+- API contract impact: `UserProfile` now exposes active metadata only:
+  `contactNumber`, `addressStreet`, `addressCity`, `addressState`,
+  timestamps. `UpdateCurrentUserProfileResponse` includes the updated
+  `AuthUser`.
+- Auth or authorization impact: profile routes still use `requireAuth` and the
+  authenticated user id from middleware; no `/api/profile/:id` behavior added.
+- Data privacy or visibility impact: admin detail remains read-only and no
+  longer exposes legacy contact method/notes.
+- Frontend UX impact: Settings now edits account name plus structured
+  address/phone fields and refreshes account-menu identity immediately after
+  save. Phone entry uses a country-aware input with upfront formatting.
+- Environment or deployment impact: run migration `0029` before using
+  structured address fields.
+- Dependency impact: `react-phone-number-input` in the web workspace and
+  `libphonenumber-js` in the API workspace.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run test -w apps/api -- profile.test.ts adminUsers.test.ts
+npm run lint
+npm run build
+npm test
+npm run db:reset && npm run db:migrate
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Initial sandboxed focused API test attempt was blocked by PostgreSQL access
+  to `127.0.0.1:5432`.
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- profile.test.ts adminUsers.test.ts` (20 tests
+  after the structured-address follow-up)
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 224 tests after the structured-address follow-up
+- Passed with approved local PostgreSQL access:
+  `npm run db:reset && npm run db:migrate`
+  - Local schema reset applied migrations `0001` through `0029`.
+  - Development seeds applied successfully after the tag-definition
+    `display_order` fix.
+  - Follow-up `db:migrate` reported no pending migrations.
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Completed by the human tester and passed:
+  - `/settings` updates first name, last name, street address, city, state, and
+    phone number.
+  - US and non-US country/region phone entries persist and reload correctly.
+  - Invalid phone values show clear feedback.
+  - Account menu reflects the updated name immediately after save.
+  - Settings password reset sends/cooldowns as before.
+  - Admin user detail shows normalized phone and structured address fields
+    read-only.
+  - Standard user cannot reach admin detail.
+  - Settings and Admin user detail layouts hold at 375 / 768 / 1280px.
+
+## Follow-Up Tasks
+
+- None for Phase 30 before commit.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_30.txt`
+
+Status:
+
+- Completed. Claude found no blocking issues and requested no code changes.
+
+Findings and disposition:
+
+- PII minimization, current-user-only authorization, name/session refresh,
+  admin read-only boundaries, legacy field non-exposure, survey stats, and
+  password-reset preservation were reviewed as sound.
+- Non-blocking note: Settings sends first/last name on every profile save, so
+  `users.updated_at` changes even when only address/phone changed. Accepted as
+  harmless for this self-service profile surface.
+- Non-blocking note: migration constraint addition is not individually
+  re-runnable. Accepted under the repo's forward-only checksum-tracked
+  migration policy; migration files are run transactionally.
+- Optional validator unit-test suggestion accepted as unnecessary for this
+phase because route tests cover blank-name rejection and partial profile
+update behavior.
+
+Phone follow-up review:
+
+- Completed. Claude found no blocking issues and requested no code changes.
+
+Phone follow-up findings and disposition:
+
+- Server-side possible-number validation, E.164 normalization, blank-to-null
+  behavior, current-user-only authorization, dependency fit, admin read-only
+  display, and no address scope drift were reviewed as sound.
+- Non-blocking note: the rendered phone number text input should ideally have
+  an explicit accessible name because the phone component renders both a country
+  selector and text input under one visible label. Accepted for manual a11y
+  verification before commit; no code change made because the review marked it
+  optional.
+- Non-blocking note: wrapping `parsePhoneNumber` in a defensive try/catch would
+  avoid a theoretical 500 if a future edge input passes possible-number checks
+  but fails parsing. Accepted as optional hardening; no code change made because
+  current tests and expected inputs are covered.
+- Accepted tradeoff: the phone input dependency grows the already-large web
+  bundle. Keep as-is for the UX gain unless future bundle work route-splits
+  Settings or adopts lighter metadata.
+
+Structured address follow-up review:
+
+- Completed. Claude found no blocking issues and requested no code changes.
+- Structured address shape, current-user-only authorization, partial-update
+  preservation, per-field blank-to-null normalization, shared/API/web/test
+  contract consistency, admin read-only display, and pre-commit migration
+  replacement were reviewed as sound.
+- Non-blocking note: `State` remains free text rather than a state/region
+  dropdown. Accepted as aligned with optional, country-flexible profile data.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues across the
+  base phase and both follow-up reviews
+- Review findings addressed or deferred: Yes; phone/address follow-up notes
+  accepted as optional/manual-pass checks
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 29 — Tag Group Management Foundation
 
 Date:

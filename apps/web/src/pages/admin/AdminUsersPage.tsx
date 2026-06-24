@@ -399,16 +399,20 @@ export function AdminUserDetailPage() {
                 <dd>{formatDateTime(detail.user.createdAt)}</dd>
               </div>
               <div>
-                <dt>Contact number</dt>
+                <dt>Street address</dt>
+                <dd>{profile?.addressStreet ?? "Not provided"}</dd>
+              </div>
+              <div>
+                <dt>City</dt>
+                <dd>{profile?.addressCity ?? "Not provided"}</dd>
+              </div>
+              <div>
+                <dt>State</dt>
+                <dd>{profile?.addressState ?? "Not provided"}</dd>
+              </div>
+              <div>
+                <dt>Phone number</dt>
                 <dd>{profile?.contactNumber ?? "Not provided"}</dd>
-              </div>
-              <div>
-                <dt>Preferred contact method</dt>
-                <dd>{profile?.preferredContactMethod ?? "Not provided"}</dd>
-              </div>
-              <div>
-                <dt>Contact notes</dt>
-                <dd>{profile?.contactNotes ?? "Not provided"}</dd>
               </div>
               <div>
                 <dt>Profile updated</dt>

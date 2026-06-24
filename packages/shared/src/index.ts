@@ -24,8 +24,9 @@ export interface PasswordResetMessageResponse {
 
 export interface UserProfile {
   contactNumber: string | null;
-  preferredContactMethod: string | null;
-  contactNotes: string | null;
+  addressStreet: string | null;
+  addressCity: string | null;
+  addressState: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -45,6 +46,7 @@ export interface CurrentUserProfileResponse {
 }
 
 export interface UpdateCurrentUserProfileResponse {
+  user: AuthUser;
   profile: UserProfile;
 }
 

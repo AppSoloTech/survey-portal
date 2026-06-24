@@ -202,9 +202,12 @@ describe("admin user management", () => {
     const anonymousSurvey = await createSingleQuestionPublishedSurvey(admin, "Admin anonymous");
 
     await request(app).put("/api/profile").set("Cookie", user.cookie).send({
-      contactNumber: "555-0100",
-      preferredContactMethod: "Phone",
-      contactNotes: "Weekday mornings"
+      firstName: "Jordan",
+      lastName: "Profile",
+      contactNumber: "+1 (213) 373-4253",
+      addressStreet: "22 Survey Street",
+      addressCity: "Cincinnati",
+      addressState: "Ohio"
     });
     await startAnonymousAttempt(admin, anonymousSurvey.id);
     await startAttempt(app, otherUser, availableSurvey.id);
@@ -232,15 +235,18 @@ describe("admin user management", () => {
     expect(response.body.user).toMatchObject({
       id: user.user.id,
       email: user.user.email,
-      firstName: user.user.firstName,
-      lastName: user.user.lastName,
+      firstName: "Jordan",
+      lastName: "Profile",
       role: "user"
     });
     expect(response.body.profile).toMatchObject({
-      contactNumber: "555-0100",
-      preferredContactMethod: "Phone",
-      contactNotes: "Weekday mornings"
+      contactNumber: "+12133734253",
+      addressStreet: "22 Survey Street",
+      addressCity: "Cincinnati",
+      addressState: "Ohio"
     });
+    expect(response.body.profile.preferredContactMethod).toBeUndefined();
+    expect(response.body.profile.contactNotes).toBeUndefined();
     expect(response.body.surveyStats).toMatchObject({
       available: 2,
       inProgress: 1,
@@ -271,8 +277,9 @@ describe("admin user management", () => {
     expect(response.status).toBe(200);
     expect(response.body.profile).toMatchObject({
       contactNumber: null,
-      preferredContactMethod: null,
-      contactNotes: null,
+      addressStreet: null,
+      addressCity: null,
+      addressState: null,
       createdAt: null,
       updatedAt: null
     });

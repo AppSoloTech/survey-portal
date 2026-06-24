@@ -112,8 +112,9 @@ Suggested fields:
 id
 user_id
 contact_number
-preferred_contact_method
-contact_notes
+address_street
+address_city
+address_state
 created_at
 updated_at
 ```
@@ -124,6 +125,13 @@ Notes:
 * Core profile fields should remain relational columns, not JSON blobs.
 * Contact fields are optional account metadata used for survey follow-up and
   should avoid broad CRM/account-management scope.
+* `contact_number` is presented to users and admins as "Phone number".
+* Address is stored as optional `address_street`, `address_city`, and
+  `address_state` fields. These fields are structured enough for user clarity
+  but intentionally stop short of address autocomplete, geocoding, postal-code
+  validation, or broader CRM/account-management workflows.
+* Earlier contact-method and contact-notes columns are legacy metadata and are
+  not part of the cleaned-up self-service or admin read-only profile surface.
 * Standard users may read and update only their own profile metadata.
 * Admin profile viewing or editing is a separate admin-user-management concern,
   not part of the user-owned profile model.

@@ -1,0 +1,113 @@
+# Claude Review — Phase 30 Structured Address Follow-Up (street/city/state)
+
+Reviewer: Claude Code
+Scope: the structured-address delta only, on top of the already-reviewed Phase 30
+base (notes/claude_review_phase_30.txt) and phone follow-up
+(notes/claude_review_phase_30_phone_followup.txt). Files: migration 0029, shared
+types, userProfile service, AccountSettings, AdminUsersPage, auth client, and the
+profile/adminUsers tests. Method: static review against the follow-up handoff,
+confirming the request/response shape is consistent across shared/api/web/tests
+and that partial-merge preserves omitted fields. Suite not re-run here; the base
+phase handoffs reported typecheck/lint/build/test green with approved local
+PostgreSQL.
+
+Verdict: Clean, consistent split of the single `address` into
+`addressStreet`/`addressCity`/`addressState`. Partial-merge correctly preserves
+omitted fields, per-field empty→null works, the current-user boundary is intact,
+admin stays read-only, and the pre-commit migration replacement is appropriate.
+No blocking issues. Recommend commit after the pending manual browser + mobile
+pass.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Suggested improvements (non-blocking)
+
+These are carried forward from the phone follow-up review (the phone control and
+its server validation are unchanged here) — still optional, not introduced by
+this delta:
+
+1. Give the PhoneInput an explicit `aria-label="Phone number"` so the number
+   input (not just the country select) has an accessible name, since the `<label>`
+   wraps two controls.
+2. Wrap the server `parsePhoneNumber(trimmed).number` in try/catch so any edge
+   parse throw returns a clean 400 rather than a 500.
+
+New to this delta:
+
+3. `State` is free text (length-capped at 80), not constrained to a state/region
+   list. That's a reasonable choice given the country-flexible phone field and
+   non-US addresses, but worth confirming it matches the product intent (no
+   dropdown / no US-only constraint expected).
+
+## 3. Acceptable tradeoffs
+
+- Migration 0029 was replaced in place (pre-commit) to create
+  `address_street` (<=160), `address_city` (<=80), `address_state` (<=80) instead
+  of the single `address` column. This is acceptable: the phase is uncommitted and
+  the original 0029 was never merged/applied anywhere, so there is no checksum or
+  deployed-schema conflict — the file simply reflects the final intended schema.
+  `add column if not exists` is idempotent; the `add constraint` block is not
+  re-runnable, consistent with the repo's forward-only migration policy.
+- Length bounds (street 160, city/state 80) align across DB checks, server
+  validation (`addressStreetMaxLength`/`addressFieldMaxLength`), and client
+  `maxLength` attributes. Names/phone remain 120.
+- Three independent optional fields with no cross-field requirement (e.g. street
+  without city is allowed) — fine for optional profile data.
+- Per-field empty-string→null normalization and the partial-merge upsert
+  (`case when $n then excluded else existing`) follow the established pattern.
+
+## 4. Questions or assumptions
+
+- Current-user-only boundary: confirmed intact. The write still targets `user.id`
+  from `requireAuth`; there is no `/api/profile/:id`, and the validator reads only
+  the whitelisted fields, so a body `userId` is ignored. The guessed-id test now
+  also asserts all three address fields are null for the other user, and
+  guessed read/update return 404.
+- Partial updates not wiping omitted fields: confirmed. The
+  `"<field>" in input` flags drive each column's `case when` independently, and
+  the test sets all fields then PUTs `{ addressCity: "" }` and asserts
+  contactNumber/street/state are preserved while city becomes null. This is the
+  key correctness property for this delta and it holds.
+- Request/response shape consistency: confirmed across `UserProfile`
+  (shared), the service select/map, the web `updateCurrentUserProfile` input
+  type, AccountSettings form state, AdminUsersPage display, and all tests. No
+  stale single-`address` profile references remain (grep-confirmed; the only
+  "address" hits left are the unrelated anonymous-contact-email copy and the
+  email-validation message).
+- Validation lengths/labels: reasonable — "Street address must be 160…", "City
+  must be 80…", "State must be 80…", with empty→null before the length check
+  (so blank fields clear rather than error). Tests lock the street/city bounds
+  and the missing-name and invalid-phone branches.
+- Admin read-only: confirmed. AdminUsersPage renders street/city/state/phone as
+  static dt/dd; no admin write path was added.
+- Legacy non-exposure and survey-stat stability: still covered by the
+  dedicated tests (preferred-method/contact-notes `toBeUndefined`; stats
+  byte-identical before/after a profile edit).
+
+## 5. Product UX alignment notes
+
+- Settings now shows First name, Last name, Street address, City, State, and a
+  country-aware Phone number — matching the user's request to break the single
+  address into proper street/city/state sections while keeping each optional.
+- Admin detail mirrors the same fields read-only, so the admin view tracks the
+  structured shape without drifting back to legacy contact metadata.
+- Field ordering (name → street → city → state → phone) reads naturally; confirm
+  the added inputs stack cleanly at 375/768/1280px in the manual pass.
+
+## 6. Commit readiness
+
+Ready to commit after the pending manual pass:
+  - Settings: edit name/street/city/state/phone, reload, confirm persistence and
+    that clearing one field nulls only that field;
+  - admin user detail shows street/city/state/phone read-only;
+  - 375 / 768 / 1280px for Settings and admin detail;
+  - (optional) screen-reader check of the phone field name (improvement 1).
+
+No code changes are requested from this review; improvements 1-3 are optional.
+Because this delta changed the schema/types/tests, re-running `npm test` before
+commit is worthwhile to confirm the structured-address suite is green in this
+exact working tree.

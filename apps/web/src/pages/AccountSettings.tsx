@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { CurrentUserProfileResponse } from "@survey-portal/shared";
+import PhoneInput, { isPossiblePhoneNumber } from "react-phone-number-input";
 
 import {
   fetchCurrentUserProfile,
@@ -10,13 +11,16 @@ import { useAuth } from "../auth/AuthContext.js";
 import { useReveal } from "../motion/motion.js";
 
 const emptyProfileForm = {
+  firstName: "",
+  lastName: "",
   contactNumber: "",
-  preferredContactMethod: "",
-  contactNotes: ""
+  addressStreet: "",
+  addressCity: "",
+  addressState: ""
 };
 
 export function AccountSettings() {
-  const { user } = useAuth();
+  const { updateSessionUser, user } = useAuth();
   const revealRef = useReveal<HTMLElement>();
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -42,9 +46,12 @@ export function AccountSettings() {
         setProfile(response.profile);
         setSurveyStats(response.surveyStats);
         setProfileForm({
+          firstName: response.user.firstName,
+          lastName: response.user.lastName,
           contactNumber: response.profile.contactNumber ?? "",
-          preferredContactMethod: response.profile.preferredContactMethod ?? "",
-          contactNotes: response.profile.contactNotes ?? ""
+          addressStreet: response.profile.addressStreet ?? "",
+          addressCity: response.profile.addressCity ?? "",
+          addressState: response.profile.addressState ?? ""
         });
       })
       .catch((loadError) => {
@@ -97,15 +104,25 @@ export function AccountSettings() {
     event.preventDefault();
     setError(null);
     setMessage(null);
+
+    if (profileForm.contactNumber && !isPossiblePhoneNumber(profileForm.contactNumber)) {
+      setError("Phone number must be a valid phone number");
+      return;
+    }
+
     setIsProfileSaving(true);
 
     try {
-      const savedProfile = await updateCurrentUserProfile(profileForm);
-      setProfile(savedProfile);
+      const response = await updateCurrentUserProfile(profileForm);
+      setProfile(response.profile);
+      updateSessionUser(response.user);
       setProfileForm({
-        contactNumber: savedProfile.contactNumber ?? "",
-        preferredContactMethod: savedProfile.preferredContactMethod ?? "",
-        contactNotes: savedProfile.contactNotes ?? ""
+        firstName: response.user.firstName,
+        lastName: response.user.lastName,
+        contactNumber: response.profile.contactNumber ?? "",
+        addressStreet: response.profile.addressStreet ?? "",
+        addressCity: response.profile.addressCity ?? "",
+        addressState: response.profile.addressState ?? ""
       });
       setMessage("Profile saved.");
     } catch (submitError) {
@@ -163,43 +180,81 @@ export function AccountSettings() {
 
         <form className="profile-panel profile-form" onSubmit={handleSaveProfile}>
           <div>
-            <h3>Contact details</h3>
-            <p>Optional details for reaching you about survey follow-up.</p>
+            <h3>Profile details</h3>
+            <p>Update your name and optional contact details.</p>
           </div>
           <label>
-            <span>Contact number</span>
+            <span>First name</span>
             <input
               maxLength={120}
               onChange={(event) =>
-                setProfileForm((current) => ({ ...current, contactNumber: event.target.value }))
+                setProfileForm((current) => ({ ...current, firstName: event.target.value }))
               }
+              required
               type="text"
-              value={profileForm.contactNumber}
+              value={profileForm.firstName}
             />
           </label>
           <label>
-            <span>Preferred contact method</span>
+            <span>Last name</span>
             <input
               maxLength={120}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, lastName: event.target.value }))
+              }
+              required
+              type="text"
+              value={profileForm.lastName}
+            />
+          </label>
+          <label>
+            <span>Street address</span>
+            <input
+              maxLength={160}
               onChange={(event) =>
                 setProfileForm((current) => ({
                   ...current,
-                  preferredContactMethod: event.target.value
+                  addressStreet: event.target.value
                 }))
               }
               type="text"
-              value={profileForm.preferredContactMethod}
+              value={profileForm.addressStreet}
             />
           </label>
           <label>
-            <span>Contact notes</span>
+            <span>City</span>
             <input
-              maxLength={120}
+              maxLength={80}
               onChange={(event) =>
-                setProfileForm((current) => ({ ...current, contactNotes: event.target.value }))
+                setProfileForm((current) => ({ ...current, addressCity: event.target.value }))
               }
               type="text"
-              value={profileForm.contactNotes}
+              value={profileForm.addressCity}
+            />
+          </label>
+          <label>
+            <span>State</span>
+            <input
+              maxLength={80}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, addressState: event.target.value }))
+              }
+              type="text"
+              value={profileForm.addressState}
+            />
+          </label>
+          <label>
+            <span>Phone number</span>
+            <PhoneInput
+              className="profile-phone-input"
+              defaultCountry="US"
+              international
+              countryCallingCodeEditable={false}
+              onChange={(value) =>
+                setProfileForm((current) => ({ ...current, contactNumber: value ?? "" }))
+              }
+              placeholder="Enter phone number"
+              value={profileForm.contactNumber}
             />
           </label>
           <button

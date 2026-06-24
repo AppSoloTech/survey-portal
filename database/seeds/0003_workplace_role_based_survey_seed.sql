@@ -368,8 +368,28 @@ survey_tag_rows as (
   from question_value_tags
   join survey_questions on survey_questions.id = question_value_tags.question_id
   join seed_survey on seed_survey.id = survey_questions.survey_id
+),
+new_tags as (
+  select distinct survey_tag_rows.tag_key, survey_tag_rows.tag_value
+  from survey_tag_rows
+  where not exists (
+    select 1
+    from tag_definitions existing
+    where existing.tag_key = survey_tag_rows.tag_key
+      and existing.tag_value = survey_tag_rows.tag_value
+  )
+),
+ordered_new_tags as (
+  select
+    new_tags.tag_key,
+    new_tags.tag_value,
+    (
+      select coalesce(max(tag_definitions.display_order), 0)
+      from tag_definitions
+    ) + (row_number() over (order by new_tags.tag_key, new_tags.tag_value))::integer as display_order
+  from new_tags
 )
-insert into tag_definitions (tag_key, tag_value)
-select distinct tag_key, tag_value
-from survey_tag_rows
+insert into tag_definitions (tag_key, tag_value, display_order)
+select tag_key, tag_value, display_order
+from ordered_new_tags
 on conflict (tag_key, tag_value) do nothing;

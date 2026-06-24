@@ -1,0 +1,121 @@
+# Claude Review Handoff — Phase 30 Phone Follow-Up
+
+Claude Code instructions:
+
+- Review only the structured phone-number follow-up diff on top of the already
+  reviewed Phase 30 work.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly
+  asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_30_phone_followup.txt
+```
+
+## Review Goal
+
+Please review the follow-up for:
+
+- phone number validation and E.164 normalization
+- current-user-only profile boundary staying intact
+- dependency fit and bundle/UX risk
+- Settings phone input accessibility/responsive behavior
+- admin read-only display remaining unchanged except normalized phone values
+- no address autocomplete or structured-address scope drift
+
+## Phase Follow-Up Scope
+
+Implemented:
+
+- Added `react-phone-number-input` to `apps/web`.
+- Added `libphonenumber-js` to `apps/api`.
+- Replaced the plain Settings phone input with a country-aware phone component,
+  defaulting to `US` and allowing users to choose another country/region.
+- Added frontend invalid-phone feedback before submit.
+- Added server-side possible-number validation and normalization with
+  `libphonenumber-js`; accepted nonblank values are stored as E.164.
+- Preserved blank phone normalization to `null`.
+- Kept `contactNumber` / `contact_number` as the shared/API/database field.
+- Updated focused profile/admin tests for normalized US/non-US numbers,
+  invalid rejection, and blank-to-null behavior.
+- Updated `markdown/FOLLOW_UPS.md` and `markdown/PHASE_LOG.md`.
+
+Out of scope:
+
+- Address autocomplete.
+- Structured address fields.
+- Phone number database migration/backfill.
+- Admin editing.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Key follow-up files:
+
+- `apps/api/src/services/userProfile.ts`
+- `apps/api/test/profile.test.ts`
+- `apps/api/test/adminUsers.test.ts`
+- `apps/web/src/pages/AccountSettings.tsx`
+- `apps/web/src/main.tsx`
+- `apps/web/src/styles.css`
+- `apps/api/package.json`
+- `apps/web/package.json`
+- `package-lock.json`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test -w apps/api -- profile.test.ts adminUsers.test.ts
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- profile.test.ts adminUsers.test.ts` (20 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning; the main app chunk is larger
+    after adding the phone input dependency.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 224 tests
+- Passed: `git diff --check`
+- Production dependency audit passed: `npm audit --omit=dev`
+
+Manual testing:
+
+- Not run in browser yet. Follow-up logged for Settings phone selection,
+  invalid feedback, save/reload persistence, admin read-only display, and
+  375/768/1280px responsive checks.
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_30_phone_followup.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

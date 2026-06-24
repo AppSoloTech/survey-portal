@@ -1,0 +1,55 @@
+# Phase 30 Structured Address Follow-Up Handoff
+
+## Review Request
+
+Please review the post-review Phase 30 change that splits the Settings address
+field into structured street/city/state fields.
+
+## Context
+
+Earlier Phase 30 work used one optional `address` field. The user then asked to
+break the address section into proper city, state, and street address sections.
+This follow-up intentionally supersedes the earlier "single address" decision.
+
+## Files To Review
+
+- `database/migrations/0029_user_profile_address.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/userProfile.ts`
+- `apps/api/test/profile.test.ts`
+- `apps/api/test/adminUsers.test.ts`
+- `apps/web/src/api/auth.ts`
+- `apps/web/src/pages/AccountSettings.tsx`
+- `apps/web/src/pages/admin/AdminUsersPage.tsx`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+
+## What Changed
+
+- Replaced `UserProfile.address` with:
+  - `addressStreet`
+  - `addressCity`
+  - `addressState`
+- Updated migration `0029` before commit to create:
+  - `address_street` with a 160-character check
+  - `address_city` with an 80-character check
+  - `address_state` with an 80-character check
+- Updated `/api/profile` validation, persistence, partial-merge behavior, and
+  empty-string-to-null normalization for each field.
+- Updated Settings to show separate Street address, City, and State inputs.
+- Updated Admin user detail to show those fields read-only.
+- Updated focused API tests for trimming, nulling, validation bounds, partial
+  update preservation, guessed-id isolation, admin detail, and survey stats.
+
+## Please Check
+
+- The current-user-only profile boundary still holds.
+- Partial profile updates do not accidentally wipe address fields that were not
+  included in the request.
+- The API response/request shape is consistent between shared types, API, web,
+  and tests.
+- Validation lengths and user-facing error labels are reasonable.
+- Admin detail remains read-only.
+- The migration is acceptable as a pre-commit replacement for the earlier
+  single-address migration.

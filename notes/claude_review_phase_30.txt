@@ -1,0 +1,120 @@
+# Claude Review — Phase 30 (User Profile Demographics Cleanup)
+
+Reviewer: Claude Code
+Scope: current phase diff only — migration 0029_user_profile_address.sql,
+shared types, userProfile service, profile route (unchanged but re-verified),
+admin user-detail route/page, auth.ts client, AuthContext, AccountSettings, and
+the profile/adminUsers tests. Method: static review against prompt_30 and the
+handoff, plus repo-wide greps confirming no `/profile/:id` route and no
+remaining references to the legacy fields. Suite not re-run here; the handoff
+reports typecheck/lint/build/test green with approved local PostgreSQL (API 223
+tests, web 57, shared 54; focused profile+adminUsers 19).
+
+Verdict: Clean, well-scoped, and well-tested. PII is minimized, the update path
+is strictly current-user, the name/session refresh is consistent without
+session invalidation, the admin view stays read-only, and survey-stat /
+password-reset behavior is untouched. No blocking issues. Recommend commit after
+the pending manual browser + mobile pass.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Suggested improvements (non-blocking)
+
+1. Every profile save now rewrites the name. The Settings form marks first/last
+   name `required`, so each save sends them and the service runs the `users`
+   UPDATE (bumping users.updated_at) even when only the address/phone changed.
+   Harmless and arguably correct, but if you ever want "name unchanged" saves to
+   skip the users write, the service already supports it (it only updates when
+   `firstName`/`lastName` are present) — the form would just need to omit
+   unchanged names. Not worth changing now.
+
+2. Migration constraint is not re-runnable. `add column if not exists address`
+   is idempotent, but `add constraint user_profiles_address_length_check` is not
+   (Postgres has no IF NOT EXISTS for constraints). This matches the repo's
+   forward-only, checksum-tracked migration policy (same precedent accepted in
+   prior phases), so it's fine — just noting it. Confirm the runner wraps each
+   file in a transaction so the add-column/add-constraint pair is atomic.
+
+3. Optional: a focused unit test for `readOptionalNameField` boundary (present-
+   but-blank → "X is required", absent → no-op) would lock the "names can't be
+   blanked but are partial-mergeable" rule at the validator level. The route
+   tests already cover the blank-name 400 and the partial address path, so this
+   is purely belt-and-suspenders.
+
+## 3. Acceptable tradeoffs
+
+- Address bound of 240 vs 120 for name/phone — reasonable for a single free-text
+  address line, and the client maxLength (240), server validation (240), and DB
+  check (char_length <= 240) are all aligned. Likewise name/phone are aligned at
+  120 across client/server.
+- Legacy columns (`preferred_contact_method`, `contact_notes`, plus the older
+  `organization`/`job_title`/`location`) remain in the database while being
+  removed from all active read/write paths and shared types. This is the
+  intended "hide now, schedule removal later" approach and is tracked in
+  FOLLOW_UPS; no active code references them (grep-confirmed).
+- Empty-string → null normalization for optional fields (address, phone) and the
+  partial-merge upsert (`case when $n then excluded... else existing`) are
+  carried over unchanged from the prior profile design.
+- `updateCurrentUserProfile` returns all-null `emptyUserProfile()` when no
+  profile row exists yet (e.g. a name-only first save) — consistent with the GET
+  behavior.
+
+## 4. Questions or assumptions
+
+- PII minimization: confirmed minimal — the active profile payload is now just
+  `contactNumber`, `address`, and timestamps; legacy contact-method/notes are
+  gone from update and reload responses and from admin detail (asserted in both
+  test suites via `toBeUndefined()`). Address/phone are stored plaintext, the
+  same as existing profile data; no new PII logging was introduced.
+- Current-user-only / no mass assignment: confirmed. `PUT /api/profile` derives
+  the target from `requireAuth` (`user.id`); there is no `/api/profile/:id`
+  route (grep-confirmed), and the validator reads only firstName/lastName/
+  contactNumber/address, so an injected `userId` in the body is ignored. The
+  test sending `userId: <other>` and then guessing the other user's id confirms
+  the write hits only the caller and guessed reads/updates 404.
+- Name update + session consistency: confirmed. The service updates `users` and
+  returns `mapUserRecord(...)` (AuthUser shape — no `password_hash`, which lives
+  only on `UserWithPasswordRecord`), and the client calls
+  `updateSessionUser` (= `storeSession` = `setUser`) so the account-menu
+  identity updates immediately; a reload rehydrates from `/me` against the
+  now-updated row. No cookie/session invalidation occurs, matching the non-goal.
+- Admin read-only boundary: confirmed. The admin user-detail handler only reads
+  (`fetchAdminUserById` + `fetchUserProfile` + survey stats); there is no admin
+  profile write path, and AdminUsersPage renders address/phone as static dt/dd.
+- Survey-stat / password-reset regression: none. Stats are computed
+  independently and the test asserts they are byte-identical before/after a
+  profile edit; the password-reset panel/cooldown code is not in the diff.
+
+## 5. Product UX alignment notes
+
+- Settings now edits first name, last name, address, and "Phone number" (the
+  contact number relabeled, input type `tel`), with the panel retitled to
+  "Profile details" — matches the clarified product decision to surface full
+  name + single address + phone while reusing `contactNumber` internally.
+- Names are required in the form (can't be blanked), address/phone optional —
+  sensible, and the server enforces the same (blank name → 400, blank optional →
+  null).
+- Account menu reflecting the new name without reload is handled via
+  `updateSessionUser`; the immediate state update plus the form re-seeding from
+  the response keeps the UI consistent with what was saved.
+- Admin sees the same minimized fields read-only, so the admin view won't drift
+  back toward the legacy contact-method/notes surface.
+
+## 6. Commit readiness
+
+Ready to commit after the pending manual pass the handoff lists as not yet run:
+  - /settings: update name/address/phone, reload, confirm persistence;
+  - account menu reflects the new name post-save and post-reload;
+  - another user cannot fetch/update via guessed ids (covered by tests, worth a
+    spot check);
+  - admin user detail shows address/phone read-only;
+  - password-reset send/cooldown unchanged;
+  - 375 / 768 / 1280px for Settings and Admin user detail.
+
+No code changes are requested from this review. The automated suite passed per
+the handoff (not re-run here); a final `npm test` before commit is advisable but
+low-risk.

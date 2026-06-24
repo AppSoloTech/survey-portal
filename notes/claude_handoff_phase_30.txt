@@ -1,0 +1,191 @@
+# Claude Review Handoff — Phase 30
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_30.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 30 for:
+
+- PII minimization and validation
+- current-user-only authorization
+- name update behavior and auth/session consistency
+- admin read-only boundary
+- no password-reset or survey-stat regression
+- legacy preferred-contact-method/contact-notes non-exposure
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_30.txt`
+- `notes/06-24-26_dev_path.txt`
+- `prompts/prompt_19.txt`
+- `prompts/prompt_20.txt`
+- `notes/claude_handoff_phase_19.txt`
+- `notes/claude_review_phase_19.txt`
+- `notes/claude_handoff_phase_20.txt`
+- `notes/claude_review_phase_20.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `apps/api/src/services/userProfile.ts`
+- `apps/api/src/routes/profile.ts`
+- `apps/api/src/routes/admin.ts`
+- `apps/web/src/pages/AccountSettings.tsx`
+- `apps/web/src/pages/admin/AdminUsersPage.tsx`
+- `apps/web/src/auth/AuthContext.tsx`
+- `apps/web/src/App.tsx`
+
+## Phase Scope
+
+Implemented:
+
+- Added `database/migrations/0029_user_profile_address.sql` with optional
+  `user_profiles.address` and a 240-character check constraint.
+- Updated shared profile response types:
+  - `UserProfile` now exposes `contactNumber`, `address`, and timestamps.
+  - `UpdateCurrentUserProfileResponse` now returns the updated `AuthUser` plus
+    saved profile.
+- Updated `PUT /api/profile` to validate and persist:
+  - first name
+  - last name
+  - phone number via existing `contact_number` / `contactNumber`
+  - address
+- Kept optional profile-field blank normalization to `null`.
+- Kept profile update partial-merge semantics.
+- Kept profile routes self-service-only; no `/api/profile/:id` behavior added.
+- Updated Settings to edit first name, last name, address, and "Phone number".
+- Updated the auth context so Settings can refresh the current client auth user
+  immediately after save; account-menu identity updates without reload.
+- Preserved the existing Settings survey stats and password-reset panel/cooldown.
+- Updated admin user detail to display address and phone read-only when present.
+- Removed legacy `preferredContactMethod` and `contactNotes` from visible shared
+  response types, Settings, and Admin user detail. Existing database columns/data
+  are preserved.
+- Updated `markdown/DATA_MODEL_VISION.md`, `markdown/FOLLOW_UPS.md`, and
+  `markdown/PHASE_LOG.md`.
+
+Non-goals respected:
+
+- No structured address fields.
+- No profile photos or uploads.
+- No admin demographic editing.
+- No CRM/account-management workflow.
+- No additional demographic fields beyond full name, address, and phone number.
+- No session invalidation after name/profile edits.
+- No password reset behavior changes.
+
+Known tradeoffs:
+
+- `address` allows up to 240 characters while the existing phone/name profile
+  validation remains 120 characters.
+- Existing legacy columns (`organization`, `job_title`, `location`,
+  `preferred_contact_method`, `contact_notes`) remain in the database and are
+  tracked for a later cleanup decision.
+- Manual browser checks were not run in this environment; they are logged as a
+  follow-up.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `database/migrations/0029_user_profile_address.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/userProfile.ts`
+- `apps/api/test/profile.test.ts`
+- `apps/api/test/adminUsers.test.ts`
+- `apps/web/src/api/auth.ts`
+- `apps/web/src/auth/AuthContext.tsx`
+- `apps/web/src/pages/AccountSettings.tsx`
+- `apps/web/src/pages/admin/AdminUsersPage.tsx`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_30.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test -w apps/api -- profile.test.ts adminUsers.test.ts
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Initial sandboxed focused API test attempt was blocked by PostgreSQL access
+  to `127.0.0.1:5432`; rerun with approved local PostgreSQL access.
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- profile.test.ts adminUsers.test.ts` (19 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 223 tests
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser. Follow-up logged for `/settings` save/reload/account-menu
+  identity, Settings password reset cooldown, admin read-only detail, standard
+  user admin rejection, and 375/768/1280px responsive checks.
+
+## Specific Questions
+
+- Is the active profile payload minimal enough now that legacy contact method
+  and contact notes are hidden?
+- Is a 240-character bound appropriate for the single optional address field?
+- Does the current-user-only update path avoid id guessing and mass assignment?
+- Does returning the updated `AuthUser` from `PUT /api/profile` plus
+  `updateSessionUser` in the client keep auth/session behavior consistent
+  without unnecessary session invalidation?
+- Does admin detail remain read-only and avoid accidental demographic editing?
+- Did profile edits leave survey stats and password-reset behavior unchanged?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_30.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness
