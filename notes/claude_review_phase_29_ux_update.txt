@@ -1,0 +1,139 @@
+# Claude Review — Phase 29 Post-Review Tag Catalog UX Update
+
+Reviewer: Claude Code
+Scope: the post-review UX delta only — AdminTagsPage.tsx (click-to-move panel,
+section collapse/expand, collapsed drop zones) and styles.css. The DB/API
+foundation was reviewed in notes/claude_review_phase_29.txt and is unchanged;
+the handoff confirms no API/DB/shared-type/helper changes, which the diff bears
+out (only the web page and CSS plus FOLLOW_UPS/PHASE_LOG changed).
+Method: static review of the current working tree against the prior review as
+baseline. tagCatalogDrag.ts/test are unchanged. Suite not re-run; handoff
+reports typecheck/lint/build/tagCatalogDrag green, full suite green before this
+UI-only delta.
+
+Verdict: Clean, well-structured UX addition. Click-to-move and drag-to-move
+coexist safely, collapsed sections remain valid drop targets, and the move
+panel handles same-group/submit-disable/close correctly. No blocking issues.
+A few minor polish/UX notes and one known scaling limitation below. Recommend
+commit after the pending manual browser + mobile pass.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Review-request findings
+
+a. Click-to-move vs drag-to-move coexistence — safe. The drag listeners live
+   only on the dedicated `.drag-handle` button (PointerSensor distance:6,
+   KeyboardSensor on the same handle); the tag pair is a separate
+   `.tag-catalog-pair-button` whose onClick opens the move panel, and the "Move"
+   button is a third separate control. Clicking/keyboard-activating the pair
+   cannot start a drag, and the handle cannot open the panel — no pointer or
+   keyboard contention. Mutual exclusion is also handled in state: startEditingTag
+   clears selectedMoveTagId and startMovingTag clears editingTagId, so a row is
+   never in edit and move mode at once. Sorting for a row is disabled while it is
+   being edited (`disabled || editingTagId === tag.id`).
+
+b. Collapsed sections as drop targets — yes. CollapsedTagDropZone registers a
+   useDroppable with `{groupId, type: "groupdrop"}`, the same data shape the
+   drag helper's resolveOverTagGroupId already recognizes, so a drag dropped on a
+   collapsed section resolves to a move-tag into that group/ungrouped. Droppable
+   ids are suffixed (`:collapsed` / `ungrouped-collapsed`) and the expanded vs
+   collapsed body render mutually exclusively, so there is no duplicate-id
+   collision, and the id suffix is irrelevant to the helper (it keys off
+   overData, not overId, for groupdrop). displayOrder appends to end via
+   tagIdsByGroup count, which is computed from group state and so is correct even
+   while collapsed. One asymmetry worth noting (3b below): you can drag a tag
+   *into* a collapsed section but cannot drag one *out* of a collapsed section.
+
+c. Move panel — same-group/submit/stale handling correct. handleMoveSelectedTag
+   no-ops and closes when the chosen group equals the tag's current group; the
+   submit button is independently disabled on `isSubmitting` or a same-group
+   selection, so a redundant move can't be issued. Only one panel is open at a
+   time (single selectedMoveTagId), startMovingTag toggles it closed on re-click
+   and re-seeds selectedMoveGroupId to the tag's current group when switching
+   rows, and a successful move closes the panel after applyCatalog. State is
+   server-authoritative (applyCatalog from the move response), so no client/server
+   drift. On move failure the panel stays open for retry — reasonable.
+
+d. Collapse/expand vs edit/delete/move — no bad interaction. Collapsing a section
+   hides its rows without clearing editingTagId/selectedMoveTagId; expanding
+   restores the same edit/move row with retained field values. Deleting a tag or
+   group while a panel/edit references it simply stops rendering that row (the
+   stale id is never read for a non-rendered row). Collapse all / Expand all is
+   driven by allSectionsCollapsed and replaces the whole set, so it self-corrects
+   any stale keys. Group reorder drag still works when bodies are collapsed
+   because the group cards (and their header drag handles) still render.
+
+e. Usability for hundreds of pairs — improved but bounded; see 4 (scaling). The
+   collapse controls and per-section counts are the right ergonomic lever for big
+   catalogs, and the handoff correctly scopes search/filter/pagination out of
+   this delta.
+
+f. CSS at narrow widths / dense rows — looks sound. The new `.three-columns` tag
+   form is added to the 767.98px single-column breakpoint list, so it stacks on
+   mobile like `.two-columns`. The pair button uses min-width:0 + overflow-wrap:
+   anywhere (long categories/values won't overflow the row), the move panel and
+   group edit form flex-wrap with sensible flex-basis, and the collapsed drop zone
+   has a clear dashed affordance with min-height. No obvious overflow or
+   tap-target regressions; confirm in the manual 375/768/1280 pass.
+
+## 3. Minor observations (non-blocking)
+
+1. Empty-state double render. When there are zero groups and zero tags, the
+   "No catalog tags yet" empty state (lines ~461-466) renders *and* the always-
+   present Ungrouped section renders its own "No tags here" empty state below it.
+   Harmless but slightly redundant; consider hiding the Ungrouped section (or the
+   top empty state) when the whole catalog is empty.
+
+2. Move-out-of-collapsed requires expand. A tag inside a collapsed section has
+   neither a visible drag handle nor a clickable pair, so it can only be moved
+   after expanding that section. This is reasonable behavior, but worth a line in
+   the help copy or the manual checklist so it isn't mistaken for a bug.
+
+3. Stale collapsedSectionKeys entries. Collapsing then deleting a group leaves
+   its `group:<id>` key in the set. It's inert (allSectionKeys no longer includes
+   it; Collapse/Expand all rebuilds the set), so purely cosmetic memory — fine to
+   leave, or prune in applyCatalog if you want tidiness.
+
+4. Two affordances open the same panel (clicking the pair text and the explicit
+   "Move" button). This matches the requested behavior, but clicking the pair
+   text to *move* may surprise admins who expect click-to-edit; the explicit
+   Move/Edit buttons mitigate this. aria-expanded on the pair button communicates
+   the panel state to assistive tech. No change required — just confirm the
+   interaction reads naturally in the manual pass.
+
+## 4. Scaling note (deferred, acknowledged)
+
+With sections expanded, every tag row is rendered inside a SortableContext, so a
+catalog with hundreds of expanded pairs will mount hundreds of sortable nodes —
+drag precision and render cost will degrade. The handoff explicitly defers
+search/filter/pagination/virtualization, and collapse-all is a real mitigation,
+so this is an accepted foundation limitation, not a defect. Worth keeping the
+deferred-improvement note in FOLLOW_UPS so it isn't lost.
+
+## 5. Tests
+
+The pure drag helper remains covered by its 4 unit tests. The new behavior lives
+in component state, so it's untested by automation. Optional, not blocking:
+extract and unit-test the small pure bits — the same-group move guard
+(target === current → no-op) and the toggle/all-collapsed logic — if you want
+regression coverage without a full RTL harness. The existing API-level grouping
+tests already lock the contract these UI actions call.
+
+## 6. Commit readiness
+
+Ready to commit once the pending manual pass is done (handoff lists it; it is not
+yet run):
+  - click a grouped and an ungrouped tag, move via the selector;
+  - drag between expanded sections and into collapsed sections;
+  - collapse/expand individual sections and Collapse all / Expand all;
+  - edit a grouped pair and confirm its group is retained;
+  - re-check builder hidden-tag suggestions;
+  - 375 / 768 / 1280px layouts.
+
+No code changes are requested from this review. The full suite was green before
+this UI-only delta; re-running `npm test` before commit is advisable but the risk
+of a UI-only change breaking API/shared tests is low.

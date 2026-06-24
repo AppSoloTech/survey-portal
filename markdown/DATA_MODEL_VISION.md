@@ -359,6 +359,63 @@ Notes:
 
 ---
 
+## Tag Definition
+
+Represents one reusable catalog category/value pair available to administrators
+as a hidden-tag suggestion.
+
+Suggested fields:
+
+```txt
+id
+tag_key
+tag_value
+group_id
+display_order
+created_at
+updated_at
+```
+
+Notes:
+
+* Tag definitions are admin-only catalog metadata.
+* A tag definition stores the category/value pair together; category and value
+  should not be split into separately groupable objects.
+* `group_id` is nullable. A null value means the pair lives in the public
+  ungrouped catalog holding area.
+* A tag definition may belong to at most one tag group.
+* Deleting a catalog definition does not delete hidden tags already saved on
+  answer options, Other metadata, value tags, responses, reports, or CSV rows.
+* Builder-saved hidden tags continue to auto-register catalog definitions and
+  enter the ungrouped holding area by default.
+
+---
+
+## Tag Group
+
+Represents an admin-managed catalog grouping for reusable tag definitions.
+
+Suggested fields:
+
+```txt
+id
+name
+display_order
+created_at
+updated_at
+```
+
+Notes:
+
+* Tag groups are admin-only organization metadata for `/admin/tags`.
+* Tag groups are not participant-facing and should not appear in participant
+  survey payloads, reports, CSV exports, response storage, or hidden-tag
+  matching behavior.
+* Deleting a tag group does not delete tag definitions; grouped definitions
+  return to the ungrouped catalog holding area.
+
+---
+
 ## Question Other Tag
 
 Represents hidden metadata attached to the system-generated Other choice on a

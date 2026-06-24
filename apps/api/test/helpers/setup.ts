@@ -23,6 +23,7 @@ const dataTables = [
   "survey_questions",
   "survey_pages",
   "tag_definitions",
+  "tag_groups",
   "surveys",
   "survey_categories",
   "users"

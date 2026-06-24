@@ -1,0 +1,141 @@
+# Claude Handoff — Phase 29 Tag Group Management Foundation
+
+Date:
+2026-06-24
+
+Branch:
+`phase-29-tag-groups`
+
+Prompt:
+`prompts/prompt_29.txt`
+
+## Scope
+
+Phase 29 adds admin-managed grouping for the reusable hidden-tag catalog on
+`/admin/tags`.
+
+Groups organize whole tag category/value pairs. The implementation must keep
+pairs intact, keep groups admin-only, and avoid changing participant payloads,
+reports, CSV shape, response storage, hidden-tag matching, or survey validation.
+
+## Changes Made
+
+- Added migration `database/migrations/0028_tag_groups.sql`.
+  - New `tag_groups` table: `id`, `name`, `display_order`, timestamps, unique
+    name, positive display order.
+  - Added `tag_definitions.group_id` nullable FK to `tag_groups(id)` with
+    `on delete set null`.
+  - Added `tag_definitions.display_order`; existing definitions backfill into
+    ungrouped ordering by category/value/id.
+  - Added ordering indexes.
+- Extended shared catalog types in `packages/shared/src/index.ts`.
+  - `TagDefinition` now includes `groupId` and `displayOrder`.
+  - Added `TagGroup`, `TagCatalogGroup`, and grouped list fields on
+    `TagDefinitionsResponse`.
+- Rebuilt admin-only `/api/tags` in `apps/api/src/routes/tags.ts`.
+  - Existing flat `tags` list remains in the response.
+  - Added grouped `groups` and `ungroupedTags`.
+  - Added group create/update/delete/reorder routes.
+  - Added tag create/update with optional group assignment.
+  - Added tag reorder and tag move routes.
+  - Reorder endpoints verify exact id sets before saving.
+  - Deleting a group moves its definitions to ungrouped and preserves the
+    definitions.
+- Updated builder tag auto-registration in
+  `apps/api/src/services/surveyBuilder.ts` so hidden tags saved from builder
+  flows register into ungrouped catalog order.
+- Added validation helpers for group names, group ids, tag moves, and tag
+  reorders in `apps/api/src/services/validation.ts`.
+- Rebuilt `/admin/tags` in `apps/web/src/pages/admin/AdminTagsPage.tsx`.
+  - Create groups.
+  - Create tags with optional group assignment.
+  - Rename/delete groups.
+  - Edit/delete tags while preserving or changing group assignment.
+  - Drag/drop groups.
+  - Drag/drop tag pairs within a section and between groups/ungrouped.
+- Added pure drag outcome helper and tests:
+  - `apps/web/src/components/admin/tagCatalogDrag.ts`
+  - `apps/web/src/components/admin/tagCatalogDrag.test.ts`
+- Updated frontend tag API client in `apps/web/src/api/tags.ts`.
+- Added tag board styling in `apps/web/src/styles.css`.
+- Corrected one remaining visible admin copy reference in
+  `apps/web/src/pages/admin/SurveyQuestionsPage.tsx` from "keys and values" to
+  "categories and values".
+- Expanded `apps/api/test/tagCatalog.test.ts`.
+- Updated docs:
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+
+## Intentional Non-Changes
+
+- Did not split tag categories and values into separate groupable objects.
+- Did not allow a tag pair to belong to multiple groups.
+- Did not add group fields to participant survey payloads.
+- Did not change report tag stats or CSV hidden-tag values.
+- Did not change answer tags, question value tags, Other tags, response
+  storage, hidden-tag rollups, or survey validation.
+- Did not add reporting/filtering by tag group.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run test -w apps/web -- tagCatalogDrag
+npm run test -w apps/api -- test/tagCatalog.test.ts
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run test -w apps/web -- tagCatalogDrag`
+  - 1 file, 4 tests
+- Initial sandboxed API focused test was blocked by PostgreSQL access to
+  `127.0.0.1:5432`; rerun with approved local PostgreSQL access passed.
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/tagCatalog.test.ts`
+  - 1 file, 13 tests
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 222 tests
+- Passed: `git diff --check`
+
+Manual checks:
+
+- Not run in browser.
+- The manual `/admin/tags` responsive workflow is tracked in
+  `markdown/FOLLOW_UPS.md`.
+
+## Review Requests
+
+Please review:
+
+- Migration safety and ordering/backfill behavior.
+- Admin-only authorization boundaries for every group endpoint.
+- Pair-level grouping integrity: category/value pairs stay together.
+- Group delete behavior: definitions return to ungrouped without deleting
+  catalog rows or saved hidden tags.
+- Drag/drop outcome correctness and API reorder validation.
+- No participant/report/CSV coupling to tag groups.
+- Whether returning flat `tags` plus grouped `groups`/`ungroupedTags` is a
+  reasonable compatibility shape.
+
+## Required Review Output
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_29.txt
+```
+
+Then summarize the result in chat.

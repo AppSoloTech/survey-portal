@@ -725,7 +725,7 @@ export function SurveyQuestionsPage() {
             <h3>Tag catalog</h3>
             <p className="builder-heading-note">
               Tags saved on answer options register in the shared catalog automatically.
-              Manage reusable keys and values on the tag catalog page.
+              Manage reusable categories and values on the tag catalog page.
             </p>
           </div>
           <Link className="button-link compact-button secondary-button" to="/admin/tags">

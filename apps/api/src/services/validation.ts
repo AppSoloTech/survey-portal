@@ -12,6 +12,7 @@ const answerOptionTextMaxLength = 240;
 const otherAnswerTextMaxLength = answerOptionTextMaxLength;
 const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
+const tagGroupNameMaxLength = 120;
 const scaleRangeMaxValueCount = 21;
 const categoryNameMaxLength = 120;
 const surveyPageTitleMaxLength = 180;
@@ -321,6 +322,97 @@ export function validateAnswerTagBody(body: unknown): ValidationResult<{
   };
 }
 
+export function validateTagDefinitionBody(body: unknown): ValidationResult<{
+  tagKey: string;
+  tagValue: string;
+  groupId: number | null | undefined;
+}> {
+  const tagValidation = validateAnswerTagBody(body);
+
+  if (!tagValidation.ok) {
+    return tagValidation;
+  }
+
+  const record = body as Record<string, unknown>;
+  const groupId =
+    Object.hasOwn(record, "groupId") ? readOptionalPositiveIntegerField(record, "groupId") : undefined;
+
+  if (groupId === false) {
+    return { ok: false, error: "groupId must be a positive integer or null" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      tagKey: tagValidation.value.tagKey,
+      tagValue: tagValidation.value.tagValue,
+      groupId
+    }
+  };
+}
+
+export function validateTagGroupBody(body: unknown): ValidationResult<{ name: string }> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const name = readTextField(body, "name");
+
+  if (!name) {
+    return { ok: false, error: "Group name is required" };
+  }
+
+  if (name.length > tagGroupNameMaxLength) {
+    return { ok: false, error: `Group name must be ${tagGroupNameMaxLength} characters or fewer` };
+  }
+
+  return { ok: true, value: { name } };
+}
+
+export function validateTagMoveBody(body: unknown): ValidationResult<{
+  groupId: number | null;
+  displayOrder: number | null;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const groupId = readOptionalPositiveIntegerField(body, "groupId");
+  const displayOrder = readOptionalPositiveIntegerField(body, "displayOrder");
+
+  if (groupId === false) {
+    return { ok: false, error: "groupId must be a positive integer or null" };
+  }
+
+  if (displayOrder === false) {
+    return { ok: false, error: "displayOrder must be a positive integer" };
+  }
+
+  return { ok: true, value: { groupId, displayOrder } };
+}
+
+export function validateTagReorderBody(body: unknown): ValidationResult<{
+  groupId: number | null;
+  tagIds: number[];
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const groupId = readOptionalPositiveIntegerField(body, "groupId");
+  const tagIds = readPositiveIntegerArray(body.tagIds, "tagIds");
+
+  if (groupId === false) {
+    return { ok: false, error: "groupId must be a positive integer or null" };
+  }
+
+  if (!tagIds.ok) {
+    return tagIds;
+  }
+
+  return { ok: true, value: { groupId, tagIds: tagIds.value } };
+}
+
 // Body for hidden value tags on integer/text questions. Bounds are only
 // meaningful for integer questions; the route layer enforces the per-type
 // shape since it knows the question.
@@ -538,7 +630,7 @@ export function validateConditionalRuleBody(
 
 export function validateReorderBody(
   body: unknown,
-  field: "pageIds" | "questionIds" | "optionIds"
+  field: "pageIds" | "questionIds" | "optionIds" | "groupIds"
 ): ValidationResult<{ ids: number[] }> {
   if (!isRecord(body)) {
     return { ok: false, error: "Request body is required" };

@@ -1,0 +1,149 @@
+# Claude Handoff — Phase 29 Post-Review Tag Catalog UX Update
+
+Date:
+2026-06-24
+
+Branch:
+`phase-29-tag-groups`
+
+Related prompt:
+`prompts/prompt_29.txt`
+
+Prior review:
+`notes/claude_review_phase_29.txt`
+
+## Scope
+
+This is a targeted follow-up review for a post-Claude UX/ergonomics update on
+`/admin/tags`.
+
+The Phase 29 foundation already received a clean review in
+`notes/claude_review_phase_29.txt`. After that review, the developer requested
+better handling for large catalogs with hundreds of category/value pairs:
+
+- Clicking a grouped or ungrouped tag should open a group selector to move it.
+- Manual drag/drop move functionality should remain.
+- Groups and the Ungrouped section should be collapsible and expandable.
+
+Please focus this review on the latest UX delta, not a full re-review of the
+database/API foundation unless the new UI behavior exposes a new concern.
+
+## Files To Focus On
+
+- `apps/web/src/pages/admin/AdminTagsPage.tsx`
+- `apps/web/src/styles.css`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+
+The full branch still includes the broader Phase 29 files from the original
+implementation, so use the prior review as the baseline context.
+
+## Changes Made In This Update
+
+- Added selected-tag move state:
+  - clicking a tag pair opens an inline `Move to` panel
+  - the visible `Move` button opens the same panel
+  - moving uses the existing `moveTagDefinition` API and appends the tag to the
+    selected target section
+  - opening edit mode closes the move panel for that row
+- Preserved drag/drop behavior:
+  - drag handles still use the existing sortable row behavior
+  - tag pair clicks are separate from the drag handle
+  - collapsed sections still provide a droppable target so drag moves remain
+    possible
+- Added section collapse state:
+  - Ungrouped can collapse/expand
+  - each group can collapse/expand
+  - board-level `Collapse all` / `Expand all` controls affect all sections
+  - collapsed sections show a compact count and drop hint
+- Added CSS for:
+  - clickable tag pair button
+  - inline move panel
+  - row shell
+  - collapsed drop zone
+- Updated docs:
+  - `markdown/FOLLOW_UPS.md` manual checklist now includes click-to-move and
+    collapse/expand checks
+  - `markdown/PHASE_LOG.md` records this as a post-review UX polish and notes
+    that it was not part of the original Claude review
+
+## Intentional Non-Changes
+
+- No API changes.
+- No database changes.
+- No shared type changes.
+- No changes to participant/report/CSV behavior.
+- No changes to the existing drag/drop helper or API reorder semantics.
+- No search/filter/pagination was added in this update.
+
+## Validation
+
+Commands run after this UX update:
+
+```bash
+npm run typecheck
+npm run test -w apps/web -- tagCatalogDrag
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run test -w apps/web -- tagCatalogDrag`
+  - 1 file, 4 tests
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed: `git diff --check`
+
+Not rerun after this UI-only update:
+
+```bash
+npm test
+```
+
+The full test suite passed before this follow-up update:
+
+- Shared tests: 4 files, 54 tests
+- Web tests: 5 files, 57 tests
+- API tests: 22 files, 222 tests
+
+Manual checks:
+
+- Not run in browser yet.
+- Pending manual checklist includes:
+  - click grouped tag and move it with the selector
+  - click ungrouped tag and move it with the selector
+  - drag tags between expanded sections
+  - drag tags into collapsed sections
+  - collapse/expand individual groups and Ungrouped
+  - Collapse all / Expand all
+  - 375 / 768 / 1280px layouts
+
+## Review Requests
+
+Please review:
+
+- Whether click-to-move and drag-to-move can coexist without confusing pointer
+  or keyboard interaction.
+- Whether collapsed sections still behave as valid drag/drop targets.
+- Whether the move panel handles same-group selection, submit disabling, and
+  stale state safely.
+- Whether collapsed/expanded state has any bad interaction with editing,
+  deleting, or moving tags.
+- Whether the added controls remain usable for catalogs with hundreds of tag
+  pairs.
+- Whether the CSS introduces layout issues on narrow widths or dense rows.
+- Whether any additional focused tests are warranted before commit.
+
+## Required Review Output
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_29_ux_update.txt
+```
+
+Then summarize the result in chat.

@@ -6,6 +6,264 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 29 — Tag Group Management Foundation
+
+Date:
+2026-06-24
+
+Status:
+Complete; ready to commit
+
+Prompt:
+`prompts/prompt_29.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_29.txt`
+- Claude review: `notes/claude_review_phase_29.txt`
+- UX update handoff: `notes/claude_handoff_phase_29_ux_update.txt`
+- UX update review: `notes/claude_review_phase_29_ux_update.txt`
+
+## Goals
+
+- Add admin-managed tag groups for the reusable hidden-tag catalog.
+- Keep each tag category/value pair intact while grouping and moving.
+- Support group CRUD, group reorder, tag reorder, and moving tags between
+  groups and the ungrouped holding area.
+- Keep tag groups out of participant, report, CSV, response, and hidden-tag
+  matching behavior.
+
+## Built
+
+- Added migration `0028_tag_groups.sql`:
+  - new `tag_groups` table with name, display order, timestamps, and unique
+    names
+  - nullable `tag_definitions.group_id` with `on delete set null`
+  - `tag_definitions.display_order` for grouped and ungrouped catalog ordering
+  - indexes for group and tag ordering
+- Extended shared tag catalog types with `TagGroup`, grouped catalog response
+  data, `groupId`, and `displayOrder`.
+- Expanded admin-only `/api/tags` behavior:
+  - group create, rename, reorder, and delete
+  - tag create/update with optional group assignment
+  - tag reorder within grouped or ungrouped sections
+  - tag move between groups and ungrouped
+  - exact-set reorder validation for groups and tag sections
+- Updated builder auto-registration so hidden tags saved from survey-builder
+  flows enter the ungrouped catalog area with a valid display order.
+- Rebuilt `/admin/tags` into a grouped drag/drop board with:
+  - group creation
+  - optional group selection when creating a new catalog pair
+  - group rename/delete controls
+  - tag edit/delete controls that preserve or change group assignment
+  - draggable group ordering and draggable tag movement between sections
+- Added post-review ergonomics for large tag catalogs:
+  - clicking a grouped or ungrouped tag opens an inline move panel with a group
+    selector
+  - drag/drop manual move behavior remains available
+  - groups and the Ungrouped holding area can collapse/expand individually
+  - board-level Expand all / Collapse all controls support large catalogs
+- Tightened the click-to-move control after screenshot review so the group
+  selector, Move action, and Cancel action stay inline with the row controls
+  instead of stretching across the card.
+- Added a pure tag catalog drag helper and focused unit tests.
+- Expanded tag catalog API tests for admin-only access, group CRUD, assignment,
+  unassignment, reorder, cross-group moves, group deletion, builder
+  auto-registration, and non-exposure in participant/report/CSV payloads.
+- Corrected one remaining admin-facing builder helper copy instance from
+  "keys and values" to "categories and values".
+
+## Important Decisions
+
+### Groups Are Catalog Metadata Only
+
+Decision:
+Store grouping on `tag_definitions` and expose it only through admin catalog
+APIs.
+
+Reason:
+The feature is for managing reusable catalog pairs. Hidden tags saved on answer
+options, Other metadata, and value tags should continue to use plain
+category/value pairs exactly as before.
+
+Tradeoff:
+Reports and CSV do not show group names. Cross-survey or reporting filters by
+group remain out of scope.
+
+### Group Deletion Leaves Tags Intact
+
+Decision:
+Deleting a tag group returns its catalog definitions to the ungrouped holding
+area.
+
+Reason:
+The prompt explicitly requires group deletion to avoid deleting tag
+definitions, and existing saved hidden tags are independent of the catalog.
+
+Tradeoff:
+Admins may need to manually re-home returned tags after deleting a group.
+
+## Architecture Notes
+
+- Database/schema impact: additive migration `0028_tag_groups.sql`; existing
+  definitions backfill into ungrouped ordering.
+- API contract impact: `/api/tags` list responses now include grouped catalog
+  data while keeping the flat `tags` array; tag objects include `groupId` and
+  `displayOrder`.
+- Auth or authorization impact: all group endpoints use the existing admin-only
+  `/api/tags` boundary.
+- Data privacy or visibility impact: automated tests assert participant,
+  report, and CSV payloads do not expose tag group metadata.
+- Frontend UX impact: `/admin/tags` is now a grouped drag/drop management
+  board with an ungrouped holding area.
+- Environment or deployment impact: run migration `0028` before using tag
+  groups.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run test -w apps/web -- tagCatalogDrag
+npm run test -w apps/api -- test/tagCatalog.test.ts
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run test -w apps/web -- tagCatalogDrag
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run test -w apps/web -- tagCatalogDrag` (4 tests)
+- Initial sandboxed focused API test attempt was blocked by PostgreSQL access
+  to `127.0.0.1:5432`.
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/tagCatalog.test.ts` (13 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 222 tests
+- Passed: `git diff --check`
+- Post-review UX polish passed:
+  - `npm run typecheck`
+  - `npm run test -w apps/web -- tagCatalogDrag`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+- Compact move-control polish passed:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+- Final pre-commit rerun passed with approved local PostgreSQL access:
+  `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 222 tests
+
+Manual tests:
+
+- Passed by developer on 2026-06-24:
+  - create/rename/delete tag groups on `/admin/tags`
+  - create a tag directly into a group
+  - click grouped and ungrouped tags to move them with the group selector
+  - drag tag pairs between groups and into Ungrouped
+  - collapse/expand groups and Ungrouped
+  - edit a grouped tag pair and confirm group assignment remains correct
+  - re-check hidden-tag suggestions in the survey builder
+  - inspect responsive behavior at 375 / 768 / 1280px
+
+## Follow-Up Tasks
+
+- Manual `/admin/tags` responsive browser pass is complete.
+- Claude Code review is complete with no blocking findings and no requested
+  code changes.
+- Confirmed Claude's migration atomicity question: `scripts/migrate-db.mjs`
+  wraps each pending migration file in `begin`/`commit`.
+- Accepted Claude's non-blocking observation that builder suggestion ordering
+  now follows the flat catalog response's ungrouped/group display order before
+  `buildTagPresets` sorts merged suggestions alphabetically. Manual browser
+  testing should still confirm the suggestion dropdown reads sensibly.
+- Added post-review UX polish at developer request after Claude's review:
+  click-to-move controls and collapsible grouped/ungrouped sections. These
+  additions passed frontend-focused validation and received a targeted second
+  Claude review with no blocking findings.
+- Accepted Claude's UX review notes:
+  - empty whole-catalog state plus Ungrouped empty section can both render when
+    the catalog is empty; harmless, left as-is for now
+  - moving a tag out of a collapsed section requires expanding it first; this is
+    accepted behavior for the current interaction model
+  - stale collapsed-section keys after group deletion are inert and self-correct
+    on Collapse all / Expand all
+  - search/filtering, pagination, or virtualization remain deferred if
+    hundred-row expanded catalogs become cumbersome
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_29.txt`
+
+Status:
+
+- Completed. Claude found no blocking issues and recommended commit after the
+  required manual browser and mobile pass.
+
+Findings and disposition:
+
+- Migration safety, admin-only authorization, pair-level grouping integrity,
+  group delete behavior, server-side reorder validation, and
+  participant/report/CSV isolation were reviewed as sound.
+- Non-blocking observation about possible concurrent display-order ties is
+  accepted for this low-concurrency admin surface; read paths have stable
+  tiebreakers and reorders self-heal to contiguous ordering.
+- Non-blocking observation about redundant intermediate `display_order` write
+  during tag moves is accepted as harmless within the transaction.
+
+## Claude UX Update Review Notes
+
+Source:
+
+- `notes/claude_review_phase_29_ux_update.txt`
+
+Status:
+
+- Completed. Claude found no blocking issues and recommended commit after the
+  manual browser and mobile pass, which is now complete.
+
+Findings and disposition:
+
+- Click-to-move and drag-to-move were reviewed as safely separated by dedicated
+  controls, with edit and move state mutually exclusive.
+- Collapsed sections were reviewed as valid drop targets; dragging into a
+  collapsed section is supported, while moving out requires expanding.
+- The move panel's same-group guard, submit disabling, retry behavior, and
+  server-authoritative state refresh were reviewed as sound.
+- Dense-row/narrow-width CSS was reviewed as reasonable and the required
+  375 / 768 / 1280px manual pass is now complete.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found authorization boundaries sound
+  and server-side admin-only tests pass for catalog/group endpoints
+- Review findings addressed or deferred: Yes; no code changes requested
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 28 — Tag Category Terminology Alignment
 
 Date:

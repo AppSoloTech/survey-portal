@@ -1,0 +1,142 @@
+# Claude Review — Phase 29 (Tag Group Management Foundation)
+
+Reviewer: Claude Code
+Scope: current phase diff vs main — migration 0028_tag_groups.sql, routes/tags.ts
+(full rewrite), validation.ts, surveyBuilder.ts registerTagDefinition, shared
+types, web tags API client, AdminTagsPage.tsx, tagCatalogDrag.ts + test,
+tagCatalog.test.ts, setup.ts, SurveyQuestionsPage copy fix, styles, docs.
+Method: static review against prompt_29 and the handoff, plus repo-wide grep to
+confirm the new group fields are isolated to the tag code paths. The suite was
+not re-executed; the handoff reports typecheck/lint/build/test green with
+approved local PostgreSQL (API 222 tests, web 57, shared 54; tagCatalog 13).
+
+Verdict: Solid, well-scoped foundation. Authorization, pair integrity, group
+delete behavior, reorder validation, and participant/report/CSV isolation are
+all correct and well tested. No blocking issues. A few non-blocking
+observations below; recommend commit after the manual browser + mobile pass the
+prompt requires.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Review-request findings
+
+a. Migration safety / ordering / backfill — sound. `tag_groups` uses identity
+   PK, unique name, positive display_order check. `tag_definitions` gains a
+   nullable `group_id` FK with `on delete set null` (the mechanism that returns
+   tags to ungrouped on group delete) and a `display_order` backfilled
+   deterministically via `row_number() over (order by tag_key, tag_value, id)`
+   before being set NOT NULL with a positive check. Table/columns/indexes use
+   IF NOT EXISTS; the backfill→SET NOT NULL→ADD CONSTRAINT steps are not
+   re-runnable, which is consistent with the repo's forward-only, checksum-
+   tracked migrations (same precedent accepted in Phase 27). One confirmation:
+   ensure the migration runner wraps each file in a single transaction so the
+   backfill and SET NOT NULL cannot land half-applied — see Questions.
+
+b. Admin-only authorization — correct and comprehensively tested. The router
+   applies `requireAuth, requireRole("admin")` to every route, and
+   tagCatalog.test.ts asserts 403 for a non-admin on all ten endpoints (list,
+   tag CRUD, group create/rename/reorder/delete, tag reorder, tag move).
+
+c. Pair-level grouping integrity — preserved. Groups operate on whole
+   `tag_definitions` rows (`group_id`/`display_order` columns); category and
+   value are never split into separate groupable objects, and a pair belongs to
+   at most one group (single nullable FK). Editing a pair's category/value keeps
+   its group (PUT /:id treats an omitted `groupId` as "keep current" via
+   `Object.hasOwn` → undefined → `nextGroupId = currentGroupId`; tested).
+
+d. Group delete — definitions preserved. DELETE /groups/:groupId captures the
+   group's tag ids, deletes the group row (FK sets those tags' group_id to
+   null), then recompacts ungrouped order (existing ungrouped followed by the
+   former group's tags) and the remaining groups' order — all in one
+   transaction with rollback. Catalog rows and saved hidden tags are untouched;
+   tested by "deletes a group without deleting its tag definitions" and
+   "keeps saved option tags when a catalog entry is deleted".
+
+e. Drag/drop correctness + reorder validation — good. The pure helper
+   (tagCatalogDrag.ts) cleanly distinguishes group reorder, same-group tag
+   reorder, cross-group move, and ungrouped drop, with one-based display order;
+   its four unit tests cover each path. Server reorder endpoints require the
+   payload to be the exact id set of the target scope (`sameIdSet`), rejecting
+   partial/duplicate/foreign id lists with 400 (tested). The page is
+   server-authoritative — every mutation applies the response catalog rather
+   than mutating local state optimistically — so client/server order cannot
+   drift, and handleDragEnd guards against concurrent drags via `isSubmitting`.
+
+f. No participant/report/CSV coupling — confirmed. Repo-wide grep shows
+   `group_id`/`tag_groups`/`groupId` appear only in validation.ts,
+   surveyBuilder.ts, and routes/tags.ts — never in survey serialization,
+   reporting, or CSV. The "keeps tag group metadata out of participant, report,
+   and CSV payloads" test asserts no `groupId` in the participant survey read or
+   the report payload, that tagStats still carry tagKey/tagValue, and that the
+   CSV still emits `key=value` and does not contain the group name.
+
+g. Compatibility shape (flat `tags` + grouped `groups`/`ungroupedTags`) —
+   reasonable. Keeping the flat list means existing consumers (the survey
+   builder's hidden-tag suggestion list) keep working without change while the
+   grouped fields drive the new board. See observation 1 about its ordering.
+
+## 3. Observations (non-blocking)
+
+1. Builder suggestion ordering changed. The flat `tags` list was previously
+   ordered `tag_key, tag_value, id` (alphabetical); it is now
+   `group_id nulls first, display_order, tag_key, tag_value, id`. The survey
+   builder hidden-tag suggestion dropdown consumes `response.tags`
+   (SurveyQuestionsPage sets `catalogTags = response.tags`), so its suggestion
+   order now reflects catalog display order rather than pure alphabetical. Not a
+   correctness issue and arguably an improvement, but it is a UX change the
+   prompt didn't explicitly call for — worth a confirmation, and worth a manual
+   check that the builder suggestion list still reads sensibly.
+
+2. display_order assignment is not lock-guarded. POST /groups computes
+   `fetchNextGroupDisplayOrder` then inserts as separate statements (and outside
+   a transaction); POST / does so inside a transaction but without a row lock.
+   Two concurrent creates in the same scope could compute the same next order.
+   There is no unique constraint on display_order, so this produces no error and
+   ordering is tie-broken by (name/id) or (tag_key, tag_value, id) — acceptable
+   for an admin-only, low-concurrency surface, but noting it in case stricter
+   ordering guarantees are wanted later.
+
+3. PATCH /:id/group writes display_order twice. The first UPDATE sets
+   `display_order = targetIds.indexOf(id)+1` (needed to set group_id), then
+   `reorderTags(target, targetIds)` immediately renumbers the whole target scope
+   including the moved row. The intermediate value is harmless (same transaction,
+   superseded before commit), just slightly redundant.
+
+## 4. Acceptable tradeoffs
+
+- No down migration — consistent with the repo's forward-only migration policy.
+- No unique constraint on display_order — reorders always write a contiguous
+  1..n set in a single UPDATE...FROM(values) statement, and read paths have
+  stable tiebreakers, so gaps/dupes are self-healing on the next reorder.
+- registerTagDefinition (builder auto-registration) inserts new pairs into
+  ungrouped order via INSERT...SELECT coalesce(max(display_order),0)+1 with
+  `on conflict do nothing`, so re-saving an existing catalog pair from the
+  builder does not move it or change its group — correct.
+
+## 5. Questions / assumptions
+
+- Migration atomicity: confirm the migration runner executes each file in a
+  transaction. The backfill UPDATE followed by `alter column ... set not null`
+  must be atomic; if the runner does not wrap files, a failure between those two
+  statements on a populated table would leave `display_order` nullable with
+  partial data. (Prior phases used the same multi-statement pattern, so this is
+  likely already guaranteed — just worth confirming.)
+- Observation 1: confirm the changed builder suggestion ordering is acceptable
+  product-wise.
+
+## 6. Commit readiness
+
+Ready to commit after the prompt's manual checks, which the handoff lists as not
+yet run:
+  - Create several groups; create a tag directly into a group; drag tags between
+    groups and into ungrouped; edit a pair and confirm its group stays intact;
+    confirm builder hidden-tag suggestions still work.
+  - Mobile pass at 375 / 768 / 1280px for /admin/tags (tracked in FOLLOW_UPS).
+
+No code changes are requested from this review; items in section 3/5 are
+confirmations, not fixes. The automated suite passed per the handoff (not
+re-run here).

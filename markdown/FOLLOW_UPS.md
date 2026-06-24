@@ -87,12 +87,20 @@ Review this file before starting each implementation phase. When a follow-up is 
   attempts should save page-entry/resume/heartbeat activity while preserving
   current answer, completion, Admin Results, CSV, hidden-tag, and mobile
   behavior.
+- Phase 29 large-catalog scaling: collapse-all mitigates hundreds of expanded
+  tag rows for now, but consider search/filtering, pagination, or virtualization
+  if admins routinely manage hundreds of expanded category/value pairs.
 - Phase 25 scaling note: `fetchSurveyStructures` computes effective timing on every survey-structure read, including participant/anonymous hot paths, and the median query sorts valid completed attempts. Revisit caching/materializing effective estimates once Phase 26 consumes the field heavily or high-volume surveys make timing reads expensive.
 
 ---
 
 ## Completed Follow-Ups
 
+- Phase 29: Manual browser pass completed 2026-06-24. Developer verified
+  create/rename/delete tag groups, create a tag directly into a group,
+  click-to-move for grouped and ungrouped tags, drag movement between groups
+  and Ungrouped, collapse/expand behavior, grouped tag editing, builder hidden
+  tag suggestions, and 375/768/1280px layouts.
 - Phase 10 round 2: Reintroduced automated CI checks as a gated job in the Azure deploy workflow — lint, build, and the full test suite run against a postgres:18 service container before packaging, and a red run blocks the deploy.
 - Phase 2: Added a safe local admin seed in `database/seeds/0001_phase_2_seed.sql`.
 - Phase 3: Migrated from local-storage bearer JWTs to httpOnly, SameSite cookie auth before persisted survey response data was implemented.

@@ -262,16 +262,36 @@ export interface TagDefinition {
   id: number;
   tagKey: string;
   tagValue: string;
+  groupId: number | null;
+  displayOrder: number;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface TagGroup {
+  id: number;
+  name: string;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TagCatalogGroup extends TagGroup {
+  tags: TagDefinition[];
+}
+
 export interface TagDefinitionsResponse {
   tags: TagDefinition[];
+  groups: TagCatalogGroup[];
+  ungroupedTags: TagDefinition[];
 }
 
 export interface TagDefinitionResponse {
   tag: TagDefinition;
+}
+
+export interface TagGroupResponse {
+  group: TagGroup;
 }
 
 export interface AdminUserSummary {

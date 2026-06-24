@@ -838,8 +838,10 @@ export async function registerTagDefinition(
   tagValue: string
 ): Promise<void> {
   await queryable.query(
-    `insert into tag_definitions (tag_key, tag_value)
-     values ($1, $2)
+    `insert into tag_definitions (tag_key, tag_value, group_id, display_order)
+     select $1, $2, null, coalesce(max(display_order), 0) + 1
+     from tag_definitions
+     where group_id is null
      on conflict (tag_key, tag_value) do nothing`,
     [tagKey, tagValue]
   );
