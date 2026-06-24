@@ -105,6 +105,10 @@ Implement:
 * Add a single optional `address` profile field with length validation.
 * Present the existing contact number field as "Phone number" in user-facing
   Settings and admin read-only detail.
+* Treat Phase 19/20 `preferredContactMethod` and `contactNotes` as legacy
+  profile metadata. Do not keep them visible or editable in the cleaned-up
+  Settings or Admin user detail UI unless explicitly re-approved. Preserve the
+  existing database columns/data unless removal is separately scoped.
 * Preserve current survey statistics on Settings.
 * Preserve the Settings password reset panel and cooldown behavior.
 * Keep profile routes self-service only; no `/api/profile/:id` behavior and no
@@ -135,6 +139,9 @@ Do not implement:
 * `contactNumber` may remain the internal/shared field name if that keeps the
   change smaller; user-facing copy should say "Phone number".
 * Empty strings should normalize to null for optional profile fields.
+* Saving first and last name should refresh the current client auth user state
+  immediately so account-menu/current-user identity reflects the new name
+  without requiring a full page reload.
 
 ## Open Questions
 
