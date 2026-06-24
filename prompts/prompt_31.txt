@@ -16,6 +16,16 @@ Source feedback or planning note:
 notes/06-24-26_dev_path.txt item 4
 ```
 
+Adjacent planning note:
+
+```txt
+notes/06-24-26_dev_path.txt item 5
+```
+
+Item 5 is related to the end of anonymous survey completion, optional account
+registration, and optional email capture. Treat that as a later phase. Phase 31
+should only add the public anonymous survey directory and Admin listing opt-in.
+
 ## Role Note
 
 Default arrangement:
@@ -131,11 +141,15 @@ Do not implement:
 * Public survey discovery for authenticated-only surveys.
 * Anonymous assignment or recipient-list management.
 * Email invitation workflows.
+* End-of-anonymous-survey registration, sign-up conversion, email capture, or
+  ownership conversion from anonymous attempt to registered user.
 * Public search/filtering beyond a simple list.
 * Changes to anonymous attempt ownership, answer validation, reporting,
   hidden-tag behavior, CSV exports, or timing activity internals.
 * Exposure of hidden tags, Admin notes, token hashes, access-token hashes, or
   non-public survey metadata.
+* Use or exposure of Phase 30 user profile contact fields, structured address
+  fields, or phone numbers in the public directory.
 
 ## Assumptions
 
@@ -144,6 +158,8 @@ Do not implement:
   the directory.
 * The public URL is intentionally visible for listed links.
 * Existing direct token URLs keep working whether or not the link is listed.
+* Phase 30 profile demographics are unrelated to anonymous public listing and
+  must not expand the public directory payload.
 
 ## Open Questions
 
