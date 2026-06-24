@@ -73,6 +73,8 @@ Clarified product decision:
 
 * Groups organize tag category/value pairs together.
 * Tag pairs should stay together as they do now.
+* Deleting a group does not delete tag definitions; contained tags return to
+  the public ungrouped holding area.
 
 ---
 
@@ -98,8 +100,8 @@ Expected impact:
 
 Implement:
 
-* Admin-only tag groups with a name, display order, timestamps, and archive or
-  delete behavior that does not delete tag definitions.
+* Admin-only tag groups with a name, display order, timestamps, and delete
+  behavior that does not delete tag definitions.
 * Assignment of catalog tag definitions to zero or one group by default.
 * Drag/drop ordering for groups and for tags within a group, modeled after the
   existing Organize tab patterns.
@@ -131,7 +133,7 @@ Do not implement:
 
 * A group is admin-only catalog metadata.
 * Existing tag definitions start ungrouped after migration.
-* Deleting or archiving a group leaves its tags in the catalog as ungrouped.
+* Deleting a group leaves its tags in the catalog as ungrouped.
 * Existing hidden tags saved on answer options, Other, or value tags continue to
   use category/value pairs exactly as before.
 
@@ -145,7 +147,7 @@ Do not implement:
 
 The phase is ready for review when:
 
-* Admins can create, rename, reorder, and delete/archive tag groups.
+* Admins can create, rename, reorder, and delete tag groups.
 * Admins can assign existing category/value tag pairs to groups or leave them
   ungrouped.
 * Admins can drag/drop groups and tag pairs within/between group sections.
@@ -175,7 +177,7 @@ Add focused tests for:
 * assigning and unassigning tag pairs
 * reordering groups and tags within a group
 * moving tags between groups and ungrouped
-* deleting/archiving a group without deleting tag definitions
+* deleting a group without deleting tag definitions
 * new tag creation with and without group assignment
 * participant/report/CSV payloads not exposing or depending on groups
 
