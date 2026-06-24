@@ -6,6 +6,196 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 31 — Public Anonymous Survey Directory
+
+Date:
+2026-06-24
+
+Status:
+Complete; ready to commit
+
+Prompt:
+`prompts/prompt_31.txt`
+
+Git Commit:
+Ready to commit
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_31.txt`
+- Claude review: `notes/claude_review_phase_31.txt`
+
+## Goals
+
+- Add a public anonymous survey directory separate from authenticated dashboard
+  routes.
+- Keep anonymous token links secret/unlisted unless an Admin explicitly opts in
+  the individual link.
+- Return only enabled, unexpired, listed links for published, non-deleted
+  surveys.
+- Keep hidden tags, Admin metadata, token hashes, attempt access tokens, and
+  profile contact fields out of the directory payload.
+
+## Built
+
+- Added migration `0030_anonymous_public_directory.sql` with
+  `anonymous_survey_links.listed_in_public_directory boolean not null default
+  false` and a partial listing index.
+- Extended anonymous-link shared/API types with `listedInPublicDirectory`.
+- Added Admin-only `PATCH /api/surveys/:id/anonymous-links/:linkId/public-directory`
+  to opt a link into or out of the public directory.
+- Cleared the directory flag when a link is disabled or rotated out.
+- Added public `GET /api/anonymous-survey-directory`, returning only
+  participant-safe directory cards with survey title, description, category,
+  expiration, listing timestamp, and public runner URL.
+- Added public `/anonymous-surveys` web route outside `ProtectedRoute`, plus a
+  directory list UI that links to existing `/anonymous-surveys/:token` runner
+  URLs.
+- Replaced the homepage's three informational cards with a prominent public
+  anonymous-surveys callout card linking to `/anonymous-surveys`.
+- Added a per-link Admin Setup checkbox for directory listing opt-in.
+- Expanded anonymous survey API tests for default-off behavior, Admin-only
+  toggle, unauthenticated directory reads, eligibility filtering, safe payload
+  shape, and unchanged direct unlisted-token access.
+
+## Important Decisions
+
+### Listing Belongs To The Link
+
+Decision:
+Store directory opt-in on `anonymous_survey_links`, not `surveys`.
+
+Reason:
+The same survey may have multiple anonymous links with different sharing
+purposes. Listing one link publicly should not make every tokenized link
+discoverable.
+
+### Directory Payload Is Narrower Than Runner Payload
+
+Decision:
+The directory returns only listing summary fields and a public URL, not the full
+participant survey structure.
+
+Reason:
+The runner endpoint already returns participant-safe survey structure after a
+visitor opens a specific token. The directory should not broaden exposure of
+questions, options, hidden tags, token internals, or profile/contact metadata.
+
+## Architecture Notes
+
+- Database/schema impact: additive migration `0030`.
+- API contract impact: new public directory response and Admin link-listing
+  mutation.
+- Auth or authorization impact: Admin toggle requires `requireAuth` and
+  `requireRole("admin")`; public directory read is intentionally unauthenticated.
+- Data privacy or visibility impact: directory filters by explicit opt-in,
+  enabled/unexpired link, published survey, and non-deleted survey. Hidden tags,
+  Admin-only metadata, token hashes, attempt access tokens, and Phase 30 profile
+  contact fields are not returned.
+- Frontend UX impact: public `/anonymous-surveys` page stays outside dashboard
+  navigation; Admin Setup controls directory listing per anonymous link.
+- Environment or deployment impact: run migration `0030` before using the public
+  directory toggle.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run test -w apps/api -- test/anonymousSurvey.test.ts
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/anonymousSurvey.test.ts` (5 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 225 tests
+- Passed: `git diff --check`
+- Passed after post-review homepage callout update: `npm run typecheck`
+- Passed after post-review homepage callout update: `npm run lint`
+- Passed after post-review homepage callout update: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed after post-review homepage callout update: `git diff --check`
+- Passed after Setup switch cleanup: `npm run typecheck`
+- Passed after Setup switch cleanup: `npm run lint`
+- Passed after Setup switch cleanup: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed after Setup switch cleanup: `git diff --check`
+
+Manual tests:
+
+- Completed by the human tester and passed:
+  - Admin creates an anonymous link and confirms it is unlisted by default.
+  - Admin opts a link into the public directory and sees it on
+    `/anonymous-surveys`.
+  - Participant can start the listed survey from the directory.
+  - Opting out, disabling, or expiring the link removes it from the directory.
+  - Homepage anonymous-surveys callout and directory layouts hold at
+    375 / 768 / 1280px.
+
+## Follow-Up Tasks
+
+- Optional hardening from Claude review: rate-limit
+  `GET /api/anonymous-survey-directory`.
+- Addressed optional UI polish from Claude review: the Admin Setup directory
+  control now uses a compact switch and is disabled when a link is not enabled.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_31.txt`
+
+Status:
+
+- Completed. Claude found no blocking issues and requested no required code
+  changes.
+
+Findings and disposition:
+
+- Public listing default-off behavior, restrictive eligibility filtering,
+  participant-safe payload fields, token/logging handling, route segregation,
+  hidden-tag/Admin metadata isolation, and unlisted direct-token stability were
+  reviewed as sound.
+- Non-blocking recommendation: add rate limiting to
+  `GET /api/anonymous-survey-directory`. Accepted as optional hardening and
+  tracked above.
+- Non-blocking recommendation: disable the Setup directory checkbox for disabled
+  links. Addressed after screenshot review by replacing the oversized native
+  checkbox with a compact switch and disabling it for disabled/unrevealable
+  links.
+- Minor index note: the partial index includes `listed_in_public_directory` even
+  though the partial predicate pins it to true. Accepted as harmless and not
+  worth migration churn on its own.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues
+- Review findings addressed or deferred: Yes; optional findings tracked above
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 30 — User Profile Demographics Cleanup
 
 Date:

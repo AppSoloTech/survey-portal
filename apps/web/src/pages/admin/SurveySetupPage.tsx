@@ -9,6 +9,7 @@ import {
   fetchAnonymousSurveyLinks,
   fetchSurveyTiming,
   rotateAnonymousSurveyLink,
+  updateAnonymousSurveyLinkDirectoryListing,
   updateSurveyMetadata,
   updateSurveyTimingOverride
 } from "../../api/surveys.js";
@@ -229,6 +230,41 @@ export function SurveySetupPage() {
       setFeedback({ error: null, notice: "Anonymous survey link copied" });
     } catch {
       setFeedback({ error: "Could not copy link", notice: null });
+    }
+  }
+
+  async function handleToggleAnonymousDirectoryListing(
+    link: AnonymousSurveyLink,
+    listedInPublicDirectory: boolean
+  ) {
+    setIsMutatingLink(true);
+    setCopiedAnonymousLinkId(null);
+
+    try {
+      const response = await updateAnonymousSurveyLinkDirectoryListing({
+        surveyId: survey.id,
+        linkId: link.id,
+        listedInPublicDirectory
+      });
+      setAnonymousLinks((current) =>
+        current.map((currentLink) => (currentLink.id === link.id ? response.link : currentLink))
+      );
+      setFeedback({
+        error: null,
+        notice: listedInPublicDirectory
+          ? "Anonymous link listed in the public directory"
+          : "Anonymous link removed from the public directory"
+      });
+    } catch (toggleError) {
+      setFeedback({
+        error:
+          toggleError instanceof Error
+            ? toggleError.message
+            : "Could not update public directory listing",
+        notice: null
+      });
+    } finally {
+      setIsMutatingLink(false);
     }
   }
 
@@ -557,10 +593,31 @@ export function SurveySetupPage() {
                       <span className={`status-pill ${link.enabled ? "published" : "retired"}`}>
                         {link.enabled ? "enabled" : "disabled"}
                       </span>
+                      {link.listedInPublicDirectory ? (
+                        <span className="status-pill published">directory</span>
+                      ) : null}
                       {copiedAnonymousLinkId === link.id ? (
                         <span className="status-pill published">copied</span>
                       ) : null}
                     </div>
+                    <label className="anonymous-directory-toggle">
+                      <input
+                        className="visually-hidden"
+                        checked={link.listedInPublicDirectory}
+                        disabled={isMutatingLink || !link.enabled || !publicUrl}
+                        onChange={(event) =>
+                          void handleToggleAnonymousDirectoryListing(link, event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span aria-hidden="true" className="anonymous-directory-switch">
+                        <span />
+                      </span>
+                      <span className="anonymous-directory-toggle-copy">
+                        <span>Show on anonymous surveys page</span>
+                        <small>Allow this link to appear in the public directory.</small>
+                      </span>
+                    </label>
                     {link.enabled ? (
                       <details className="anonymous-link-reveal">
                         <summary>Show public link</summary>

@@ -27,6 +27,7 @@ import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
 import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
 import { RouteTransition } from "./motion/RouteTransition.js";
 import { AccountSettings } from "./pages/AccountSettings.js";
+import { AnonymousSurveyDirectoryPage } from "./pages/AnonymousSurveyDirectoryPage.js";
 import { CategorySurveysPage } from "./pages/CategorySurveysPage.js";
 import { ForgotPassword } from "./pages/ForgotPassword.js";
 import { Home } from "./pages/Home.js";
@@ -54,6 +55,7 @@ export function App() {
                   <Route element={<Register />} path="/register" />
                   <Route element={<ForgotPassword />} path="/forgot-password" />
                   <Route element={<ResetPassword />} path="/reset-password" />
+                  <Route element={<AnonymousSurveyDirectoryPage />} path="/anonymous-surveys" />
                   <Route
                     element={<AnonymousSurveyAttemptPage />}
                     path="/anonymous-surveys/:token"
@@ -96,7 +98,14 @@ export function App() {
 // three.js stays out of the main bundle; only public pages render the aurora.
 const AmbientBackdrop = lazy(() => import("./components/AmbientBackdrop.js"));
 
-const backdropPaths = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password"]);
+const backdropPaths = new Set([
+  "/",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/anonymous-surveys"
+]);
 
 function BackdropGate() {
   const { pathname } = useLocation();
@@ -141,6 +150,7 @@ function Header() {
       ]
     : [
         { to: "/", label: "Home" },
+        { to: "/anonymous-surveys", label: "Anonymous surveys" },
         { to: "/register", label: "Create account" }
       ];
   const isAccountActive = location.pathname.startsWith("/settings");

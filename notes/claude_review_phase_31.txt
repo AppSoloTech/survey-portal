@@ -1,0 +1,131 @@
+# Claude Review — Phase 31 (Public Anonymous Survey Directory)
+
+Reviewer: Claude Code
+Scope: current phase diff only — migration 0030, shared contracts, app.ts route
+wiring, anonymousSurveys service (eligibility query + link mutations + directory
+listing), anonymousSurveyRoutes (admin PATCH + public GET), web client, App.tsx
+routing/nav, the new directory page, and SurveySetupPage control. Method: static
+review against prompt_31 and the handoff, tracing the directory eligibility query
+and the public payload field-by-field, plus confirming default-off and route
+segregation. Suite not re-run here; handoff reports typecheck/lint/build/test
+green with approved local PostgreSQL (API 225, web 57, shared 54; anonymousSurvey
+5).
+
+Verdict: Solid, well-isolated feature. Listing is default-off at the DB level,
+the eligibility query is correctly restrictive, the public payload is
+participant-safe with no token/admin/PII leakage, and the public route is cleanly
+segregated from authenticated/admin surfaces. No blocking issues. Two worthwhile
+follow-ups (rate-limit the public endpoint; gate the Setup checkbox on enabled)
+and minor notes below. Recommend commit after the pending manual pass.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Suggested improvements (non-blocking)
+
+1. Rate-limit `GET /api/anonymous-survey-directory`. It is mounted on its own
+   router with no limiter, while the anonymous runner routes sit behind
+   `anonymousSurveyRateLimiter`. The handoff raises this explicitly. The endpoint
+   is unauthenticated and runs a join + per-row AES-GCM decrypt on every hit, so
+   an abuser can hammer it cheaply. It's a read-only public listing so the risk
+   is modest, but reusing the existing `PostgresRateLimitStore` (or a lightweight
+   limiter) would harden it. Recommend before or shortly after commit.
+
+2. Gate the Setup "List in public directory" checkbox on `link.enabled`. It is
+   currently disabled only on `isMutatingLink || !publicUrl`, not on enabled
+   state. Because disabling/rotating clears `listed_in_public_directory`, an admin
+   can re-check the box on an already-disabled link: the PATCH sets
+   `listed = true`, the row shows the "directory" pill, but the eligibility query
+   (which requires `enabled = true`) correctly keeps it out of the public list.
+   The result is harmless but misleading. Adding `|| !link.enabled` to the
+   checkbox `disabled` prop keeps the UI honest.
+
+3. Trivial: the partial index
+   `... (listed_in_public_directory, enabled, expires_at, survey_id) where
+   listed_in_public_directory = true` leads with the column that the partial
+   predicate already pins to true, so the leading column adds no selectivity.
+   Harmless; could drop it from the key list. Not worth a churned migration on
+   its own.
+
+## 3. Acceptable tradeoffs
+
+- Default-off is enforced at the DB layer (`not null default false`), and the
+  insert path (`insertAnonymousSurveyLink`) omits the column from its VALUES, so
+  new and rotated links inherit the default. Disable and rotate-out both set
+  `listed_in_public_directory = false` explicitly. This is the right belt-and-
+  suspenders shape.
+- `listedAt` maps to the link's `updated_at`, so any later mutation shifts the
+  displayed timestamp — a display hint, not an audit trail, as the handoff notes.
+  Fine for a simple directory.
+- Undecryptable/missing `public_token` rows are filtered post-query
+  (`decryptPublicToken` → skip), so a manually DB-flagged legacy link without a
+  reveable token never appears. `decryptPublicToken` still passes through legacy
+  plaintext tokens, so genuinely valid legacy links list correctly.
+- Public endpoint is unauthenticated by design (see improvement 1 for the only
+  caveat).
+- Migration is forward-only and idempotent for the add-column/add-index
+  (`if not exists`), consistent with repo policy.
+
+## 4. Questions or assumptions (answering the handoff's specific questions)
+
+- Default-off for new and rotated links: confirmed (DB default + insert omits the
+  column; rotate inserts via the same path).
+- Eligibility query correctness: confirmed. `listAnonymousSurveyDirectory`
+  requires `listed = true AND enabled = true AND public_token IS NOT NULL AND
+  (expires_at IS NULL OR expires_at > now()) AND surveys.status = 'published'
+  AND surveys.deleted_at IS NULL`, then drops undecryptable tokens. That excludes
+  unlisted, disabled, expired, unpublished/retired, deleted, and
+  unrevealable-token links.
+- Participant-safe payload: confirmed. The directory record selects only title,
+  description, category name, public_token (→ decrypted into a runner URL),
+  expires_at, and updated_at; the response item exposes title/description/
+  category/expiresAt/listedAt/publicUrl only. No link id, token hash, lookup key,
+  encrypted token, attempt token, contact email, hidden tags, or Phase 30 profile
+  fields. The admin PATCH response returns `AnonymousSurveyLink`, which likewise
+  maps no secret columns.
+- Leakage avoidance: confirmed. The new request paths carry no tokens
+  (`/api/anonymous-survey-directory` has none; the admin PATCH uses integer
+  id/linkId), so request-logging redaction is satisfied by construction — public
+  tokens appear only inside response bodies, which the request logger does not
+  emit. The pre-existing `:token` runner route is unchanged.
+- Clearing `listed_in_public_directory` on disable/rotate: this is the right
+  product behavior — a disabled or rotated-out link should not remain
+  publicly listed, and re-listing requires an explicit deliberate action.
+- Rate limiter: recommended — see improvement 1.
+- Public nav segregation: the `/anonymous-surveys` route sits outside
+  `ProtectedRoute`/`AdminRoute`, and the header link is shown only in the
+  unauthenticated nav branch, so it does not bleed into authenticated dashboard
+  surfaces. The route stays reachable by direct URL for authenticated users,
+  which is fine.
+- Direct `/anonymous-surveys/:token` stability: confirmed. The runner/availability
+  path (`fetchAvailableAnonymousSurveyLink` and attempt flows) only gained the new
+  column in SELECT/RETURNING lists — no WHERE/logic change — so unlisted links
+  still work exactly as before via their direct token URL.
+
+## 5. Product UX alignment notes
+
+- The directory lists only opt-in, enabled, live, published surveys with safe
+  metadata (title, optional description, category pill, expiry) and a "Start
+  survey" link to the existing anonymous runner — matching the "simple public
+  list, no search/filter" scope.
+- The Setup control (checkbox + "directory" status pill) gives admins a clear
+  per-link opt-in, and the default-off behavior means nothing is exposed without
+  an explicit choice — good privacy-forward default. (Pair with improvement 2 so
+  the control is only actionable on enabled links.)
+- Showing the nav entry only to signed-out users keeps the public directory as a
+  pre-auth discovery surface without cluttering the authenticated dashboard.
+
+## 6. Commit readiness
+
+Ready to commit after the pending manual pass the handoff lists (create →
+default-unlisted; opt in → appears; opt out / disable / expire → disappears;
+375/768/1280px). Consider landing improvement 1 (rate limiting) and improvement 2
+(checkbox gating) either in this phase or as an immediate fast-follow — neither is
+a correctness blocker, but the rate-limit gap is the most worthwhile to close on
+an unauthenticated endpoint.
+
+No code changes are requested from this review unless you want me to apply
+improvements 1-2. The automated suite passed per the handoff (not re-run here).

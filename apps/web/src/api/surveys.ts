@@ -1,5 +1,6 @@
 import type {
   AdminAttemptDetailResponse,
+  AnonymousSurveyDirectoryResponse,
   AnonymousSurveyLinksResponse,
   AnonymousSurveyResponse,
   AnswerSurveyResponse,
@@ -20,7 +21,8 @@ import type {
   SurveyReportResponse,
   SurveyResponse,
   SurveyTimingResponse,
-  SurveyStatus
+  SurveyStatus,
+  UpdateAnonymousSurveyLinkDirectoryListingResponse
 } from "@survey-portal/shared";
 
 import { apiRequest } from "./client.js";
@@ -112,6 +114,10 @@ export async function fetchAnonymousSurvey(token: string): Promise<AnonymousSurv
   return apiRequest<AnonymousSurveyResponse>(
     `/api/anonymous-surveys/${encodeURIComponent(token)}`
   );
+}
+
+export async function fetchAnonymousSurveyDirectory(): Promise<AnonymousSurveyDirectoryResponse> {
+  return apiRequest<AnonymousSurveyDirectoryResponse>("/api/anonymous-survey-directory");
 }
 
 export async function startAnonymousSurvey(token: string): Promise<StartAnonymousSurveyResponse> {
@@ -225,6 +231,20 @@ export async function disableAnonymousSurveyLink(input: {
   return apiRequest<DisableAnonymousSurveyLinkResponse>(
     `/api/surveys/${input.surveyId}/anonymous-links/${input.linkId}/disable`,
     { method: "PATCH" }
+  );
+}
+
+export async function updateAnonymousSurveyLinkDirectoryListing(input: {
+  surveyId: number;
+  linkId: number;
+  listedInPublicDirectory: boolean;
+}): Promise<UpdateAnonymousSurveyLinkDirectoryListingResponse> {
+  return apiRequest<UpdateAnonymousSurveyLinkDirectoryListingResponse>(
+    `/api/surveys/${input.surveyId}/anonymous-links/${input.linkId}/public-directory`,
+    {
+      body: JSON.stringify({ listedInPublicDirectory: input.listedInPublicDirectory }),
+      method: "PATCH"
+    }
   );
 }
 

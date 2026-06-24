@@ -563,6 +563,7 @@ token_lookup_key
 token_secret_hash
 public_token
 enabled
+listed_in_public_directory
 expires_at
 created_by_user_id
 disabled_at
@@ -573,6 +574,9 @@ updated_at
 Notes:
 
 * Anonymous links are admin-created and scoped to one published survey.
+* Public directory listing is an explicit per-link Admin opt-in through
+  `listed_in_public_directory`. The default is false so enabled tokenized links
+  remain unlisted unless an Admin lists that specific link.
 * The public URL token should be high entropy.
 * Store a lookup key plus a hash of the token secret for validation.
 * Store the complete public token encrypted at rest for admin-only reveal/copy
@@ -585,6 +589,11 @@ Notes:
 * Public anonymous survey APIs must return the same participant-safe survey
   shape as logged-in survey-taking APIs: hidden tags and admin-only metadata are
   not included.
+* The public anonymous directory may expose only participant-safe listing fields
+  for eligible links, such as survey title, public survey description, category
+  name, expiration display data, and the public runner URL. It must not expose
+  hidden tags, Admin notes, token hashes, attempt access tokens, profile contact
+  fields, or the full survey structure.
 * Disabled, expired, draft, retired, deleted, or otherwise unavailable links
   should produce a safe unavailable response.
 
@@ -742,6 +751,9 @@ For MVP:
 * admins can view each user’s survey status
 * anonymous visitors can start and complete a published survey only through an
   enabled, unexpired anonymous survey link
+* anonymous visitors may browse only links explicitly opted into the public
+  anonymous survey directory; ordinary enabled anonymous links remain secret and
+  unlisted
 * anonymous attempts remain separate from registered user attempts and should be
   reported as anonymous, not as synthetic user accounts
 

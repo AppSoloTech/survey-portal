@@ -1,0 +1,319 @@
+# Phase 32 — Anonymous Completion Account Conversion
+
+## Purpose
+
+Update the end of the anonymous survey flow so an anonymous participant can
+choose to create an account after completing a survey. If they register, the
+completed anonymous attempt should become a normal registered-user attempt. If
+they decline registration, offer the existing optional follow-up email capture
+and otherwise preserve the current anonymous completion behavior.
+
+This phase builds directly on the Phase 17 anonymous survey foundation and the
+Phase 31 public anonymous survey directory. It should improve the completion
+handoff without changing how anonymous visitors discover, start, answer, or
+complete a survey.
+
+Source feedback or planning note:
+
+```txt
+notes/06-24-26_dev_path.txt item 5
+```
+
+Adjacent completed phase:
+
+```txt
+prompts/prompt_31.txt
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` after Phase 31 is merged unless the human
+explicitly reprioritizes this phase. Create a fresh phase branch before making
+code changes; do not implement this phase directly on `main`.
+
+```bash
+git checkout main
+git checkout -b phase-32-anonymous-completion-account-conversion
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_32.txt`
+* Claude review: `notes/claude_review_phase_32.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/06-24-26_dev_path.txt`
+* `prompts/prompt_17.txt`
+* `prompts/prompt_31.txt`
+* `notes/claude_handoff_phase_17.txt`
+* `notes/claude_review_phase_17.txt`
+* `notes/claude_handoff_phase_31.txt`
+* `notes/claude_review_phase_31.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current auth registration/login routes, password validation, auth cookie
+  helpers, anonymous completion/contact-email routes, anonymous attempt owner
+  checks, participant runner completion UI, current user dashboard/my-surveys
+  behavior, reporting/CSV anonymous-vs-user participant handling, request
+  logging, and anonymous survey tests.
+
+---
+
+# Received Feedback
+
+Update the end of the anonymous survey process to allow a user to register for
+an account.
+
+If the participant chooses not to register, offer the option to submit an email
+address instead.
+
+If the participant registers, save that survey result as if it were a normal
+registered-user survey result.
+
+If the participant does not register but submits an email address, or submits no
+email address, keep the current anonymous save process.
+
+Clarified product interpretation for this phase:
+
+* Account registration is offered only after anonymous survey completion.
+* Successful registration should convert the completed anonymous attempt to a
+  registered-user-owned attempt.
+* Declining registration should continue to use the existing optional anonymous
+  follow-up email capture behavior.
+* Existing-user login and claim/merge workflows are separate future scope.
+
+---
+
+# Intake Classification
+
+* public participant-facing workflow change
+* authentication and authorization risk
+* anonymous survey ownership conversion
+* database/API contract change
+* privacy and reporting behavior risk
+
+Expected impact:
+
+* anonymous completion UI
+* anonymous registration/conversion API
+* auth cookie/session behavior after conversion
+* survey attempt ownership mutation
+* user dashboard/my-surveys visibility after conversion
+* reporting/CSV participant representation after conversion
+* tests for conversion safety, duplicate email handling, token ownership, and
+  fallback email behavior
+
+---
+
+# Scope
+
+Implement:
+
+* After an anonymous participant completes a survey, show a completion choice
+  that first offers account creation.
+* If the participant chooses to register:
+  * collect the same minimum registration fields as normal registration:
+    first name, last name, email, and password
+  * reuse existing registration validation, password hashing, email
+    normalization, duplicate-email handling, and auth cookie behavior where
+    practical
+  * require the anonymous survey token, attempt id, and per-attempt anonymous
+    access token before any attempt conversion
+  * convert only a completed anonymous attempt owned by that link/access-token
+    pair
+  * in one transaction, create the user and reassign the completed survey
+    attempt from anonymous ownership to registered-user ownership
+  * preserve saved survey responses and completion timestamps
+  * clear anonymous-only owner fields, including `anonymous_link_id`,
+    `anonymous_access_token_hash`, and `anonymous_contact_email`, after
+    successful conversion
+  * set an auth cookie for the newly registered user and return enough data for
+    the frontend to update auth state or navigate safely
+* If the participant declines account creation:
+  * show the existing optional follow-up email capture flow
+  * keep the attempt anonymous whether or not an email is submitted
+* Keep the existing direct anonymous token runner and Phase 31 public directory
+  behavior unchanged before completion.
+* Ensure converted attempts appear in the registered user's dashboard/history
+  like normal user attempts.
+* Ensure Admin Results and CSV represent converted attempts as registered-user
+  attempts, while non-converted attempts remain anonymous.
+* Keep hidden tags, token hashes, attempt access tokens, password hashes, and
+  anonymous contact emails out of participant-visible responses.
+* Ensure request logging does not expose anonymous tokens or passwords.
+
+Use the next available migration number at implementation time only if a schema
+change is actually needed. Do not hard-code the migration number in this prompt
+or docs because earlier phases may change the sequence.
+
+## Non-Goals
+
+Do not implement:
+
+* Existing-user login from the anonymous completion screen.
+* Claiming or merging an anonymous attempt into an already existing account.
+* Password reset from the anonymous completion screen.
+* Email verification or sending real email.
+* Anonymous survey invitations, recipient lists, assignments, reminders, or
+  broader CRM/contact workflows.
+* Public directory search/filtering or any Phase 31 listing changes.
+* Changes to anonymous start/answer/complete validation before the survey is
+  completed.
+* Converting in-progress, abandoned, unavailable, disabled-link, expired-link,
+  or bad-token attempts.
+* Converting attempts without the per-attempt anonymous access token.
+* Exposing hidden tags, token hashes, attempt access tokens, password hashes, or
+  Admin-only metadata to participants.
+* Changing answer validation, conditional navigation, reporting counts, CSV
+  columns, timing activity internals, or hidden-tag resolution beyond what is
+  necessary to reflect the converted participant owner.
+
+## Assumptions
+
+* Registration/conversion happens after anonymous completion, not before or
+  during the survey.
+* Successful conversion changes attempt ownership from anonymous to registered
+  user, rather than copying responses into a second attempt.
+* The existing `survey_attempts` owner constraint already models exactly one
+  owner path. If a migration is needed to support conversion safely, keep it
+  narrowly scoped.
+* Duplicate email registration should fail with the existing duplicate-email
+  behavior and must not convert the anonymous attempt.
+* Existing anonymous follow-up email capture remains the fallback when the
+  participant declines account creation.
+* A converted attempt no longer needs `anonymous_contact_email`, because the
+  registered user account has an email address.
+
+## Open Questions
+
+* None. Treat existing-account claim/merge as out of scope unless the human
+  explicitly reprioritizes it before implementation.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Anonymous completion offers account registration before optional follow-up
+  email capture.
+* A newly registered anonymous participant is authenticated after successful
+  registration/conversion.
+* The completed attempt becomes owned by the new registered user and appears in
+  that user's dashboard/history.
+* Saved answers and completion metadata are preserved during conversion.
+* Converted attempts are represented as registered-user attempts in Admin
+  Results and CSV.
+* Non-converted attempts remain anonymous and still support optional follow-up
+  email capture.
+* Duplicate-email or invalid registration attempts do not convert the attempt.
+* Bad anonymous tokens, bad attempt access tokens, wrong attempt ids,
+  in-progress attempts, abandoned attempts, expired/disabled links, and
+  unavailable surveys cannot be converted.
+* Hidden tags, Admin metadata, password hashes, token hashes, and attempt access
+  tokens are not exposed.
+* Existing direct anonymous survey token links and the public anonymous
+  directory continue to work as before.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* anonymous completion registration requires a valid link token, attempt id, and
+  attempt access token
+* only completed anonymous attempts can be converted
+* successful registration converts the attempt to `user_id` ownership, clears
+  anonymous owner/contact fields, preserves responses, and sets an auth cookie
+* converted attempts appear in `/api/my-surveys` or the current-user survey
+  history path as registered attempts
+* Admin Results and CSV represent converted attempts as registered-user
+  participants
+* duplicate email or invalid password/email/name validation fails without
+  converting the attempt
+* bad token, bad attempt token, wrong attempt id, disabled/expired link, and
+  retired/deleted survey cases are rejected safely
+* declining registration keeps the current anonymous follow-up email behavior
+* hidden tags, password hashes, token hashes, and attempt access tokens are not
+  exposed in participant-facing payloads
+* no regression to existing anonymous lifecycle and Phase 31 directory tests
+
+Manual checks:
+
+* Complete a listed anonymous survey from `/anonymous-surveys`, register at the
+  completion screen, and confirm the user is signed in.
+* Confirm the converted attempt appears in the user's dashboard/history.
+* Confirm Admin Results shows the converted attempt as the new registered user.
+* Complete another anonymous survey, decline registration, submit a follow-up
+  email, and confirm it remains anonymous in Admin Results.
+* Complete another anonymous survey, decline registration and email, and confirm
+  current anonymous completion behavior remains intact.
+* Try duplicate email registration and confirm the attempt remains anonymous.
+* Mobile pass at 375/768/1280px for the completion choice, registration form,
+  email fallback, and resulting dashboard/directory navigation.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_32.txt
+```
+
+Ask Claude Code to review:
+
+* anonymous-to-registered ownership conversion correctness
+* auth cookie/session behavior after conversion
+* transaction safety and duplicate email rollback
+* token/access-token validation and IDOR resistance
+* hidden-tag/Admin metadata/password/token isolation
+* reporting, CSV, dashboard, and anonymous fallback behavior
+* no accidental existing-account merge/login scope creep
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_32.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

@@ -86,6 +86,10 @@ Review this file before starting each implementation phase. When a follow-up is 
   attempts should save page-entry/resume/heartbeat activity while preserving
   current answer, completion, Admin Results, CSV, hidden-tag, and mobile
   behavior.
+- Phase 31 optional hardening: add a rate limiter to
+  `GET /api/anonymous-survey-directory`; Claude review marked this non-blocking
+  but worthwhile because the endpoint is unauthenticated and decrypts listed
+  public tokens.
 - Phase 29 large-catalog scaling: collapse-all mitigates hundreds of expanded
   tag rows for now, but consider search/filtering, pagination, or virtualization
   if admins routinely manage hundreds of expanded category/value pairs.
@@ -95,6 +99,11 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 31: Manual browser pass completed 2026-06-24. Developer verified
+  default-unlisted anonymous link creation, opt-in listing on
+  `/anonymous-surveys`, participant start from a listed card, opt-out/disable/
+  expire removal from the directory, and homepage/directory layouts at
+  375/768/1280px.
 - Phase 29: Manual browser pass completed 2026-06-24. Developer verified
   create/rename/delete tag groups, create a tag directly into a group,
   click-to-move for grouped and ungrouped tags, drag movement between groups

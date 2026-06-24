@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import type { AnonymousSurveyLink } from "@survey-portal/shared";
+import type { AnonymousSurveyDirectoryItem, AnonymousSurveyLink } from "@survey-portal/shared";
 import type { PoolClient } from "pg";
 
 import { config } from "../config.js";
@@ -17,6 +17,7 @@ export interface AnonymousSurveyLinkRecord {
   token_secret_hash: string;
   public_token: string | null;
   enabled: boolean;
+  listed_in_public_directory: boolean;
   expires_at: Date | null;
   created_by_user_id: number | null;
   disabled_at: Date | null;
@@ -27,6 +28,15 @@ export interface AnonymousSurveyLinkRecord {
 export interface AvailableAnonymousSurveyLink extends AnonymousSurveyLinkRecord {
   survey_status: string;
   survey_deleted_at: Date | null;
+}
+
+interface AnonymousSurveyDirectoryRecord {
+  survey_title: string;
+  survey_description: string | null;
+  category_name: string | null;
+  public_token: string | null;
+  expires_at: Date | null;
+  updated_at: Date;
 }
 
 export function generateAnonymousLinkToken(): {
@@ -90,6 +100,7 @@ export async function createAnonymousSurveyLink(input: {
        token_secret_hash,
        public_token,
        enabled,
+       listed_in_public_directory,
        expires_at,
        created_by_user_id,
        disabled_at,
@@ -126,6 +137,7 @@ export async function listAnonymousSurveyLinks(surveyId: number): Promise<Anonym
        token_secret_hash,
        public_token,
        enabled,
+       listed_in_public_directory,
        expires_at,
        created_by_user_id,
        disabled_at,
@@ -148,6 +160,7 @@ export async function disableAnonymousSurveyLink(input: {
     `update anonymous_survey_links
      set enabled = false,
          disabled_at = coalesce(disabled_at, now()),
+         listed_in_public_directory = false,
          updated_at = now()
      where id = $1
        and survey_id = $2
@@ -158,6 +171,7 @@ export async function disableAnonymousSurveyLink(input: {
        token_secret_hash,
        public_token,
        enabled,
+       listed_in_public_directory,
        expires_at,
        created_by_user_id,
        disabled_at,
@@ -193,6 +207,7 @@ export async function rotateAnonymousSurveyLink(input: {
          token_secret_hash,
          public_token,
          enabled,
+         listed_in_public_directory,
          expires_at,
          created_by_user_id,
          disabled_at,
@@ -227,6 +242,7 @@ export async function rotateAnonymousSurveyLink(input: {
       `update anonymous_survey_links
        set enabled = false,
            disabled_at = coalesce(disabled_at, now()),
+           listed_in_public_directory = false,
            updated_at = now()
        where id = $1
          and survey_id = $2
@@ -237,6 +253,7 @@ export async function rotateAnonymousSurveyLink(input: {
          token_secret_hash,
          public_token,
          enabled,
+         listed_in_public_directory,
          expires_at,
          created_by_user_id,
          disabled_at,
@@ -278,6 +295,7 @@ export async function fetchAvailableAnonymousSurveyLink(
        anonymous_survey_links.token_secret_hash,
        anonymous_survey_links.public_token,
        anonymous_survey_links.enabled,
+       anonymous_survey_links.listed_in_public_directory,
        anonymous_survey_links.expires_at,
        anonymous_survey_links.created_by_user_id,
        anonymous_survey_links.disabled_at,
@@ -306,6 +324,80 @@ export async function fetchAvailableAnonymousSurveyLink(
   return link;
 }
 
+export async function updateAnonymousSurveyLinkDirectoryListing(input: {
+  surveyId: number;
+  linkId: number;
+  listedInPublicDirectory: boolean;
+}): Promise<AnonymousSurveyLink | null> {
+  const result = await pool.query<AnonymousSurveyLinkRecord>(
+    `update anonymous_survey_links
+     set listed_in_public_directory = $3,
+         updated_at = now()
+     where id = $1
+       and survey_id = $2
+     returning
+       id,
+       survey_id,
+       token_lookup_key,
+       token_secret_hash,
+       public_token,
+       enabled,
+       listed_in_public_directory,
+       expires_at,
+       created_by_user_id,
+       disabled_at,
+       created_at,
+       updated_at`,
+    [input.linkId, input.surveyId, input.listedInPublicDirectory]
+  );
+
+  return result.rows[0] ? mapAnonymousSurveyLinkRecord(result.rows[0]) : null;
+}
+
+export async function listAnonymousSurveyDirectory(): Promise<AnonymousSurveyDirectoryItem[]> {
+  const result = await pool.query<AnonymousSurveyDirectoryRecord>(
+    `select
+       surveys.title as survey_title,
+       surveys.description as survey_description,
+       survey_categories.name as category_name,
+       anonymous_survey_links.public_token,
+       anonymous_survey_links.expires_at,
+       anonymous_survey_links.updated_at
+     from anonymous_survey_links
+     join surveys on surveys.id = anonymous_survey_links.survey_id
+     left join survey_categories on survey_categories.id = surveys.category_id
+     where anonymous_survey_links.listed_in_public_directory = true
+       and anonymous_survey_links.enabled = true
+       and anonymous_survey_links.public_token is not null
+       and (
+         anonymous_survey_links.expires_at is null
+         or anonymous_survey_links.expires_at > now()
+       )
+       and surveys.status = 'published'
+       and surveys.deleted_at is null
+     order by anonymous_survey_links.updated_at desc, anonymous_survey_links.id desc`
+  );
+
+  return result.rows.flatMap((record) => {
+    const publicToken = decryptPublicToken(record.public_token);
+
+    if (!publicToken) {
+      return [];
+    }
+
+    return [
+      {
+        surveyTitle: record.survey_title,
+        surveyDescription: record.survey_description,
+        categoryName: record.category_name,
+        expiresAt: record.expires_at?.toISOString() ?? null,
+        listedAt: record.updated_at.toISOString(),
+        publicUrl: buildAnonymousSurveyUrl(publicToken)
+      }
+    ];
+  });
+}
+
 export function hashAnonymousAttemptToken(token: string): string | null {
   const parsed = parseAnonymousAttemptToken(token);
 
@@ -323,6 +415,7 @@ function mapAnonymousSurveyLinkRecord(record: AnonymousSurveyLinkRecord): Anonym
     id: record.id,
     surveyId: record.survey_id,
     enabled: record.enabled,
+    listedInPublicDirectory: record.listed_in_public_directory,
     expiresAt: record.expires_at?.toISOString() ?? null,
     disabledAt: record.disabled_at?.toISOString() ?? null,
     createdAt: record.created_at.toISOString(),
@@ -367,6 +460,7 @@ async function insertAnonymousSurveyLink(
        token_secret_hash,
        public_token,
        enabled,
+       listed_in_public_directory,
        expires_at,
        created_by_user_id,
        disabled_at,

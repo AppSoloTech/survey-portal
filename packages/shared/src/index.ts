@@ -432,6 +432,7 @@ export interface AnonymousSurveyLink {
   id: number;
   surveyId: number;
   enabled: boolean;
+  listedInPublicDirectory: boolean;
   expiresAt: string | null;
   disabledAt: string | null;
   createdAt: string;
@@ -458,6 +459,23 @@ export interface DisableAnonymousSurveyLinkResponse {
 export interface RotateAnonymousSurveyLinkResponse {
   disabledLink: AnonymousSurveyLink;
   link: AnonymousSurveyLinkWithUrl;
+}
+
+export interface UpdateAnonymousSurveyLinkDirectoryListingResponse {
+  link: AnonymousSurveyLink;
+}
+
+export interface AnonymousSurveyDirectoryItem {
+  surveyTitle: string;
+  surveyDescription: string | null;
+  categoryName: string | null;
+  expiresAt: string | null;
+  listedAt: string;
+  publicUrl: string;
+}
+
+export interface AnonymousSurveyDirectoryResponse {
+  surveys: AnonymousSurveyDirectoryItem[];
 }
 
 export interface AnonymousSurveyResponse {

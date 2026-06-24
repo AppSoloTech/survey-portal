@@ -4,24 +4,6 @@ import { useAuth } from "../auth/AuthContext.js";
 import { HealthCheck } from "../components/HealthCheck.js";
 import { useReveal } from "../motion/motion.js";
 
-const features = [
-  {
-    icon: "◍",
-    title: "Pick up anywhere",
-    description: "Every answer saves as you go, so a survey can wait while life happens."
-  },
-  {
-    icon: "⌁",
-    title: "Paths that adapt",
-    description: "Branching logic skips what doesn't apply and keeps each attempt short."
-  },
-  {
-    icon: "◳",
-    title: "Insight built in",
-    description: "Admins watch results roll up live — distributions, funnels, and tags."
-  }
-];
-
 export function Home() {
   const { isAuthenticated, user } = useAuth();
   const revealRef = useReveal<HTMLElement>();
@@ -63,17 +45,24 @@ export function Home() {
         )}
       </div>
 
-      <div className="home-feature-grid">
-        {features.map((feature) => (
-          <article className="home-feature-card" data-reveal key={feature.title}>
-            <span aria-hidden="true" className="home-feature-icon">
-              {feature.icon}
-            </span>
-            <h3>{feature.title}</h3>
-            <p>{feature.description}</p>
-          </article>
-        ))}
-      </div>
+      <article className="home-anonymous-card" data-reveal>
+        <div className="home-anonymous-card-main">
+          <p className="eyebrow">No account required</p>
+          <h3>Browse public anonymous surveys</h3>
+          <p>
+            Open surveys listed by administrators can be started directly from the
+            public directory.
+          </p>
+          <div className="home-anonymous-meta">
+            <span>Public directory</span>
+            <span>Anonymous access</span>
+            <span>Tokenized survey links</span>
+          </div>
+        </div>
+        <Link className="button-link primary-button" to="/anonymous-surveys">
+          View anonymous surveys
+        </Link>
+      </article>
 
       <details className="system-status-panel" data-reveal>
         <summary>System status</summary>

@@ -1,0 +1,218 @@
+# Claude Review Handoff — Phase 31
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly
+  asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_31.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 31 for:
+
+- public listing eligibility and default-off behavior
+- participant-safe directory payload fields
+- hidden-tag/Admin metadata isolation
+- token handling and request logging redaction
+- anonymous attempt behavior stability
+- route segregation from authenticated dashboard surfaces
+- migration safety and schema fit
+- maintainability and product UX alignment
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_31.txt`
+- `notes/06-24-26_dev_path.txt`
+- `prompts/prompt_17.txt`
+- `prompts/prompt_27.txt`
+- `notes/claude_handoff_phase_17.txt`
+- `notes/claude_review_phase_17.txt`
+- `notes/claude_handoff_phase_27.txt`
+- `notes/claude_review_phase_27.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+
+## Phase Scope
+
+Implemented:
+
+- Added migration `0030_anonymous_public_directory.sql`.
+  - Adds `anonymous_survey_links.listed_in_public_directory boolean not null
+    default false`.
+  - Adds a partial index for listed anonymous links.
+- Extended shared anonymous link contracts with `listedInPublicDirectory`.
+- Added shared public directory response contracts:
+  - `AnonymousSurveyDirectoryItem`
+  - `AnonymousSurveyDirectoryResponse`
+- Added Admin-only endpoint:
+  - `PATCH /api/surveys/:id/anonymous-links/:linkId/public-directory`
+  - Requires `requireAuth` and `requireRole("admin")`.
+  - Accepts only boolean `listedInPublicDirectory`.
+- Updated anonymous link behavior:
+  - New links are unlisted by default via DB default.
+  - Rotated replacement links are unlisted by default.
+  - Disabled links have `listed_in_public_directory` cleared.
+  - Rotated-out old links have `listed_in_public_directory` cleared.
+- Added public endpoint:
+  - `GET /api/anonymous-survey-directory`
+  - Returns only links that are explicitly listed, enabled, unexpired, scoped to
+    published non-deleted surveys, and have a decryptable public URL.
+  - Payload includes only survey title, survey description, category name,
+    expiration timestamp, listing timestamp, and public runner URL.
+- Added public web route:
+  - `/anonymous-surveys`
+  - Outside `ProtectedRoute` and `AdminRoute`.
+  - Lists eligible directory entries and links to existing
+    `/anonymous-surveys/:token` runner URLs.
+- Added Admin Setup control:
+  - Per-link checkbox to opt an enabled anonymous link into or out of the
+    public directory.
+  - Displays a directory status pill when listed.
+- Updated docs:
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+- Expanded `apps/api/test/anonymousSurvey.test.ts`.
+
+Non-goals respected:
+
+- Did not list every enabled anonymous link by default.
+- Did not add discovery for authenticated-only surveys.
+- Did not implement anonymous assignment, recipient-list management, or email
+  invitation workflows.
+- Did not implement anonymous completion registration, sign-up conversion,
+  email capture changes, or ownership conversion.
+- Did not add public search/filtering beyond a simple list.
+- Did not change anonymous attempt ownership, answer validation, reporting,
+  hidden-tag behavior, CSV exports, or timing activity internals.
+- Did not expose Phase 30 profile demographics/contact fields.
+
+Known tradeoffs:
+
+- Directory cards use the encrypted `public_token` reveal path already used for
+  Admin repeat-copy. If a legacy enabled link has no decryptable public token,
+  it is skipped by the directory even if manually flagged in the database.
+- `listedAt` uses the anonymous link `updated_at`, so later link mutations can
+  change the displayed listing timestamp. It is a display hint, not an audit
+  trail.
+- The public directory endpoint is unauthenticated by design and is not behind
+  the anonymous token route limiter. Review whether that is acceptable for this
+  simple listing endpoint or whether it should reuse/receive rate limiting.
+
+Deferred work:
+
+- Manual browser pass remains pending:
+  - Admin creates a link and confirms it is unlisted by default.
+  - Admin opts it into `/anonymous-surveys`.
+  - Participant starts the listed survey.
+  - Admin opts out, disables, or expires it and confirms it disappears.
+  - Responsive pass at 375/768/1280px.
+- No public search/filtering was added; keep as later scope if requested.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `database/migrations/0030_anonymous_public_directory.sql`
+- `packages/shared/src/index.ts`
+- `apps/api/src/app.ts`
+- `apps/api/src/services/anonymousSurveys.ts`
+- `apps/api/src/routes/anonymousSurveyRoutes.ts`
+- `apps/api/test/anonymousSurvey.test.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/App.tsx`
+- `apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx`
+- `apps/web/src/pages/admin/SurveySetupPage.tsx`
+- `apps/web/src/styles.css`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_31.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run test -w apps/api -- test/anonymousSurvey.test.ts
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/anonymousSurvey.test.ts` (5 tests)
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 225 tests
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser during this implementation pass.
+
+## Specific Questions
+
+- Is default-off behavior guaranteed for new and rotated anonymous links?
+- Does the directory eligibility query correctly exclude unlisted, disabled,
+  expired, retired/unpublished, deleted, or unrevealable-token links?
+- Does the public directory payload expose only participant-safe fields?
+- Does the implementation avoid hidden tag, Admin metadata, token hash,
+  attempt token, anonymous contact email, and Phase 30 profile contact-field
+  leakage?
+- Is clearing `listed_in_public_directory` on disable/rotate the right product
+  behavior?
+- Should `GET /api/anonymous-survey-directory` reuse a rate limiter?
+- Does adding the public header nav link for unauthenticated users fit the
+  desired segregation from authenticated dashboard routes?
+- Did existing direct `/anonymous-surveys/:token` behavior remain stable for
+  unlisted links?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_31.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

@@ -9,7 +9,9 @@ import {
   addTag,
   collectObjectKeys,
   completeAttempt,
+  createCategory,
   createDraftSurvey,
+  deleteSurvey,
   findQuestion,
   registerAdmin,
   registerUser,
@@ -45,6 +47,7 @@ describe("anonymous survey links", () => {
 
     const created = await createAnonymousLink(admin.cookie, survey.id);
     expect(created.link.enabled).toBe(true);
+    expect(created.link.listedInPublicDirectory).toBe(false);
     expect(created.link.publicUrl).toContain("/anonymous-surveys/asl.");
 
     const list = await request(app)
@@ -54,6 +57,29 @@ describe("anonymous survey links", () => {
     expect(list.status).toBe(200);
     expect(list.body.links).toHaveLength(1);
     expect(list.body.links[0].publicUrl).toBe(created.link.publicUrl);
+    expect(list.body.links[0].listedInPublicDirectory).toBe(false);
+
+    const forbiddenDirectoryToggle = await request(app)
+      .patch(`/api/surveys/${survey.id}/anonymous-links/${created.link.id}/public-directory`)
+      .set("Cookie", user.cookie)
+      .send({ listedInPublicDirectory: true });
+
+    expect(forbiddenDirectoryToggle.status).toBe(403);
+
+    const invalidDirectoryToggle = await request(app)
+      .patch(`/api/surveys/${survey.id}/anonymous-links/${created.link.id}/public-directory`)
+      .set("Cookie", admin.cookie)
+      .send({ listedInPublicDirectory: "true" });
+
+    expect(invalidDirectoryToggle.status).toBe(400);
+
+    const listed = await request(app)
+      .patch(`/api/surveys/${survey.id}/anonymous-links/${created.link.id}/public-directory`)
+      .set("Cookie", admin.cookie)
+      .send({ listedInPublicDirectory: true });
+
+    expect(listed.status).toBe(200);
+    expect(listed.body.link.listedInPublicDirectory).toBe(true);
 
     const stored = await pool.query<{ public_token: string | null }>(
       `select public_token
@@ -73,7 +99,9 @@ describe("anonymous survey links", () => {
     expect(rotated.status).toBe(201);
     expect(rotated.body.disabledLink.id).toBe(created.link.id);
     expect(rotated.body.disabledLink.enabled).toBe(false);
+    expect(rotated.body.disabledLink.listedInPublicDirectory).toBe(false);
     expect(rotated.body.link.enabled).toBe(true);
+    expect(rotated.body.link.listedInPublicDirectory).toBe(false);
     expect(rotated.body.link.publicUrl).toContain("/anonymous-surveys/asl.");
 
     const oldUnavailable = await request(app).get(`/api/anonymous-surveys/${created.token}`);
@@ -91,10 +119,108 @@ describe("anonymous survey links", () => {
 
     expect(disabled.status).toBe(200);
     expect(disabled.body.link.enabled).toBe(false);
+    expect(disabled.body.link.listedInPublicDirectory).toBe(false);
     expect(disabled.body.link.publicUrl).toBeUndefined();
 
     const unavailable = await request(app).get(`/api/anonymous-surveys/${rotatedToken}`);
     expect(unavailable.status).toBe(404);
+  });
+
+  it("serves only explicitly listed eligible links in the public directory", async () => {
+    const admin = await registerAdmin(app);
+    const category = await createCategory(app, admin, "Public anonymous");
+    let listedSurvey = await createDraftSurvey(app, admin, "Listed public survey");
+
+    listedSurvey = await request(app)
+      .put(`/api/surveys/${listedSurvey.id}`)
+      .set("Cookie", admin.cookie)
+      .send({
+        title: listedSurvey.title,
+        description: "Participant-safe summary",
+        status: listedSurvey.status,
+        categoryId: category.id
+      })
+      .then((response) => {
+        expect(response.status).toBe(200);
+        return response.body.survey;
+      });
+    listedSurvey = await addQuestion(app, admin, listedSurvey.id, {
+      questionText: "Directory visible?",
+      questionType: "single_select"
+    });
+    const listedQuestion = findQuestion(listedSurvey, "Directory visible?");
+    listedSurvey = await addOption(app, admin, listedSurvey.id, listedQuestion.id, "Yes");
+    const listedOption = findQuestion(listedSurvey, "Directory visible?").answerOptions[0];
+    listedSurvey = await addTag(
+      app,
+      admin,
+      listedSurvey.id,
+      listedQuestion.id,
+      listedOption.id,
+      "internal",
+      "hidden"
+    );
+    listedSurvey = await setSurveyStatus(app, admin, listedSurvey.id, "published");
+    const listedLink = await createAnonymousLink(admin.cookie, listedSurvey.id);
+
+    await setDirectoryListing(admin.cookie, listedSurvey.id, listedLink.link.id, true);
+
+    const unlistedLink = await createAnonymousLink(admin.cookie, listedSurvey.id);
+    const directUnlisted = await request(app).get(`/api/anonymous-surveys/${unlistedLink.token}`);
+
+    expect(directUnlisted.status).toBe(200);
+
+    const disabledLink = await createAnonymousLink(admin.cookie, listedSurvey.id);
+    await setDirectoryListing(admin.cookie, listedSurvey.id, disabledLink.link.id, true);
+    await request(app)
+      .patch(`/api/surveys/${listedSurvey.id}/anonymous-links/${disabledLink.link.id}/disable`)
+      .set("Cookie", admin.cookie)
+      .send({});
+
+    const expiredLink = await createAnonymousLink(admin.cookie, listedSurvey.id);
+    await setDirectoryListing(admin.cookie, listedSurvey.id, expiredLink.link.id, true);
+    await pool.query(
+      `update anonymous_survey_links
+       set expires_at = now() - interval '1 minute'
+       where id = $1`,
+      [expiredLink.link.id]
+    );
+
+    let retiredSurvey = await createDraftSurvey(app, admin, "Retired listed survey");
+    retiredSurvey = await addQuestion(app, admin, retiredSurvey.id, { questionText: "Retired?" });
+    retiredSurvey = await setSurveyStatus(app, admin, retiredSurvey.id, "published");
+    const retiredLink = await createAnonymousLink(admin.cookie, retiredSurvey.id);
+    await setDirectoryListing(admin.cookie, retiredSurvey.id, retiredLink.link.id, true);
+    await pool.query(`update surveys set status = 'retired' where id = $1`, [retiredSurvey.id]);
+
+    let deletedSurvey = await createDraftSurvey(app, admin, "Deleted listed survey");
+    deletedSurvey = await addQuestion(app, admin, deletedSurvey.id, { questionText: "Deleted?" });
+    deletedSurvey = await setSurveyStatus(app, admin, deletedSurvey.id, "published");
+    const deletedLink = await createAnonymousLink(admin.cookie, deletedSurvey.id);
+    await setDirectoryListing(admin.cookie, deletedSurvey.id, deletedLink.link.id, true);
+    await deleteSurvey(app, admin, deletedSurvey.id);
+
+    const directory = await request(app).get("/api/anonymous-survey-directory");
+
+    expect(directory.status).toBe(200);
+    expect(directory.headers["set-cookie"]).toBeUndefined();
+    expect(directory.body.surveys).toHaveLength(1);
+    expect(directory.body.surveys[0]).toEqual({
+      surveyTitle: "Listed public survey",
+      surveyDescription: "Participant-safe summary",
+      categoryName: "Public anonymous",
+      expiresAt: null,
+      listedAt: expect.any(String),
+      publicUrl: listedLink.link.publicUrl
+    });
+    expect([...collectObjectKeys(directory.body)]).not.toContain("answerTags");
+    expect([...collectObjectKeys(directory.body)]).not.toContain("valueTags");
+    expect([...collectObjectKeys(directory.body)]).not.toContain("otherTags");
+    expect([...collectObjectKeys(directory.body)]).not.toContain("tokenSecretHash");
+    expect([...collectObjectKeys(directory.body)]).not.toContain("publicToken");
+    expect([...collectObjectKeys(directory.body)]).not.toContain("attemptAccessToken");
+    expect(JSON.stringify(directory.body)).not.toContain("hidden");
+    expect(JSON.stringify(directory.body)).not.toContain(unlistedLink.token);
   });
 
   it("rejects bad, expired, and survey-unavailable tokens safely", async () => {
@@ -303,7 +429,12 @@ describe("anonymous survey links", () => {
 });
 
 async function createAnonymousLink(cookie: string, surveyId: number): Promise<{
-  link: { id: number; enabled: boolean; publicUrl: string };
+  link: {
+    id: number;
+    enabled: boolean;
+    listedInPublicDirectory: boolean;
+    publicUrl: string;
+  };
   token: string;
 }> {
   const response = await request(app)
@@ -323,4 +454,22 @@ async function createAnonymousLink(cookie: string, surveyId: number): Promise<{
   }
 
   return { link: response.body.link, token };
+}
+
+async function setDirectoryListing(
+  cookie: string,
+  surveyId: number,
+  linkId: number,
+  listedInPublicDirectory: boolean
+): Promise<void> {
+  const response = await request(app)
+    .patch(`/api/surveys/${surveyId}/anonymous-links/${linkId}/public-directory`)
+    .set("Cookie", cookie)
+    .send({ listedInPublicDirectory });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Anonymous link directory toggle failed with ${response.status}: ${JSON.stringify(response.body)}`
+    );
+  }
 }

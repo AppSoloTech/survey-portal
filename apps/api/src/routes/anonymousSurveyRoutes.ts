@@ -28,8 +28,10 @@ import {
   fetchAvailableAnonymousSurveyLink,
   generateAnonymousAttemptToken,
   hashAnonymousAttemptToken,
+  listAnonymousSurveyDirectory,
   listAnonymousSurveyLinks,
-  rotateAnonymousSurveyLink
+  rotateAnonymousSurveyLink,
+  updateAnonymousSurveyLinkDirectoryListing
 } from "../services/anonymousSurveys.js";
 import {
   fetchQuestionForSurvey,
@@ -56,6 +58,7 @@ import {
 } from "../services/validation.js";
 
 export const anonymousSurveyAdminRouter = express.Router();
+export const anonymousSurveyDirectoryRouter = express.Router();
 export const anonymousSurveyPublicRouter = express.Router();
 const anonymousSurveyRateLimitStore = new PostgresRateLimitStore(
   "anonymous_survey_public",
@@ -74,6 +77,14 @@ const anonymousSurveyRateLimiter = rateLimit({
 });
 
 anonymousSurveyPublicRouter.use(anonymousSurveyRateLimiter);
+
+anonymousSurveyDirectoryRouter.get("/", async (_req, res, next) => {
+  try {
+    res.json({ surveys: await listAnonymousSurveyDirectory() });
+  } catch (error) {
+    next(error);
+  }
+});
 
 anonymousSurveyAdminRouter.get(
   "/:id/anonymous-links",
@@ -154,6 +165,43 @@ anonymousSurveyAdminRouter.patch(
       }
 
       const link = await disableAnonymousSurveyLink({ surveyId, linkId });
+
+      if (!link) {
+        res.status(404).json({ error: "Anonymous survey link not found" });
+        return;
+      }
+
+      res.json({ link });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+anonymousSurveyAdminRouter.patch(
+  "/:id/anonymous-links/:linkId/public-directory",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res, next) => {
+    try {
+      const surveyId = readPositiveIntegerParam(req.params.id);
+      const linkId = readPositiveIntegerParam(req.params.linkId);
+
+      if (!surveyId || !linkId) {
+        res.status(400).json({ error: "Survey id and link id must be positive integers" });
+        return;
+      }
+
+      if (!isRecord(req.body) || typeof req.body.listedInPublicDirectory !== "boolean") {
+        res.status(400).json({ error: "listedInPublicDirectory must be a boolean" });
+        return;
+      }
+
+      const link = await updateAnonymousSurveyLinkDirectoryListing({
+        surveyId,
+        linkId,
+        listedInPublicDirectory: req.body.listedInPublicDirectory
+      });
 
       if (!link) {
         res.status(404).json({ error: "Anonymous survey link not found" });
