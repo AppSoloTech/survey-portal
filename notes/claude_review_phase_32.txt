@@ -1,0 +1,137 @@
+# Claude Review — Phase 32 (Anonymous Completion → Account Conversion)
+
+Reviewer: Claude Code
+Scope: current phase diff only — shared type, the registration-validator move
+into validation.ts, the new `POST /api/anonymous-surveys/:token/register`
+conversion endpoint, auth.ts cleanup, web client, SurveyAttemptPage completion
+UX, and the expanded anonymousSurvey tests. Method: static review against
+prompt_32 and the handoff, tracing the conversion transaction, authorization,
+and the frontend flow; confirmed no circular import between validation.ts and
+the auth service. Suite not re-run here; handoff reports typecheck/lint/build/
+test green with approved local PostgreSQL (API 227, web 57, shared 54;
+anonymousSurvey 7).
+
+Verdict: Strong, well-tested implementation. The conversion is transaction-safe,
+authorization reuses the established link-token + per-attempt access-token
+pattern, completed-only is double-enforced, failed registrations leave the
+attempt untouched, responses/timestamps are preserved, and no secrets are
+exposed. No blocking issues. Two worthwhile follow-ups (a registration-grade rate
+limiter; hardening the post-commit detail/cookie step) and minor notes below.
+Recommend commit after the pending manual pass.
+
+---
+
+## 1. Critical issues
+
+None.
+
+## 2. Suggested improvements (non-blocking)
+
+1. Consider a registration-grade rate limiter for the conversion endpoint. It
+   sits behind the anonymous public limiter, not the stricter auth-register
+   limiter, yet it creates accounts and runs bcrypt on every call — a CPU-costly
+   path an abuser could lean on even within the anonymous limit. The handoff
+   raises this; reusing the register limiter (or a dedicated one) would close the
+   gap. Not a correctness blocker.
+
+2. Harden the post-commit step. After `commit` sets `didCommit = true`, the code
+   calls `buildAttemptDetail(...)` and `setAuthCookie(...)`. If `buildAttemptDetail`
+   throws, the catch (correctly) skips rollback but rethrows → 500, even though
+   the account and conversion already succeeded and the cookie was never set —
+   leaving the user converted but not logged in (they'd have to log in manually).
+   Low probability (it's a read of a just-converted attempt), but building the
+   detail inside the transaction before commit, or treating post-commit failures
+   as a soft success, would remove the sharp edge.
+
+3. Minor: the conversion endpoint validates the body with both
+   `validateRegistrationBody` and `validateCompleteBody` and resolves the access
+   token via `resolveAnonymousOwner`. That's correct, but the ordering means a
+   completed-body problem (missing attemptId) is reported before the link is
+   checked. Fine as-is; just noting the precedence for future readers.
+
+## 3. Acceptable tradeoffs
+
+- No schema migration: the existing `survey_attempts_owner_check` and the
+  anonymous-contact-email check already permit a row with `user_id` set and all
+  anonymous fields null, so conversion satisfies the constraint without DDL. The
+  successful-conversion test inserting/updating proves the constraint is met.
+- Link availability is rechecked via `resolveAnonymousOwner`
+  (`fetchAvailableAnonymousSurveyLink`) just before the transaction, not re-read
+  inside it. There is a tiny TOCTOU window where a link could be disabled between
+  the recheck and the attempt UPDATE, but the attempt is already completed, so
+  converting it is benign. Acceptable.
+- The registration-validation move to validation.ts is a clean refactor: the
+  function is byte-identical to the old auth.ts copy (same `normalizeEmail`,
+  `validatePassword`, `isValidEmail`), normal `POST /api/auth/register` behavior
+  and response are unchanged, and the now-shared `isValidEmail` reuses the same
+  regex it replaced in the contact-email validator (no behavior change). No
+  circular import (validation.ts → auth service only).
+
+## 4. Questions or assumptions (answering the handoff's specific questions)
+
+- Transaction safety / partial creation: solid. bcrypt runs before BEGIN; the
+  attempt is `SELECT ... FOR UPDATE`d first, then the user is inserted, then the
+  attempt is updated — all in one transaction. A duplicate email throws on the
+  user insert and rolls back both the user and any attempt mutation (the test
+  asserts the attempt is still `user_id null` with anonymous fields intact after
+  a 409). Concurrent double-conversion is safe: the second request blocks on the
+  row lock, then its `user_id IS NULL` SELECT returns nothing (first already
+  committed) and it 404s before inserting a user — no orphan user.
+- Authorization: correct and consistent with the rest of the anonymous surface.
+  It requires an available link token (path, rechecked) plus the per-attempt
+  `attemptAccessToken` (body → hash), and the locking SELECT/UPDATE are scoped by
+  `id + survey_id + user_id IS NULL + anonymous_link_id + anonymous_access_token_hash`.
+- Disabled/expired/unavailable rejection: confirmed — `fetchAvailableAnonymousSurveyLink`
+  returns null for disabled/expired/retired/deleted/bad-token links, yielding 404
+  before the transaction (test covers all four → 404).
+- Completed-only: double-enforced — the locking SELECT 409s a non-completed
+  attempt, and the UPDATE `WHERE ... status = 'completed'` is a second guard
+  (test: pre-completion register → 409).
+- Duplicate-email / invalid-registration non-conversion: guaranteed — all such
+  paths either reject before the transaction (validation) or roll back (unique
+  email), and the test verifies the attempt is unmutated after the failures.
+- Clearing anonymous fields + preserving data: the UPDATE sets `user_id`, nulls
+  `anonymous_link_id`/`anonymous_access_token_hash`/`anonymous_contact_email`, and
+  touches only `updated_at` — `completed_at`, `started_at`, and the saved
+  responses (separate table) are untouched (test asserts `completed_at` non-null
+  and the cleared anonymous fields).
+- Dashboard / Admin Results / CSV classification: the test confirms the converted
+  attempt appears in the new user's my-surveys and is represented in the report,
+  attempt detail, and CSV as a registered-user attempt.
+- Secret exposure: none. The response is `{ user: AuthUser (no password_hash),
+  attempt: SurveyAttempt }` via the same participant-safe `buildAttemptDetail`
+  used for authenticated attempts; the password hash, token hashes, attempt
+  token, hidden tags, and (now-cleared) contact email are not returned, and no
+  token appears in the request path.
+- Cookie/session after conversion: `setAuthCookie(res, user)` is set and the
+  client calls `updateSessionUser(response.user)`, so the new account is logged in
+  immediately and redirected to `/dashboard` (subject to improvement 2 for the
+  rare post-commit failure).
+
+## 5. Product UX alignment notes
+
+- Account creation is now the first post-completion choice: on anonymous
+  completion the panel renders (gated by `isCompleted && attempt.userId === null
+  && !declined && !anonymousContactEmail`) instead of auto-opening the email
+  modal. "Continue anonymously" sets the declined flag and opens the existing
+  optional follow-up email modal, preserving the fallback. After conversion the
+  panel cannot reappear because `attempt.userId` is now set.
+- The panel mirrors the standard registration fields (names, email, password with
+  `minLength={8}` matching the server) and surfaces server errors inline
+  (duplicate email, weak password), so the decline path and the error path both
+  behave sensibly.
+- Converted attempts move cleanly into the registered experience (dashboard +
+  admin reporting), while declined attempts stay anonymous with the optional
+  email — matching the intended "convert-or-stay-anonymous" fork.
+
+## 6. Commit readiness
+
+Ready to commit after the pending manual pass the handoff lists (complete →
+panel appears; register → redirect + appears in history; decline → email modal
+save/skip; converted vs. non-converted representation in Admin Results/CSV;
+375/768/1280px). Consider landing improvement 1 (registration rate limiter) in
+this phase or as a fast-follow given it's an account-creation endpoint;
+improvement 2 is a nice-to-have.
+
+No code changes are requested from this review unless you want me to apply
+improvements 1-2. The automated suite passed per the handoff (not re-run here).

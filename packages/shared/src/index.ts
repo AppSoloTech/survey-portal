@@ -498,6 +498,11 @@ export interface CompleteSurveyResponse {
   attempt: SurveyAttempt;
 }
 
+export interface ConvertAnonymousSurveyAttemptResponse {
+  user: AuthUser;
+  attempt: SurveyAttempt;
+}
+
 export interface HealthResponse {
   status: "ok" | "unavailable";
   app: "survey-portal";

@@ -2226,6 +2226,70 @@ main {
   margin: 0;
 }
 
+.anonymous-registration-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.anonymous-registration-heading {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.anonymous-registration-heading h4,
+.anonymous-registration-heading p {
+  margin: 0;
+}
+
+.anonymous-registration-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.anonymous-registration-grid label {
+  color: var(--text-muted);
+  display: grid;
+  font-size: 0.875rem;
+  font-weight: 700;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.anonymous-registration-grid input {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  min-height: 2.6rem;
+  padding: 0.55rem 0.75rem;
+  transition:
+    border-color var(--speed-fast) var(--ease-out),
+    box-shadow var(--speed-base) var(--ease-out),
+    background-color var(--speed-fast) var(--ease-out);
+  width: 100%;
+}
+
+.anonymous-registration-grid input:focus {
+  background: var(--surface);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  outline: none;
+}
+
+.anonymous-registration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
 .modal-backdrop {
   align-items: center;
   background: rgba(13, 24, 41, 0.5);
@@ -5238,6 +5302,7 @@ main {
   .admin-overview-layout,
   .admin-user-detail-layout,
   .anonymous-directory-card,
+  .anonymous-registration-grid,
   .two-columns,
   .three-columns,
   .option-row-form,

@@ -543,6 +543,11 @@ Notes:
   access token.
 * An anonymous attempt may optionally store `anonymous_contact_email` after
   completion so admins can follow up without creating a user account.
+* A completed anonymous attempt may be converted into a newly registered user's
+  attempt after completion. Conversion mutates the same attempt row in one
+  transaction: set `user_id`, clear `anonymous_link_id`,
+  `anonymous_access_token_hash`, and `anonymous_contact_email`, and preserve
+  responses plus completion timestamps.
 * Exactly one ownership path should be set: registered user or anonymous link.
 * A user may have one or more attempts depending on business rules.
 * For MVP, consider limiting each user to one active attempt per survey.
@@ -585,7 +590,10 @@ Notes:
 * `public_token` uses application-layer authenticated encryption. If the
   encryption secret changes, existing links still validate through their hash
   but cannot be revealed for copying.
-* Anonymous takers do not receive or create user accounts.
+* Anonymous takers do not need accounts to start or complete a survey. After
+  completion, they may create a new account and convert that completed attempt
+  to registered ownership; existing-account claim or merge is separate future
+  scope.
 * Public anonymous survey APIs must return the same participant-safe survey
   shape as logged-in survey-taking APIs: hidden tags and admin-only metadata are
   not included.

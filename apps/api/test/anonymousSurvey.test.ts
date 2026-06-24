@@ -1,4 +1,4 @@
-import request from "supertest";
+import request, { type Response } from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app.js";
@@ -12,12 +12,14 @@ import {
   createCategory,
   createDraftSurvey,
   deleteSurvey,
+  extractAuthCookie,
   findQuestion,
   registerAdmin,
   registerUser,
   setSurveyStatus,
   startAttempt,
-  submitAnswer
+  submitAnswer,
+  uniqueEmail
 } from "./helpers/factories.js";
 
 const app = createApp();
@@ -370,6 +372,324 @@ describe("anonymous survey links", () => {
     expect(attempts.body.attempts[0].participant.email).toBe("followup@example.com");
   });
 
+  it("does not convert anonymous attempts for invalid registration or ownership inputs", async () => {
+    const admin = await registerAdmin(app);
+    const existingUser = await registerUser(app);
+    let survey = await createDraftSurvey(app, admin, "Anonymous conversion failures");
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Comment" });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+    const question = findQuestion(survey, "Comment");
+    const link = await createAnonymousLink(admin.cookie, survey.id);
+    const started = await request(app).post(`/api/anonymous-surveys/${link.token}/start`).send({});
+
+    const earlyConvert = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/register`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        first_name: "Early",
+        last_name: "Convert",
+        email: uniqueEmail("early-convert"),
+        password: "test-password-123"
+      });
+
+    expect(earlyConvert.status).toBe(409);
+
+    await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/answer`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        questionId: question.id,
+        answerText: "anonymous response"
+      });
+    await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/complete`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id
+      });
+    await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/contact-email`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        email: "anon-followup@example.com"
+      });
+
+    const wrongAttempt = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/register`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id + 9999,
+        first_name: "Wrong",
+        last_name: "Attempt",
+        email: uniqueEmail("wrong-attempt"),
+        password: "test-password-123"
+      });
+    const badAttemptToken = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/register`)
+      .send({
+        attemptAccessToken: "not-an-attempt-token",
+        attemptId: started.body.attempt.id,
+        first_name: "Bad",
+        last_name: "Token",
+        email: uniqueEmail("bad-token"),
+        password: "test-password-123"
+      });
+    const duplicateEmail = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/register`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        first_name: "Dupe",
+        last_name: "Email",
+        email: existingUser.user.email.toUpperCase(),
+        password: "test-password-123"
+      });
+    const shortPassword = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/register`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        first_name: "Short",
+        last_name: "Password",
+        email: uniqueEmail("short-password"),
+        password: "short"
+      });
+
+    expect(wrongAttempt.status).toBe(404);
+    expect(badAttemptToken.status).toBe(400);
+    expect(duplicateEmail.status).toBe(409);
+    expect(shortPassword.status).toBe(400);
+
+    const afterFailures = await pool.query<{
+      user_id: number | null;
+      anonymous_link_id: number | null;
+      anonymous_access_token_hash: string | null;
+      anonymous_contact_email: string | null;
+    }>(
+      `select user_id, anonymous_link_id, anonymous_access_token_hash, anonymous_contact_email
+       from survey_attempts
+       where id = $1`,
+      [started.body.attempt.id]
+    );
+
+    expect(afterFailures.rows[0]).toMatchObject({
+      user_id: null,
+      anonymous_link_id: link.link.id,
+      anonymous_contact_email: "anon-followup@example.com"
+    });
+    expect(afterFailures.rows[0].anonymous_access_token_hash).not.toBeNull();
+  });
+
+  it("converts a completed anonymous attempt into a registered-user attempt", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Anonymous conversion");
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Comment" });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+    const question = findQuestion(survey, "Comment");
+    const link = await createAnonymousLink(admin.cookie, survey.id);
+    const started = await request(app).post(`/api/anonymous-surveys/${link.token}/start`).send({});
+
+    await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/answer`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        questionId: question.id,
+        answerText: "anonymous response"
+      });
+    await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/complete`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id
+      });
+    await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/contact-email`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        email: "anon-followup@example.com"
+      });
+
+    const email = uniqueEmail("converted");
+    const converted = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/register`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        first_name: "Converted",
+        last_name: "Participant",
+        email: email.toUpperCase(),
+        password: "test-password-123"
+      });
+
+    expect(converted.status).toBe(201);
+    expect(extractAuthCookie(converted)).toMatch(/^survey_portal_auth=/);
+    expect(converted.body.user).toMatchObject({
+      firstName: "Converted",
+      lastName: "Participant",
+      email,
+      role: "user"
+    });
+    expect(converted.body.attempt).toMatchObject({
+      id: started.body.attempt.id,
+      status: "completed",
+      userId: converted.body.user.id,
+      anonymousLinkId: null,
+      anonymousContactEmail: null
+    });
+    expect(converted.body.attempt.responses[0]).toMatchObject({
+      questionId: question.id,
+      answerText: "anonymous response"
+    });
+    expect(JSON.stringify(converted.body)).not.toContain("attemptAccessToken");
+    expect(JSON.stringify(converted.body)).not.toContain("password");
+
+    const stored = await pool.query<{
+      user_id: number | null;
+      anonymous_link_id: number | null;
+      anonymous_access_token_hash: string | null;
+      anonymous_contact_email: string | null;
+      completed_at: Date | null;
+    }>(
+      `select user_id, anonymous_link_id, anonymous_access_token_hash, anonymous_contact_email, completed_at
+       from survey_attempts
+       where id = $1`,
+      [started.body.attempt.id]
+    );
+
+    expect(stored.rows[0]).toMatchObject({
+      user_id: converted.body.user.id,
+      anonymous_link_id: null,
+      anonymous_access_token_hash: null,
+      anonymous_contact_email: null
+    });
+    expect(stored.rows[0].completed_at).not.toBeNull();
+
+    const convertedCookie = extractAuthCookie(converted);
+    const mySurveys = await request(app).get("/api/my-surveys").set("Cookie", convertedCookie);
+    const convertedSummary = mySurveys.body.surveys.find(
+      (item: { survey: { id: number } }) => item.survey.id === survey.id
+    );
+
+    expect(mySurveys.status).toBe(200);
+    expect(convertedSummary.attempt.id).toBe(started.body.attempt.id);
+    expect(convertedSummary.attempt.userId).toBe(converted.body.user.id);
+    expect(convertedSummary.attempt.anonymousLinkId).toBeNull();
+
+    const report = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts`)
+      .set("Cookie", admin.cookie);
+    const detail = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${started.body.attempt.id}`)
+      .set("Cookie", admin.cookie);
+    const csv = await request(app)
+      .get(`/api/surveys/${survey.id}/export.csv`)
+      .set("Cookie", admin.cookie);
+
+    expect(report.status).toBe(200);
+    expect(report.body.attempts[0].participant).toMatchObject({
+      type: "user",
+      email
+    });
+    expect(detail.status).toBe(200);
+    expect(detail.body.participant).toMatchObject({
+      type: "user",
+      email
+    });
+    expect(csv.status).toBe(200);
+    expect(csv.text).toContain(email);
+    expect(csv.text).toContain("verified_account");
+    expect(csv.text).not.toContain("anon-followup@example.com");
+
+    const postConvertContactEmail = await request(app)
+      .post(`/api/anonymous-surveys/${link.token}/contact-email`)
+      .send({
+        attemptAccessToken: started.body.attemptAccessToken,
+        attemptId: started.body.attempt.id,
+        email: "late@example.com"
+      });
+
+    expect(postConvertContactEmail.status).toBe(404);
+  });
+
+  it("rejects anonymous attempt conversion for unavailable links and surveys", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Anonymous conversion unavailable");
+    survey = await addQuestion(app, admin, survey.id, { questionText: "Comment" });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+    const question = findQuestion(survey, "Comment");
+
+    const disabled = await completeAnonymousSurveyForConversion(admin.cookie, survey.id, question.id);
+    await request(app)
+      .patch(`/api/surveys/${survey.id}/anonymous-links/${disabled.link.link.id}/disable`)
+      .set("Cookie", admin.cookie)
+      .send({});
+
+    const disabledConvert = await request(app)
+      .post(`/api/anonymous-surveys/${disabled.link.token}/register`)
+      .send({
+        attemptAccessToken: disabled.start.body.attemptAccessToken,
+        attemptId: disabled.start.body.attempt.id,
+        first_name: "Disabled",
+        last_name: "Link",
+        email: uniqueEmail("disabled-link"),
+        password: "test-password-123"
+      });
+
+    const expired = await completeAnonymousSurveyForConversion(admin.cookie, survey.id, question.id);
+    await pool.query(
+      `update anonymous_survey_links
+       set expires_at = now() - interval '1 minute'
+       where id = $1`,
+      [expired.link.link.id]
+    );
+
+    const expiredConvert = await request(app)
+      .post(`/api/anonymous-surveys/${expired.link.token}/register`)
+      .send({
+        attemptAccessToken: expired.start.body.attemptAccessToken,
+        attemptId: expired.start.body.attempt.id,
+        first_name: "Expired",
+        last_name: "Link",
+        email: uniqueEmail("expired-link"),
+        password: "test-password-123"
+      });
+
+    const retired = await completeAnonymousSurveyForConversion(admin.cookie, survey.id, question.id);
+    await pool.query(`update surveys set status = 'retired' where id = $1`, [survey.id]);
+
+    const retiredConvert = await request(app)
+      .post(`/api/anonymous-surveys/${retired.link.token}/register`)
+      .send({
+        attemptAccessToken: retired.start.body.attemptAccessToken,
+        attemptId: retired.start.body.attempt.id,
+        first_name: "Retired",
+        last_name: "Survey",
+        email: uniqueEmail("retired-survey"),
+        password: "test-password-123"
+      });
+
+    const malformedTokenConvert = await request(app)
+      .post("/api/anonymous-surveys/not-a-token/register")
+      .send({
+        attemptAccessToken: retired.start.body.attemptAccessToken,
+        attemptId: retired.start.body.attempt.id,
+        first_name: "Bad",
+        last_name: "Token",
+        email: uniqueEmail("bad-link-token"),
+        password: "test-password-123"
+      });
+
+    expect(disabledConvert.status).toBe(404);
+    expect(expiredConvert.status).toBe(404);
+    expect(retiredConvert.status).toBe(404);
+    expect(malformedTokenConvert.status).toBe(404);
+  });
+
   it("keeps anonymous and registered attempts separate in reporting", async () => {
     const admin = await registerAdmin(app);
     const user = await registerUser(app);
@@ -472,4 +792,33 @@ async function setDirectoryListing(
       `Anonymous link directory toggle failed with ${response.status}: ${JSON.stringify(response.body)}`
     );
   }
+}
+
+async function completeAnonymousSurveyForConversion(
+  cookie: string,
+  surveyId: number,
+  questionId: number
+): Promise<{
+  link: Awaited<ReturnType<typeof createAnonymousLink>>;
+  start: Response;
+}> {
+  const link = await createAnonymousLink(cookie, surveyId);
+  const start = await request(app).post(`/api/anonymous-surveys/${link.token}/start`).send({});
+
+  await request(app)
+    .post(`/api/anonymous-surveys/${link.token}/answer`)
+    .send({
+      attemptAccessToken: start.body.attemptAccessToken,
+      attemptId: start.body.attempt.id,
+      questionId,
+      answerText: "completed"
+    });
+  await request(app)
+    .post(`/api/anonymous-surveys/${link.token}/complete`)
+    .send({
+      attemptAccessToken: start.body.attemptAccessToken,
+      attemptId: start.body.attempt.id
+    });
+
+  return { link, start };
 }

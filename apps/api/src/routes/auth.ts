@@ -23,6 +23,13 @@ import {
   requestPasswordResetForEmail,
   requestPasswordResetForUser
 } from "../services/passwordReset.js";
+import {
+  isRecord,
+  isValidEmail,
+  readTextField,
+  validateRegistrationBody,
+  type ValidationResult
+} from "../services/validation.js";
 
 const { DatabaseError } = pg;
 const loginRateLimitStore = new MemoryStore();
@@ -206,46 +213,6 @@ authRouter.post("/logout", (_req, res) => {
   res.status(204).send();
 });
 
-function validateRegistrationBody(body: unknown): ValidationResult<{
-  firstName: string;
-  lastName: string;
-  email: string;
-  password: string;
-}> {
-  if (!isRecord(body)) {
-    return { ok: false, error: "Request body is required" };
-  }
-
-  const firstName = readTextField(body, "first_name");
-  const lastName = readTextField(body, "last_name");
-  const email = normalizeEmail(readTextField(body, "email"));
-  const password = readTextField(body, "password");
-
-  if (!firstName || !lastName || !email || !password) {
-    return { ok: false, error: "First name, last name, email, and password are required" };
-  }
-
-  if (!isValidEmail(email)) {
-    return { ok: false, error: "Enter a valid email address" };
-  }
-
-  const passwordError = validatePassword(password);
-
-  if (passwordError) {
-    return { ok: false, error: passwordError };
-  }
-
-  return {
-    ok: true,
-    value: {
-      firstName,
-      lastName,
-      email,
-      password
-    }
-  };
-}
-
 function validateLoginBody(body: unknown): ValidationResult<{ email: string; password: string }> {
   if (!isRecord(body)) {
     return { ok: false, error: "Request body is required" };
@@ -315,21 +282,6 @@ function queuePasswordResetRequest(email: string): void {
   void requestPasswordResetForEmail({ email }).catch(() => {
     console.warn("Password reset request failed after generic response");
   });
-}
-
-type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function readTextField(body: Record<string, unknown>, field: string): string {
-  const value = body[field];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function isUniqueEmailError(error: unknown): boolean {

@@ -1,11 +1,19 @@
 import {
   getQuestionsForPage,
   type CompleteSurveyResponse,
+  type ConvertAnonymousSurveyAttemptResponse,
   type SurveyAttemptActivityResponse
 } from "@survey-portal/shared";
 import express from "express";
+import pg from "pg";
 import { rateLimit } from "express-rate-limit";
 
+import {
+  hashPassword,
+  mapUserRecord,
+  setAuthCookie,
+  type UserRecord
+} from "../auth.js";
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -15,6 +23,7 @@ import {
   buildAnonymousAttemptDetail,
   buildStartAnonymousSurveyResponse,
   fetchAttemptForAnonymousOwner,
+  fetchAttemptWithResponses,
   insertAnonymousSurveyAttempt,
   pruneOffPathAnswers,
   saveAnswer,
@@ -54,6 +63,7 @@ import {
   validateAnswerBody,
   validateCompleteBody,
   validatePageAnswerBody,
+  validateRegistrationBody,
   validateSurveyAttemptActivityBody
 } from "../services/validation.js";
 
@@ -64,6 +74,11 @@ const anonymousSurveyRateLimitStore = new PostgresRateLimitStore(
   "anonymous_survey_public",
   config.anonymousSurveyRateLimitWindowMs
 );
+const anonymousSurveyRegisterRateLimitStore = new PostgresRateLimitStore(
+  "anonymous_survey_register",
+  config.authRateLimitWindowMs
+);
+const { DatabaseError } = pg;
 
 const anonymousSurveyRateLimiter = rateLimit({
   windowMs: config.anonymousSurveyRateLimitWindowMs,
@@ -73,6 +88,17 @@ const anonymousSurveyRateLimiter = rateLimit({
   store: anonymousSurveyRateLimitStore,
   handler: (_req, res) => {
     res.status(429).json({ error: "Too many anonymous survey requests. Please try again later." });
+  }
+});
+
+const anonymousSurveyRegisterRateLimiter = rateLimit({
+  windowMs: config.authRateLimitWindowMs,
+  limit: config.authRegisterRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: anonymousSurveyRegisterRateLimitStore,
+  handler: (_req, res) => {
+    res.status(429).json({ error: "Too many registration attempts. Please try again later." });
   }
 });
 
@@ -710,6 +736,171 @@ anonymousSurveyPublicRouter.post("/:token/complete", async (req, res, next) => {
   }
 });
 
+anonymousSurveyPublicRouter.post(
+  "/:token/register",
+  anonymousSurveyRegisterRateLimiter,
+  async (req, res, next) => {
+    const registrationValidation = validateRegistrationBody(req.body);
+
+    if (!registrationValidation.ok) {
+      res.status(400).json({ error: registrationValidation.error });
+      return;
+    }
+
+    const completionValidation = validateCompleteBody(req.body);
+
+    if (!completionValidation.ok) {
+      res.status(400).json({ error: completionValidation.error });
+      return;
+    }
+
+    try {
+      const owner = await resolveAnonymousOwner(req.params.token, req.body);
+
+      if (!owner.ok) {
+        res.status(owner.status).json({ error: owner.error });
+        return;
+      }
+
+      const passwordHash = await hashPassword(registrationValidation.value.password);
+      const client = await pool.connect();
+      let didCommit = false;
+
+      try {
+        await client.query("begin");
+
+        const attemptResult = await client.query<SurveyAttemptRecord>(
+          `select
+             id,
+             survey_id,
+             user_id,
+             anonymous_link_id,
+             anonymous_access_token_hash,
+             anonymous_contact_email,
+             status,
+             started_at,
+             last_activity_at,
+             completed_at,
+             created_at,
+             updated_at
+           from survey_attempts
+           where id = $1
+             and survey_id = $2
+             and user_id is null
+             and anonymous_link_id = $3
+             and anonymous_access_token_hash = $4
+           for update`,
+          [
+            completionValidation.value.attemptId,
+            owner.link.survey_id,
+            owner.link.id,
+            owner.accessTokenHash
+          ]
+        );
+        const attempt = attemptResult.rows[0];
+
+        if (!attempt) {
+          await client.query("rollback");
+          res.status(404).json({ error: "Survey attempt not found" });
+          return;
+        }
+
+        if (attempt.status !== "completed") {
+          await client.query("rollback");
+          res.status(409).json({ error: "Only completed anonymous attempts can be registered" });
+          return;
+        }
+
+        const userResult = await client.query<UserRecord>(
+          `insert into users (first_name, last_name, email, password_hash, role)
+           values ($1, $2, $3, $4, 'user')
+           returning id, first_name, last_name, email, role, created_at, updated_at`,
+          [
+            registrationValidation.value.firstName,
+            registrationValidation.value.lastName,
+            registrationValidation.value.email,
+            passwordHash
+          ]
+        );
+        const user = mapUserRecord(userResult.rows[0]);
+
+        const updateResult = await client.query<SurveyAttemptRecord>(
+          `update survey_attempts
+           set user_id = $1,
+               anonymous_link_id = null,
+               anonymous_access_token_hash = null,
+               anonymous_contact_email = null,
+               updated_at = now()
+           where id = $2
+             and survey_id = $3
+             and user_id is null
+             and anonymous_link_id = $4
+             and anonymous_access_token_hash = $5
+             and status = 'completed'
+           returning
+             id,
+             survey_id,
+             user_id,
+             anonymous_link_id,
+             anonymous_access_token_hash,
+             anonymous_contact_email,
+             status,
+             started_at,
+             last_activity_at,
+             completed_at,
+             created_at,
+             updated_at`,
+          [user.id, attempt.id, owner.link.survey_id, owner.link.id, owner.accessTokenHash]
+        );
+
+        if (updateResult.rowCount !== 1) {
+          await client.query("rollback");
+          res.status(404).json({ error: "Survey attempt not found" });
+          return;
+        }
+
+        const convertedAttempt = await fetchAttemptWithResponses(
+          updateResult.rows[0].id,
+          user.id,
+          client
+        );
+
+        if (!convertedAttempt) {
+          await client.query("rollback");
+          res.status(404).json({ error: "Survey attempt not found" });
+          return;
+        }
+
+        await client.query("commit");
+        didCommit = true;
+
+        const response: ConvertAnonymousSurveyAttemptResponse = {
+          user,
+          attempt: convertedAttempt
+        };
+
+        setAuthCookie(res, user);
+        res.status(201).json(response);
+      } catch (error) {
+        if (!didCommit) {
+          await client.query("rollback");
+        }
+
+        if (isUniqueEmailError(error)) {
+          res.status(409).json({ error: "Email is already registered" });
+          return;
+        }
+
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      handleAnonymousPublicError(error, res, next);
+    }
+  }
+);
+
 anonymousSurveyPublicRouter.post("/:token/contact-email", async (req, res, next) => {
   const validation = validateAnonymousContactEmailBody(req.body);
 
@@ -781,7 +972,10 @@ anonymousSurveyPublicRouter.post("/:token/contact-email", async (req, res, next)
 });
 
 export async function resetAnonymousSurveyRateLimiterForTests(): Promise<void> {
-  await anonymousSurveyRateLimitStore.resetAll();
+  await Promise.all([
+    anonymousSurveyRateLimitStore.resetAll(),
+    anonymousSurveyRegisterRateLimitStore.resetAll()
+  ]);
 }
 
 async function resolveAnonymousOwner(
@@ -852,4 +1046,8 @@ function handleAnonymousPublicError(
   }
 
   next(error);
+}
+
+function isUniqueEmailError(error: unknown): boolean {
+  return error instanceof DatabaseError && error.constraint === "users_email_unique";
 }

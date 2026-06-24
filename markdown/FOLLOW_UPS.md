@@ -99,6 +99,11 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 32: Manual browser pass completed 2026-06-24. Developer verified
+  anonymous completion account creation from the completion panel,
+  redirect/dashboard history ownership after conversion, the "Continue
+  anonymously" optional follow-up email fallback, and responsive behavior for
+  the completion panel/modal.
 - Phase 31: Manual browser pass completed 2026-06-24. Developer verified
   default-unlisted anonymous link creation, opt-in listing on
   `/anonymous-surveys`, participant start from a listed card, opt-out/disable/

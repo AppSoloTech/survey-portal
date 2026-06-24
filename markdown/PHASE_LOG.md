@@ -6,6 +6,183 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 32 — Anonymous Completion Account Conversion
+
+Date:
+2026-06-24
+
+Status:
+Complete; ready to commit
+
+Prompt:
+`prompts/prompt_32.txt`
+
+Git Commit:
+Ready to commit
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_32.txt`
+- Claude review: `notes/claude_review_phase_32.txt`
+
+## Goals
+
+- Offer account creation after anonymous survey completion before optional
+  follow-up email capture.
+- Convert a completed anonymous attempt into a newly registered user's attempt
+  without copying responses.
+- Preserve saved answers and completion timestamps while clearing anonymous-only
+  owner/contact fields.
+- Keep decline-registration behavior on the existing optional anonymous
+  follow-up email path.
+- Ensure dashboard/history, Admin Results, and CSV treat converted attempts as
+  registered-user attempts.
+
+## Built
+
+- Added shared response contract `ConvertAnonymousSurveyAttemptResponse`.
+- Moved backend registration body validation into the shared API validation
+  service so normal registration and anonymous conversion use the same field,
+  email, and password validation.
+- Added public anonymous endpoint
+  `POST /api/anonymous-surveys/:token/register`.
+  - Requires the anonymous link token, attempt id, and per-attempt access token.
+  - Revalidates enabled/unexpired/published/non-deleted anonymous link state.
+  - Uses an auth-registration-grade rate limiter backed by the shared
+    PostgreSQL rate-limit store.
+  - Locks the anonymous attempt row, requires `status = 'completed'`, creates
+    the new user, reassigns the same attempt to `user_id`, clears
+    `anonymous_link_id`, `anonymous_access_token_hash`, and
+    `anonymous_contact_email`, and sets the standard auth cookie.
+  - Rebuilds the converted attempt response inside the transaction before
+    commit, avoiding a post-commit detail read failure path.
+- Updated the anonymous completion UI to show an inline account-creation panel
+  after completion.
+- Updated the decline path so "Continue anonymously" opens the existing
+  optional follow-up email modal.
+- Navigates successful converted participants to `/dashboard` with the auth
+  context updated from the conversion response.
+- Expanded anonymous survey API tests for conversion ownership, duplicate and
+  invalid registration safety, token/attempt/status/link availability failures,
+  dashboard visibility, Admin Results representation, and CSV participant
+  status.
+- Addressed both non-blocking Claude review suggestions: added the stricter
+  conversion registration limiter and moved converted-attempt response assembly
+  before commit.
+
+## Important Decisions
+
+### Conversion Mutates The Attempt
+
+Decision:
+Successful anonymous completion registration reassigns the existing completed
+attempt row instead of copying responses into a new registered attempt.
+
+Reason:
+This preserves response ids, completion timestamps, activity relationships, and
+reporting continuity while satisfying the owner XOR constraint already present
+on `survey_attempts`.
+
+### Existing-Account Claim Remains Future Scope
+
+Decision:
+Duplicate-email registration fails with the existing 409 behavior and does not
+convert the attempt.
+
+Reason:
+Claiming or merging into an existing account has different auth and ownership
+risks and is explicitly out of scope for Phase 32.
+
+## Architecture Notes
+
+- Database/schema impact: no migration required; existing owner/contact checks
+  already support conversion when anonymous fields are cleared.
+- API contract impact: new anonymous conversion response and endpoint.
+- Auth or authorization impact: successful conversion sets the same httpOnly
+  auth cookie as normal registration. Failed conversion attempts do not create a
+  user or mutate ownership.
+- Data privacy or visibility impact: converted attempts no longer retain
+  anonymous contact email or anonymous access-token hash. Participant responses
+  continue to use participant-safe survey shapes with hidden tags omitted.
+- Frontend UX impact: anonymous completion now offers account creation first,
+  then optional follow-up email only when the participant declines registration.
+- Environment or deployment impact: none beyond deploying updated API/web code.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run test -w apps/api -- test/anonymousSurvey.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/anonymousSurvey.test.ts` (8 tests)
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 228 tests
+- Passed: `git diff --check`
+
+Manual tests:
+
+- Completed by the human tester and passed:
+  - Anonymous participant completes a survey and sees the account-creation
+    panel after completion.
+  - New-account registration converts the completed attempt, redirects to
+    `/dashboard`, and shows the survey in the registered user's history.
+  - "Continue anonymously" preserves the optional follow-up email fallback.
+  - Completion panel and email modal passed responsive/manual checks.
+
+## Follow-Up Tasks
+
+- None for this phase.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_32.txt`
+
+Status:
+
+- Completed. Claude found no blocking issues and recommended commit after the
+  pending manual browser pass.
+
+Findings and disposition:
+
+- Non-blocking recommendation: add a registration-grade limiter to the
+  conversion endpoint. Addressed with a dedicated limiter using
+  `AUTH_RATE_LIMIT_WINDOW_MS` and `AUTH_REGISTER_RATE_LIMIT_MAX`.
+- Non-blocking recommendation: harden the post-commit detail/cookie step.
+  Addressed by fetching the converted attempt with responses through the
+  transaction client before commit, then returning that already-built response
+  after commit.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues
+- Review findings addressed or deferred: Yes; both non-blocking findings were
+  addressed
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 31 — Public Anonymous Survey Directory
 
 Date:

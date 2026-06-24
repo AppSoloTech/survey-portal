@@ -1,0 +1,208 @@
+# Claude Review Handoff — Phase 32
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly
+  asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_32.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 32 for:
+
+- anonymous completion account-conversion flow correctness
+- transaction safety and failed-registration rollback behavior
+- anonymous link token plus per-attempt access-token authorization
+- disabled/expired/unavailable link rejection
+- completed-only conversion enforcement
+- duplicate-email and invalid-registration non-conversion
+- auth cookie/session behavior after successful conversion
+- clearing anonymous-only owner/contact fields
+- saved response and completion timestamp preservation
+- dashboard/my-surveys visibility after conversion
+- Admin Results and CSV participant representation after conversion
+- hidden-tag/Admin metadata/token/password/contact-email exposure risks
+- frontend completion UX and decline-to-email fallback
+- maintainability and scope fit
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_32.txt`
+- `notes/06-24-26_dev_path.txt`
+- `prompts/prompt_17.txt`
+- `prompts/prompt_31.txt`
+- `notes/claude_handoff_phase_17.txt`
+- `notes/claude_review_phase_17.txt`
+- `notes/claude_handoff_phase_31.txt`
+- `notes/claude_review_phase_31.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+
+## Phase Scope
+
+Implemented:
+
+- Added shared type `ConvertAnonymousSurveyAttemptResponse`.
+- Moved backend registration body validation into
+  `apps/api/src/services/validation.ts`.
+- Kept normal `POST /api/auth/register` behavior and response shape unchanged.
+- Added anonymous public endpoint:
+  - `POST /api/anonymous-surveys/:token/register`
+  - Requires normal registration fields, `attemptId`, and
+    `attemptAccessToken`.
+  - Reuses anonymous token/link availability validation through the existing
+    anonymous owner resolver.
+  - Uses a dedicated registration-grade rate limiter with the auth registration
+    rate-limit window/max settings.
+  - Locks the attempt row, requires completed anonymous ownership, creates the
+    user, clears anonymous owner/contact fields, and sets the auth cookie.
+  - Fetches the converted attempt with responses through the same transaction
+    client before commit.
+- Updated anonymous completion UI:
+  - completed anonymous attempts now show an inline account-creation panel first
+  - "Continue anonymously" opens the existing optional follow-up email modal
+  - successful conversion updates auth context and redirects to `/dashboard`
+- Added web API client function for conversion.
+- Updated data-model docs, follow-ups, and phase log.
+- Expanded `apps/api/test/anonymousSurvey.test.ts` from 5 to 7 tests.
+
+Non-goals respected:
+
+- No existing-user login or claim/merge flow.
+- No password reset from the anonymous completion screen.
+- No email verification or real email delivery.
+- No anonymous invitation/recipient/list workflow.
+- No public directory search/filter changes.
+- No changes to anonymous start/answer/complete validation before completion.
+- No conversion of in-progress, disabled-link, expired-link, retired-survey, or
+  bad-token attempts.
+- No hidden-tag, token hash, attempt token, password hash, or anonymous contact
+  email exposure to participants.
+
+Known tradeoffs:
+
+- No schema migration was added. The existing `survey_attempts_owner_check` and
+  anonymous contact-email check already allow conversion when anonymous fields
+  are cleared.
+- The conversion endpoint is under both the anonymous public route limiter and a
+  dedicated registration-grade limiter.
+- The conversion transaction revalidates and locks the attempt after the link is
+  resolved. Link availability is rechecked before the transaction through the
+  existing anonymous owner resolver.
+- Browser/manual testing has not been run yet.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this phase:
+
+- `packages/shared/src/index.ts`
+- `apps/api/src/services/validation.ts`
+- `apps/api/src/routes/auth.ts`
+- `apps/api/src/routes/anonymousSurveyRoutes.ts`
+- `apps/api/src/services/surveyAttempts.ts`
+- `apps/api/test/anonymousSurvey.test.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/styles.css`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_32.txt`
+- `notes/claude_review_phase_32.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run test -w apps/api -- test/anonymousSurvey.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/anonymousSurvey.test.ts` (8 tests)
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests
+  - Web tests: 5 files, 57 tests
+  - API tests: 22 files, 228 tests
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Not run in browser during this implementation pass.
+- Recommended manual pass:
+  - Complete an anonymous survey and confirm the account-creation panel appears.
+  - Register a new account and confirm redirect to `/dashboard`.
+  - Confirm the converted attempt appears in the new user's dashboard/history.
+  - Complete another anonymous survey, choose "Continue anonymously", and save
+    or skip the optional follow-up email.
+  - Confirm converted attempts appear as registered users in Admin Results/CSV
+    and non-converted attempts remain anonymous.
+  - Responsive pass at 375/768/1280px for the completion panel and modal.
+
+## Specific Questions
+
+- Is the conversion transaction safe enough against partial user creation or
+  partial ownership mutation?
+- Should the endpoint additionally use a stricter auth-style registration rate
+  limiter, or is the existing anonymous public route limiter sufficient?
+- Are duplicate-email and invalid-registration failures guaranteed not to
+  mutate the anonymous attempt?
+- Does the conversion correctly clear anonymous owner/contact fields without
+  losing responses or completion timestamps?
+- Do dashboard, Admin Results, and CSV consistently classify converted attempts
+  as registered-user attempts?
+- Does the frontend flow make account creation the first post-completion choice
+  while preserving the email fallback when declined?
+- Is any password, token, hidden-tag, or anonymous contact email exposed in
+  participant-visible responses or logs?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_32.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

@@ -3,6 +3,7 @@ import type {
   SurveyQuestionType,
   SurveyStatus
 } from "@survey-portal/shared";
+import { normalizeEmail, validatePassword } from "../auth.js";
 
 const surveyTitleMaxLength = 180;
 const surveyDescriptionMaxLength = 1200;
@@ -19,6 +20,46 @@ const surveyPageTitleMaxLength = 180;
 const surveyPageDescriptionMaxLength = 600;
 const anonymousContactEmailMaxLength = 320;
 const surveyTimingOverrideMinutesMax = 24 * 60;
+
+export function validateRegistrationBody(body: unknown): ValidationResult<{
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const firstName = readTextField(body, "first_name");
+  const lastName = readTextField(body, "last_name");
+  const email = normalizeEmail(readTextField(body, "email"));
+  const password = readTextField(body, "password");
+
+  if (!firstName || !lastName || !email || !password) {
+    return { ok: false, error: "First name, last name, email, and password are required" };
+  }
+
+  if (!isValidEmail(email)) {
+    return { ok: false, error: "Enter a valid email address" };
+  }
+
+  const passwordError = validatePassword(password);
+
+  if (passwordError) {
+    return { ok: false, error: passwordError };
+  }
+
+  return {
+    ok: true,
+    value: {
+      firstName,
+      lastName,
+      email,
+      password
+    }
+  };
+}
 
 export function validateSurveyBody(body: unknown): ValidationResult<{
   title: string;
@@ -892,7 +933,7 @@ export function validateAnonymousContactEmailBody(
     };
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!isValidEmail(email)) {
     return { ok: false, error: "Email must be a valid address" };
   }
 
@@ -987,6 +1028,10 @@ export function readOptionalTextField(body: Record<string, unknown>, field: stri
   }
 
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export function isSurveyStatus(value: string): value is SurveyStatus {

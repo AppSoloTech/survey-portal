@@ -5,6 +5,7 @@ import type {
   AnonymousSurveyResponse,
   AnswerSurveyResponse,
   CompleteSurveyResponse,
+  ConvertAnonymousSurveyAttemptResponse,
   CreateAnonymousSurveyLinkResponse,
   DisableAnonymousSurveyLinkResponse,
   MySurveyResponse,
@@ -199,6 +200,31 @@ export async function submitAnonymousContactEmail(input: {
         attemptAccessToken: input.attemptAccessToken,
         attemptId: input.attemptId,
         email: input.email
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function convertAnonymousSurveyAttempt(input: {
+  token: string;
+  attemptAccessToken: string;
+  attemptId: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+}): Promise<ConvertAnonymousSurveyAttemptResponse> {
+  return apiRequest<ConvertAnonymousSurveyAttemptResponse>(
+    `/api/anonymous-surveys/${encodeURIComponent(input.token)}/register`,
+    {
+      body: JSON.stringify({
+        attemptAccessToken: input.attemptAccessToken,
+        attemptId: input.attemptId,
+        first_name: input.firstName,
+        last_name: input.lastName,
+        email: input.email,
+        password: input.password
       }),
       method: "POST"
     }

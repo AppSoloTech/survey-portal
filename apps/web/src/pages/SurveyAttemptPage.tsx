@@ -28,6 +28,7 @@ import {
   answerSurvey,
   completeAnonymousSurvey,
   completeSurvey,
+  convertAnonymousSurveyAttempt,
   fetchAnonymousSurvey,
   fetchMySurvey,
   fetchMySurveys,
@@ -37,6 +38,7 @@ import {
   startSurvey,
   submitAnonymousContactEmail
 } from "../api/surveys.js";
+import { useAuth } from "../auth/AuthContext.js";
 import { AnimatedNumber } from "../components/AnimatedNumber.js";
 import { prefersReducedMotion, useReveal } from "../motion/motion.js";
 
@@ -47,6 +49,13 @@ interface ActiveSurveyState {
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
+}
+
+interface AnonymousRegistrationDraft {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
 }
 
 type DraftAnswerMap<T> = Record<number, T>;
@@ -65,6 +74,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   const surveyId = readSurveyIdParam(surveyIdParam);
   const anonymousToken = tokenParam ?? null;
   const navigate = useNavigate();
+  const { updateSessionUser } = useAuth();
   const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
   const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
   const [answerIntegerByQuestionId, setAnswerIntegerByQuestionId] = useState<
@@ -84,6 +94,17 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   const [contactEmailDraft, setContactEmailDraft] = useState("");
   const [contactEmailMessage, setContactEmailMessage] = useState<string | null>(null);
   const [contactEmailError, setContactEmailError] = useState<string | null>(null);
+  const [anonymousRegistrationDraft, setAnonymousRegistrationDraft] =
+    useState<AnonymousRegistrationDraft>({
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: ""
+    });
+  const [anonymousRegistrationError, setAnonymousRegistrationError] = useState<string | null>(null);
+  const [isAnonymousRegistrationSubmitting, setIsAnonymousRegistrationSubmitting] =
+    useState(false);
+  const [hasDeclinedAnonymousRegistration, setHasDeclinedAnonymousRegistration] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const recordedResumeAttemptIdsRef = useRef<Set<number>>(new Set());
@@ -251,7 +272,20 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       setContactEmailMessage(null);
       setContactEmailError(null);
       setIsContactEmailModalOpen(false);
+      setAnonymousRegistrationDraft({
+        firstName: "",
+        lastName: "",
+        email: "",
+        password: ""
+      });
+      setAnonymousRegistrationError(null);
+      setHasDeclinedAnonymousRegistration(false);
       return;
+    }
+
+    if (activeSurvey.attempt.status !== "completed") {
+      setAnonymousRegistrationError(null);
+      setHasDeclinedAnonymousRegistration(false);
     }
 
     setAnswerTextByQuestionId((current) =>
@@ -414,7 +448,9 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       if (mode === "anonymous" && !response.attempt.anonymousContactEmail) {
         setContactEmailMessage(null);
         setContactEmailError(null);
-        setIsContactEmailModalOpen(true);
+        setIsContactEmailModalOpen(false);
+        setAnonymousRegistrationError(null);
+        setHasDeclinedAnonymousRegistration(false);
       }
     } catch (completeError) {
       setError(completeError instanceof Error ? completeError.message : "Could not submit survey");
@@ -468,6 +504,45 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
     }
   }
 
+  async function handleSubmitAnonymousRegistration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (
+      mode !== "anonymous" ||
+      !anonymousToken ||
+      !activeSurvey?.attemptAccessToken ||
+      activeSurvey.attempt.status !== "completed"
+    ) {
+      return;
+    }
+
+    setAnonymousRegistrationError(null);
+    setIsAnonymousRegistrationSubmitting(true);
+
+    try {
+      const response = await convertAnonymousSurveyAttempt({
+        token: anonymousToken,
+        attemptAccessToken: activeSurvey.attemptAccessToken,
+        attemptId: activeSurvey.attempt.id,
+        ...anonymousRegistrationDraft
+      });
+
+      updateSessionUser(response.user);
+      setActiveSurvey({
+        ...activeSurvey,
+        attempt: response.attempt,
+        attemptAccessToken: null
+      });
+      navigate("/dashboard", { replace: true });
+    } catch (submitError) {
+      setAnonymousRegistrationError(
+        submitError instanceof Error ? submitError.message : "Could not create account"
+      );
+    } finally {
+      setIsAnonymousRegistrationSubmitting(false);
+    }
+  }
+
   function handleOpenContactEmailModal() {
     setContactEmailError(null);
     setContactEmailMessage(null);
@@ -477,6 +552,20 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   function handleSkipContactEmail() {
     setContactEmailError(null);
     setIsContactEmailModalOpen(false);
+  }
+
+  function handleDeclineAnonymousRegistration() {
+    setAnonymousRegistrationError(null);
+    setHasDeclinedAnonymousRegistration(true);
+    setIsContactEmailModalOpen(true);
+  }
+
+  function handleAnonymousRegistrationDraftChange(
+    field: keyof AnonymousRegistrationDraft,
+    value: string
+  ) {
+    setAnonymousRegistrationDraft((current) => ({ ...current, [field]: value }));
+    setAnonymousRegistrationError(null);
   }
 
   function handlePrevious() {
@@ -609,13 +698,19 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         <div className="attempt-surface">
           <SurveyRunner
             activeSurvey={activeSurvey}
+            anonymousRegistrationDraft={anonymousRegistrationDraft}
+            anonymousRegistrationError={anonymousRegistrationError}
             answerIntegerByQuestionId={answerIntegerByQuestionId}
             answerTextByQuestionId={answerTextByQuestionId}
             contactEmailMessage={contactEmailMessage}
+            hasDeclinedAnonymousRegistration={hasDeclinedAnonymousRegistration}
             isAnonymous={mode === "anonymous"}
+            isAnonymousRegistrationSubmitting={isAnonymousRegistrationSubmitting}
             isSubmitting={isSubmitting}
             onClose={handleClose}
             onComplete={() => void handleComplete()}
+            onAnonymousRegistrationChange={handleAnonymousRegistrationDraftChange}
+            onDeclineAnonymousRegistration={handleDeclineAnonymousRegistration}
             onOpenContactEmailModal={handleOpenContactEmailModal}
             onIntegerChange={handleIntegerChange}
             onOtherSelectionChange={handleOtherSelection}
@@ -624,6 +719,9 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
             onResume={handleResume}
             onSelectionChange={handleSelection}
             onSubmit={handleSubmitAnswer}
+            onSubmitAnonymousRegistration={(event) =>
+              void handleSubmitAnonymousRegistration(event)
+            }
             onTextChange={handleTextChange}
             selectedAnswerOptionIdsByQuestionId={selectedAnswerOptionIdsByQuestionId}
             isOtherSelectedByQuestionId={isOtherSelectedByQuestionId}
@@ -652,14 +750,20 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
 
 function SurveyRunner({
   activeSurvey,
+  anonymousRegistrationDraft,
+  anonymousRegistrationError,
   answerIntegerByQuestionId,
   answerTextByQuestionId,
   contactEmailMessage,
+  hasDeclinedAnonymousRegistration,
   isAnonymous,
+  isAnonymousRegistrationSubmitting,
   isOtherSelectedByQuestionId,
   isSubmitting,
   onClose,
   onComplete,
+  onAnonymousRegistrationChange,
+  onDeclineAnonymousRegistration,
   onOpenContactEmailModal,
   onIntegerChange,
   onOtherSelectionChange,
@@ -668,19 +772,26 @@ function SurveyRunner({
   onResume,
   onSelectionChange,
   onSubmit,
+  onSubmitAnonymousRegistration,
   onTextChange,
   otherTextByQuestionId,
   selectedAnswerOptionIdsByQuestionId
 }: {
   activeSurvey: ActiveSurveyState;
+  anonymousRegistrationDraft: AnonymousRegistrationDraft;
+  anonymousRegistrationError: string | null;
   answerIntegerByQuestionId: DraftAnswerMap<string>;
   answerTextByQuestionId: DraftAnswerMap<string>;
   contactEmailMessage: string | null;
+  hasDeclinedAnonymousRegistration: boolean;
   isAnonymous: boolean;
+  isAnonymousRegistrationSubmitting: boolean;
   isOtherSelectedByQuestionId: DraftAnswerMap<boolean>;
   isSubmitting: boolean;
   onClose: () => void;
   onComplete: () => void;
+  onAnonymousRegistrationChange: (field: keyof AnonymousRegistrationDraft, value: string) => void;
+  onDeclineAnonymousRegistration: () => void;
   onOpenContactEmailModal: () => void;
   onIntegerChange: (questionId: number, value: string) => void;
   onOtherSelectionChange: (question: SurveyQuestion, checked: boolean) => void;
@@ -689,6 +800,7 @@ function SurveyRunner({
   onResume: () => void;
   onSelectionChange: (question: SurveyQuestion, optionId: number, checked: boolean) => void;
   onSubmit: (question: SurveyQuestion, event: FormEvent<HTMLFormElement>) => void;
+  onSubmitAnonymousRegistration: (event: FormEvent<HTMLFormElement>) => void;
   onTextChange: (questionId: number, value: string) => void;
   selectedAnswerOptionIdsByQuestionId: DraftAnswerMap<number[]>;
   otherTextByQuestionId: DraftAnswerMap<string>;
@@ -745,9 +857,18 @@ function SurveyRunner({
               : "You can go back to review saved answers before submitting the survey."}
           </span>
         </div>
-        {isAnonymous && isCompleted ? (
+        {isAnonymous && isCompleted && attempt.userId === null ? (
           <div className="contact-email-summary" data-reveal>
-            {contactEmailMessage || attempt.anonymousContactEmail ? (
+            {!hasDeclinedAnonymousRegistration && !attempt.anonymousContactEmail ? (
+              <AnonymousRegistrationPanel
+                draft={anonymousRegistrationDraft}
+                error={anonymousRegistrationError}
+                isSubmitting={isAnonymousRegistrationSubmitting}
+                onChange={onAnonymousRegistrationChange}
+                onDecline={onDeclineAnonymousRegistration}
+                onSubmit={onSubmitAnonymousRegistration}
+              />
+            ) : contactEmailMessage || attempt.anonymousContactEmail ? (
               <p className="status muted">
                 {contactEmailMessage ?? `Follow-up email saved as ${attempt.anonymousContactEmail}`}
               </p>
@@ -920,6 +1041,92 @@ function SurveyRunner({
         </button>
       </div>
     </div>
+  );
+}
+
+function AnonymousRegistrationPanel({
+  draft,
+  error,
+  isSubmitting,
+  onChange,
+  onDecline,
+  onSubmit
+}: {
+  draft: AnonymousRegistrationDraft;
+  error: string | null;
+  isSubmitting: boolean;
+  onChange: (field: keyof AnonymousRegistrationDraft, value: string) => void;
+  onDecline: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="anonymous-registration-panel" onSubmit={onSubmit}>
+      <div className="anonymous-registration-heading">
+        <p className="eyebrow">Save to an account</p>
+        <h4>Create an account for this completed survey?</h4>
+        <p className="muted">
+          Your saved responses will move into your new account and appear in your survey history.
+        </p>
+      </div>
+      <div className="anonymous-registration-grid">
+        <label>
+          <span>First name</span>
+          <input
+            autoComplete="given-name"
+            onChange={(event) => onChange("firstName", event.target.value)}
+            required
+            type="text"
+            value={draft.firstName}
+          />
+        </label>
+        <label>
+          <span>Last name</span>
+          <input
+            autoComplete="family-name"
+            onChange={(event) => onChange("lastName", event.target.value)}
+            required
+            type="text"
+            value={draft.lastName}
+          />
+        </label>
+        <label>
+          <span>Email</span>
+          <input
+            autoComplete="email"
+            inputMode="email"
+            onChange={(event) => onChange("email", event.target.value)}
+            required
+            type="email"
+            value={draft.email}
+          />
+        </label>
+        <label>
+          <span>Password</span>
+          <input
+            autoComplete="new-password"
+            minLength={8}
+            onChange={(event) => onChange("password", event.target.value)}
+            required
+            type="password"
+            value={draft.password}
+          />
+        </label>
+      </div>
+      {error ? <p className="status error">{error}</p> : null}
+      <div className="anonymous-registration-actions">
+        <button
+          className="button-link ghost-button"
+          disabled={isSubmitting}
+          onClick={onDecline}
+          type="button"
+        >
+          Continue anonymously
+        </button>
+        <button className="button-link primary-button" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "Creating account..." : "Create account"}
+        </button>
+      </div>
+    </form>
   );
 }
 

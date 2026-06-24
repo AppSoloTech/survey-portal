@@ -431,9 +431,11 @@ export async function buildMySurveysResponse(userId: number): Promise<MySurveysR
 
 export async function fetchAttemptWithResponses(
   attemptId: number,
-  userId: number
+  userId: number,
+  queryable: Queryable = pool
 ): Promise<SurveyAttempt | null> {
   const attempts = await fetchAttemptsByCondition(
+    queryable,
     `survey_attempts.user_id = $1
        and survey_attempts.id = $2`,
     [userId, attemptId]
@@ -448,6 +450,7 @@ export async function fetchAnonymousAttemptWithResponses(
   accessTokenHash: string
 ): Promise<SurveyAttempt | null> {
   const attempts = await fetchAttemptsByCondition(
+    pool,
     `survey_attempts.id = $1
        and survey_attempts.anonymous_link_id = $2
        and survey_attempts.anonymous_access_token_hash = $3`,
@@ -466,6 +469,7 @@ export async function fetchAttemptsForSurveyIds(
   }
 
   return fetchAttemptsByCondition(
+    pool,
     `survey_attempts.user_id = $1
        and survey_attempts.survey_id = any($2::int[])`,
     [userId, surveyIds]
@@ -473,10 +477,11 @@ export async function fetchAttemptsForSurveyIds(
 }
 
 async function fetchAttemptsByCondition(
+  queryable: Queryable,
   condition: string,
   values: unknown[]
 ): Promise<SurveyAttempt[]> {
-  const attemptsResult = await pool.query<SurveyAttemptRecord>(
+  const attemptsResult = await queryable.query<SurveyAttemptRecord>(
     `select
        survey_attempts.id,
        survey_attempts.survey_id,
@@ -508,7 +513,7 @@ async function fetchAttemptsByCondition(
     return [];
   }
 
-  const responsesResult = await pool.query<SurveyResponseAnswerRecord>(
+  const responsesResult = await queryable.query<SurveyResponseAnswerRecord>(
     `select
        id,
        survey_attempt_id,
@@ -526,7 +531,7 @@ async function fetchAttemptsByCondition(
   const responseIds = responsesResult.rows.map((response) => response.id);
   const selectedOptionsResult =
     responseIds.length > 0
-      ? await pool.query<SelectedOptionRecord>(
+      ? await queryable.query<SelectedOptionRecord>(
           `select
              survey_response_answer_id,
              answer_option_id
