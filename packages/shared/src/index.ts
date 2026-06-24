@@ -59,11 +59,11 @@ export type SurveyStatus = "draft" | "published" | "retired";
 export type SurveyQuestionType = "text" | "integer" | "single_select" | "multi_select" | "scale";
 
 export const surveyQuestionTypeEstimateWeightsSeconds: Record<SurveyQuestionType, number> = {
-  text: 90,
-  integer: 30,
-  single_select: 45,
-  multi_select: 60,
-  scale: 30
+  text: 15,
+  integer: 10,
+  single_select: 10,
+  multi_select: 10,
+  scale: 10
 };
 
 export function getSurveyQuestionTypeEstimateWeightSeconds(

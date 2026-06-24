@@ -140,7 +140,7 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
         makeQuestion(4, "multi_select"),
         makeQuestion(5, "scale")
       ],
-      255
+      55
     );
 
     const estimate = calculateSurveyRemainingTimeEstimate({
@@ -149,10 +149,10 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
       survey
     });
 
-    expect(estimate.totalPathWeightSeconds).toBe(255);
-    expect(estimate.remainingPathWeightSeconds).toBe(255);
+    expect(estimate.totalPathWeightSeconds).toBe(55);
+    expect(estimate.remainingPathWeightSeconds).toBe(55);
     expect(estimate.remainingQuestionIds).toEqual([1, 2, 3, 4, 5]);
-    expect(estimate.remainingSeconds).toBe(255);
+    expect(estimate.remainingSeconds).toBe(55);
   });
 
   it("scales remaining question weights from the effective survey estimate", () => {
@@ -163,7 +163,7 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
       makeQuestion(4, "multi_select"),
       makeQuestion(5, "scale")
     ];
-    const survey = makeSurvey(questions, 510);
+    const survey = makeSurvey(questions, 110);
 
     const estimate = calculateSurveyRemainingTimeEstimate({
       currentPageId: 2,
@@ -171,10 +171,10 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
       survey
     });
 
-    expect(estimate.totalPathWeightSeconds).toBe(255);
-    expect(estimate.remainingPathWeightSeconds).toBe(165);
-    expect(estimate.remainingSeconds).toBe(330);
-    expect(estimate.copy).toBe("About 6 min remaining");
+    expect(estimate.totalPathWeightSeconds).toBe(55);
+    expect(estimate.remainingPathWeightSeconds).toBe(40);
+    expect(estimate.remainingSeconds).toBe(80);
+    expect(estimate.copy).toBe("About 1 min remaining");
   });
 
   it("decreases across a straight resolved page path", () => {
@@ -183,7 +183,7 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
       makeQuestion(2, "integer"),
       makeQuestion(3, "single_select")
     ];
-    const survey = makeSurvey(questions, 165);
+    const survey = makeSurvey(questions, 35);
 
     const start = calculateSurveyRemainingTimeEstimate({
       currentPageId: 1,
@@ -201,7 +201,7 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
       survey
     });
 
-    expect(start.remainingSeconds).toBe(165);
+    expect(start.remainingSeconds).toBe(35);
     expect(afterFirstPage.remainingSeconds).toBeLessThan(start.remainingSeconds);
     expect(afterSecondPage.remainingSeconds).toBeLessThan(afterFirstPage.remainingSeconds);
   });
@@ -221,7 +221,7 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
     });
 
     expect(estimate.remainingQuestionIds).toEqual([2, 3]);
-    expect(estimate.remainingPathWeightSeconds).toBe(90);
+    expect(estimate.remainingPathWeightSeconds).toBe(20);
   });
 
   it("updates when a saved answer changes the resolved branch path", () => {
@@ -250,7 +250,7 @@ describe("calculateSurveyRemainingTimeEstimate", () => {
 
     expect(normalEstimate.remainingQuestionIds).toEqual([1, 2]);
     expect(branchedEstimate.remainingQuestionIds).toEqual([3]);
-    expect(branchedEstimate.totalPathWeightSeconds).toBe(75);
+    expect(branchedEstimate.totalPathWeightSeconds).toBe(20);
   });
 
   it("treats an unknown current page as not-yet-complete defensively", () => {
