@@ -12,9 +12,9 @@ definitions.
 The global glossary work is larger than a single tooltip pass, so it has been
 split into staged follow-up prompts:
 
-* `prompts/prompt_28.txt` — Global Glossary Data Model And Admin Foundation
-* `prompts/prompt_29.txt` — Dictionary-Assisted Glossary Definitions
-* `prompts/prompt_30.txt` — Participant Inline Glossary Rendering
+* `prompts/deferred_global_glossary_admin_foundation.txt` — Global Glossary Data Model And Admin Foundation
+* `prompts/deferred_glossary_dictionary_assist.txt` — Dictionary-Assisted Glossary Definitions
+* `prompts/deferred_participant_inline_glossary_rendering.txt` — Participant Inline Glossary Rendering
 
 Keep this file as a historical marker so future phase planning does not
 accidentally revive the older per-question tooltip scope.

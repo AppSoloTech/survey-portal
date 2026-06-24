@@ -1,21 +1,17 @@
-# Phase 30 — Participant Inline Glossary Rendering
+# Phase 30 — User Profile Demographics Cleanup
 
 ## Purpose
 
-Render Admin-approved global glossary definitions inline in participant-facing
-survey question text.
+Clean up the user profile/settings experience so users can update the requested
+demographic/contact fields: full name, address, and phone number.
 
-This phase should build on the glossary foundation from Phase 28 and can use
-definitions enhanced by Phase 29 when available. It should make glossary terms
-discoverable to survey takers without changing survey logic or response data.
+This phase builds on the existing Settings/profile foundation and keeps profile
+editing self-service only.
 
 Source feedback or planning note:
 
 ```txt
-Client Phase 22 re-scope: survey takers should hover over a word/string defined
-in the Admin glossary and see its definition. Matching should be generated
-inline just before question text is displayed so all string matches become
-proper interactive elements.
+notes/06-24-26_dev_path.txt item 3
 ```
 
 ## Role Note
@@ -27,12 +23,13 @@ Default arrangement:
 
 Branch:
 
-Start implementation from `main` after Phase 28 is merged. Phase 29 is helpful
-but not required if definitions already exist manually.
+Start implementation from `main` after Phase 29 is merged unless the human
+explicitly reprioritizes this phase. Create a fresh phase branch before making
+code changes; do not implement this phase directly on `main`.
 
 ```bash
 git checkout main
-git checkout -b phase-30-inline-glossary-rendering
+git checkout -b phase-30-profile-demographics-cleanup
 ```
 
 Closeout artifacts:
@@ -46,10 +43,13 @@ Closeout artifacts:
 
 Read before implementation:
 
-* `prompts/prompt_28.txt`
-* `notes/claude_handoff_phase_28.txt`
-* `notes/claude_review_phase_28.txt`
-* `prompts/prompt_29.txt` if Phase 29 has been completed
+* `notes/06-24-26_dev_path.txt`
+* `prompts/prompt_19.txt`
+* `prompts/prompt_20.txt`
+* `notes/claude_handoff_phase_19.txt`
+* `notes/claude_review_phase_19.txt`
+* `notes/claude_handoff_phase_20.txt`
+* `notes/claude_review_phase_20.txt`
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -58,35 +58,41 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
-* Current participant runner, public/anonymous survey APIs, Admin preview,
-  question rendering components, and shared question/page types.
+* Current auth user model, profile routes, profile service, Settings page,
+  Admin user detail, password reset panel, and profile tests.
 
 ---
 
 # Received Feedback
 
-Glossary definitions should apply globally to all questions where strings in
-the question match predefined glossary terms. The popup the survey user sees
-should be dynamic and generated inline just before text is displayed to the
-user.
+User demographics cleanup: ensure users can update profile with address, phone
+number, and full name.
+
+Clarified product decision:
+
+* Full name means users can edit the existing account first name and last name
+  from Settings.
+* Address should be one optional profile text field.
+* Phone number should reuse the existing contact-number behavior where
+  practical, with user-facing copy updated to "Phone number".
 
 ---
 
 # Intake Classification
 
-* participant-facing UX feature
-* shared text matching/rendering logic
-* accessibility-sensitive interaction
-* participant API payload change
+* authenticated user workflow change
+* user PII/profile data change
+* database schema and API contract change
+* frontend settings UX change
 
 Expected impact:
 
-* participant-safe glossary payload
-* term matching helper
-* inline glossary text renderer
-* accessible tooltip/popover component
-* participant runner and preview display
-* tests for matching, rendering, and payload isolation
+* profile migration for address
+* self-service profile API validation and response types
+* existing auth name fields update path
+* Settings UI
+* Admin user detail read-only display
+* tests for authorization, validation, persistence, and no admin edit expansion
 
 ---
 
@@ -94,54 +100,45 @@ Expected impact:
 
 Implement:
 
-* Participant-safe glossary payload containing enabled glossary match strings
-  and definitions, with no Admin-only metadata.
-* A deterministic text-matching helper for plain text question prompts.
-* Inline rendering that wraps matched glossary terms with an accessible
-  definition trigger/popover.
-* Hover, focus, keyboard, click/tap, and mobile-friendly behavior.
-* Longest-match-first handling so longer aliases win over shorter overlapping
-  matches.
-* Case-insensitive matching while preserving the original question text casing.
-* Overlap prevention so generated glossary spans are never nested.
-* Word/string boundary rules that avoid surprising partial-word matches unless
-  a match string explicitly requires punctuation or spacing.
-* Admin preview behavior consistent with the participant runner where practical.
-* Focused tests for matching and rendering behavior.
+* Let authenticated users update their own first name and last name from
+  Settings.
+* Add a single optional `address` profile field with length validation.
+* Present the existing contact number field as "Phone number" in user-facing
+  Settings and admin read-only detail.
+* Preserve current survey statistics on Settings.
+* Preserve the Settings password reset panel and cooldown behavior.
+* Keep profile routes self-service only; no `/api/profile/:id` behavior and no
+  admin demographic editing.
+* Update shared profile/request/response types as needed.
+* Update admin user detail to display address and phone read-only if present.
 
-Apply glossary rendering only to plain participant-facing question text in this
-phase unless implementation inspection shows another already-shared prompt
-renderer should be covered at the same time.
+Use the next available migration number at implementation time. Do not hard-code
+the migration number in this prompt or docs because earlier phases may change
+the sequence.
 
 ## Non-Goals
 
 Do not implement:
 
-* changes to answer validation, skip logic, hidden tags, reporting, CSV exports,
-  or response storage
-* HTML/rich-text parsing of question text
-* glossary rendering inside answer option labels unless explicitly requested
-* matching inside Admin-only forms while editing
-* automatic dictionary lookups
-* analytics for glossary popover opens
-* participant exposure of Admin-only glossary metadata
+* Structured address fields.
+* Profile photos or file uploads.
+* Admin editing of user profile demographics.
+* CRM/account-management workflows.
+* Additional demographic fields beyond full name, address, and phone number.
+* Session invalidation after name/profile edits.
+* Password reset behavior changes.
 
 ## Assumptions
 
-* Matching strings are plain text, not regular expressions.
-* Glossary definitions are plain text.
-* Participant rendering can be computed client-side from a participant-safe
-  glossary payload.
-* If two glossary entries have the same match string, validation from Phase 28
-  should prevent ambiguity before this phase.
+* First and last name remain on the existing auth user model.
+* Address belongs in `user_profiles` as optional self-service profile data.
+* `contactNumber` may remain the internal/shared field name if that keeps the
+  change smaller; user-facing copy should say "Phone number".
+* Empty strings should normalize to null for optional profile fields.
 
 ## Open Questions
 
-* Should glossary matching apply to survey/page descriptions as well as question
-  prompts? If unanswered, start with question prompts and leave descriptions as
-  a documented follow-up.
-* Should answer option labels be matched? If unanswered, do not match option
-  labels in this phase.
+* None.
 
 ---
 
@@ -149,16 +146,14 @@ Do not implement:
 
 The phase is ready for review when:
 
-* Participant question text automatically marks enabled glossary terms.
-* Hover/focus/click/tap opens a definition popover without changing survey
-  state.
-* Keyboard users can discover, open, and dismiss definitions.
-* Mobile users can open and dismiss definitions without layout breakage.
-* Matching is deterministic for aliases, casing, repeated terms, and overlaps.
-* Disabled glossary entries do not render.
-* Admin-only glossary metadata is not exposed to participant APIs.
-* Survey validation, navigation, reporting, CSV, hidden tags, and response data
-  remain unchanged.
+* Users can update first name, last name, address, and phone number from
+  Settings.
+* Updated names appear after reload and in the account menu/current-user
+  identity where applicable.
+* Address and phone persist after reload.
+* Profile updates remain current-user-only.
+* Admin user detail can read address and phone but cannot edit them.
+* Existing survey stats and password reset controls still work.
 
 ---
 
@@ -176,27 +171,23 @@ git diff --check
 
 Add focused tests for:
 
-* no matches
-* single match
-* repeated matches
-* case-insensitive matching with original text preserved
-* aliases and canonical terms
-* longest-match-first overlap resolution
-* boundary behavior for partial words
-* disabled glossary entries excluded
-* participant payload excluding Admin-only fields
-* popover accessibility states if component tests exist nearby
+* authenticated profile read/update including address and phone
+* first/last name update from the current user's settings context
+* unauthenticated rejection
+* guessed-id route rejection remains intact
+* validation bounds and trimming/null normalization
+* admin user detail read-only profile display
+* survey stats unchanged by profile edits
 
 Manual checks:
 
-* Admin creates glossary entries, publishes/uses a survey question containing
-  matching text, and participant sees inline glossary affordances.
-* Hover/focus/click/tap open and close definitions.
-* Keyboard-only pass: Tab to term, open/read/dismiss, continue survey.
-* Repeated terms and overlapping terms render cleanly.
-* Disabled glossary entry stops rendering without editing the question text.
-* Survey answers, completion, Results, and CSV remain unchanged.
-* Mobile pass at 375/768/1280px.
+* User updates full name, address, and phone on `/settings`, reloads, and sees
+  saved values.
+* Account menu reflects the updated name after profile save or refresh.
+* Another user cannot fetch or update the profile by guessing IDs.
+* Admin views address and phone read-only in user detail.
+* Settings password reset still sends/cooldowns as before.
+* Mobile pass at 375/768/1280px for Settings and Admin user detail.
 
 ---
 
@@ -210,12 +201,11 @@ notes/claude_handoff_phase_30.txt
 
 Ask Claude Code to review:
 
-* matching correctness and edge cases
-* accessibility and mobile behavior
-* participant-safe glossary payload isolation
-* no survey logic, reporting, CSV, or response-data coupling
-* Admin preview consistency
-* performance on questions with many glossary entries
+* PII minimization and validation
+* current-user-only authorization
+* name update behavior and auth/session consistency
+* admin read-only boundary
+* no password-reset or survey-stat regression
 
 Claude Code must write review output to:
 

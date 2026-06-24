@@ -1,0 +1,239 @@
+# Deferred Glossary Phase — Participant Inline Glossary Rendering
+
+## Purpose
+
+Render Admin-approved global glossary definitions inline in participant-facing
+survey question text.
+
+This deferred phase should build on the deferred global glossary Admin
+foundation and can use dictionary-assisted definitions when available. It should
+make glossary terms discoverable to survey takers without changing survey logic
+or response data.
+
+Source feedback or planning note:
+
+```txt
+Client Phase 22 re-scope: survey takers should hover over a word/string defined
+in the Admin glossary and see its definition. Matching should be generated
+inline just before question text is displayed so all string matches become
+proper interactive elements.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+When this deferred work is reactivated, assign it a fresh phase number and start
+implementation from `main` after the deferred global glossary Admin foundation
+is merged. Dictionary assist is helpful but not required if definitions already
+exist manually.
+
+```bash
+git checkout main
+git checkout -b phase-FUTURE-inline-glossary-rendering
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_FUTURE_inline_glossary_rendering.txt`
+* Claude review: `notes/claude_review_phase_FUTURE_inline_glossary_rendering.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/deferred_global_glossary_admin_foundation.txt`
+* The handoff and review artifacts from the reactivated global glossary Admin
+  foundation phase.
+* `prompts/deferred_glossary_dictionary_assist.txt` if dictionary assist has
+  been completed
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current participant runner, public/anonymous survey APIs, Admin preview,
+  question rendering components, and shared question/page types.
+
+---
+
+# Received Feedback
+
+Glossary definitions should apply globally to all questions where strings in
+the question match predefined glossary terms. The popup the survey user sees
+should be dynamic and generated inline just before text is displayed to the
+user.
+
+---
+
+# Intake Classification
+
+* participant-facing UX feature
+* shared text matching/rendering logic
+* accessibility-sensitive interaction
+* participant API payload change
+
+Expected impact:
+
+* participant-safe glossary payload
+* term matching helper
+* inline glossary text renderer
+* accessible tooltip/popover component
+* participant runner and preview display
+* tests for matching, rendering, and payload isolation
+
+---
+
+# Scope
+
+Implement:
+
+* Participant-safe glossary payload containing enabled glossary match strings
+  and definitions, with no Admin-only metadata.
+* A deterministic text-matching helper for plain text question prompts.
+* Inline rendering that wraps matched glossary terms with an accessible
+  definition trigger/popover.
+* Hover, focus, keyboard, click/tap, and mobile-friendly behavior.
+* Longest-match-first handling so longer aliases win over shorter overlapping
+  matches.
+* Case-insensitive matching while preserving the original question text casing.
+* Overlap prevention so generated glossary spans are never nested.
+* Word/string boundary rules that avoid surprising partial-word matches unless
+  a match string explicitly requires punctuation or spacing.
+* Admin preview behavior consistent with the participant runner where practical.
+* Focused tests for matching and rendering behavior.
+
+Apply glossary rendering only to plain participant-facing question text in this
+phase unless implementation inspection shows another already-shared prompt
+renderer should be covered at the same time.
+
+## Non-Goals
+
+Do not implement:
+
+* changes to answer validation, skip logic, hidden tags, reporting, CSV exports,
+  or response storage
+* HTML/rich-text parsing of question text
+* glossary rendering inside answer option labels unless explicitly requested
+* matching inside Admin-only forms while editing
+* automatic dictionary lookups
+* analytics for glossary popover opens
+* participant exposure of Admin-only glossary metadata
+
+## Assumptions
+
+* Matching strings are plain text, not regular expressions.
+* Glossary definitions are plain text.
+* Participant rendering can be computed client-side from a participant-safe
+  glossary payload.
+* If two glossary entries have the same match string, validation from the global
+  glossary Admin foundation should prevent ambiguity before this phase.
+
+## Open Questions
+
+* Should glossary matching apply to survey/page descriptions as well as question
+  prompts? If unanswered, start with question prompts and leave descriptions as
+  a documented follow-up.
+* Should answer option labels be matched? If unanswered, do not match option
+  labels in this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Participant question text automatically marks enabled glossary terms.
+* Hover/focus/click/tap opens a definition popover without changing survey
+  state.
+* Keyboard users can discover, open, and dismiss definitions.
+* Mobile users can open and dismiss definitions without layout breakage.
+* Matching is deterministic for aliases, casing, repeated terms, and overlaps.
+* Disabled glossary entries do not render.
+* Admin-only glossary metadata is not exposed to participant APIs.
+* Survey validation, navigation, reporting, CSV, hidden tags, and response data
+  remain unchanged.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* no matches
+* single match
+* repeated matches
+* case-insensitive matching with original text preserved
+* aliases and canonical terms
+* longest-match-first overlap resolution
+* boundary behavior for partial words
+* disabled glossary entries excluded
+* participant payload excluding Admin-only fields
+* popover accessibility states if component tests exist nearby
+
+Manual checks:
+
+* Admin creates glossary entries, publishes/uses a survey question containing
+  matching text, and participant sees inline glossary affordances.
+* Hover/focus/click/tap open and close definitions.
+* Keyboard-only pass: Tab to term, open/read/dismiss, continue survey.
+* Repeated terms and overlapping terms render cleanly.
+* Disabled glossary entry stops rendering without editing the question text.
+* Survey answers, completion, Results, and CSV remain unchanged.
+* Mobile pass at 375/768/1280px.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_FUTURE_inline_glossary_rendering.txt
+```
+
+Ask Claude Code to review:
+
+* matching correctness and edge cases
+* accessibility and mobile behavior
+* participant-safe glossary payload isolation
+* no survey logic, reporting, CSV, or response-data coupling
+* Admin preview consistency
+* performance on questions with many glossary entries
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_FUTURE_inline_glossary_rendering.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

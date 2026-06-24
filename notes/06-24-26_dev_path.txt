@@ -1,0 +1,4 @@
+1) Update tag nomenclature. "Tag key" should be "Tag category". "Tag value" nomenclature can remain as the other side of the key pairs.
+2) Implement grouping feature for tag housing and management. Implementation should be similar to the /admin/surveys/2/organize question grouping and manipulation (drag and drops). The /admin/tags page will need a section to create new groups as well as smartly handle new tag creation.
+3) User demogrphics cleanup: ensure users can update profile with the following fields - address, phone number, and full name.
+4) Public anonymous survey section: Need a seperate page that is safely segregated from the user authenticated side of the site. This page should house all surveys that have a tokenized link for public anonymous survey use.

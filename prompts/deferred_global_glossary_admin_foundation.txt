@@ -1,0 +1,225 @@
+# Deferred Glossary Phase — Global Glossary Data Model And Admin Foundation
+
+## Purpose
+
+Create the Admin-managed global glossary foundation used to define participant
+inline terms.
+
+This phase should build durable glossary storage and Admin CRUD only. It should
+not implement external dictionary lookups or participant inline rendering yet.
+
+Source feedback or planning note:
+
+```txt
+Client Phase 22 re-scope: survey takers should hover/focus glossary terms in
+question text and see Admin-approved definitions. Admins need a glossary page
+with canonical terms, optional strings/aliases, and definitions.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+When this deferred work is reactivated, assign it a fresh phase number and
+start implementation from `main` on a fresh phase branch. Do not implement this
+phase directly on `main`.
+
+```bash
+git checkout main
+git checkout -b phase-FUTURE-global-glossary-admin
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_FUTURE_glossary_admin.txt`
+* Claude review: `notes/claude_review_phase_FUTURE_glossary_admin.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/next_phases.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current Admin navigation, Admin tag-catalog patterns, migrations, shared API
+  types, route auth middleware, and frontend data-loading patterns.
+
+---
+
+# Received Feedback
+
+The client wants a glossary page where an Admin defines a term or a series of
+strings associated with a key/definition. The glossary should later apply
+globally to all questions where participant-facing question text matches those
+predefined strings.
+
+---
+
+# Intake Classification
+
+* Admin feature
+* database schema and API contract change
+* global content-management foundation
+* participant rendering dependency for a later phase
+
+Expected impact:
+
+* glossary migrations
+* Admin-only glossary APIs
+* Admin navigation/page
+* shared glossary types
+* tests for authorization, validation, CRUD, and duplicate boundaries
+
+---
+
+# Scope
+
+Implement:
+
+* A global glossary data model for:
+  * canonical term/key
+  * Admin-approved definition
+  * one or more match strings/aliases
+  * enabled/disabled state
+  * definition/source metadata fields needed for later dictionary assist
+* Admin-only CRUD endpoints.
+* Admin glossary management page linked from the existing Admin area.
+* Validation for empty terms, empty definitions, duplicate aliases, excessive
+  lengths, and unsupported values.
+* Case-insensitive duplicate prevention for match strings where practical.
+* Plain-text definitions only.
+* Shared types for Admin glossary responses and participant-safe glossary
+  entries that later rendering can consume.
+* Focused API and helper tests.
+
+Prefer a schema shape that keeps glossary terms independent from surveys and
+questions unless implementation inspection reveals a strong reason to scope
+them differently.
+
+## Non-Goals
+
+Do not implement:
+
+* Webster/dictionary API calls
+* automatic participant inline term detection/rendering
+* rich text or HTML glossary definitions
+* glossary terms as answer options
+* survey-response data changes
+* reporting or CSV changes
+* hidden tags or conditional logic based on glossary matches
+* per-survey glossary scoping unless the client explicitly requests it
+
+## Assumptions
+
+* Glossary entries are global across all surveys.
+* Definitions are informational only.
+* Admins approve and save the final definition text.
+* Match strings should be treated as plain text, not regular expressions.
+* Disabled glossary entries should remain editable but unavailable to
+  participant-facing payloads.
+
+## Open Questions
+
+* Should glossary entries support internal Admin notes? If unanswered, do not
+  add notes in this phase.
+* Should the canonical term itself automatically be a match string? If
+  unanswered, yes, include it as an implicit or persisted match string.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can create, edit, enable/disable, and delete or archive glossary
+  entries.
+* Each glossary entry can have one canonical term, one definition, and multiple
+  match strings/aliases.
+* Non-admin users cannot access glossary management APIs or pages.
+* Duplicate match strings are rejected or clearly handled.
+* Participant-facing APIs do not yet change except for any intentionally added
+  participant-safe glossary endpoint/type that returns no Admin-only metadata.
+* No survey logic, validation, reporting, exports, hidden tags, or response data
+  behavior changes.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* Admin create/update/read/list/delete or archive behavior
+* non-admin authorization rejection
+* duplicate canonical terms and aliases
+* disabled entries excluded from participant-safe payloads if such a payload is
+  introduced
+* validation of empty/long fields
+* migration idempotency/backward compatibility
+
+Manual checks:
+
+* Admin can reach the glossary page from Admin navigation.
+* Admin can create a glossary entry with aliases.
+* Admin can edit a definition and toggle enabled/disabled.
+* Non-admin users do not see the Admin glossary page.
+* No participant question text is changed yet.
+* Mobile pass at 375/768/1280px for the Admin glossary page.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_FUTURE_glossary_admin.txt
+```
+
+Ask Claude Code to review:
+
+* schema separation from surveys, questions, answers, tags, and reporting
+* Admin-only authorization boundaries
+* glossary validation and duplicate handling
+* participant-safe payload shape if introduced
+* no accidental participant rendering or survey logic coupling
+* migration safety
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_FUTURE_glossary_admin.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness

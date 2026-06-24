@@ -1,19 +1,18 @@
-# Phase 29 — Dictionary-Assisted Glossary Definitions
+# Phase 29 — Tag Group Management Foundation
 
 ## Purpose
 
-Add an Admin-only dictionary lookup flow that suggests definitions for glossary
-terms before the Admin saves or updates the final glossary definition.
+Add Admin-managed grouping for the tag catalog so category/value tag pairs can
+be housed, ordered, and managed more easily on `/admin/tags`.
 
-This phase should build on Phase 28. It should not implement participant inline
-glossary rendering.
+This phase depends on Phase 28 terminology alignment. Groups organize existing
+tag category/value pairs as intact pairs; a category/value pair should never be
+split across separate grouping primitives.
 
 Source feedback or planning note:
 
 ```txt
-Client Phase 22 re-scope: when an Admin enters a glossary term, use a
-Webster/dictionary API to suggest a definition. If no definition is found, the
-Admin should enter their own definition.
+notes/06-24-26_dev_path.txt item 2
 ```
 
 ## Role Note
@@ -25,11 +24,13 @@ Default arrangement:
 
 Branch:
 
-Start implementation from `main` after Phase 28 is merged.
+Start implementation from `main` after Phase 28 is merged. Create a fresh
+phase branch before making code changes; do not implement this phase directly
+on `main`.
 
 ```bash
 git checkout main
-git checkout -b phase-29-glossary-dictionary-assist
+git checkout -b phase-29-tag-groups
 ```
 
 Closeout artifacts:
@@ -43,6 +44,7 @@ Closeout artifacts:
 
 Read before implementation:
 
+* `notes/06-24-26_dev_path.txt`
 * `prompts/prompt_28.txt`
 * `notes/claude_handoff_phase_28.txt`
 * `notes/claude_review_phase_28.txt`
@@ -54,33 +56,41 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
-* Current glossary APIs/UI from Phase 28.
-* Current official documentation for the approved dictionary/Webster provider.
+* Current Admin tag catalog routes/page, tag-definition service helpers,
+  hidden-tag suggestion helpers, `/admin/surveys/:id/organize` drag/drop
+  patterns, migration order, and shared tag types.
 
 ---
 
 # Received Feedback
 
-The Admin-entered term should be sent to a Webster/dictionary API so the system
-can suggest a definition. If no definition is found, the Admin should provide
-their own definition.
+Implement a grouping feature for tag housing and management. Implementation
+should be similar to the `/admin/surveys/2/organize` question grouping and
+manipulation drag/drop experience. The `/admin/tags` page needs a section to
+create new groups and should smartly handle new tag creation.
+
+Clarified product decision:
+
+* Groups organize tag category/value pairs together.
+* Tag pairs should stay together as they do now.
 
 ---
 
 # Intake Classification
 
-* Admin workflow enhancement
-* backend integration
-* environment/configuration change
-* external API dependency
+* Admin feature request
+* database schema and API contract change
+* admin workflow and drag/drop UX change
 
 Expected impact:
 
-* environment variables for provider configuration
-* server-side dictionary client
-* Admin lookup endpoint
-* Admin glossary form suggestion UI
-* tests with mocked provider responses
+* tag group migrations
+* Admin-only tag group APIs
+* shared Admin tag group response types
+* `/admin/tags` group creation/editing/assignment/reorder UI
+* tag creation flow with optional group assignment
+* tests for authorization, grouping integrity, ordering, and no participant
+  data exposure
 
 ---
 
@@ -88,50 +98,46 @@ Expected impact:
 
 Implement:
 
-* Select and document the approved dictionary/Webster provider after verifying
-  current official provider docs, terms, authentication, and response shape.
-* Server-side lookup endpoint available only to Admins.
-* Environment-driven provider configuration with no secrets committed.
-* Graceful states for:
-  * definition found
-  * multiple definitions found
-  * no definition found
-  * provider unavailable/rate-limited
-  * provider not configured
-* Admin UI that lets the Admin accept, edit, or ignore a suggested definition.
-* Store source metadata on glossary entries where Phase 28 schema supports it,
-  such as `manual`, `dictionary_suggested`, provider name, and lookup timestamp.
-* Tests that mock provider responses instead of calling the live service.
+* Admin-only tag groups with a name, display order, timestamps, and archive or
+  delete behavior that does not delete tag definitions.
+* Assignment of catalog tag definitions to zero or one group by default.
+* Drag/drop ordering for groups and for tags within a group, modeled after the
+  existing Organize tab patterns.
+* An ungrouped section for catalog tags with no group.
+* New tag creation on `/admin/tags` with optional group assignment.
+* Editing a tag's category/value without losing its group assignment.
+* Moving a tag pair between groups while keeping the category/value pair intact.
+* Shared Admin response types for grouped catalog data.
+* Focused tests for group CRUD, assignment, reorder, and admin-only access.
 
-The Admin must remain in control of the saved glossary definition. Suggestions
-should never overwrite existing definitions without explicit Admin action.
+Use the next available migration number at implementation time. Do not hard-code
+the migration number in this prompt or docs because earlier phases may change
+the sequence.
 
 ## Non-Goals
 
 Do not implement:
 
-* participant inline term rendering
-* automatic glossary entry creation without Admin confirmation
-* client-side direct calls to the dictionary provider
-* live-network tests
-* storing API keys in source files, migrations, fixtures, or snapshots
-* rich text or HTML dictionary output
-* non-English dictionary behavior unless explicitly requested
+* Splitting categories and values into separate groupable objects.
+* Allowing one tag pair to belong to multiple groups.
+* Participant-facing tag group payloads.
+* Changes to hidden-tag matching, reporting counts, CSV exports, response data,
+  or survey validation.
+* Cross-survey tag rollups or reporting filters.
+* Grouping survey questions; this should only borrow interaction patterns from
+  the Organize tab.
 
 ## Assumptions
 
-* The dictionary provider is optional. The glossary must remain usable when the
-  provider is not configured.
-* Dictionary definitions are suggestions only and may be edited before save.
-* Provider responses should be normalized to plain text before reaching the UI.
+* A group is admin-only catalog metadata.
+* Existing tag definitions start ungrouped after migration.
+* Deleting or archiving a group leaves its tags in the catalog as ungrouped.
+* Existing hidden tags saved on answer options, Other, or value tags continue to
+  use category/value pairs exactly as before.
 
 ## Open Questions
 
-* Which dictionary/Webster provider and plan should be used? If not decided,
-  implement the client behind a small provider interface and document the
-  required environment variables as placeholders.
-* Should lookup results be cached? If unanswered, avoid durable caching beyond
-  saved source metadata in this phase.
+* None.
 
 ---
 
@@ -139,13 +145,14 @@ Do not implement:
 
 The phase is ready for review when:
 
-* Admins can request a definition suggestion for a glossary term.
-* Admins can accept, edit, or ignore the suggested definition.
-* No-match and provider-error states are clear and do not block manual entry.
-* Non-admin users cannot call the lookup endpoint.
-* Dictionary provider secrets are read from environment configuration only.
-* Tests do not depend on live network access.
-* Participant-facing survey behavior remains unchanged.
+* Admins can create, rename, reorder, and delete/archive tag groups.
+* Admins can assign existing category/value tag pairs to groups or leave them
+  ungrouped.
+* Admins can drag/drop groups and tag pairs within/between group sections.
+* New catalog tag creation can optionally assign the tag pair to a group.
+* Non-admin users cannot access tag group APIs or pages.
+* Participant APIs, reports, hidden-tag rollups, CSV output, and survey
+  response storage remain unchanged.
 
 ---
 
@@ -163,23 +170,23 @@ git diff --check
 
 Add focused tests for:
 
-* Admin-only lookup authorization
-* successful provider response normalization
-* no-match fallback
-* provider error/rate-limit fallback
-* provider-not-configured behavior
-* accepting/editing/ignoring a suggested definition in the Admin form
-* no live API calls during automated tests
+* Admin-only tag group CRUD
+* non-admin authorization rejection
+* assigning and unassigning tag pairs
+* reordering groups and tags within a group
+* moving tags between groups and ungrouped
+* deleting/archiving a group without deleting tag definitions
+* new tag creation with and without group assignment
+* participant/report/CSV payloads not exposing or depending on groups
 
 Manual checks:
 
-* With provider disabled, Admin can still manually create/edit glossary entries.
-* With mocked or configured provider, Admin can request a suggestion and edit it
-  before save.
-* No-match terms show manual-entry fallback.
-* Existing saved definitions are not overwritten unless the Admin explicitly
-  applies a suggestion.
-* Mobile pass at 375/768/1280px for the lookup UI.
+* Admin creates several groups on `/admin/tags`.
+* Admin creates a new tag directly into a group.
+* Admin drags tag pairs between groups and into the ungrouped section.
+* Admin edits a tag pair and confirms its group stays intact.
+* Existing hidden-tag suggestion flows still work in the survey builder.
+* Mobile pass at 375/768/1280px for `/admin/tags`.
 
 ---
 
@@ -193,12 +200,11 @@ notes/claude_handoff_phase_29.txt
 
 Ask Claude Code to review:
 
-* provider secret handling
-* server-side-only dictionary access
-* external API failure modes
-* Admin approval/editing flow
-* test mocking and no live-network dependency
-* no participant-rendering drift
+* group data model and migration safety
+* admin-only authorization boundaries
+* pair-level grouping integrity
+* drag/drop reorder correctness
+* no participant/report/CSV coupling
 
 Claude Code must write review output to:
 
@@ -212,8 +218,6 @@ notes/claude_review_phase_29.txt
 
 Update as needed:
 
-* `.env.example`
-* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
 * `markdown/DATA_MODEL_VISION.md`
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude

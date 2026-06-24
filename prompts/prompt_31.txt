@@ -1,0 +1,237 @@
+# Phase 31 — Public Anonymous Survey Directory
+
+## Purpose
+
+Add a segregated public anonymous survey directory page that lists only
+tokenized anonymous survey links explicitly opted into public listing by an
+Admin.
+
+This phase builds on the existing anonymous survey link foundation. The public
+directory must stay separate from authenticated dashboard routes and must not
+turn all tokenized links into discoverable public listings by default.
+
+Source feedback or planning note:
+
+```txt
+notes/06-24-26_dev_path.txt item 4
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` after Phase 30 is merged unless the human
+explicitly reprioritizes this phase. Create a fresh phase branch before making
+code changes; do not implement this phase directly on `main`.
+
+```bash
+git checkout main
+git checkout -b phase-31-public-anonymous-directory
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_31.txt`
+* Claude review: `notes/claude_review_phase_31.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/06-24-26_dev_path.txt`
+* `prompts/prompt_17.txt`
+* `prompts/prompt_27.txt`
+* `notes/claude_handoff_phase_17.txt`
+* `notes/claude_review_phase_17.txt`
+* `notes/claude_handoff_phase_27.txt`
+* `notes/claude_review_phase_27.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current anonymous survey link admin controls, public anonymous survey routes,
+  anonymous attempt runner, public route header/backdrop behavior, request
+  logging token redaction, and anonymous survey tests.
+
+---
+
+# Received Feedback
+
+Public anonymous survey section: need a separate page that is safely segregated
+from the user authenticated side of the site. This page should house all
+surveys that have a tokenized link for public anonymous survey use.
+
+Clarified product decision:
+
+* Public directory listing requires explicit Admin opt-in per anonymous link.
+* Enabled tokenized links remain secret/unlisted unless opted into the
+  directory.
+
+---
+
+# Intake Classification
+
+* public participant-facing feature
+* security and data-visibility risk
+* database schema and API contract change
+* anonymous survey workflow change
+
+Expected impact:
+
+* anonymous link public-listing metadata
+* Admin Setup controls for directory opt-in/out
+* participant-safe public directory API
+* public `/anonymous-surveys` page
+* tests for listing eligibility, auth segregation, token safety, and hidden-tag
+  non-disclosure
+
+---
+
+# Scope
+
+Implement:
+
+* Add an explicit public-directory flag to anonymous survey links, defaulting to
+  false.
+* Let Admins opt individual anonymous links into or out of the public directory
+  from existing anonymous-link management controls.
+* Add a public directory API, preferably `GET /api/anonymous-survey-directory`,
+  returning only enabled, unexpired, public-listed links for published,
+  non-deleted surveys.
+* Add a public `/anonymous-surveys` page that lists eligible surveys and links
+  to each existing `/anonymous-surveys/:token` runner URL.
+* Keep `/anonymous-surveys/:token` as the anonymous attempt route.
+* Include only participant-safe fields in the directory payload, such as survey
+  title, public description/category if already safe, expiration display data,
+  and public URL.
+* Ensure request logging continues to redact anonymous tokens.
+* Keep authenticated dashboard routes and public anonymous directory routes
+  visually and functionally separate.
+
+Use the next available migration number at implementation time. Do not hard-code
+the migration number in this prompt or docs because earlier phases may change
+the sequence.
+
+## Non-Goals
+
+Do not implement:
+
+* Listing every enabled anonymous link by default.
+* Public survey discovery for authenticated-only surveys.
+* Anonymous assignment or recipient-list management.
+* Email invitation workflows.
+* Public search/filtering beyond a simple list.
+* Changes to anonymous attempt ownership, answer validation, reporting,
+  hidden-tag behavior, CSV exports, or timing activity internals.
+* Exposure of hidden tags, Admin notes, token hashes, access-token hashes, or
+  non-public survey metadata.
+
+## Assumptions
+
+* Public-listing opt-in belongs to the anonymous link, not the whole survey.
+* Disabled, expired, unpublished, or deleted surveys/links must not appear in
+  the directory.
+* The public URL is intentionally visible for listed links.
+* Existing direct token URLs keep working whether or not the link is listed.
+
+## Open Questions
+
+* None.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can mark an anonymous link as listed or unlisted.
+* New anonymous links are unlisted by default.
+* Public `/anonymous-surveys` shows only enabled, unexpired, explicitly listed
+  links for published surveys.
+* Public directory cards link into the existing anonymous runner.
+* Authenticated dashboard data, hidden tags, Admin metadata, token hashes, and
+  attempt access tokens are not exposed.
+* Disabled, expired, unpublished, deleted, or unlisted links do not appear.
+* Existing direct anonymous survey token links still work.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* Admin-only public-listing toggle
+* new links defaulting to unlisted
+* listed enabled link appears in directory
+* unlisted, disabled, expired, unpublished, and deleted links are excluded
+* directory payload excludes hidden tags, Admin-only fields, token hashes, and
+  attempt tokens
+* direct `/anonymous-surveys/:token` access remains unchanged
+* unauthenticated users can read the directory without auth cookies
+
+Manual checks:
+
+* Admin creates an anonymous link and confirms it is not listed by default.
+* Admin opts a link into the directory and sees it on `/anonymous-surveys`.
+* Participant opens the directory and starts the survey from the listed card.
+* Admin opts the link out, disables it, or lets it expire and confirms it
+  disappears from the directory.
+* Public page stays separate from authenticated dashboard navigation.
+* Mobile pass at 375/768/1280px for the directory and anonymous runner entry.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_31.txt
+```
+
+Ask Claude Code to review:
+
+* public listing eligibility and default-off behavior
+* participant-safe payload fields
+* hidden-tag/Admin metadata isolation
+* token handling and logging redaction
+* anonymous attempt behavior stability
+* route segregation from authenticated dashboard surfaces
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_31.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness
