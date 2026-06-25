@@ -29,6 +29,16 @@ Each file is named:
 vX.Y.Z.md
 ```
 
+The working draft for the next release lives in:
+
+```txt
+markdown/releases/unreleased.md
+```
+
+Agents should update `unreleased.md` during production-bound implementation
+sessions. The admin app ignores this draft; only versioned `vX.Y.Z.md` files
+are shown on `/admin/releases`.
+
 ## File Format
 
 Use this format:
@@ -64,9 +74,22 @@ Summary: One short paragraph describing why this release exists.
 Only include sections that have notes. Every included section must contain at
 least one bullet.
 
+## Drafting Notes During Implementation
+
+Start or ensure the draft note exists:
+
+```bash
+npm run release:draft
+```
+
+During each coding session that changes production behavior, update
+`markdown/releases/unreleased.md` with concise admin-readable bullets. Keep
+developer-only review notes, raw commit messages, and temporary implementation
+details in phase notes instead.
+
 ## Creating Notes
 
-Before a production-bound commit, update the root package version and scaffold
+For one-off manual release files, update the root package version and scaffold
 the note:
 
 ```bash
@@ -75,6 +98,30 @@ npm run release:notes
 
 The command creates `markdown/releases/v<package.version>.md` and refuses to
 overwrite an existing release file. Edit the generated bullets before commit.
+
+For the normal automated release path, promote the draft note:
+
+```bash
+npm run release:prepare
+```
+
+By default this prepares the next patch version. To choose a specific bump or
+version:
+
+```bash
+npm run release:prepare -- --version minor
+npm run release:prepare -- --version 1.2.3
+```
+
+The prepare command:
+
+- reads `markdown/releases/unreleased.md`
+- rejects placeholder release title, summary, or bullet text
+- bumps the root `package.json` app version and root lockfile version
+- creates `markdown/releases/vX.Y.Z.md`
+- resets `markdown/releases/unreleased.md` for the next cycle
+- runs release-note validation against the promoted output
+- refuses to overwrite an existing versioned release file
 
 ## Validating Notes
 

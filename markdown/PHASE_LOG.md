@@ -39,9 +39,12 @@ Review Artifacts:
 - Added `markdown/RELEASE_NOTES.md` and release files:
   - `markdown/releases/v0.1.0.md`
   - `markdown/releases/v0.1.1.md`
+  - `markdown/releases/unreleased.md`
 - Bumped the root app version from `0.1.0` to `0.1.1`.
 - Added root scripts:
+  - `release:draft`
   - `release:notes`
+  - `release:prepare`
   - `release:check`
   - `test:release`
 - Added strict release-note parsing and response building in the API.
@@ -50,6 +53,11 @@ Review Artifacts:
 - Added shared release-note response types.
 - Added `/admin/releases` as a read-only admin page and linked it from Admin
   tools.
+- Tightened release-note parsing so blank bullet items are rejected consistently
+  by the CLI validator and admin API parser.
+- Added a draft-to-release workflow: agents maintain
+  `markdown/releases/unreleased.md`, and `npm run release:prepare` promotes the
+  draft into the next versioned release note while bumping the root app version.
 - Updated `scripts/deploy.mjs` so production pushes validate release notes
   before `git push origin main`.
 - Updated `.github/workflows/main_njsda-wa.yml` so direct `main` pushes validate
@@ -84,6 +92,20 @@ same commit that deploys the app.
 
 Tradeoff:
 Admins cannot patch release-note copy from the app after deployment.
+
+### Draft Notes Before Versioned Releases
+
+Decision:
+Keep agent-maintained draft notes in `markdown/releases/unreleased.md`, then use
+`npm run release:prepare` to promote the draft into a versioned release file.
+
+Reason:
+This makes routine coding sessions easy to document incrementally without
+publishing draft notes in the admin UI.
+
+Tradeoff:
+The final release still needs a human-quality title, summary, and bullet review
+before the prepare command will publish it.
 
 ### CI Enforces Direct Main Pushes
 
@@ -150,6 +172,18 @@ Results:
   - Failed because the check compares committed `HEAD` against `origin/main`;
     Phase 33 changes are still uncommitted, so the push diff does not yet show
     `package.json`.
+- Additional parser-hardening validation passed:
+  - `npm run release:check`
+  - `npm run test:release`
+  - `npm run typecheck`
+  - `npm test -w apps/api -- releaseNotes` with approved local PostgreSQL access
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+- Release draft automation checks passed:
+  - `node scripts/release-notes.mjs draft` reported the draft already exists
+  - `node scripts/release-notes.mjs prepare --version patch` rejected placeholder
+    draft text before making changes
 
 Manual tests:
 

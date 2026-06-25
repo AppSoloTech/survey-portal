@@ -59,6 +59,9 @@ Read before implementation:
    created as part of the development process.
 3. Validate and publish release notes when production deploys happen through
    `npm run deploy` or direct pushes to `main`.
+4. Follow-up adjustment: make the release-note workflow more automated for
+   coding sessions by letting agents maintain an unpublished draft note and
+   promoting that draft into a versioned release note before deployment.
 
 Do not silently drop feedback. Anything not implemented must be moved to
 Non-Goals, Deferred Work, or Open Questions.
@@ -99,8 +102,11 @@ Implement:
 * `markdown/RELEASE_NOTES.md` with release-note workflow, file format, and
   publish checks.
 * `markdown/releases/v0.1.0.md` as baseline historical release note.
+* `markdown/releases/unreleased.md` as the agent-maintained draft note for the
+  next production release.
 * Current root app version bump and matching release note for this phase.
-* `release:notes` and `release:check` root npm scripts.
+* `release:draft`, `release:notes`, `release:prepare`, and `release:check`
+  root npm scripts.
 * `GET /api/admin/releases`, protected by existing admin auth.
 * Shared release-note response types.
 * `/admin/releases` read-only admin page and link from Admin tools.
@@ -155,6 +161,10 @@ The phase is ready for review when:
 * Authenticated non-admin users receive `403` from `GET /api/admin/releases`.
 * `npm run release:notes` can scaffold the current version note without
   overwriting an existing file.
+* `npm run release:draft` creates or preserves the unpublished draft note.
+* `npm run release:prepare` promotes a completed draft note into a versioned
+  release note, bumps the root app version, resets the draft, and refuses
+  placeholder draft text.
 * `npm run release:check` validates semver, release-note format, and current
   package-version coverage.
 * `npm run deploy` runs release validation before pushing.

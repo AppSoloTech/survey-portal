@@ -6,9 +6,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const releasesDir = path.join(rootDir, "markdown", "releases");
+const unreleasedFileName = "unreleased.md";
+const unreleasedPath = path.join(releasesDir, unreleasedFileName);
 const semverPattern = /^\d+\.\d+\.\d+$/;
 const releaseFilePattern = /^v(\d+\.\d+\.\d+)\.md$/;
 const releaseHeadingPattern = /^# v(\d+\.\d+\.\d+) - (.+)$/;
+const unreleasedHeadingPattern = /^# Unreleased$/;
+const releaseTitlePattern = /^Release title: (.+)$/;
 const releaseDatePattern = /^Release date: (\d{4}-\d{2}-\d{2})$/;
 const summaryPattern = /^Summary: (.+)$/;
 const allowedSections = new Set(["Added", "Changed", "Fixed", "Security", "Operational Notes"]);
@@ -22,13 +26,25 @@ function main() {
       return;
     }
 
+    if (command === "draft") {
+      createUnreleasedDraft();
+      return;
+    }
+
+    if (command === "prepare") {
+      prepareRelease({ versionOrBump: readPrepareVersionArg(args) });
+      return;
+    }
+
     if (command === "check") {
       const since = readSinceArg(args);
       checkReleaseNotes({ since });
       return;
     }
 
-    throw new Error("Usage: node scripts/release-notes.mjs notes|check [--since <ref>]");
+    throw new Error(
+      "Usage: node scripts/release-notes.mjs notes|draft|prepare|check [--version patch|minor|major|X.Y.Z] [--since <ref>]"
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -51,6 +67,62 @@ export function createCurrentReleaseNote() {
 
   writeFileSync(releasePath, content, "utf8");
   console.log(`Created ${path.relative(rootDir, releasePath)}`);
+}
+
+export function createUnreleasedDraft() {
+  mkdirSync(releasesDir, { recursive: true });
+
+  if (existsSync(unreleasedPath)) {
+    console.log(`${path.relative(rootDir, unreleasedPath)} already exists`);
+    return;
+  }
+
+  writeFileSync(unreleasedPath, buildUnreleasedTemplate(), "utf8");
+  console.log(`Created ${path.relative(rootDir, unreleasedPath)}`);
+}
+
+export function prepareRelease({ versionOrBump = "patch", releaseDate = todayIsoDate() } = {}) {
+  if (!existsSync(unreleasedPath)) {
+    throw new Error(`Missing ${path.relative(rootDir, unreleasedPath)}; run npm run release:draft`);
+  }
+
+  const currentVersion = readRootVersion(rootDir);
+  const nextVersion = resolveNextVersion(currentVersion, versionOrBump);
+
+  if (compareVersions(nextVersion, currentVersion) <= 0) {
+    throw new Error(`Release version ${nextVersion} must be greater than ${currentVersion}`);
+  }
+
+  const releasePath = path.join(releasesDir, `v${nextVersion}.md`);
+
+  if (existsSync(releasePath)) {
+    throw new Error(`${path.relative(rootDir, releasePath)} already exists`);
+  }
+
+  const draft = parseUnreleasedNote(readFileSync(unreleasedPath, "utf8"), {
+    sourceName: unreleasedFileName
+  });
+
+  validatePublishableDraft(draft, unreleasedFileName);
+
+  const content = buildReleaseNoteFromDraft(draft, {
+    releaseDate,
+    version: nextVersion
+  });
+
+  parseReleaseNote(content, {
+    expectedVersion: nextVersion,
+    sourceName: `v${nextVersion}.md`
+  });
+
+  writeFileSync(releasePath, content, "utf8");
+  updateRootVersion(nextVersion);
+  writeFileSync(unreleasedPath, buildUnreleasedTemplate(), "utf8");
+  checkReleaseNotes();
+
+  console.log(`Prepared release v${nextVersion}`);
+  console.log(`Created ${path.relative(rootDir, releasePath)}`);
+  console.log(`Reset ${path.relative(rootDir, unreleasedPath)}`);
 }
 
 export function checkReleaseNotes({ since } = {}) {
@@ -79,7 +151,7 @@ export function checkReleaseNotes({ since } = {}) {
 }
 
 export function parseReleaseNote(markdown, { expectedVersion, sourceName = "release note" } = {}) {
-  const lines = markdown.replace(/\r\n/g, "\n").trim().split("\n");
+  const lines = normalizeMarkdownLines(markdown);
   const headingMatch = lines[0]?.match(releaseHeadingPattern);
 
   if (!headingMatch) {
@@ -111,50 +183,82 @@ export function parseReleaseNote(markdown, { expectedVersion, sourceName = "rele
     throw new Error(`${sourceName} summary cannot be blank`);
   }
 
-  const sections = [];
-  let currentSection = null;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    if (line.startsWith("## ")) {
-      const heading = line.slice(3).trim();
-
-      if (!allowedSections.has(heading)) {
-        throw new Error(`${sourceName} has unsupported section "${heading}"`);
-      }
-
-      currentSection = { heading, items: [] };
-      sections.push(currentSection);
-      continue;
-    }
-
-    if (line.startsWith("- ")) {
-      if (!currentSection) {
-        throw new Error(`${sourceName} bullet items must be inside a section`);
-      }
-
-      const item = line.slice(2).trim();
-
-      if (!item) {
-        throw new Error(`${sourceName} bullet items cannot be blank`);
-      }
-
-      currentSection.items.push(item);
-    }
-  }
-
-  if (sections.length === 0) {
-    throw new Error(`${sourceName} must include at least one section`);
-  }
-
-  for (const section of sections) {
-    if (section.items.length === 0) {
-      throw new Error(`${sourceName} section "${section.heading}" must include bullet items`);
-    }
-  }
+  const sections = parseSections(lines, sourceName);
 
   return { version, releasedAt, title, summary, sections };
+}
+
+export function parseUnreleasedNote(
+  markdown,
+  { sourceName = unreleasedFileName } = {}
+) {
+  const lines = normalizeMarkdownLines(markdown);
+
+  if (!unreleasedHeadingPattern.test(lines[0] ?? "")) {
+    throw new Error(`${sourceName} must start with "# Unreleased"`);
+  }
+
+  const titleLine = findRequiredLine(lines, releaseTitlePattern, sourceName, "release title");
+  const title = titleLine.match(releaseTitlePattern)?.[1]?.trim() ?? "";
+
+  if (!title) {
+    throw new Error(`${sourceName} release title cannot be blank`);
+  }
+
+  const summaryLine = findRequiredLine(lines, summaryPattern, sourceName, "summary");
+  const summary = summaryLine.match(summaryPattern)?.[1]?.trim() ?? "";
+
+  if (!summary) {
+    throw new Error(`${sourceName} summary cannot be blank`);
+  }
+
+  return {
+    title,
+    summary,
+    sections: parseSections(lines, sourceName)
+  };
+}
+
+export function buildReleaseNoteFromDraft(draft, { releaseDate, version }) {
+  validateSemver(version, "Release version");
+  validateDate(releaseDate, `v${version}.md`);
+
+  const sectionText = draft.sections
+    .map(
+      (section) =>
+        `## ${section.heading}\n\n${section.items.map((item) => `- ${item}`).join("\n")}`
+    )
+    .join("\n\n");
+
+  return `# v${version} - ${draft.title}\n\nRelease date: ${releaseDate}\n\nSummary: ${draft.summary}\n\n${sectionText}\n`;
+}
+
+export function buildUnreleasedTemplate() {
+  return `# Unreleased\n\nRelease title: Next Release\n\nSummary: Replace this with a short summary before running \`npm run release:prepare\`.\n\n## Changed\n\n- Add release-note bullets here during implementation.\n`;
+}
+
+export function resolveNextVersion(currentVersion, versionOrBump) {
+  validateSemver(currentVersion, "Current version");
+
+  if (semverPattern.test(versionOrBump)) {
+    return versionOrBump;
+  }
+
+  const [major, minor, patch] = currentVersion.split(".").map(Number);
+
+  if (versionOrBump === "major") {
+    return `${major + 1}.0.0`;
+  }
+
+  if (versionOrBump === "minor") {
+    return `${major}.${minor + 1}.0`;
+  }
+
+  if (versionOrBump === "patch") {
+    return `${major}.${minor}.${patch + 1}`;
+  }
+
+  throw new Error("--version must be patch, minor, major, or MAJOR.MINOR.PATCH");
 }
 
 function readReleaseFiles() {
@@ -245,6 +349,22 @@ function readSinceArg(args) {
   return value;
 }
 
+function readPrepareVersionArg(args) {
+  const index = args.indexOf("--version");
+
+  if (index === -1) {
+    return "patch";
+  }
+
+  const value = args[index + 1];
+
+  if (!value) {
+    throw new Error("--version requires patch, minor, major, or MAJOR.MINOR.PATCH");
+  }
+
+  return value;
+}
+
 function readRootVersion(directory) {
   const parsed = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"));
 
@@ -255,9 +375,53 @@ function readRootVersion(directory) {
   return parsed.version;
 }
 
+function updateRootVersion(version) {
+  updateJsonFile(path.join(rootDir, "package.json"), (parsed) => {
+    parsed.version = version;
+    return parsed;
+  });
+
+  updateJsonFile(path.join(rootDir, "package-lock.json"), (parsed) => {
+    parsed.version = version;
+
+    if (parsed.packages?.[""]) {
+      parsed.packages[""].version = version;
+    }
+
+    return parsed;
+  });
+}
+
+function updateJsonFile(filePath, update) {
+  const parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  const updated = update(parsed);
+
+  writeFileSync(filePath, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
+}
+
 function validateSemver(version, label) {
   if (!semverPattern.test(version)) {
     throw new Error(`${label} must be MAJOR.MINOR.PATCH`);
+  }
+}
+
+export function validatePublishableDraft(draft, sourceName) {
+  const placeholders = [
+    draft.title,
+    draft.summary,
+    ...draft.sections.flatMap((section) => section.items)
+  ];
+
+  if (draft.title === "Next Release") {
+    throw new Error(`${sourceName} release title must be updated before preparing a release`);
+  }
+
+  if (
+    placeholders.some((value) =>
+      /replace this|add release-note bullets here during implementation/i.test(value)
+    )
+  ) {
+    throw new Error(`${sourceName} contains placeholder release-note text`);
   }
 }
 
@@ -269,6 +433,57 @@ function validateDate(date, sourceName) {
   }
 }
 
+function normalizeMarkdownLines(markdown) {
+  return markdown.replace(/\r\n/g, "\n").trim().split("\n");
+}
+
+function parseSections(lines, sourceName) {
+  const sections = [];
+  let currentSection = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (line.startsWith("## ")) {
+      const heading = line.slice(3).trim();
+
+      if (!allowedSections.has(heading)) {
+        throw new Error(`${sourceName} has unsupported section "${heading}"`);
+      }
+
+      currentSection = { heading, items: [] };
+      sections.push(currentSection);
+      continue;
+    }
+
+    if (line === "-" || line.startsWith("- ")) {
+      if (!currentSection) {
+        throw new Error(`${sourceName} bullet items must be inside a section`);
+      }
+
+      const item = line.slice(1).trim();
+
+      if (!item) {
+        throw new Error(`${sourceName} bullet items cannot be blank`);
+      }
+
+      currentSection.items.push(item);
+    }
+  }
+
+  if (sections.length === 0) {
+    throw new Error(`${sourceName} must include at least one section`);
+  }
+
+  for (const section of sections) {
+    if (section.items.length === 0) {
+      throw new Error(`${sourceName} section "${section.heading}" must include bullet items`);
+    }
+  }
+
+  return sections;
+}
+
 function findRequiredLine(lines, pattern, sourceName, label) {
   const line = lines.find((candidate) => pattern.test(candidate.trim()));
 
@@ -277,6 +492,10 @@ function findRequiredLine(lines, pattern, sourceName, label) {
   }
 
   return line.trim();
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function compareVersions(left, right) {

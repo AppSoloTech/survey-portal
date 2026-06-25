@@ -64,6 +64,13 @@ describe("admin release notes", () => {
         { expectedVersion: "1.2.3", sourceName: "v1.2.3.md" }
       )
     ).toThrow(/must include bullet items/);
+
+    expect(() =>
+      parseSoftwareReleaseNote(
+        `# v1.2.3 - Broken\n\nRelease date: 2026-06-25\n\nSummary: Blank bullet.\n\n## Added\n\n-   \n`,
+        { expectedVersion: "1.2.3", sourceName: "v1.2.3.md" }
+      )
+    ).toThrow(/bullet items cannot be blank/);
   });
 
   it("builds a response whose latest release matches the root app version", () => {

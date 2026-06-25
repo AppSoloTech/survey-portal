@@ -24,16 +24,25 @@ Implemented:
 
 - Added committed release-note workflow docs and files under `markdown/`.
 - Added root release commands:
+  - `npm run release:draft`
   - `npm run release:notes`
+  - `npm run release:prepare`
   - `npm run release:check`
   - `npm run test:release`
 - Bumped root app version from `0.1.0` to `0.1.1` and added matching release note.
+- Added `markdown/releases/unreleased.md` as the agent-maintained draft for the
+  next production release.
 - Added admin-only API `GET /api/admin/releases`.
 - Added shared release-note response types.
 - Added `/admin/releases` read-only React admin page and Admin tools link.
 - Updated `npm run deploy` to validate release notes before pushing.
 - Updated GitHub Actions to validate release notes before Azure deploy.
 - Updated README, `markdown/FLOW.md`, and `markdown/REVIEW_CHECKLIST.md`.
+- Tightened release-note parsing so blank bullet items are rejected consistently
+  by the CLI validator and admin API parser.
+- Added draft-note promotion: `npm run release:prepare` reads
+  `unreleased.md`, rejects placeholder text, bumps the root app version,
+  creates the versioned release note, and resets the draft.
 
 ## Non-Goals
 
@@ -54,6 +63,8 @@ Implemented:
 - Root `package.json` is the app release version source of truth. Workspace
   package versions remain `0.1.0` because their package contracts did not
   change.
+- Draft notes in `markdown/releases/unreleased.md` are not shown in the admin
+  UI because the API only reads versioned `vX.Y.Z.md` files.
 
 ## Validation Completed
 
@@ -94,6 +105,32 @@ Results:
   - Reason: this mode compares committed `HEAD` to `origin/main`, and Phase 33
     changes are still uncommitted.
 
+Additional parser-hardening validation after final touch-up:
+
+```bash
+npm run release:check
+npm run test:release
+npm run typecheck
+npm test -w apps/api -- releaseNotes
+npm run lint
+npm run build
+git diff --check
+node scripts/release-notes.mjs draft
+node scripts/release-notes.mjs prepare --version patch
+```
+
+Results:
+
+- Passed: release check, release script test, typecheck, lint, build, and
+  whitespace check.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- releaseNotes`
+  - 1 file, 4 tests.
+- Passed: `node scripts/release-notes.mjs draft` reported the draft already
+  exists without overwriting it.
+- Expected guardrail: `node scripts/release-notes.mjs prepare --version patch`
+  rejected placeholder draft text before changing files.
+
 Manual checks:
 
 - Not run in browser. Typecheck/build covered route and page wiring.
@@ -119,6 +156,7 @@ Phase 33-specific paths include:
 prompts/prompt_33.txt
 markdown/RELEASE_NOTES.md
 markdown/releases/
+markdown/releases/unreleased.md
 scripts/release-notes.mjs
 scripts/release-notes.test.mjs
 scripts/deploy.mjs

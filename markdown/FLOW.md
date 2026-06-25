@@ -422,8 +422,10 @@ Before any production deployment:
 - verify production secrets are only in Azure configuration
 - verify `.env` is ignored
 - verify `.env.example` contains placeholders only
-- update the root `package.json` app version for production-bound changes
-- create or update `markdown/releases/vX.Y.Z.md` for the version being deployed
+- verify production-bound coding sessions updated
+  `markdown/releases/unreleased.md` with admin-readable draft notes
+- run `npm run release:prepare` to bump the root app version and promote the
+  draft into `markdown/releases/vX.Y.Z.md`
 - run `npm run release:check`
 - run build and relevant tests
 - confirm database migrations are reviewed
@@ -432,6 +434,8 @@ Before any production deployment:
 Release-note commands:
 
 ```bash
+npm run release:draft
+npm run release:prepare
 npm run release:notes
 npm run release:check
 ```
@@ -505,7 +509,8 @@ A phase is complete when:
 - `notes/claude_review_phase_X.txt` exists, or the phase log explicitly says Claude review is pending
 - review findings are addressed or intentionally deferred
 - `markdown/PHASE_LOG.md` is updated
-- production-bound changes have a matching release note under
+- production-bound changes update `markdown/releases/unreleased.md`, or have
+  already been promoted into a matching versioned release note under
   `markdown/releases/`
 - no real secrets are committed
 - the phase can be reviewed from a clean diff

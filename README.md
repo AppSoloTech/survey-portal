@@ -78,7 +78,27 @@ Production secrets should live in Azure App Service configuration, not in source
 The root `package.json` version is the deployed app version. Production-bound
 changes should include a matching release file in `markdown/releases/`.
 
-Create the current version's release-note template:
+Keep the next release draft warm during implementation:
+
+```bash
+npm run release:draft
+```
+
+Agents should update `markdown/releases/unreleased.md` with concise
+admin-readable bullets during production-bound coding sessions. The admin app
+does not publish this draft.
+
+Promote the draft into the next patch release, bumping the root version and
+resetting the draft:
+
+```bash
+npm run release:prepare
+```
+
+Use `-- --version minor`, `-- --version major`, or `-- --version X.Y.Z` when the
+release should not be the next patch.
+
+Create the current version's release-note template manually:
 
 ```bash
 npm run release:notes
@@ -147,7 +167,9 @@ npm run dev
 npm run admin:provision
 npm run db:migrate
 npm run db:reset
+npm run release:draft
 npm run release:notes
+npm run release:prepare
 npm run release:check
 npm run typecheck
 npm run build

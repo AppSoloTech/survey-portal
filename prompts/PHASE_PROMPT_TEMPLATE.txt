@@ -161,8 +161,8 @@ If a command cannot run, document why and what narrower validation was completed
 
 Update as needed:
 
+* `markdown/releases/unreleased.md` with admin-readable draft notes for production-bound changes.
 * `markdown/FOLLOW_UPS.md` for deferred or newly discovered follow-ups.
 * `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and commit readiness.
 * README, `.env.example`, or database docs if setup/operator behavior changes.
 * `notes/claude_handoff_phase_X.txt` before marking implementation complete.
-

@@ -103,12 +103,18 @@ export function parseSoftwareReleaseNote(
       continue;
     }
 
-    if (line.startsWith("- ")) {
+    if (line === "-" || line.startsWith("- ")) {
       if (!currentSection) {
         throw new Error(`${sourceName} bullet items must be inside a section`);
       }
 
-      currentSection.items.push(line.slice(2).trim());
+      const item = line.slice(1).trim();
+
+      if (!item) {
+        throw new Error(`${sourceName} bullet items cannot be blank`);
+      }
+
+      currentSection.items.push(item);
     }
   }
 

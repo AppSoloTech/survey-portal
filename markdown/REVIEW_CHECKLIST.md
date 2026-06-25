@@ -58,6 +58,9 @@ Use this checklist before committing a phase and when preparing Claude review ha
 
 ## Release Notes And Deployment
 
+- Production-bound implementation sessions update
+  `markdown/releases/unreleased.md` with concise admin-readable draft notes.
+- Placeholder draft release-note text is removed before preparing a release.
 - Production-bound changes update the root `package.json` app version.
 - `markdown/releases/vX.Y.Z.md` exists for the root app version.
 - Release notes follow `markdown/RELEASE_NOTES.md`.
