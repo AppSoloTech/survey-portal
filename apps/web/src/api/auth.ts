@@ -6,7 +6,7 @@ import type {
   UpdateCurrentUserProfileResponse
 } from "@survey-portal/shared";
 
-import { apiRequest } from "./client.js";
+import { apiRequest, resetCsrfTokenCache } from "./client.js";
 
 export async function registerUser(input: {
   firstName: string;
@@ -61,9 +61,13 @@ export async function updateCurrentUserProfile(input: {
 }
 
 export async function logoutUser(): Promise<void> {
-  await apiRequest<void>("/api/auth/logout", {
-    method: "POST"
-  });
+  try {
+    await apiRequest<void>("/api/auth/logout", {
+      method: "POST"
+    });
+  } finally {
+    resetCsrfTokenCache();
+  }
 }
 
 export async function requestPasswordReset(input: {

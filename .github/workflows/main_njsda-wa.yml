@@ -46,6 +46,9 @@ jobs:
         with:
           node-version: '24.x'
 
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+
       # Tests must run before the prune strips devDependencies (vitest,
       # supertest). Type checking is covered by tsc inside each workspace
       # build. A red step fails this job, and deploy needs build, so
@@ -55,6 +58,7 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/survey_portal_test
         run: |
           npm ci
+          npm audit --omit=dev --audit-level=high
           npm run lint
           npm run build
           npm test

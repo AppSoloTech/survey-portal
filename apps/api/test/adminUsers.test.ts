@@ -146,9 +146,16 @@ describe("admin user management", () => {
     expect(promoteResponse.status).toBe(200);
     expect(promoteResponse.body.user).toMatchObject({ id: user.user.id, role: "admin" });
 
-    // The promoted user can reach admin-only endpoints with their existing
-    // session because roles are read from the database on every request.
-    const adminMeResponse = await request(app).get("/api/admin/me").set("Cookie", user.cookie);
+    const stalePromotedSession = await request(app).get("/api/admin/me").set("Cookie", user.cookie);
+    expect(stalePromotedSession.status).toBe(401);
+
+    const promotedLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: user.user.email, password: user.password });
+    expect(promotedLogin.status).toBe(200);
+    const promotedCookie = String(promotedLogin.headers["set-cookie"]?.[0] ?? "").split(";")[0];
+
+    const adminMeResponse = await request(app).get("/api/admin/me").set("Cookie", promotedCookie);
     expect(adminMeResponse.status).toBe(200);
 
     const demoteResponse = await request(app)
@@ -159,8 +166,8 @@ describe("admin user management", () => {
     expect(demoteResponse.status).toBe(200);
     expect(demoteResponse.body.user.role).toBe("user");
 
-    const revokedResponse = await request(app).get("/api/admin/me").set("Cookie", user.cookie);
-    expect(revokedResponse.status).toBe(403);
+    const revokedResponse = await request(app).get("/api/admin/me").set("Cookie", promotedCookie);
+    expect(revokedResponse.status).toBe(401);
   });
 
   it("blocks admins from changing their own role", async () => {

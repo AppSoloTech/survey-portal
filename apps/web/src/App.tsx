@@ -40,57 +40,81 @@ import { UserDashboard } from "./pages/UserDashboard.js";
 
 export function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <Router>
-          <BackdropGate />
-          <div className="app-shell">
-            <Header />
+    <ToastProvider>
+      <Router>
+        <AppShell />
+      </Router>
+    </ToastProvider>
+  );
+}
 
-            <main>
-              <RouteTransition>
-                <Routes>
-                  <Route element={<Home />} path="/" />
-                  <Route element={<Login />} path="/login" />
-                  <Route element={<Register />} path="/register" />
-                  <Route element={<ForgotPassword />} path="/forgot-password" />
-                  <Route element={<ResetPassword />} path="/reset-password" />
-                  <Route element={<AnonymousSurveyDirectoryPage />} path="/anonymous-surveys" />
-                  <Route
-                    element={<AnonymousSurveyAttemptPage />}
-                    path="/anonymous-surveys/:token"
-                  />
-                  <Route element={<ProtectedRoute />}>
-                    <Route element={<UserDashboard />} path="/dashboard" />
-                    <Route element={<AccountSettings />} path="/settings" />
-                    <Route
-                      element={<CategorySurveysPage />}
-                      path="/dashboard/category/:categoryId"
-                    />
-                    <Route element={<SurveyAttemptPage />} path="/surveys/:surveyId/attempt" />
-                  </Route>
-                  <Route element={<AdminRoute />}>
-                    <Route element={<AdminSurveysOverview />} path="/admin" />
-                    <Route element={<AdminUsersPage />} path="/admin/users" />
-                    <Route element={<AdminUserDetailPage />} path="/admin/users/:userId" />
-                    <Route element={<AdminTagsPage />} path="/admin/tags" />
-                    <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
-                      <Route element={<Navigate replace to="setup" />} index />
-                      <Route element={<SurveySetupPage />} path="setup" />
-                      <Route element={<SurveyQuestionsPage />} path="questions" />
-                      <Route element={<SurveyOrganizePage />} path="organize" />
-                      <Route element={<SurveyLogicPage />} path="logic" />
-                      <Route element={<SurveyPreviewPage />} path="preview" />
-                      <Route element={<SurveyResultsPage />} path="results" />
-                    </Route>
-                  </Route>
-                  <Route element={<NotFound />} path="*" />
-                </Routes>
-              </RouteTransition>
-            </main>
-          </div>
-        </Router>
-      </ToastProvider>
+function AppShell() {
+  const location = useLocation();
+  const isPublicAnonymousRoute =
+    location.pathname === "/anonymous-surveys" ||
+    location.pathname.startsWith("/anonymous-surveys/");
+
+  if (isPublicAnonymousRoute) {
+    return (
+      <>
+        <BackdropGate />
+        <div className="app-shell">
+          <PublicHeader />
+
+          <main>
+            <RouteTransition>
+              <Routes>
+                <Route element={<AnonymousSurveyDirectoryPage />} path="/anonymous-surveys" />
+                <Route element={<AnonymousSurveyAttemptPage />} path="/anonymous-surveys/:token" />
+                <Route element={<NotFound />} path="*" />
+              </Routes>
+            </RouteTransition>
+          </main>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <AuthProvider>
+      <BackdropGate />
+      <div className="app-shell">
+        <Header />
+
+        <main>
+          <RouteTransition>
+            <Routes>
+              <Route element={<Home />} path="/" />
+              <Route element={<Login />} path="/login" />
+              <Route element={<Register />} path="/register" />
+              <Route element={<ForgotPassword />} path="/forgot-password" />
+              <Route element={<ResetPassword />} path="/reset-password" />
+              <Route element={<ProtectedRoute />}>
+                <Route element={<UserDashboard />} path="/dashboard" />
+                <Route element={<AccountSettings />} path="/settings" />
+                <Route element={<CategorySurveysPage />} path="/dashboard/category/:categoryId" />
+                <Route element={<SurveyAttemptPage />} path="/surveys/:surveyId/attempt" />
+              </Route>
+              <Route element={<AdminRoute />}>
+                <Route element={<AdminSurveysOverview />} path="/admin" />
+                <Route element={<AdminUsersPage />} path="/admin/users" />
+                <Route element={<AdminUserDetailPage />} path="/admin/users/:userId" />
+                <Route element={<AdminTagsPage />} path="/admin/tags" />
+                <Route element={<SurveyWorkspaceLayout />} path="/admin/surveys/:surveyId">
+                  <Route element={<Navigate replace to="setup" />} index />
+                  <Route element={<SurveySetupPage />} path="setup" />
+                  <Route element={<SurveyQuestionsPage />} path="questions" />
+                  <Route element={<SurveyOrganizePage />} path="organize" />
+                  <Route element={<SurveyLogicPage />} path="logic" />
+                  <Route element={<SurveyPreviewPage />} path="preview" />
+                  <Route element={<SurveyResultsPage />} path="results" />
+                </Route>
+              </Route>
+              <Route element={<NotFound />} path="*" />
+            </Routes>
+          </RouteTransition>
+        </main>
+      </div>
     </AuthProvider>
   );
 }
@@ -118,6 +142,38 @@ function BackdropGate() {
     <Suspense fallback={null}>
       <AmbientBackdrop />
     </Suspense>
+  );
+}
+
+function PublicHeader() {
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setIsScrolled(window.scrollY > 8);
+    }
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
+  return (
+    <header className={isScrolled ? "app-header scrolled" : "app-header"}>
+      <Link className="brand-link" to="/anonymous-surveys">
+        <p className="eyebrow">Survey Portal</p>
+        <h1>Anonymous surveys</h1>
+      </Link>
+      <div className="header-actions">
+        <ThemeToggle />
+        <Link className="nav-link" to="/">
+          Home
+        </Link>
+      </div>
+    </header>
   );
 }
 

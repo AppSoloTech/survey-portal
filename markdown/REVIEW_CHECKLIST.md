@@ -37,16 +37,21 @@ Use this checklist before committing a phase and when preparing Claude review ha
 - Authentication is enforced server-side.
 - Authorization is enforced server-side for every protected endpoint.
 - Admin-only functionality is inaccessible to standard users.
+- Browser unsafe requests that rely on auth cookies have CSRF and allowed-origin protection.
+- Public anonymous endpoints that bypass CSRF have a documented non-cookie bearer-token authorization model.
+- Sensitive account changes invalidate or deliberately preserve existing sessions with the decision documented.
 - Incoming requests are validated on the server.
 - Database access uses parameterized queries or a safe query builder/ORM.
 - Error responses do not expose implementation details.
 - Logs do not contain secrets, passwords, tokens, or sensitive response data.
+- Security headers are present and appropriate for the app surface, including CSP, frame protection, MIME sniff protection, referrer policy, and production HSTS where applicable.
 
 ## Environment And Secrets
 
 - `.env` and `.env.*` remain ignored except `.env.example`.
 - `.env.example` contains placeholders only.
 - Production secrets are expected to live in Azure App Service configuration.
+- Production secrets that need stronger controls are tracked for Azure Key Vault references or equivalent managed secret storage.
 - Local development defaults do not leak into production startup.
 - CORS is only enabled where needed and is appropriately constrained.
 - Required environment variables are documented.
@@ -74,6 +79,8 @@ Use this checklist before committing a phase and when preparing Claude review ha
 - Typecheck was run or documented as unavailable.
 - Build was run or documented as unavailable.
 - Lint was run or documented as unavailable.
+- Security-sensitive changes include focused automated tests where practical.
+- Supply-chain checks were run or explicitly deferred when dependency or CI security changed.
 - Backend startup was tested when backend behavior changed.
 - Frontend startup was tested when frontend behavior changed.
 - `/api/health` was checked when the API changed.

@@ -237,6 +237,23 @@ describe("auth routes", () => {
       expect(reuse.body.error).toBe("Password reset link is invalid or expired");
     });
 
+    it("invalidates existing auth cookies after a successful password reset", async () => {
+      const session = await registerUser(app);
+      const result = await requestPasswordResetForEmail({ email: session.user.email });
+      const token = result.token ?? "";
+
+      const beforeReset = await request(app).get("/api/auth/me").set("Cookie", session.cookie);
+      expect(beforeReset.status).toBe(200);
+
+      const resetResponse = await request(app)
+        .post("/api/auth/password-reset/complete")
+        .send({ token, newPassword: "new-password-456" });
+      expect(resetResponse.status).toBe(200);
+
+      const afterReset = await request(app).get("/api/auth/me").set("Cookie", session.cookie);
+      expect(afterReset.status).toBe(401);
+    });
+
     it("rejects expired, malformed, and unknown reset tokens safely", async () => {
       const session = await registerUser(app);
       const result = await requestPasswordResetForEmail({ email: session.user.email });

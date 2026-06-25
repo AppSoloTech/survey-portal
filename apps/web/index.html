@@ -10,25 +10,6 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;650;700&family=Space+Grotesk:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
-    <script>
-      // Apply the saved (or OS-preferred) theme before first paint so the
-      // page never flashes the wrong colors. Kept inline and dependency-free
-      // on purpose; the React toggle keeps this attribute in sync afterwards.
-      (function () {
-        try {
-          var stored = localStorage.getItem("survey-portal-theme");
-          var theme =
-            stored === "light" || stored === "dark"
-              ? stored
-              : window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light";
-          document.documentElement.setAttribute("data-theme", theme);
-        } catch (error) {
-          document.documentElement.setAttribute("data-theme", "light");
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

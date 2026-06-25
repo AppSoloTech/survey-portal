@@ -222,12 +222,17 @@ Use:
 * parameterized SQL
 * request validation
 * role verification
+* httpOnly cookie protections
+* CSRF/origin protections for browser cookie-authenticated unsafe requests
+* security headers appropriate for a browser-served app
 
 Protect against:
 
 * SQL injection
 * privilege escalation
 * unauthorized data access
+* token leakage in logs
+* browser-driven cross-site request abuse
 
 ---
 
@@ -244,10 +249,16 @@ Use:
 
 * Azure App Service environment variables
 * Azure PostgreSQL Flexible Server
+* Azure managed identity and Key Vault references when production secret
+  controls need to move beyond encrypted App Service settings
 
 Store secrets in Azure configuration.
 
 Do not store production secrets in source control.
+
+Public-pilot deployments should verify HTTPS-only, current TLS minimums,
+health checks, logging/monitoring, PostgreSQL network restrictions, backup
+readiness, and least-privilege RBAC before broad use.
 
 ---
 

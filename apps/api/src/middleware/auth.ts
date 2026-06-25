@@ -19,7 +19,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   try {
     const payload = verifyAuthToken(token);
     const result = await pool.query<UserRecord>(
-      `select id, first_name, last_name, email, role, created_at, updated_at
+      `select id, first_name, last_name, email, role, session_version, created_at, updated_at
        from users
        where id = $1`,
       [Number(payload.sub)]
@@ -27,7 +27,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     const user = result.rows[0];
 
-    if (!user) {
+    if (!user || user.session_version !== payload.sessionVersion) {
       res.status(401).json({ error: "Authentication required" });
       return;
     }

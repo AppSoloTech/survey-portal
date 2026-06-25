@@ -167,6 +167,7 @@ adminRouter.patch("/users/:id/role", requireAuth, requireRole("admin"), async (r
     const result = await pool.query<AdminUserRecord>(
       `update users
        set role = $2,
+           session_version = session_version + 1,
            updated_at = now()
        where id = $1
        returning id, first_name, last_name, email, role, created_at`,

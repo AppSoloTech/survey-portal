@@ -814,7 +814,7 @@ anonymousSurveyPublicRouter.post(
         const userResult = await client.query<UserRecord>(
           `insert into users (first_name, last_name, email, password_hash, role)
            values ($1, $2, $3, $4, 'user')
-           returning id, first_name, last_name, email, role, created_at, updated_at`,
+           returning id, first_name, last_name, email, role, session_version, created_at, updated_at`,
           [
             registrationValidation.value.firstName,
             registrationValidation.value.lastName,
@@ -879,7 +879,7 @@ anonymousSurveyPublicRouter.post(
           attempt: convertedAttempt
         };
 
-        setAuthCookie(res, user);
+        setAuthCookie(res, user, userResult.rows[0].session_version);
         res.status(201).json(response);
       } catch (error) {
         if (!didCommit) {

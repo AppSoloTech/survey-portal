@@ -6,6 +6,275 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Security Hardening Pass — Public Pilot Baseline
+
+Date:
+2026-06-24
+
+Status:
+Complete; ready to commit
+
+Prompt:
+Direct user request; review brief tracked in `notes/security_pass.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_security_pass.txt`
+- Claude review: `notes/claude_review_security_pass.txt`
+
+## Goals
+
+- Harden the existing React/Vite, Express, PostgreSQL, and cookie/JWT app
+  before broader public use.
+- Keep the current app-auth model while adding explicit browser CSRF and origin
+  protection.
+- Separate public anonymous survey routes from authenticated shell behavior.
+- Improve session invalidation, rate limiting, request-log redaction, CI
+  supply-chain checks, and Azure security checklist coverage.
+
+## Built
+
+- Added centralized Express security headers, including CSP, production HSTS,
+  frame protection, MIME sniff protection, referrer policy, permissions policy,
+  and cross-origin opener policy.
+- Added browser-origin validation and CSRF token issuance/validation for unsafe
+  browser requests, while keeping bearer-token public anonymous survey endpoints
+  CSRF-exempt.
+- Adjusted development origin validation so `localhost` and `127.0.0.1` with
+  the same protocol/port are accepted as equivalent loopback origins, while
+  production origin matching remains exact.
+- Added a production-origin policy test proving production accepts only the
+  exact configured `WEB_ORIGIN` and rejects host aliases.
+- Moved auth, registration, and password-reset limiters onto the shared
+  PostgreSQL-backed rate-limit store and added email/account-aware limiter keys.
+- Added `users.session_version`, embedded it in auth JWTs, and invalidated stale
+  cookies after password resets and admin role changes.
+- Expanded request URL redaction for token, secret, password, reset, attempt,
+  and email-like query parameters.
+- Split `/anonymous-surveys` and `/anonymous-surveys/:token` outside
+  `AuthProvider` so public anonymous pages no longer call `/api/auth/me` or
+  render authenticated account/admin navigation.
+- Removed the inline theme script from `apps/web/index.html` so `script-src
+  'self'` is feasible; initial theme selection now runs from bundled module
+  code.
+- Added CI supply-chain checks: `npm audit --omit=dev --audit-level=high`,
+  gitleaks secret scan, and Dependabot for npm/GitHub Actions.
+- Added focused security tests for headers, CSRF, origin rejection, password
+  reset session invalidation, and role-change session invalidation.
+- Addressed Claude's blocking CSRF client-cache finding by clearing cached CSRF
+  state on logout, retrying once on CSRF rejection after refetch, and adding a
+  web regression test for logout-to-login without page reload.
+- Addressed two low-risk Claude suggestions: successful logins no longer count
+  against the email-keyed login limiter, and logger fallback redaction now
+  covers reset/attempt query keys.
+- Created `notes/security_pass.txt` as the Azure checklist and implementation
+  summary for Claude review and deployment follow-up.
+
+## Important Decisions
+
+### Browser-Oriented CSRF Enforcement
+
+Decision:
+Unsafe requests with browser `Origin` or `Referer` headers must match
+`WEB_ORIGIN`; non-anonymous browser unsafe requests also require a valid CSRF
+token.
+
+Reason:
+The app uses same-site httpOnly cookies, so browser-originated unsafe requests
+need explicit CSRF protection without breaking server-side test automation and
+non-browser operational calls that do not send browser origin headers.
+
+Tradeoff:
+This is not a universal API key/auth replacement for non-browser clients; it is
+targeted protection for the browser cookie threat model.
+
+### Anonymous Public Endpoints Remain CSRF-Exempt
+
+Decision:
+`/api/anonymous-surveys/:token/*` remains CSRF-exempt.
+
+Reason:
+Those endpoints rely on anonymous link bearer tokens plus per-attempt access
+tokens and do not authorize via the auth cookie.
+
+Tradeoff:
+Claude should re-review whether this remains acceptable for public pilot, but
+adding CSRF to those endpoints would complicate unauthenticated token-link
+flows.
+
+### Session Versioning Over Session Registry
+
+Decision:
+Use a per-user `session_version` integer in JWTs rather than introducing a
+server-side per-device session table.
+
+Reason:
+This gives immediate invalidation after sensitive account changes while staying
+small and aligned with the existing stateless JWT model.
+
+Tradeoff:
+Invalidation is coarse-grained per user; all existing cookies for that user are
+retired together after a password reset or role change.
+
+## Architecture Notes
+
+- Database/schema impact: migration `0031_user_session_version.sql` adds
+  `users.session_version integer not null default 0` with a nonnegative check.
+- API contract impact: new `GET /api/auth/csrf` endpoint returns `{ csrfToken }`.
+- Auth or authorization impact: auth JWTs now include `sessionVersion`; stale
+  session-version cookies return 401. Admin role changes and password resets
+  bump the version.
+- Data privacy or visibility impact: request URL logging redacts additional
+  sensitive query-like values; public anonymous frontend shell avoids
+  authenticated account state.
+- Frontend UX impact: public anonymous pages use a minimal public header instead
+  of authenticated navigation; normal authenticated app routes are unchanged.
+- Environment or deployment impact: Azure checklist updated in
+  `notes/security_pass.txt`; CI now includes audit, gitleaks, and Dependabot.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck -w apps/api
+npm run typecheck -w apps/web
+npm run lint -w apps/api
+npm run lint -w apps/web
+npm test -w apps/api -- test/auth.test.ts test/security.test.ts test/adminUsers.test.ts
+npm test -w apps/web
+npm test
+npm run build
+npm audit --omit=dev --audit-level=high
+npm test -w apps/web -- src/api/client.test.ts
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run typecheck -w apps/api
+npm run lint -w apps/api
+npm test -w apps/api -- test/security.test.ts
+```
+
+Results:
+
+- Passed: API typecheck.
+- Passed: Web typecheck.
+- Passed: API lint.
+- Passed: Web lint.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/auth.test.ts test/security.test.ts test/adminUsers.test.ts`
+  - 3 files, 39 tests.
+- Passed: `npm test -w apps/web`
+  - 5 files, 57 tests.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests.
+  - Web tests: 5 files, 57 tests.
+  - API tests: 23 files, 232 tests.
+- Passed: `npm run build`.
+  - Vite emitted the existing large chunk warning.
+- Passed with network access: `npm audit --omit=dev --audit-level=high`.
+  - Found 0 vulnerabilities.
+- Passed after Claude review fixes:
+  - `npm test -w apps/web -- src/api/client.test.ts`
+    - 1 file, 2 tests.
+  - `npm run typecheck -w apps/web`
+  - `npm run lint -w apps/web`
+  - `npm run typecheck -w apps/api`
+  - `npm run lint -w apps/api`
+  - `npm test -w apps/api -- test/auth.test.ts test/security.test.ts test/adminUsers.test.ts`
+    - 3 files, 39 tests.
+- Passed after loopback-origin fix:
+  - `npm run typecheck -w apps/api`
+  - `npm run lint -w apps/api`
+  - `npm test -w apps/api -- test/security.test.ts`
+    - 1 file, 5 tests.
+
+Manual tests:
+
+- Completed by the human tester and passed:
+  - Login/register/logout CSRF flow.
+  - Password reset completion and stale-session rejection.
+  - Admin role change stale-session rejection and re-login.
+  - Anonymous directory and direct token runner without `/api/auth/me`.
+  - Anonymous start/answer/complete/register flows.
+  - Public and authenticated responsive layouts at 375/768/1280px.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_security_pass.txt`
+- Claude review status before commit: Completed; blocking finding addressed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_security_pass.txt`
+
+Status:
+
+- Completed. Claude found one blocking client-side regression and several
+  non-blocking suggestions.
+
+Critical issues:
+
+- C1: Logout cleared the server CSRF cookie but the web API client kept the old
+  token in module memory, causing the next login without page reload to fail
+  with 403. Addressed by clearing the cached CSRF token after logout, refetching
+  and retrying once on CSRF rejection, and adding
+  `apps/web/src/api/client.test.ts`.
+
+Suggested improvements:
+
+- S1: Email-keyed login limiter could count successful logins and create
+  self-lockout/targeted lockout friction. Addressed with
+  `skipSuccessfulRequests: true` on the email-keyed login limiter.
+- S2: `anonymous_rate_limits` table name is now misleading because auth limits
+  also use it. Deferred as a future neutral table-name migration/comment.
+- S3: Request logger fallback redaction omitted `reset` and `attempt`.
+  Addressed.
+- S4: CSRF HMAC currently reuses `JWT_SECRET`. Deferred as a future optional
+  key-separation env/config pass.
+
+Accepted fixes:
+
+- C1 fixed.
+- S1 fixed.
+- S3 fixed.
+
+Deferred findings:
+
+- S2 deferred: rename/comment rate-limit storage when a small migration is
+  convenient.
+- S4 deferred: add a dedicated CSRF signing secret if/when stronger key
+  separation is required.
+
+## Problems Encountered
+
+- Problem: Initial sandboxed API test run could not connect to local
+  PostgreSQL (`EPERM 127.0.0.1:5432`).
+  Resolution: reran API/full tests with approved local PostgreSQL access.
+
+## Follow-Up Tasks
+
+- Verify the first GitHub Actions run with gitleaks after push.
+- Apply/review the Azure checklist from `notes/security_pass.txt` before
+  public pilot deployment.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude review completed
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 32 — Anonymous Completion Account Conversion
 
 Date:

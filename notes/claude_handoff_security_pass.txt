@@ -1,0 +1,239 @@
+# Claude Review Handoff — Security Hardening Pass
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current security-hardening diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly
+  asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_security_pass.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this pass for:
+
+- browser security header correctness
+- CSP compatibility with the Vite/React/Three production bundle
+- CSRF and same-origin enforcement correctness
+- whether public anonymous survey endpoint CSRF exemption is justified
+- auth/session invalidation correctness after password resets and role changes
+- rate-limit behavior and PostgreSQL-backed store usage
+- request-log redaction coverage
+- anonymous public-route segregation from authenticated shell/session probing
+- CI supply-chain additions and deployment risk
+- Azure checklist completeness for a public-pilot security baseline
+- maintainability, scope fit, and accidental complexity
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `notes/security_pass.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `notes/claude_handoff_phase_17.txt`
+- `notes/claude_review_phase_17.txt`
+- `notes/claude_handoff_phase_31.txt`
+- `notes/claude_review_phase_31.txt`
+- `notes/claude_handoff_phase_32.txt`
+- `notes/claude_review_phase_32.txt`
+
+## Scope
+
+Implemented:
+
+- Added centralized security middleware:
+  - `Content-Security-Policy`
+  - production-only `Strict-Transport-Security`
+  - `X-Frame-Options`
+  - `X-Content-Type-Options`
+  - `Referrer-Policy`
+  - `Permissions-Policy`
+  - `Cross-Origin-Opener-Policy`
+- Added browser-origin validation for unsafe requests.
+- Added CSRF token issuance through `GET /api/auth/csrf`.
+- Added CSRF validation for browser unsafe requests that are not public
+  anonymous survey endpoints.
+- Kept `POST /api/anonymous-surveys/:token/*` endpoints CSRF-exempt because
+  those routes use anonymous link bearer tokens plus per-attempt access tokens
+  and do not rely on the auth cookie.
+- Replaced in-memory auth/password-reset limit stores with
+  `PostgresRateLimitStore`.
+- Added email/account-aware rate-limit keys for login, registration, and public
+  password-reset request attempts.
+- Added `users.session_version` migration.
+- Included `sessionVersion` in auth JWT payloads and rejected stale cookies in
+  `requireAuth`.
+- Bumped `session_version` after password reset and admin role changes.
+- Expanded request URL redaction for token, secret, password, reset, attempt,
+  and email-like query parameters.
+- Split `/anonymous-surveys` and `/anonymous-surveys/:token` out of
+  `AuthProvider` so public anonymous pages do not call `/api/auth/me` or render
+  authenticated account/admin navigation.
+- Added frontend CSRF token handling in the shared web API client.
+- Removed the inline theme bootstrap from `apps/web/index.html`; moved initial
+  theme selection into bundled module code.
+- Added CI supply-chain checks:
+  - `npm audit --omit=dev --audit-level=high`
+  - `gitleaks/gitleaks-action`
+  - Dependabot for npm and GitHub Actions.
+- Added security tests for headers, CSRF pass/fail, origin rejection, password
+  reset session invalidation, and role-change session invalidation behavior.
+- Added `notes/security_pass.txt` with implementation notes and Azure checklist.
+
+Non-goals:
+
+- No full migration to Microsoft Entra authentication.
+- No Azure portal/CLI mutations were performed.
+- No Key Vault wiring was implemented in code; it remains an Azure deployment
+  checklist item.
+- No WAF, private endpoint, VNet, Defender, App Insights, or Azure RBAC changes
+  were applied directly.
+- No real email provider was added.
+- No broad refactor of survey-builder/reporting routes was attempted.
+- No public anonymous survey directory rate limiter was added in this pass.
+
+Known tradeoffs:
+
+- CSRF enforcement is browser-oriented: unsafe requests with `Origin` or
+  `Referer` must pass origin and CSRF checks, while non-browser automation
+  without those headers remains allowed.
+- `style-src` still allows `'unsafe-inline'` to preserve current CSS/font
+  behavior; `script-src` is restricted to `'self'`.
+- Public anonymous endpoints remain CSRF-exempt because adding CSRF there would
+  complicate unauthenticated token-link flows without protecting auth cookies.
+- Session invalidation is coarse-grained per user via `session_version`, not a
+  per-device session registry.
+- The CI gitleaks action may need repository/organization approval or tuning on
+  first GitHub run.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Changed/new files belonging to this pass:
+
+- `.github/workflows/main_njsda-wa.yml`
+- `.github/dependabot.yml`
+- `apps/api/src/app.ts`
+- `apps/api/src/auth.ts`
+- `apps/api/src/middleware/auth.ts`
+- `apps/api/src/middleware/request-logger.ts`
+- `apps/api/src/middleware/security.ts`
+- `apps/api/src/routes/admin.ts`
+- `apps/api/src/routes/anonymousSurveyRoutes.ts`
+- `apps/api/src/routes/auth.ts`
+- `apps/api/src/services/passwordReset.ts`
+- `apps/api/src/services/userProfile.ts`
+- `apps/api/test/adminUsers.test.ts`
+- `apps/api/test/auth.test.ts`
+- `apps/api/test/security.test.ts`
+- `apps/web/index.html`
+- `apps/web/src/App.tsx`
+- `apps/web/src/api/client.ts`
+- `apps/web/src/components/ThemeToggle.tsx`
+- `apps/web/src/main.tsx`
+- `database/migrations/0031_user_session_version.sql`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `notes/security_pass.txt`
+- `notes/claude_handoff_security_pass.txt`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck -w apps/api
+npm run typecheck -w apps/web
+npm run lint -w apps/api
+npm run lint -w apps/web
+npm test -w apps/api -- test/auth.test.ts test/security.test.ts test/adminUsers.test.ts
+npm test -w apps/web
+npm test
+npm run build
+npm audit --omit=dev --audit-level=high
+```
+
+Results:
+
+- Passed: API typecheck.
+- Passed: Web typecheck.
+- Passed: API lint.
+- Passed: Web lint.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/auth.test.ts test/security.test.ts test/adminUsers.test.ts`
+  - 3 files, 39 tests.
+- Passed: `npm test -w apps/web`
+  - 5 files, 57 tests.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared tests: 4 files, 54 tests.
+  - Web tests: 5 files, 57 tests.
+  - API tests: 23 files, 232 tests.
+- Passed: `npm run build`.
+  - Vite emitted the existing large chunk warning.
+- Passed with network access: `npm audit --omit=dev --audit-level=high`.
+  - Found 0 vulnerabilities.
+
+Manual testing:
+
+- Not run yet. Recommended browser pass:
+  - Login/register/logout with CSRF token flow.
+  - Password reset link read/clear/complete flow.
+  - Admin role change forces stale-session re-login.
+  - Anonymous directory and token runner do not call `/api/auth/me`.
+  - Anonymous start/answer/complete/register flows still work.
+  - Public and authenticated layouts at 375/768/1280px.
+
+## Specific Questions
+
+- Is the browser-origin plus CSRF strategy sufficient for the current cookie
+  auth model?
+- Should anonymous public endpoints remain CSRF-exempt given their bearer-link
+  and per-attempt token model?
+- Is the CSP production-safe enough, or should `style-src 'unsafe-inline'` be
+  removed in a later styling pass?
+- Should the first public-pilot deployment require Azure Key Vault references,
+  or is the current checklist acceptable?
+- Does session-version invalidation create any undesirable UX or admin-support
+  edge cases?
+- Is adding gitleaks to the deploy workflow acceptable, or should it run in a
+  separate non-deploy workflow?
+- Is there any route-level authorization gap still visible in admin, reporting,
+  survey-builder, profile, or anonymous conversion flows?
+
+## Requested Output Format
+
+Write `notes/claude_review_security_pass.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

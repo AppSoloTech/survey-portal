@@ -42,13 +42,26 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ### Auth And Security
 
-- Replace the in-memory auth rate-limit store with a shared store if the API ever scales horizontally.
-- Revisit invalidating existing auth sessions after password reset once the app has a session version, token revocation, or similar server-side session invalidation model. Phase 18 intentionally left existing sessions valid because no revocation model exists yet.
+- Verify the first GitHub Actions run after adding gitleaks and `npm audit`;
+  tune or move the secret scan to a separate workflow if repository policy or
+  false positives require it.
+- Review whether `style-src 'unsafe-inline'` can be removed from the CSP in a
+  later styling pass.
+- Consider a neutral rename or explanatory comment for `anonymous_rate_limits`,
+  which now stores both anonymous and auth-scoped rate-limit buckets.
+- Consider a dedicated CSRF signing secret/env var for stronger key separation
+  from `JWT_SECRET`.
 
 ### Environment And Deployment
 
 - Verify the first run of the Azure deploy workflow (`.github/workflows/main_njsda-wa.yml`) after the Phase 9/10 code is pushed to `main`.
 - Configure the Azure Web App application settings for production: `RUN_ENV=prod`, `NODE_ENV=production`, a strong `JWT_SECRET`, `DATABASE_URL` for the hosted PostgreSQL server (connection verified 2026-06-11), and `TRUST_PROXY_HOPS=1`. Decide on a dedicated application database on the hosted server instead of the default `postgres` database, then run `npm run db:migrate` and `npm run admin:provision` against it.
+- Apply the security hardening Azure checklist from `notes/security_pass.txt`
+  before public pilot: HTTPS-only, minimum TLS, `/api/health/ready` health
+  checks, Always On, FTPS/basic publishing restrictions, Key Vault reference
+  decision, managed identity, PostgreSQL network/TLS posture, diagnostic logs,
+  alerts, Defender recommendations, RBAC least privilege, and restore
+  readiness.
 
 ### API And Code Quality
 
@@ -99,6 +112,24 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Security hardening pass: Manual browser pass completed 2026-06-25.
+  Developer verified login/register/logout CSRF flow, password reset
+  completion and stale-session rejection, admin role-change stale-session
+  rejection plus re-login, public anonymous directory/direct token runner
+  without `/api/auth/me`, anonymous start/answer/complete/register flows, and
+  public/authenticated responsive layouts at 375/768/1280px.
+- Security hardening pass: Claude review completed in
+  `notes/claude_review_security_pass.txt`; the blocking logout-to-login CSRF
+  cache issue was addressed before commit readiness.
+- Security hardening pass: Adjusted the email-keyed login limiter to skip
+  successful requests, reducing self-lockout/targeted-lockout friction.
+- Security hardening pass: Expanded request logger fallback redaction to cover
+  reset and attempt query keys.
+- Security hardening pass: Replaced in-memory auth/password-reset rate-limit
+  stores with the shared PostgreSQL-backed store and added email/account-aware
+  throttles.
+- Security hardening pass: Added `users.session_version` JWT validation and
+  invalidated existing auth cookies after password reset and admin role changes.
 - Phase 32: Manual browser pass completed 2026-06-24. Developer verified
   anonymous completion account creation from the completion panel,
   redirect/dashboard history ownership after conversion, the "Continue

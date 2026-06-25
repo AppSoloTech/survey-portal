@@ -4,7 +4,7 @@ type Theme = "light" | "dark";
 
 const storageKey = "survey-portal-theme";
 
-// index.html sets data-theme before first paint; this reads whatever it
+// main.tsx sets data-theme before React renders; this reads whatever it
 // decided so the toggle starts in sync without re-deriving the preference.
 function getActiveTheme(): Theme {
   return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";

@@ -1,0 +1,249 @@
+# Claude Review — Security Hardening Pass
+
+Reviewer: Claude (read-only review; no source files modified)
+Scope reviewed: the current security-hardening diff only (working-tree changes
+plus the new untracked files listed in the handoff).
+
+Summary verdict: Strong, well-scoped pass. One client-side regression breaks
+re-login without a page reload and should be fixed (or explicitly accepted)
+before commit. Everything else is sound; the deferred Azure items are
+appropriate for a checklist.
+
+--------------------------------------------------------------------------------
+## 1. Critical issues
+--------------------------------------------------------------------------------
+
+### C1. Logout breaks the next login until a full page reload (stale CSRF token)
+
+The web API client caches the CSRF token in module memory and never clears it:
+
+- `apps/web/src/api/client.ts:5` — `let csrfToken: string | null = null;`
+- `apps/web/src/api/client.ts:33-52` — `getCsrfToken()` only fetches
+  `/api/auth/csrf` when the cached value is `null`; once set it is reused for
+  the lifetime of the page.
+
+Logout clears the server-side CSRF cookie:
+
+- `apps/api/src/routes/auth.ts` — `POST /logout` calls `clearCsrfCookie(res)`.
+- `apps/api/src/middleware/security.ts:78-85` — `clearCsrfCookie` expires the
+  `survey_portal_csrf` cookie.
+
+But the client never resets its cached token on logout, and logout is a router
+navigation (no full reload):
+
+- `apps/web/src/auth/AuthContext.tsx:96-104` — `logout()` calls `logoutUser()`
+  then `clearSession()`; it does not reset the cached CSRF token.
+
+Resulting flow (no reload between logout and the next login):
+
+1. First unsafe request triggers `getCsrfToken()` → cookie + in-memory token set.
+2. `POST /api/auth/logout` succeeds (token still valid) → server clears the CSRF
+   cookie; browser drops it.
+3. The in-memory token is still non-null, so `getCsrfToken()` does NOT refetch.
+4. `POST /api/auth/login` (CSRF-required; login is not exempt) sends the stale
+   `X-CSRF-Token` header but no CSRF cookie.
+5. `enforceBrowserRequestSecurity` sees no cookie token and returns 403:
+   `apps/api/src/middleware/security.ts:54-60` → "CSRF token is invalid or
+   missing".
+
+Impact: re-login and account-switching fail with a 403 until the user hard-
+reloads the page. This is a core auth flow.
+
+Why tests miss it: `apps/api/test/security.test.ts` and the supertest suites
+attach cookies explicitly per request, so they never exercise the client's
+in-memory caching. This is a client-only regression with no client test for the
+logout→login sequence. It is also precisely the manual-test gap the handoff
+flags as "not run yet."
+
+Recommended fix (defer to the human; not applied in this review):
+- Reset the cached token on logout (export a `resetCsrfToken()` from
+  `client.ts` and call it from `clearSession()`/`logout`), and/or
+- On a 403 "CSRF token is invalid or missing" response, clear the cache, refetch
+  `/api/auth/csrf` once, and retry the original request.
+
+No other critical issues found.
+
+--------------------------------------------------------------------------------
+## 2. Suggested improvements
+--------------------------------------------------------------------------------
+
+### S1. Email-keyed login limiter enables targeted lockout and self-lockout
+`loginEmailRateLimiter` in `apps/api/src/routes/auth.ts` keys on the submitted
+email with limit 5 per 15-minute window
+(`apps/api/src/config.ts:228-232`, `authLoginRateLimitMax = 5`,
+`authRateLimitWindowMs = 15*60*1000`). express-rate-limit increments on every
+request, including successful logins. Consequences:
+- An attacker who knows a victim's email can lock that account's login for the
+  window from any IP (the email bucket is IP-independent).
+- A legitimate user logging in repeatedly (multiple devices/tabs) can self-lock.
+
+This is a deliberate anti-credential-stuffing tradeoff and the IP-keyed limiter
+remains as a second axis, but consider: `skipSuccessfulRequests: true` on the
+login email limiter (count only failures), and/or a higher email cap than the
+IP cap. The register and reset email limiters have the same shape but lower
+abuse value.
+
+### S2. Misleading rate-limit table name
+Auth limits are now stored in the `anonymous_rate_limits` table via
+`PostgresRateLimitStore` (`apps/api/src/services/rateLimitStore.ts`), scoped by
+`prefix` (e.g. `auth_login_ip`). The table name now understates its contents.
+Rename to a neutral `rate_limits` in a future migration, or add a comment, to
+avoid future confusion. (Behavior is correct as-is.)
+
+### S3. Redaction fallback omits two keys the primary path covers
+`sanitizeUrl` in `apps/api/src/middleware/request-logger.ts`: the primary
+`URL`-based path redacts keys matching `token|secret|password|email|reset|
+attempt`, but the `catch` fallback regex only covers
+`token|secret|password|email`. Add `reset|attempt` to the fallback for
+consistency. Low impact (the fallback only runs if `URL` parsing throws).
+
+### S4. CSRF HMAC reuses the JWT secret
+`signCsrfToken` (`apps/api/src/middleware/security.ts:138-145`) signs the CSRF
+token with `config.jwtSecret`. Functionally safe, but a dedicated
+CSRF-signing secret gives cleaner key separation and limits blast radius if one
+secret is rotated/leaked. Minor.
+
+--------------------------------------------------------------------------------
+## 3. Acceptable tradeoffs
+--------------------------------------------------------------------------------
+
+### T1. Unsafe requests without Origin/Referer bypass origin + CSRF checks
+`enforceBrowserRequestSecurity` (`apps/api/src/middleware/security.ts:39-42`)
+allows unsafe requests that carry neither header. Acceptable: there is no
+native/non-browser first-party client today, and modern browsers always send
+`Origin` on POST/PUT/PATCH/DELETE, so real browser CSRF is still covered.
+Revisit if a mobile or server-to-server API client is added.
+
+### T2. `style-src 'unsafe-inline'` retained; `script-src 'self'` strict
+`apps/api/src/middleware/security.ts:119-135`. The CSP is compatible with the
+current Vite/React/Three production bundle: `script-src 'self'` works because
+the inline theme bootstrap was moved into bundled code (see section 5);
+`connect-src 'self'` works because the web client uses relative `/api` paths;
+`worker-src blob:` and `img-src data: blob:` cover Three.js workers/textures;
+`font-src`/`style-src` allow Google Fonts. `style-src 'unsafe-inline'` is
+retained to preserve current inline styling/fonts. Acceptable for now; plan to
+drop `'unsafe-inline'` (nonce/hashed styles) in a later styling pass.
+
+### T3. Coarse per-user session invalidation via `session_version`
+Not a per-device registry, but correct and consistently wired:
+- Migration `database/migrations/0031_user_session_version.sql` adds the column
+  (`not null default 0`, non-negative check).
+- JWT carries it and `isJwtPayload` bounds it (`apps/api/src/auth.ts`,
+  safe-integer, `>= 0`).
+- `requireAuth` rejects tokens whose version != the DB row
+  (`apps/api/src/middleware/auth.ts`).
+- Bumped on password reset (`apps/api/src/services/passwordReset.ts`) and admin
+  role change (`apps/api/src/routes/admin.ts`).
+- All three `setAuthCookie` callers pass the current version: login + register
+  (`apps/api/src/routes/auth.ts`) and anonymous conversion
+  (`apps/api/src/routes/anonymousSurveyRoutes.ts:882`). `userProfile.ts` selects
+  the column so the mapped record stays consistent.
+The only UX edge case is C1 above; otherwise the model is appropriate for MVP.
+A self-initiated password reset logs out the user's other sessions — expected.
+
+### T4. Anonymous endpoints remain CSRF-exempt
+`isCsrfExempt` exempts `/api/anonymous-surveys/` (`security.ts:87-89`); the
+client mirrors this (`client.ts` `needsCsrfToken`). Justified: these flows are
+unauthenticated and gated by the unguessable anonymous link token plus per-
+attempt access tokens, not by the auth cookie, so classic cookie-CSRF does not
+apply. Note that the anonymous-completion conversion endpoint issues an auth
+cookie while exempt — acceptable because it still requires those unguessable
+tokens in the request. Origin validation still applies to these routes; only the
+CSRF token check is skipped.
+
+### T5. Migration 0031 idempotency
+The `add constraint` lacks an `if not exists` guard, but the migrator
+(`scripts/migrate-db.mjs`) tracks applied files in `schema_migrations` and only
+runs pending ones inside a transaction, with checksum validation against history.
+The constraint will not re-run, so this is safe.
+
+### T6. CI supply-chain checks live in the deploy job (deployment risk)
+`.github/workflows/main_njsda-wa.yml` runs `npm audit --omit=dev
+--audit-level=high` and `gitleaks/gitleaks-action@v2` in the same job that
+builds/deploys. Tradeoffs to accept consciously:
+- A newly published high-severity advisory in a production dependency will fail
+  the job and block all deploys until remediated — intended gating, but it
+  couples deployability to the external advisory feed.
+- `gitleaks-action@v2` may require org/repo approval (and historically a license
+  for private org repos) on its first run.
+Both are reasonable as a security gate. If deploy availability becomes a concern,
+move the scans to a separate non-deploy workflow (or mark `npm audit` advisory-
+only) so a fresh advisory does not block an urgent deploy. Dependabot config
+(`.github/dependabot.yml`, weekly npm + github-actions) is appropriate.
+
+--------------------------------------------------------------------------------
+## 4. Questions or assumptions
+--------------------------------------------------------------------------------
+
+Answers to the handoff's specific questions:
+
+1. Browser-origin + CSRF sufficient for the cookie model? Yes. The signed
+   double-submit token plus the origin allow-list give two independent layers
+   against cookie CSRF, and the auth cookie is `httpOnly`, `sameSite=lax`,
+   `secure` in prod. Sufficient — provided C1 is fixed so the flow actually
+   works end to end.
+2. Keep anonymous endpoints CSRF-exempt? Yes — see T4. Their security rests on
+   bearer link + per-attempt tokens, not the auth cookie.
+3. Is the CSP production-safe, or should `style-src 'unsafe-inline'` go now? It
+   is production-safe now (T2). Removing `'unsafe-inline'` is a worthwhile later
+   styling pass, not a blocker.
+4. Require Azure Key Vault for the first public pilot? Not required to ship the
+   pilot — the checklist (Key Vault references + managed identity) is acceptable
+   as a deployment task, given `JWT_SECRET` /
+   `ANONYMOUS_LINK_TOKEN_ENCRYPTION_SECRET` length/placeholder validation already
+   runs at startup. Adopt Key Vault before scaling beyond the pilot.
+5. Does session-version invalidation create UX/admin edge cases? One: C1 (the
+   logout→login 403). Also expected-by-design: a password reset or role change
+   forces re-login on the user's other sessions. No admin-support footgun beyond
+   that.
+6. gitleaks in the deploy workflow acceptable, or separate workflow? Acceptable
+   (T6); splitting into a non-deploy workflow is a reasonable option if deploy
+   availability matters.
+7. Any route-authorization gap in admin/reporting/survey-builder/profile/
+   anonymous-conversion? None found. `requireAuth` + `requireRole("admin")`
+   remain on admin routes; the role-change route now also bumps `session_version`
+   so a demoted admin's existing cookie is invalidated. Anonymous conversion
+   stays within the token-gated public router.
+
+Assumptions made during review:
+- In production the web app and API share an origin (relative `/api` paths,
+  `connect-src 'self'`), and `WEB_ORIGIN` exactly matches that origin.
+- There is no non-browser/native first-party client (basis for T1).
+
+--------------------------------------------------------------------------------
+## 5. Product UX alignment notes
+--------------------------------------------------------------------------------
+
+- Public anonymous routes are split out of `AuthProvider`
+  (`apps/web/src/App.tsx`, `AppShell` + `PublicHeader`), so `/anonymous-surveys`
+  and `/anonymous-surveys/:token` no longer call `/api/auth/me` or render
+  account/admin navigation. This matches the anonymous-pilot intent and removes
+  authenticated-session probing from public pages.
+- Theme bootstrap moved from an inline `<script>` in `apps/web/index.html` into
+  `applyInitialTheme()` in `apps/web/src/main.tsx`, run before React renders.
+  This is what makes `script-src 'self'` viable while preserving the no-flash
+  initial theme; the `ThemeToggle` comment was updated to match.
+- No regressions to the authenticated shell layout were introduced by the split
+  (routes are duplicated faithfully into the two shells). Recommend the manual
+  responsive pass at 375/768/1280px the handoff lists, since the public header
+  is new markup.
+
+--------------------------------------------------------------------------------
+## 6. Commit readiness
+--------------------------------------------------------------------------------
+
+Recommendation: do NOT commit until C1 (logout→login CSRF regression) is fixed
+or explicitly accepted as a known issue. It breaks a core auth flow and is the
+one item in the handoff's own manual-test gap.
+
+Everything else is commit-ready:
+- Validation already run per the handoff passed (API/web typecheck, lint, build,
+  full test suite incl. new security/auth/admin tests, `npm audit` 0 vulns).
+- Suggested improvements S1-S4 are non-blocking and can be follow-ups
+  (recommend at least S1 and S3 soon).
+- Acceptable tradeoffs T1-T6 are reasonable for a public pilot; T6's deploy-
+  coupling and T2's `unsafe-inline` removal are worth tracking in FOLLOW_UPS.
+
+Once C1 is resolved, manually verify: log in → log out → log in again WITHOUT a
+page reload, and confirm the second login succeeds (no 403 on
+`POST /api/auth/login`). Then this pass is good to commit.

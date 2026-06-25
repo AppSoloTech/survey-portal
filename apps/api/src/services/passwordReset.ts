@@ -139,6 +139,7 @@ export async function completePasswordReset(input: {
     await client.query(
       `update users
        set password_hash = $1,
+           session_version = session_version + 1,
            updated_at = now()
        where id = $2`,
       [passwordHash, resetToken.user_id]

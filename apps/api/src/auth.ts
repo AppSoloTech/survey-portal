@@ -16,6 +16,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: UserRole;
+  sessionVersion: number;
 }
 
 export interface UserRecord {
@@ -24,6 +25,7 @@ export interface UserRecord {
   last_name: string;
   email: string;
   role: UserRole;
+  session_version: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -68,13 +70,14 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export function signAuthToken(user: AuthUser): string {
+export function signAuthToken(user: AuthUser, sessionVersion: number): string {
   const expiresIn = config.jwtExpiresIn as jwt.SignOptions["expiresIn"];
 
   return jwt.sign(
     {
       email: user.email,
-      role: user.role
+      role: user.role,
+      sessionVersion
     },
     config.jwtSecret,
     {
@@ -94,8 +97,8 @@ export function verifyAuthToken(token: string): JwtPayload {
   return payload;
 }
 
-export function setAuthCookie(res: Response, user: AuthUser): void {
-  res.cookie(authCookieName, signAuthToken(user), getAuthCookieOptions());
+export function setAuthCookie(res: Response, user: AuthUser, sessionVersion: number): void {
+  res.cookie(authCookieName, signAuthToken(user, sessionVersion), getAuthCookieOptions());
 }
 
 export function clearAuthCookie(res: Response): void {
@@ -116,6 +119,9 @@ function isJwtPayload(payload: string | jwt.JwtPayload): payload is JwtPayload {
     typeof payload !== "string" &&
     typeof payload.sub === "string" &&
     typeof payload.email === "string" &&
+    typeof payload.sessionVersion === "number" &&
+    Number.isSafeInteger(payload.sessionVersion) &&
+    payload.sessionVersion >= 0 &&
     (payload.role === "user" || payload.role === "admin")
   );
 }

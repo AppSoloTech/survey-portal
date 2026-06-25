@@ -77,7 +77,7 @@ export async function updateCurrentUserProfile(
              last_name = case when $4 then $5 else last_name end,
              updated_at = now()
          where id = $1
-         returning id, first_name, last_name, email, role, created_at, updated_at`,
+         returning id, first_name, last_name, email, role, session_version, created_at, updated_at`,
         [
           userId,
           "firstName" in input,
@@ -88,7 +88,7 @@ export async function updateCurrentUserProfile(
       );
     } else {
       userResult = await client.query<UserRecord>(
-        `select id, first_name, last_name, email, role, created_at, updated_at
+        `select id, first_name, last_name, email, role, session_version, created_at, updated_at
          from users
          where id = $1`,
         [userId]

@@ -1,0 +1,90 @@
+# Security Hardening Pass
+
+## Implemented in this pass
+
+- Added centralized Express security headers:
+  - `Content-Security-Policy`
+  - `Strict-Transport-Security` in production
+  - `X-Frame-Options: DENY`
+  - `X-Content-Type-Options: nosniff`
+  - `Referrer-Policy: no-referrer`
+  - `Permissions-Policy`
+  - `Cross-Origin-Opener-Policy`
+- Added browser-origin validation for unsafe requests.
+- Development origin validation treats `localhost` and `127.0.0.1` with the same protocol/port as equivalent loopback origins; production still requires exact origin matching. `apps/api/test/security.test.ts` verifies production rejects origin aliases such as `www` vs apex and `127.0.0.1` vs `localhost`.
+- Added CSRF token issuance and validation for same-origin browser unsafe requests.
+- Kept public anonymous survey endpoints CSRF-exempt because they use bearer-style anonymous link tokens plus per-attempt access tokens.
+- Moved auth, registration, and password-reset rate limits to the PostgreSQL-backed rate-limit store.
+- Added email/account-aware throttles for login, registration, and public password-reset requests.
+- Login's email/account-aware limiter skips successful requests so normal account switching and repeated legitimate logins do not consume the email-keyed failure budget.
+- Added `users.session_version` and included it in auth JWTs.
+- Bumped `session_version` after password reset and admin role changes to invalidate older auth cookies.
+- Expanded request URL redaction for token, secret, password, reset, attempt, and email-like query values.
+- Split public anonymous survey frontend routes out of the authenticated React shell so those pages do not call `/api/auth/me` or render authenticated account/admin navigation.
+- Added frontend CSRF cache recovery:
+  - logout clears the cached CSRF token
+  - a CSRF 403 clears/refetches the token and retries once
+  - web regression coverage verifies logout-to-login without a page reload
+- Removed the inline theme bootstrap script from `apps/web/index.html`; initial theme selection now runs from the bundled module code.
+- Added CI supply-chain checks:
+  - `npm audit --omit=dev --audit-level=high`
+  - gitleaks secret scan
+  - Dependabot for npm and GitHub Actions.
+
+## Azure checklist
+
+- App Service settings:
+  - `RUN_ENV=prod`
+  - `NODE_ENV=production`
+  - `WEB_ORIGIN` exactly matches the public app origin.
+  - `TRUST_PROXY_HOPS=1`
+  - `JWT_SECRET` is non-placeholder and at least 32 characters.
+  - `ANONYMOUS_LINK_TOKEN_ENCRYPTION_SECRET` is set separately from `JWT_SECRET`.
+- App Service platform:
+  - HTTPS-only enabled.
+  - Minimum TLS version 1.2 or higher for app and SCM.
+  - Health check path set to `/api/health/ready`.
+  - Always On enabled.
+  - FTPS disabled unless explicitly needed.
+  - Basic publishing credentials disabled.
+- Secret management:
+  - Prefer Azure Key Vault references for app secrets.
+  - Enable App Service managed identity for Key Vault access.
+  - Keep GitHub deploy OIDC; avoid long-lived publish profiles.
+- PostgreSQL:
+  - TLS required.
+  - Public access restricted by private endpoint, VNet integration, or a tight firewall allow-list.
+  - Certificate verification remains enabled in app config.
+  - Point-in-time restore retention reviewed and restore process tested.
+- Monitoring:
+  - App Service logs enabled.
+  - Application Insights enabled.
+  - Azure Monitor alerts for 5xx spikes, readiness failures, auth failure/rate-limit spikes.
+  - PostgreSQL audit logs sent to Log Analytics.
+  - Defender for Cloud recommendations reviewed.
+- Access control:
+  - Azure RBAC reviewed for least privilege.
+  - GitHub OIDC deploy identity scoped only to required deployment resources.
+  - Key Vault access limited to App Service managed identity and required operators.
+
+## Claude review outcome
+
+Claude review was written to `notes/claude_review_security_pass.txt`.
+
+- Blocking finding: logout cleared the server CSRF cookie while the web client retained the cached CSRF token, causing the next login without page reload to fail with 403. Fixed with cache clearing on logout, one-time CSRF retry, and `apps/web/src/api/client.test.ts`.
+- Accepted improvement: successful logins no longer count against the email-keyed login limiter.
+- Accepted improvement: fallback request-log redaction now covers reset and attempt query keys.
+- Deferred improvement: neutral rename/comment for `anonymous_rate_limits`, which now stores auth-scoped limits too.
+- Deferred improvement: dedicated CSRF signing secret for stronger key separation from `JWT_SECRET`.
+
+## Remaining review notes
+
+- Manual browser pass completed 2026-06-25: login/register/logout CSRF flow, password reset, admin role-change re-login, anonymous public pages without `/api/auth/me`, anonymous start/answer/complete/register, and 375/768/1280px layouts.
+- Confirm the gitleaks action is acceptable for this repository and organization policy after the first GitHub Actions run.
+- Decide whether Azure Key Vault migration is required before public pilot or can remain a deployment checklist item.
+
+## References
+
+- Azure App Service security guidance: https://learn.microsoft.com/en-us/azure/app-service/overview-security
+- Azure App Service security baseline: https://learn.microsoft.com/en-us/security/benchmark/azure/baselines/app-service-security-baseline
+- Azure PostgreSQL security overview: https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview

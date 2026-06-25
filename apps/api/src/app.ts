@@ -7,6 +7,10 @@ import express from "express";
 import { config } from "./config.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
+import {
+  applySecurityHeaders,
+  enforceBrowserRequestSecurity
+} from "./middleware/security.js";
 import { adminRouter } from "./routes/admin.js";
 import {
   anonymousSurveyDirectoryRouter,
@@ -28,10 +32,8 @@ export function createApp() {
   app.set("trust proxy", config.trustProxyHops);
 
   app.use(requestLogger);
-  app.use((_req, res, next) => {
-    res.setHeader("Referrer-Policy", "no-referrer");
-    next();
-  });
+  app.use(applySecurityHeaders);
+  app.use(enforceBrowserRequestSecurity);
   app.use(express.json({ limit: "100kb" }));
 
   if (!config.isProduction) {
