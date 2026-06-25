@@ -53,15 +53,24 @@
   - Keep GitHub deploy OIDC; avoid long-lived publish profiles.
 - PostgreSQL:
   - TLS required.
-  - Public access restricted by private endpoint, VNet integration, or a tight firewall allow-list.
+  - Public access now restricted by a tight firewall allow-list rather than the broad Azure-services rule.
+  - Added 31 `njsda-wa-outbound-*` firewall rules covering the production App Service `possibleOutboundIpAddresses`.
+  - Removed the broad `Allow public access from any Azure service within Azure to this server` / `0.0.0.0` rule.
+  - Retained two known developer/client home-network IP rules for direct DB administration via tools such as DBeaver.
+  - Firewall maintenance note: after App Service plan/tier changes, re-check outbound IPs and update PostgreSQL allow-list rules; broad Azure-services access may be re-enabled only temporarily as a recovery bridge while narrowing the IP scope again.
   - Certificate verification remains enabled in app config.
   - Point-in-time restore retention reviewed and restore process tested.
+  - Delete lock recommended for `njsda-db`; creation attempted but blocked because the current Azure account lacks `Microsoft.Authorization/locks/write`.
 - Monitoring:
-  - App Service logs enabled.
-  - Application Insights enabled.
-  - Azure Monitor alerts for 5xx spikes, readiness failures, auth failure/rate-limit spikes.
-  - PostgreSQL audit logs sent to Log Analytics.
+  - App Service diagnostic streaming to Log Analytics was reviewed, then removed at client preference to avoid potential Azure Monitor ingestion costs until the team is comfortable operating it.
+  - Application Insights remains a future option, not currently enabled.
+  - Azure Monitor alerts for 5xx spikes, readiness failures, auth failure/rate-limit spikes were reviewed but not implemented because the current Azure account lacks permission to create Action Groups/Alert Rules.
+  - PostgreSQL audit logs to Log Analytics remain deferred.
   - Defender for Cloud recommendations reviewed.
+- Log Analytics cost note:
+  - `njsda-law` was deleted after review to avoid introducing a potential cost-accruing Azure Monitor / Log Analytics service before the client is ready to operate it.
+  - Current Microsoft Azure Monitor pricing states that the first 5 GB/month per billing account in the pay-as-you-go Analytics Logs tier is free.
+  - Recheck Azure Monitor pricing before recreating Log Analytics, and review ingestion after production traffic begins if it is re-enabled.
 - Access control:
   - Azure RBAC reviewed for least privilege.
   - GitHub OIDC deploy identity scoped only to required deployment resources.
@@ -88,3 +97,5 @@ Claude review was written to `notes/claude_review_security_pass.txt`.
 - Azure App Service security guidance: https://learn.microsoft.com/en-us/azure/app-service/overview-security
 - Azure App Service security baseline: https://learn.microsoft.com/en-us/security/benchmark/azure/baselines/app-service-security-baseline
 - Azure PostgreSQL security overview: https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview
+- Azure Monitor pricing: https://azure.microsoft.com/en-us/pricing/details/monitor/
+- Azure Monitor Logs cost guidance: https://learn.microsoft.com/en-us/azure/azure-monitor/logs/cost-logs

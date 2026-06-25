@@ -1,0 +1,2 @@
+SECURITY
+1) Log Analytics was reviewed but removed before production use to avoid introducing a potential cost-accruing Azure Monitor service before the team is ready to operate it. Microsoft’s current pricing notes a free 5 GB/month allowance for pay-as-you-go Analytics Logs per billing account, but pricing should be rechecked before re-enabling.
