@@ -309,6 +309,12 @@ function AdminToolsPanel() {
             <small>Review hidden tag definitions used in reporting.</small>
           </span>
         </Link>
+        <Link className="admin-tool-link" to="/admin/releases">
+          <span>
+            <strong>Software updates</strong>
+            <small>Review deployed versions and production patch notes.</small>
+          </span>
+        </Link>
       </div>
     </section>
   );

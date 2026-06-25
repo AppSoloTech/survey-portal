@@ -326,6 +326,24 @@ export interface AdminUserPasswordResetResponse {
   message: string;
 }
 
+export interface SoftwareReleaseNoteSection {
+  heading: string;
+  items: string[];
+}
+
+export interface SoftwareReleaseNote {
+  version: string;
+  releasedAt: string;
+  title: string;
+  summary: string;
+  sections: SoftwareReleaseNoteSection[];
+}
+
+export interface SoftwareReleaseNotesResponse {
+  currentVersion: string;
+  releases: SoftwareReleaseNote[];
+}
+
 export interface SurveyListResponse {
   surveys: Survey[];
 }

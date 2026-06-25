@@ -1,0 +1,151 @@
+# Claude Review Handoff — Phase 33 Admin Release Notes And Version Tracking
+
+## Review Request
+
+Please perform a code review for Phase 33 using this handoff.
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_33.txt
+```
+
+Then summarize the result in chat.
+
+## Phase Scope
+
+Prompt:
+
+```txt
+prompts/prompt_33.txt
+```
+
+Implemented:
+
+- Added committed release-note workflow docs and files under `markdown/`.
+- Added root release commands:
+  - `npm run release:notes`
+  - `npm run release:check`
+  - `npm run test:release`
+- Bumped root app version from `0.1.0` to `0.1.1` and added matching release note.
+- Added admin-only API `GET /api/admin/releases`.
+- Added shared release-note response types.
+- Added `/admin/releases` read-only React admin page and Admin tools link.
+- Updated `npm run deploy` to validate release notes before pushing.
+- Updated GitHub Actions to validate release notes before Azure deploy.
+- Updated README, `markdown/FLOW.md`, and `markdown/REVIEW_CHECKLIST.md`.
+
+## Non-Goals
+
+- No in-app editing for release notes.
+- No database storage or migrations.
+- No public release-note page.
+- No git commit/changelog generator.
+- No broad admin navigation redesign.
+
+## Known Tradeoffs
+
+- Release-note parsing is intentionally strict and supports a small fixed
+  section set: Added, Changed, Fixed, Security, Operational Notes.
+- `release:check --since <ref>` compares committed `HEAD` against the ref.
+  It is expected to fail before the phase is committed because uncommitted files
+  are not part of `HEAD`; `npm run deploy` already requires a clean tree before
+  invoking this mode.
+- Root `package.json` is the app release version source of truth. Workspace
+  package versions remain `0.1.0` because their package contracts did not
+  change.
+
+## Validation Completed
+
+Commands run:
+
+```bash
+npm run release:check
+npm run typecheck
+npm run test:release
+npm test -w apps/api -- releaseNotes
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run release:check -- --since origin/main
+```
+
+Results:
+
+- Passed: `npm run release:check`
+- Passed: `npm run typecheck`
+- Passed: `npm run test:release`
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- releaseNotes`
+  - 1 file, 4 tests.
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - Shared: 4 files, 54 tests.
+  - Web: 6 files, 59 tests.
+  - API: 24 files, 238 tests.
+  - Release script: 3 tests.
+- Passed: `git diff --check`
+- Not expected to pass before commit:
+  `npm run release:check -- --since origin/main`
+  - Failed with `Release version changed without package.json appearing in the push diff`
+  - Reason: this mode compares committed `HEAD` to `origin/main`, and Phase 33
+    changes are still uncommitted.
+
+Manual checks:
+
+- Not run in browser. Typecheck/build covered route and page wiring.
+
+## Diff Review Notes
+
+Review all tracked and untracked files for this phase. There are unrelated
+pre-existing seed/tag-catalog changes in the worktree that should not be treated
+as Phase 33 work:
+
+```txt
+database/seeds/0001_phase_2_seed.sql
+database/seeds/0003_workplace_role_based_survey_seed.sql
+database/seeds/README.md
+database/seeds/0004_tag_catalog_seed.sql
+markdown/TAG_CATALOG_SEED.md
+scripts/group-tags-by-key.mjs
+```
+
+Phase 33-specific paths include:
+
+```txt
+prompts/prompt_33.txt
+markdown/RELEASE_NOTES.md
+markdown/releases/
+scripts/release-notes.mjs
+scripts/release-notes.test.mjs
+scripts/deploy.mjs
+.github/workflows/main_njsda-wa.yml
+packages/shared/src/index.ts
+apps/api/src/routes/admin.ts
+apps/api/src/services/releaseNotes.ts
+apps/api/test/releaseNotes.test.ts
+apps/web/src/api/admin.ts
+apps/web/src/pages/admin/AdminReleasesPage.tsx
+apps/web/src/pages/admin/AdminSurveysOverview.tsx
+apps/web/src/App.tsx
+apps/web/src/styles.css
+README.md
+markdown/FLOW.md
+markdown/REVIEW_CHECKLIST.md
+package.json
+package-lock.json
+```
+
+## Specific Questions For Review
+
+- Is the release freshness check strict enough for production pushes without
+  becoming too brittle for docs-only work?
+- Is the admin release API sufficiently protected and free from data exposure
+  concerns?
+- Is the Markdown parser contract clear, maintainable, and aligned between API
+  runtime and release CLI validation?
+- Does the `/admin/releases` page fit the existing admin UX without implying
+  in-app editing?

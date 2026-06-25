@@ -354,42 +354,8 @@ where not exists (
     and existing.tag_value = value_tag_rows.tag_value
 );
 
-with seed_survey as (
-  select id from surveys where title = 'Workplace Role Based Survey'
-),
-survey_tag_rows as (
-  select answer_tags.tag_key, answer_tags.tag_value
-  from answer_tags
-  join answer_options on answer_options.id = answer_tags.answer_option_id
-  join survey_questions on survey_questions.id = answer_options.question_id
-  join seed_survey on seed_survey.id = survey_questions.survey_id
-  union
-  select question_value_tags.tag_key, question_value_tags.tag_value
-  from question_value_tags
-  join survey_questions on survey_questions.id = question_value_tags.question_id
-  join seed_survey on seed_survey.id = survey_questions.survey_id
-),
-new_tags as (
-  select distinct survey_tag_rows.tag_key, survey_tag_rows.tag_value
-  from survey_tag_rows
-  where not exists (
-    select 1
-    from tag_definitions existing
-    where existing.tag_key = survey_tag_rows.tag_key
-      and existing.tag_value = survey_tag_rows.tag_value
-  )
-),
-ordered_new_tags as (
-  select
-    new_tags.tag_key,
-    new_tags.tag_value,
-    (
-      select coalesce(max(tag_definitions.display_order), 0)
-      from tag_definitions
-    ) + (row_number() over (order by new_tags.tag_key, new_tags.tag_value))::integer as display_order
-  from new_tags
-)
-insert into tag_definitions (tag_key, tag_value, display_order)
-select tag_key, tag_value, display_order
-from ordered_new_tags
-on conflict (tag_key, tag_value) do nothing;
+-- The reusable tag catalog (tag_definitions) is seeded from the production
+-- snapshot in 0004_tag_catalog_seed.sql, not from this survey's local test
+-- tags. The answer_tags and question_value_tags above stay on the seeded
+-- options for runner and reporting tests; they are intentionally not
+-- registered in the catalog.

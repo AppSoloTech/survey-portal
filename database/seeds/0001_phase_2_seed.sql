@@ -233,30 +233,7 @@ where not exists (
     and existing.target_question_id = target_question.id
 );
 
--- Register every seeded answer tag in the reusable tag catalog. Seed SQL
--- bypasses the API's registerTagDefinition(), so without this the catalog
--- page lists zero entries on a freshly seeded database.
-with new_tags as (
-  select distinct answer_tags.tag_key, answer_tags.tag_value
-  from answer_tags
-  where not exists (
-    select 1
-    from tag_definitions existing
-    where existing.tag_key = answer_tags.tag_key
-      and existing.tag_value = answer_tags.tag_value
-  )
-),
-ordered_new_tags as (
-  select
-    new_tags.tag_key,
-    new_tags.tag_value,
-    (
-      select coalesce(max(tag_definitions.display_order), 0)
-      from tag_definitions
-    ) + (row_number() over (order by new_tags.tag_key, new_tags.tag_value))::integer as display_order
-  from new_tags
-)
-insert into tag_definitions (tag_key, tag_value, display_order)
-select tag_key, tag_value, display_order
-from ordered_new_tags
-on conflict (tag_key, tag_value) do nothing;
+-- The reusable tag catalog (tag_definitions) is seeded from the production
+-- snapshot in 0004_tag_catalog_seed.sql, not from this survey's local test
+-- tags. The hidden answer_tags above stay on the seeded options for runner and
+-- reporting tests; they are intentionally not registered in the catalog.

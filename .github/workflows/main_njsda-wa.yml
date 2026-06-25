@@ -40,11 +40,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js version
         uses: actions/setup-node@v6
         with:
           node-version: '24.x'
+
+      - name: Validate release notes
+        run: |
+          if [ -n "${{ github.event.before }}" ]; then
+            npm run release:check -- --since "${{ github.event.before }}"
+          else
+            npm run release:check
+          fi
 
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2

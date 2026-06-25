@@ -2524,6 +2524,102 @@ main {
   line-height: 1.35;
 }
 
+.release-notes-layout {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(230px, 0.35fr) minmax(420px, 1fr);
+}
+
+.release-version-panel,
+.release-note-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.release-version-panel {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  position: sticky;
+  top: 6rem;
+}
+
+.release-version-panel strong {
+  color: var(--brand-strong);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.release-version-panel span {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.release-timeline {
+  display: grid;
+  gap: 1rem;
+}
+
+.release-note-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.release-note-heading {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.release-note-heading h3 {
+  font-size: 1.2rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.release-note-heading time {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.release-note-card > p {
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.release-note-sections {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.release-note-section {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.release-note-section h4 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.release-note-section ul {
+  color: var(--ink);
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .overview-survey-list {
   display: grid;
   gap: 0.5rem;
@@ -5301,6 +5397,7 @@ main {
 
   .admin-overview-layout,
   .admin-user-detail-layout,
+  .release-notes-layout,
   .anonymous-directory-card,
   .anonymous-registration-grid,
   .two-columns,
@@ -5321,6 +5418,10 @@ main {
     gap: 1rem;
   }
 
+  .release-version-panel {
+    position: static;
+  }
+
   .builder-form,
   .question-editor {
     padding: 1rem;
@@ -5331,9 +5432,14 @@ main {
   .completion-heading,
   .builder-section-heading,
   .option-row-header,
-  .admin-user-class-header {
+  .admin-user-class-header,
+  .release-note-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .release-note-heading time {
+    white-space: normal;
   }
 
   .survey-card-footer .status-pill {

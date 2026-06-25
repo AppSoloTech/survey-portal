@@ -7,6 +7,7 @@ import {
   genericPasswordResetMessage,
   requestPasswordResetForUser
 } from "../services/passwordReset.js";
+import { buildSoftwareReleaseNotesResponse } from "../services/releaseNotes.js";
 import { fetchRegisteredUserSurveyStats, fetchUserProfile } from "../services/userProfile.js";
 import { isRecord, readPositiveIntegerParam, readTextField } from "../services/validation.js";
 
@@ -63,6 +64,14 @@ export const adminRouter = express.Router();
 
 adminRouter.get("/me", requireAuth, requireRole("admin"), (req, res) => {
   res.json({ user: (req as AuthenticatedRequest).user });
+});
+
+adminRouter.get("/releases", requireAuth, requireRole("admin"), (_req, res, next) => {
+  try {
+    res.json(buildSoftwareReleaseNotesResponse());
+  } catch (error) {
+    next(error);
+  }
 });
 
 adminRouter.get("/users", requireAuth, requireRole("admin"), async (req, res, next) => {

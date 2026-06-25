@@ -56,6 +56,15 @@ Use this checklist before committing a phase and when preparing Claude review ha
 - CORS is only enabled where needed and is appropriately constrained.
 - Required environment variables are documented.
 
+## Release Notes And Deployment
+
+- Production-bound changes update the root `package.json` app version.
+- `markdown/releases/vX.Y.Z.md` exists for the root app version.
+- Release notes follow `markdown/RELEASE_NOTES.md`.
+- `npm run release:check` passes before `npm run deploy`.
+- Direct `main` pushes rely on GitHub Actions release-note validation before
+  Azure deploy.
+
 ## Database
 
 - Migrations are explicit, reviewable, and ordered.

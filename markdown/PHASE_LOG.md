@@ -6,6 +6,216 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 33 — Admin Release Notes And Version Tracking
+
+Date:
+2026-06-25
+
+Status:
+Complete; ready for Claude review
+
+Prompt:
+`prompts/prompt_33.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_33.txt`
+- Claude review: `notes/claude_review_phase_33.txt`
+
+## Goals
+
+- Add an admin-only software version and patch-notes section.
+- Keep release notes as committed, reviewable Markdown under `markdown/`.
+- Validate release notes before production deploys through `npm run deploy` and
+  the GitHub Actions `main` workflow.
+- Update durable phase/process scaffolding so future production-bound work
+  creates release notes through the established workflow.
+
+## Built
+
+- Created `prompts/prompt_33.txt` as the implementation source of truth.
+- Added `markdown/RELEASE_NOTES.md` and release files:
+  - `markdown/releases/v0.1.0.md`
+  - `markdown/releases/v0.1.1.md`
+- Bumped the root app version from `0.1.0` to `0.1.1`.
+- Added root scripts:
+  - `release:notes`
+  - `release:check`
+  - `test:release`
+- Added strict release-note parsing and response building in the API.
+- Added `GET /api/admin/releases`, protected by existing `requireAuth` and
+  `requireRole("admin")` middleware.
+- Added shared release-note response types.
+- Added `/admin/releases` as a read-only admin page and linked it from Admin
+  tools.
+- Updated `scripts/deploy.mjs` so production pushes validate release notes
+  before `git push origin main`.
+- Updated `.github/workflows/main_njsda-wa.yml` so direct `main` pushes validate
+  release notes before Azure deploy.
+- Updated README, `markdown/FLOW.md`, and `markdown/REVIEW_CHECKLIST.md`.
+- Created `notes/claude_handoff_phase_33.txt`.
+
+## Important Decisions
+
+### Root App Version Is The Release Version
+
+Decision:
+Use the root `package.json` `version` as the deployed app version shown in the
+admin UI and validated by release scripts.
+
+Reason:
+The repository is deployed as one app from the root workflow, while workspace
+package versions represent package contracts and do not need to change for
+every product release.
+
+Tradeoff:
+The root version can differ from workspace package versions.
+
+### Committed Markdown Over In-App Editing
+
+Decision:
+Release notes are edited in the repo and displayed read-only to admins.
+
+Reason:
+This keeps production release history reviewable, diffable, and coupled to the
+same commit that deploys the app.
+
+Tradeoff:
+Admins cannot patch release-note copy from the app after deployment.
+
+### CI Enforces Direct Main Pushes
+
+Decision:
+`npm run deploy` validates release notes before pushing, and GitHub Actions
+validates direct `main` pushes before Azure deploy.
+
+Reason:
+Raw `git push origin main` cannot be reliably intercepted on every developer
+machine with committed source alone.
+
+Tradeoff:
+Release-note freshness is enforced at CI/deploy time, not by universal local git
+hooks.
+
+## Architecture Notes
+
+- Database/schema impact: None.
+- API contract impact: added admin-only `GET /api/admin/releases`.
+- Auth or authorization impact: endpoint is protected by existing admin
+  middleware.
+- Data privacy or visibility impact: release notes are visible only to admins
+  in-app; committed Markdown remains repository-visible.
+- Frontend UX impact: added read-only Software updates admin page.
+- Environment or deployment impact: deploy script and GitHub Actions now run
+  release-note validation.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run release:check
+npm run typecheck
+npm run test:release
+npm test -w apps/api -- releaseNotes
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run release:check -- --since origin/main
+```
+
+Results:
+
+- Passed: `npm run release:check`.
+- Passed: `npm run typecheck`.
+- Passed: `npm run test:release`
+  - 3 tests.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- releaseNotes`
+  - 1 file, 4 tests.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`.
+  - Shared tests: 4 files, 54 tests.
+  - Web tests: 6 files, 59 tests.
+  - API tests: 24 files, 238 tests.
+  - Release script tests: 3 tests.
+- Passed: `git diff --check`.
+- Not expected to pass before commit:
+  `npm run release:check -- --since origin/main`.
+  - Failed because the check compares committed `HEAD` against `origin/main`;
+    Phase 33 changes are still uncommitted, so the push diff does not yet show
+    `package.json`.
+
+Manual tests:
+
+- Browser manual test not run; route/page wiring was covered by typecheck and
+  production build.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_33.txt`
+- Claude review status before commit: Pending
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_33.txt`
+
+Status:
+
+- Pending.
+
+Critical issues:
+
+- Pending review.
+
+Suggested improvements:
+
+- Pending review.
+
+Accepted fixes:
+
+- Pending review.
+
+Deferred findings:
+
+- Pending review.
+
+## Problems Encountered
+
+- Problem: Sandboxed API test run could not connect to local PostgreSQL
+  (`EPERM 127.0.0.1:5432`).
+  Resolution: reran the targeted API test and full `npm test` with approved
+  local PostgreSQL access.
+- Problem: Deploy-style release freshness check failed before commit.
+  Resolution: Documented as expected because that check compares committed
+  `HEAD` to `origin/main`; `npm run deploy` requires a clean committed tree
+  before running this mode.
+
+## Follow-Up Tasks
+
+- Run Claude review using `notes/claude_handoff_phase_33.txt`.
+- Browser-check `/admin/releases` with an admin account before production
+  deployment.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Pending Claude review
+- Review findings addressed or deferred: Pending Claude review
+- Manual testing complete: Browser check pending
+- Ready to commit: Pending Claude review and browser check
+
 ## Security Hardening Pass — Public Pilot Baseline
 
 Date:

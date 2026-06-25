@@ -3,6 +3,7 @@ import type {
   AdminUserPasswordResetResponse,
   AdminUserRoleResponse,
   AdminUsersListResponse,
+  SoftwareReleaseNotesResponse,
   UserRole
 } from "@survey-portal/shared";
 
@@ -46,4 +47,8 @@ export async function requestAdminUserPasswordReset(
   return apiRequest<AdminUserPasswordResetResponse>(`/api/admin/users/${userId}/password-reset`, {
     method: "POST"
   });
+}
+
+export async function fetchSoftwareReleaseNotes(): Promise<SoftwareReleaseNotesResponse> {
+  return apiRequest<SoftwareReleaseNotesResponse>("/api/admin/releases");
 }

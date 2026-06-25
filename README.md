@@ -73,6 +73,25 @@ the in-memory limiter store with a shared store.
 
 Production secrets should live in Azure App Service configuration, not in source control.
 
+## Release Notes
+
+The root `package.json` version is the deployed app version. Production-bound
+changes should include a matching release file in `markdown/releases/`.
+
+Create the current version's release-note template:
+
+```bash
+npm run release:notes
+```
+
+Validate release-note format and version coverage:
+
+```bash
+npm run release:check
+```
+
+Admins can view published release notes in the app at `/admin/releases`.
+
 ## Health Checks
 
 - `GET /api/health/live` returns 200 when the Node process is up and does not
@@ -128,10 +147,13 @@ npm run dev
 npm run admin:provision
 npm run db:migrate
 npm run db:reset
+npm run release:notes
+npm run release:check
 npm run typecheck
 npm run build
 npm run lint
 npm run test
+npm run deploy
 npm run start
 ```
 

@@ -20,6 +20,7 @@ The goal is to keep implementation phases small, reviewable, secure, and aligned
 | `markdown/PHASE_TEMPLATE.md` | Reusable phase log entry template |
 | `markdown/PHASE_LOG.md` | Durable project memory and phase decisions |
 | `markdown/FOLLOW_UPS.md` | Active deferred work and loose ends to revisit before future phases |
+| `markdown/RELEASE_NOTES.md` | Release-note format, versioning source of truth, and deploy validation workflow |
 | `markdown/CLAUDE_REVIEW_TEMPLATE.md` | Per-phase review handoff template |
 | `prompts/PHASE_PROMPT_TEMPLATE.txt` | Reusable template for drafting new phase prompts |
 | `prompts/prompt_X.txt` | Phase-specific implementation prompt |
@@ -43,7 +44,8 @@ When documents conflict, resolve them in this order:
 7. `markdown/FLOW.md`
 8. `markdown/REVIEW_CHECKLIST.md`
 9. `markdown/FOLLOW_UPS.md`
-10. Older entries in `markdown/PHASE_LOG.md`
+10. `markdown/RELEASE_NOTES.md` for release-note and production-publish process
+11. Older entries in `markdown/PHASE_LOG.md`
 
 If a conflict changes product direction, architecture, security posture, or deployment assumptions, update the durable reference document and record the decision in `markdown/PHASE_LOG.md`.
 
@@ -420,9 +422,23 @@ Before any production deployment:
 - verify production secrets are only in Azure configuration
 - verify `.env` is ignored
 - verify `.env.example` contains placeholders only
+- update the root `package.json` app version for production-bound changes
+- create or update `markdown/releases/vX.Y.Z.md` for the version being deployed
+- run `npm run release:check`
 - run build and relevant tests
 - confirm database migrations are reviewed
 - confirm rollback expectations are understood
+
+Release-note commands:
+
+```bash
+npm run release:notes
+npm run release:check
+```
+
+`npm run deploy` validates release notes against `origin/main` before pushing.
+Direct pushes to `main` are validated by the GitHub Actions production workflow
+before the Azure deploy step.
 
 ---
 
@@ -489,6 +505,8 @@ A phase is complete when:
 - `notes/claude_review_phase_X.txt` exists, or the phase log explicitly says Claude review is pending
 - review findings are addressed or intentionally deferred
 - `markdown/PHASE_LOG.md` is updated
+- production-bound changes have a matching release note under
+  `markdown/releases/`
 - no real secrets are committed
 - the phase can be reviewed from a clean diff
 

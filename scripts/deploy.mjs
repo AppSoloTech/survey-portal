@@ -55,6 +55,18 @@ if (ahead === 0) {
   console.log("Nothing to push; origin/main already matches local main.");
   console.log("Continuing to the hosted database check...");
 } else {
+  console.log("Validating release notes for the production push...");
+
+  const releaseCheck = spawnSync(
+    process.execPath,
+    [path.join(__dirname, "release-notes.mjs"), "check", "--since", "origin/main"],
+    { cwd: rootDir, stdio: "inherit" }
+  );
+
+  if (releaseCheck.status !== 0) {
+    fail("Release-note validation failed; origin/main was not updated.");
+  }
+
   console.log(`Pushing ${ahead} commit(s) to origin/main (triggers the Azure deploy workflow)...`);
 
   const push = spawnSync("git", ["push", "origin", "main"], { cwd: rootDir, stdio: "inherit" });

@@ -51,3 +51,17 @@ runner testing:
 - mixed question types with multi-question pages
 - answer option tags and value tags for role, quantity, quality, benefits, and completion rollups
 - no conditional rules
+
+## Tag Catalog Seed (0004)
+
+Applied automatically by the same `npm run db:reset` run. Mirrors the grouped
+tag catalog from production (snapshot 2026-06-25):
+
+- 8 category groups (`Equity`, `Federal Civil Rights`, `HCBS`, `Health, Safety,
+  and Cost`, `Labor and Workforce`, `Medicaid / 1115 Waiver`, `NJDDD
+  Administrative Practice`, `OPIA/administrative accountability`)
+- 63 tag definitions, each assigned to its group with a per-group display order
+- idempotent: groups upsert by name, tags upsert by `(tag_key, tag_value)`
+
+See `markdown/TAG_CATALOG_SEED.md` for how the snapshot was produced and how to
+refresh it.
