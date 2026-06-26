@@ -1,0 +1,389 @@
+# Phase 34 — Admin Page Template Library
+
+## Purpose
+
+Convert the approved page-template plan into an implementation phase for a
+shared admin template library. Admins should be able to save an existing survey
+page as a reusable template and insert a fresh copy of that page into another
+draft survey.
+
+Source planning note:
+
+```txt
+Chat-approved Phase 34 prompt scaffold and page-template plan from the
+developer session. No separate notes/client_review_YYYY-MM-DD.txt file is
+required for this phase unless the human developer chooses to preserve raw
+feedback separately.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_34.txt`
+* Claude review: `notes/claude_review_phase_34.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `markdown/SCALE_QUESTION_DATA_MODEL.md`
+* `apps/api/src/routes/surveyBuilderRoutes.ts`
+* `apps/api/src/services/surveyBuilder.ts`
+* `apps/api/src/services/surveyStructure.ts`
+* `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+* `apps/web/src/pages/admin/SurveyOrganizePage.tsx`
+* `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx`
+* `packages/shared/src/index.ts`
+
+---
+
+# Received Feedback
+
+1. Add a shared admin page-template library so admins can save commonly reused
+   survey pages.
+2. Let admins insert a saved page template into any draft survey.
+3. Copy the reusable page content admins expect: page title/description,
+   questions, options, scale ranges, answer hidden tags, value hidden tags, and
+   Other hidden tags.
+4. Keep V1 safe and narrow by excluding conditional logic rules from templates.
+5. Follow the existing phase workflow and do not implement this feature until
+   Phase 34 is explicitly started.
+
+Forward-compatibility decisions added during prompt strengthening (these shape
+V1 design without expanding the V1 build):
+
+6. Build the template store as a kind-discriminated envelope so future question
+   templates and logic-bounded segment templates reuse the same table and
+   payload contract instead of requiring a rename or migration. V1 still ships
+   page-only API surface and UI.
+7. On save, V1 still excludes conditional logic, but must detect and record which
+   conditional rules reference the saved page (as source or target) in an
+   excluded-logic manifest, and surface that to the admin. This serves the
+   long-term goal of preventing broken survey logic and seeds the future
+   logic-aware segment engine.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+* Feature request: reusable admin page-template library.
+* Broken workflow/time-saver: admins currently must recreate common page and
+  question groups manually.
+* Security/privacy/data-visibility risk: templates can include hidden tags, so
+  all template APIs and payloads must remain admin-only and never leak to
+  participant survey payloads.
+* Database/schema change: add persistent template storage.
+* API contract change: add admin template APIs and insertion route.
+* Frontend UX change: add save and insert controls in the admin builder.
+
+This phase changes:
+
+* Database schema or migrations: yes, add a template table.
+* API contracts: yes, add shared template response types and admin routes.
+* Hidden-tag visibility: yes, hidden tags are copied for admins but must remain
+  excluded from participant-facing payloads.
+* Authentication or authorization: yes, server-side admin-only access is
+  required for template library routes.
+* Validation/test expectations: yes, add copy-fidelity, auth, and
+  non-disclosure tests.
+
+This phase does not change:
+
+* Participant-facing survey behavior.
+* Survey attempt or response storage.
+* Conditional navigation runtime behavior.
+* Production secret handling.
+* Deployment flow beyond the ordinary migration/release-note expectations.
+
+Ask for clarification only if a safe implementation cannot be inferred from
+this prompt and the required reading.
+
+---
+
+# Scope
+
+Implement:
+
+* `prompts/prompt_34.txt` as this phase source of truth.
+* A shared admin page-template library.
+* Save-page-as-template from an existing survey page.
+* Insert-template-into-draft-survey.
+* Copy page title, page description, questions, answer options, scale ranges,
+  answer hidden tags, question value hidden tags, and Other hidden tags.
+* Exclude conditional logic rules from saved and inserted template content.
+* Store the template in a kind-discriminated envelope (`template_kind = 'page'`
+  in V1) so future question and segment kinds reuse the same table and payload
+  contract. V1 exposes page-only routes, types, and UI.
+* Compute and persist an excluded-logic manifest when saving a page template:
+  a snapshot of the conditional rules that reference the page as source or
+  target through `source_page_id`, `target_page_id`, source/target questions, or
+  source options. Flag whether each rule crosses the saved page boundary.
+  Surface a clear admin warning on save listing how many rules will not be
+  copied. Do not copy or recreate any of those rules.
+* Server-side admin-only authorization for all template library APIs.
+* Draft-only insertion using the existing structural-lock behavior.
+* Focused shared API types, backend services/routes, frontend API helpers, and
+  admin UI controls.
+* `markdown/releases/unreleased.md` with an admin-readable draft release note.
+* `markdown/PHASE_LOG.md` phase entry after implementation/review status is
+  known.
+* `notes/claude_handoff_phase_34.txt` before claiming implementation complete.
+
+Suggested API surface:
+
+* `GET /api/admin/page-templates`
+* `GET /api/admin/page-templates/:templateId`
+* `PUT /api/admin/page-templates/:templateId`
+* `DELETE /api/admin/page-templates/:templateId`
+* `POST /api/surveys/:surveyId/pages/:pageId/template`
+* `POST /api/surveys/:surveyId/page-templates/:templateId/insert`
+
+Suggested shared types:
+
+* `SurveyPageTemplateSummary`
+* `SurveyPageTemplateDetail`
+* `SurveyPageTemplatesResponse`
+* `SurveyPageTemplateResponse`
+* `SurveyTemplateExcludedLogicEntry` (source rule id as snapshot metadata,
+  source/target locator snapshots, action/condition labels, and a
+  `crossesPageBoundary` flag) plus an `excludedLogic` array on the detail type.
+* Reuse `SurveyResponse` for insertion results.
+
+V1 keeps page-specific type and route names. The underlying table row and JSONB
+payload envelope carry a `template_kind` discriminator and a payload
+`schemaVersion` so future `question` and `segment` kinds can extend the same
+store without replacing or renaming the core table/envelope.
+
+## Non-Goals
+
+Do not implement (these are deferred future kinds, not dropped — see Deferred
+Work):
+
+* Individual question templates.
+* Segment/"chunk" templates spanning multiple pages.
+* Conditional logic copying, logic recreation, or logic repair workflows.
+* Logic-safe segment detection beyond the read-only excluded-logic manifest.
+* Private/shared template visibility controls.
+* Participant-facing template APIs, payload fields, or UI.
+* Hidden-tag exposure to participants.
+* Broad survey-builder redesign or admin navigation redesign.
+* In-app template version history, restore, or rollback workflows beyond
+  replaceable template metadata.
+* Template insertion into published, retired, or deleted surveys.
+* Any feature implementation before this prompt is explicitly started as
+  Phase 34.
+
+## Assumptions
+
+* V1 ships page-only API surface and UI, but the storage layer is built for
+  multiple template kinds from the start.
+* Templates are shared across all admins.
+* Conditional logic is intentionally excluded from copy/insert for safety; V1
+  only records a read-only manifest of which rules were excluded.
+* Template storage uses relational metadata plus a versioned JSONB snapshot for
+  reusable template payload content, with a `template_kind` discriminator on the
+  row and a `schemaVersion` inside the payload.
+* The JSONB snapshot is an admin template artifact, not live survey definition
+  storage.
+* Scale question minimum and maximum values are derived from the option-backed
+  scale rows and recreated through existing scale-option behavior.
+* "Logic-safe segment" (future) means a contiguous run of pages with no
+  conditional rule crossing its boundary. V1 does not build segments, but the
+  excluded-logic manifest captures the boundary signal a future segment engine
+  needs.
+
+## Open Questions
+
+* None blocking V1. Future segment templates will need a confirmed rule for
+  handling rules that target pages/questions outside a copied segment (reject,
+  drop, or remap). Out of scope for this phase.
+
+---
+
+# Deferred Work / Roadmap
+
+V1 is the foundation for a broader, logic-aware templating system. These are
+intentionally out of V1 scope but the V1 design above must not preclude them:
+
+1. Question templates: save/insert a single question with its options, scale
+   rows, and hidden tags. Reuses the kind-discriminated store as
+   `template_kind = 'question'`.
+2. Segment ("chunk") templates: save/insert a contiguous multi-page run as
+   `template_kind = 'segment'`, preserving intra-segment conditional logic.
+3. Logic-safe segment detection: use the excluded-logic manifest concept to
+   identify segment boundaries (where no rule crosses) so admins can only save
+   chunks that will not produce broken survey logic, and so insertion can recreate
+   internal logic with remapped fresh IDs.
+4. Logic recreation on insert for question/segment kinds, with rules referencing
+   targets outside the copied content handled by a confirmed boundary policy.
+
+---
+
+# Implementation Guidance
+
+Keep the implementation consistent with existing survey duplication and builder
+patterns:
+
+* Prefer relational metadata for template rows: `template_kind` (V1 always
+  `'page'`), name, description, generic nullable source metadata
+  (`source_entity_kind`, `source_entity_id`, and optional source survey/page
+  snapshots), creator, payload version, timestamps.
+* Use a versioned JSONB snapshot only for the reusable page payload, with a
+  `schemaVersion` and a `kind` field inside the payload so future kinds extend
+  the same envelope. Do not add page-only columns that would block a future
+  question or segment kind from sharing the table.
+* Persist the excluded-logic manifest alongside the template (a JSONB manifest
+  field or a small manifest table containing snapshot data, not live foreign-key
+  dependencies on source survey rows). Compute it by scanning conditional rules
+  whose source or target references the saved page through page ids, question
+  ids, or source option ids, and flag each entry's `crossesPageBoundary`. The
+  manifest is read-only metadata: it never recreates rules on insert.
+* Treat the template payload as admin-only content; it may include hidden tags
+  and must never be returned from participant APIs.
+* New inserted rows must receive fresh survey, page, question, option, and tag
+  IDs.
+* Reuse or extract survey tree copy/remapping helpers from
+  `apps/api/src/services/surveyBuilder.ts` where practical.
+* Preserve display order inside inserted templates.
+* Register copied hidden tag key/value pairs in the tag catalog when inserting,
+  matching builder writes.
+* Use transactions for save and insert mutations so partial page copies cannot
+  leave the destination survey in a broken state.
+* Keep conditional logic rules out of the saved payload and out of inserted
+  rows. The UI should clearly communicate that page templates copy question
+  content and hidden tags, not logic rules, and should surface the excluded-logic
+  manifest count on save (e.g. "N logic rules reference this page and will not be
+  copied").
+
+Suggested UI placement:
+
+* In `SurveyQuestionsPage`, add a draft/admin control to save the active page as
+  a template.
+* In `SurveyOrganizePage`, add an insert-from-template control near Add page.
+* Use a compact picker/modal or inline panel for listing templates, previewing
+  enough detail to choose safely, and inserting at a selected position.
+* Preserve existing loading, error, empty, and locked-survey states.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Database migration and template payload shape.
+2. Backend template save/insert services with transaction safety and fresh ID
+   creation.
+3. Admin-only API routes and shared response types.
+4. Hidden-tag isolation and participant non-disclosure regression coverage.
+5. Admin UI controls for save and insert.
+6. Release notes, phase log, and Claude handoff.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admin can save an existing page as a named template.
+* Admin can list/select templates and insert one into a draft survey.
+* Inserted pages appear in the destination survey with copied page metadata,
+  questions, options, scale ranges, hidden tags, required flags, help text, and
+  display order.
+* Inserted template content uses fresh IDs and does not retain source survey,
+  page, question, option, or tag IDs.
+* Insertion is rejected for published, retired, deleted, missing, or non-admin
+  cases.
+* Participant survey payloads still omit hidden tags and all template data.
+* Conditional logic rules are not copied into templates or inserted surveys.
+* Saving a page that is referenced by conditional rules records an excluded-logic
+  manifest and the admin is warned with an accurate excluded-rule count.
+* The template row carries a `template_kind` discriminator and the payload a
+  `schemaVersion`, so a future kind can be added without replacing or renaming
+  the core table/envelope.
+* Template APIs are server-side admin-only.
+* `markdown/releases/unreleased.md` has an admin-readable draft bullet.
+* `notes/claude_handoff_phase_34.txt` exists before implementation closeout.
+* Every received feedback item is fixed, deferred with a reason, or blocked by
+  a documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update automated tests for changed behavior when practical.
+
+API tests should cover:
+
+* admin-only save/list/detail/update/delete/insert behavior
+* non-admin and unauthenticated rejection
+* save from a page with text, integer, single-select, multi-select, scale,
+  Allow Other, answer tags, value tags, and Other tags
+* insert into a draft survey with fresh IDs and preserved display order
+* insertion blocked for published, retired, and deleted surveys
+* missing source page, missing template, and malformed payload behavior
+* conditional logic rules are not copied
+* saving a page referenced by conditional rules records an accurate
+  excluded-logic manifest, including a rule that crosses the page boundary
+* participant payloads omit hidden tags, the excluded-logic manifest, and all
+  template data
+
+Manual checks to perform or document:
+
+* Save a page template from the Questions tab.
+* Save a page that is referenced by a conditional rule and confirm the
+  excluded-logic warning shows an accurate count.
+* Insert a page template from the Organize tab into a draft survey.
+* Verify locked survey behavior on published and retired surveys.
+* Verify participant hidden-tag non-disclosure after inserting a tagged
+  template.
+* Responsive pass for template controls at 375/768/1280px.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for the
+  page-template feature.
+* `markdown/FOLLOW_UPS.md` for deferred or newly discovered follow-ups.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status,
+  and commit readiness.
+* README or database docs only if setup/operator behavior changes.
+* `notes/claude_handoff_phase_34.txt` before marking implementation complete.

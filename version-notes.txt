@@ -1,0 +1,28 @@
+1) During implementation, update only markdown/releases/unreleased.md
+# Unreleased
+
+Release title: Admin Page Templates
+
+Summary: Adds reusable admin page templates so admins can save common survey pages and insert them into draft surveys.
+
+## Added
+
+- Admins can save a survey page as a reusable page template and insert it into another draft survey.
+- Page templates copy page content, questions, options, scale ranges, and admin-only hidden-tag metadata.
+
+## Security
+
+- Page template APIs are admin-only, and template payloads remain excluded from participant survey responses.
+
+## Operational Notes
+
+- Adds a database migration for admin page-template storage.
+
+2) At Phase 34 closeout, also update markdown/PHASE_LOG.md and create notes/claude_handoff_phase_34.txt, as the prompt says.
+
+3) Before deployment/release, run:
+npm run release:prepare
+npm run release:check
+
+release:prepare promotes unreleased.md into the next versioned file, bumps root package.json from 0.1.1 to the next patch by default, updates the lockfile version, and resets unreleased.md.
+So the practical rule is: while coding, maintain unreleased.md; when preparing a production release, promote it with release:prepare.
