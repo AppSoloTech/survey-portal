@@ -1,20 +1,14 @@
-# Deferred Glossary Phase — Participant Inline Glossary Rendering
-
-Status:
-Reinstated in the normal prompt flow as `prompts/prompt_41.txt`.
-
-Keep this file as historical planning context only. Use `prompts/prompt_41.txt`
-for implementation.
+# Phase 41 - Participant Inline Glossary Rendering
 
 ## Purpose
 
 Render Admin-approved global glossary definitions inline in participant-facing
 survey question text.
 
-This deferred phase should build on the deferred global glossary Admin
-foundation and can use dictionary-assisted definitions when available. It should
-make glossary terms discoverable to survey takers without changing survey logic
-or response data.
+This phase should build on Phase 39, the global glossary Admin foundation.
+Phase 40 dictionary assist is helpful but not required if definitions already
+exist manually. This phase should make glossary terms discoverable to survey
+takers without changing survey logic or response data.
 
 Source feedback or planning note:
 
@@ -25,6 +19,13 @@ inline just before question text is displayed so all string matches become
 proper interactive elements.
 ```
 
+Reinstatement note:
+
+This prompt promotes the former deferred participant inline rendering work back
+into the normal phase flow.
+`prompts/deferred_participant_inline_glossary_rendering.txt` remains as
+historical planning context only.
+
 ## Role Note
 
 Default arrangement:
@@ -34,20 +35,18 @@ Default arrangement:
 
 Branch:
 
-When this deferred work is reactivated, assign it a fresh phase number and start
-implementation from `main` after the deferred global glossary Admin foundation
-is merged. Dictionary assist is helpful but not required if definitions already
-exist manually.
+Start implementation from `main` after Phase 39 is merged. Phase 40 can be
+merged first, but this phase must not depend on live dictionary access.
 
 ```bash
 git checkout main
-git checkout -b phase-FUTURE-inline-glossary-rendering
+git checkout -b phase-41-inline-glossary-rendering
 ```
 
 Closeout artifacts:
 
-* implementation handoff: `notes/claude_handoff_phase_FUTURE_inline_glossary_rendering.txt`
-* Claude review: `notes/claude_review_phase_FUTURE_inline_glossary_rendering.txt`
+* implementation handoff: `notes/claude_handoff_phase_41_inline_glossary_rendering.txt`
+* Claude review: `notes/claude_review_phase_41_inline_glossary_rendering.txt`
 
 ---
 
@@ -55,11 +54,10 @@ Closeout artifacts:
 
 Read before implementation:
 
-* `prompts/deferred_global_glossary_admin_foundation.txt`
-* The handoff and review artifacts from the reactivated global glossary Admin
-  foundation phase.
-* `prompts/deferred_glossary_dictionary_assist.txt` if dictionary assist has
-  been completed
+* `prompts/prompt_39.txt`
+* The handoff and review artifacts from Phase 39.
+* `prompts/prompt_40.txt` and the Phase 40 handoff/review artifacts if
+  dictionary assist has been completed.
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -116,7 +114,8 @@ Implement:
 * Overlap prevention so generated glossary spans are never nested.
 * Word/string boundary rules that avoid surprising partial-word matches unless
   a match string explicitly requires punctuation or spacing.
-* Admin preview behavior consistent with the participant runner where practical.
+* Admin preview behavior consistent with the participant runner where
+  practical.
 * Focused tests for matching and rendering behavior.
 
 Apply glossary rendering only to plain participant-facing question text in this
@@ -127,14 +126,14 @@ renderer should be covered at the same time.
 
 Do not implement:
 
-* changes to answer validation, skip logic, hidden tags, reporting, CSV exports,
-  or response storage
-* HTML/rich-text parsing of question text
-* glossary rendering inside answer option labels unless explicitly requested
-* matching inside Admin-only forms while editing
-* automatic dictionary lookups
-* analytics for glossary popover opens
-* participant exposure of Admin-only glossary metadata
+* Changes to answer validation, skip logic, hidden tags, reporting, CSV exports,
+  or response storage.
+* HTML/rich-text parsing of question text.
+* Glossary rendering inside answer option labels unless explicitly requested.
+* Matching inside Admin-only forms while editing.
+* Automatic dictionary lookups.
+* Analytics for glossary popover opens.
+* Participant exposure of Admin-only glossary metadata.
 
 ## Assumptions
 
@@ -142,14 +141,14 @@ Do not implement:
 * Glossary definitions are plain text.
 * Participant rendering can be computed client-side from a participant-safe
   glossary payload.
-* If two glossary entries have the same match string, validation from the global
-  glossary Admin foundation should prevent ambiguity before this phase.
+* If two glossary entries have the same match string, validation from Phase 39
+  should prevent ambiguity before this phase.
 
 ## Open Questions
 
-* Should glossary matching apply to survey/page descriptions as well as question
-  prompts? If unanswered, start with question prompts and leave descriptions as
-  a documented follow-up.
+* Should glossary matching apply to survey/page descriptions as well as
+  question prompts? If unanswered, start with question prompts and leave
+  descriptions as a documented follow-up.
 * Should answer option labels be matched? If unanswered, do not match option
   labels in this phase.
 
@@ -186,16 +185,16 @@ git diff --check
 
 Add focused tests for:
 
-* no matches
-* single match
-* repeated matches
-* case-insensitive matching with original text preserved
-* aliases and canonical terms
-* longest-match-first overlap resolution
-* boundary behavior for partial words
-* disabled glossary entries excluded
-* participant payload excluding Admin-only fields
-* popover accessibility states if component tests exist nearby
+* No matches.
+* Single match.
+* Repeated matches.
+* Case-insensitive matching with original text preserved.
+* Aliases and canonical terms.
+* Longest-match-first overlap resolution.
+* Boundary behavior for partial words.
+* Disabled glossary entries excluded.
+* Participant payload excluding Admin-only fields.
+* Popover accessibility states if component tests exist nearby.
 
 Manual checks:
 
@@ -215,7 +214,7 @@ Manual checks:
 Before implementation closeout, create:
 
 ```txt
-notes/claude_handoff_phase_FUTURE_inline_glossary_rendering.txt
+notes/claude_handoff_phase_41_inline_glossary_rendering.txt
 ```
 
 Ask Claude Code to review:
@@ -230,7 +229,7 @@ Ask Claude Code to review:
 Claude Code must write review output to:
 
 ```txt
-notes/claude_review_phase_FUTURE_inline_glossary_rendering.txt
+notes/claude_review_phase_41_inline_glossary_rendering.txt
 ```
 
 ---

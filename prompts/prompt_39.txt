@@ -1,10 +1,4 @@
-# Deferred Glossary Phase — Global Glossary Data Model And Admin Foundation
-
-Status:
-Reinstated in the normal prompt flow as `prompts/prompt_39.txt`.
-
-Keep this file as historical planning context only. Use `prompts/prompt_39.txt`
-for implementation.
+# Phase 39 - Global Glossary Data Model And Admin Foundation
 
 ## Purpose
 
@@ -22,6 +16,12 @@ question text and see Admin-approved definitions. Admins need a glossary page
 with canonical terms, optional strings/aliases, and definitions.
 ```
 
+Reinstatement note:
+
+This prompt promotes the former deferred glossary Admin foundation back into
+the normal phase flow. `prompts/deferred_global_glossary_admin_foundation.txt`
+remains as historical planning context only.
+
 ## Role Note
 
 Default arrangement:
@@ -31,19 +31,18 @@ Default arrangement:
 
 Branch:
 
-When this deferred work is reactivated, assign it a fresh phase number and
-start implementation from `main` on a fresh phase branch. Do not implement this
+Start implementation from `main` on a fresh phase branch. Do not implement this
 phase directly on `main`.
 
 ```bash
 git checkout main
-git checkout -b phase-FUTURE-global-glossary-admin
+git checkout -b phase-39-global-glossary-admin
 ```
 
 Closeout artifacts:
 
-* implementation handoff: `notes/claude_handoff_phase_FUTURE_glossary_admin.txt`
-* Claude review: `notes/claude_review_phase_FUTURE_glossary_admin.txt`
+* implementation handoff: `notes/claude_handoff_phase_39_glossary_admin.txt`
+* Claude review: `notes/claude_review_phase_39_glossary_admin.txt`
 
 ---
 
@@ -52,6 +51,7 @@ Closeout artifacts:
 Read before implementation:
 
 * `notes/next_phases.txt`
+* `prompts/prompt_22.txt`
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -119,14 +119,14 @@ them differently.
 
 Do not implement:
 
-* Webster/dictionary API calls
-* automatic participant inline term detection/rendering
-* rich text or HTML glossary definitions
-* glossary terms as answer options
-* survey-response data changes
-* reporting or CSV changes
-* hidden tags or conditional logic based on glossary matches
-* per-survey glossary scoping unless the client explicitly requests it
+* Webster/dictionary API calls.
+* Automatic participant inline term detection/rendering.
+* Rich text or HTML glossary definitions.
+* Glossary terms as answer options.
+* Survey-response data changes.
+* Reporting or CSV changes.
+* Hidden tags or conditional logic based on glossary matches.
+* Per-survey glossary scoping unless the client explicitly requests it.
 
 ## Assumptions
 
@@ -136,13 +136,17 @@ Do not implement:
 * Match strings should be treated as plain text, not regular expressions.
 * Disabled glossary entries should remain editable but unavailable to
   participant-facing payloads.
+* The canonical term itself should be included as a match string, either
+  implicitly or as a persisted alias, unless implementation inspection finds a
+  cleaner established pattern.
 
 ## Open Questions
 
 * Should glossary entries support internal Admin notes? If unanswered, do not
   add notes in this phase.
-* Should the canonical term itself automatically be a match string? If
-  unanswered, yes, include it as an implicit or persisted match string.
+* Should glossary entries be deleted or archived? If unanswered, prefer archive
+  or soft-delete behavior if the codebase already has that pattern; otherwise
+  document the deletion choice in the handoff.
 
 ---
 
@@ -177,13 +181,13 @@ git diff --check
 
 Add focused tests for:
 
-* Admin create/update/read/list/delete or archive behavior
-* non-admin authorization rejection
-* duplicate canonical terms and aliases
-* disabled entries excluded from participant-safe payloads if such a payload is
-  introduced
-* validation of empty/long fields
-* migration idempotency/backward compatibility
+* Admin create/update/read/list/delete or archive behavior.
+* Non-admin authorization rejection.
+* Duplicate canonical terms and aliases.
+* Disabled entries excluded from participant-safe payloads if such a payload is
+  introduced.
+* Validation of empty/long fields.
+* Migration idempotency/backward compatibility.
 
 Manual checks:
 
@@ -201,7 +205,7 @@ Manual checks:
 Before implementation closeout, create:
 
 ```txt
-notes/claude_handoff_phase_FUTURE_glossary_admin.txt
+notes/claude_handoff_phase_39_glossary_admin.txt
 ```
 
 Ask Claude Code to review:
@@ -216,7 +220,7 @@ Ask Claude Code to review:
 Claude Code must write review output to:
 
 ```txt
-notes/claude_review_phase_FUTURE_glossary_admin.txt
+notes/claude_review_phase_39_glossary_admin.txt
 ```
 
 ---

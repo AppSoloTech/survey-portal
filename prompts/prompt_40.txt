@@ -1,18 +1,12 @@
-# Deferred Glossary Phase — Dictionary-Assisted Glossary Definitions
-
-Status:
-Reinstated in the normal prompt flow as `prompts/prompt_40.txt`.
-
-Keep this file as historical planning context only. Use `prompts/prompt_40.txt`
-for implementation.
+# Phase 40 - Dictionary-Assisted Glossary Definitions
 
 ## Purpose
 
 Add an Admin-only dictionary lookup flow that suggests definitions for glossary
 terms before the Admin saves or updates the final glossary definition.
 
-This deferred phase should build on the deferred global glossary Admin
-foundation. It should not implement participant inline glossary rendering.
+This phase should build on Phase 39, the global glossary Admin foundation. It
+should not implement participant inline glossary rendering.
 
 Source feedback or planning note:
 
@@ -21,6 +15,22 @@ Client Phase 22 re-scope: when an Admin enters a glossary term, use a
 Webster/dictionary API to suggest a definition. If no definition is found, the
 Admin should enter their own definition.
 ```
+
+Reinstatement note:
+
+This prompt promotes the former deferred dictionary-assist work back into the
+normal phase flow. `prompts/deferred_glossary_dictionary_assist.txt` remains as
+historical planning context only.
+
+Provider planning status:
+
+* Approved test provider: Merriam-Webster Collegiate Dictionary API.
+* Local development env vars have been added by the project owner:
+  `DICTIONARY_PROVIDER` and `MERRIAM_WEBSTER_COLLEGIATE_API_KEY`.
+* Do not commit real provider keys. Add only placeholder names/defaults to
+  tracked documentation or examples.
+* The client should own the production provider account/key; production should
+  be a pure environment-variable swap.
 
 ## Role Note
 
@@ -31,19 +41,17 @@ Default arrangement:
 
 Branch:
 
-When this deferred work is reactivated, assign it a fresh phase number and start
-implementation from `main` after the deferred global glossary Admin foundation
-is merged.
+Start implementation from `main` after Phase 39 is merged.
 
 ```bash
 git checkout main
-git checkout -b phase-FUTURE-glossary-dictionary-assist
+git checkout -b phase-40-glossary-dictionary-assist
 ```
 
 Closeout artifacts:
 
-* implementation handoff: `notes/claude_handoff_phase_FUTURE_glossary_dictionary_assist.txt`
-* Claude review: `notes/claude_review_phase_FUTURE_glossary_dictionary_assist.txt`
+* implementation handoff: `notes/claude_handoff_phase_40_glossary_dictionary_assist.txt`
+* Claude review: `notes/claude_review_phase_40_glossary_dictionary_assist.txt`
 
 ---
 
@@ -51,9 +59,8 @@ Closeout artifacts:
 
 Read before implementation:
 
-* `prompts/deferred_global_glossary_admin_foundation.txt`
-* The handoff and review artifacts from the reactivated global glossary Admin
-  foundation phase.
+* `prompts/prompt_39.txt`
+* The handoff and review artifacts from Phase 39.
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -63,7 +70,9 @@ Read before implementation:
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
 * Current glossary APIs/UI from the completed global glossary Admin foundation.
-* Current official documentation for the approved dictionary/Webster provider.
+* Current official Merriam-Webster Dictionary API documentation, terms,
+  authentication, request URL, response shape, rate limits, and branding
+  requirements.
 
 ---
 
@@ -96,20 +105,24 @@ Expected impact:
 
 Implement:
 
-* Select and document the approved dictionary/Webster provider after verifying
-  current official provider docs, terms, authentication, and response shape.
+* Merriam-Webster Collegiate Dictionary API lookup behind a small provider
+  interface so future provider swaps are isolated.
+* Environment-driven provider configuration:
+  * `DICTIONARY_PROVIDER=disabled` or equivalent safe default.
+  * `DICTIONARY_PROVIDER=merriam-webster` for the configured provider.
+  * `MERRIAM_WEBSTER_COLLEGIATE_API_KEY` for the provider key.
 * Server-side lookup endpoint available only to Admins.
-* Environment-driven provider configuration with no secrets committed.
+* No client-side direct calls to Merriam-Webster.
 * Graceful states for:
   * definition found
   * multiple definitions found
-  * no definition found
+  * spelling suggestions/no exact match
   * provider unavailable/rate-limited
   * provider not configured
 * Admin UI that lets the Admin accept, edit, or ignore a suggested definition.
-* Store source metadata on glossary entries where the global glossary schema
-  supports it, such as `manual`, `dictionary_suggested`, provider name, and
-  lookup timestamp.
+* Store source metadata on glossary entries where the Phase 39 schema supports
+  it, such as `manual`, `dictionary_suggested`, provider name, and lookup
+  timestamp.
 * Tests that mock provider responses instead of calling the live service.
 
 The Admin must remain in control of the saved glossary definition. Suggestions
@@ -119,13 +132,16 @@ should never overwrite existing definitions without explicit Admin action.
 
 Do not implement:
 
-* participant inline term rendering
-* automatic glossary entry creation without Admin confirmation
-* client-side direct calls to the dictionary provider
-* live-network tests
-* storing API keys in source files, migrations, fixtures, or snapshots
-* rich text or HTML dictionary output
-* non-English dictionary behavior unless explicitly requested
+* Participant inline term rendering.
+* Automatic glossary entry creation without Admin confirmation.
+* Client-side direct calls to the dictionary provider.
+* Live-network tests.
+* Storing API keys in source files, migrations, fixtures, snapshots, handoffs,
+  or screenshots.
+* Rich text or HTML dictionary output.
+* Non-English dictionary behavior unless explicitly requested.
+* Commercial/provider licensing changes beyond documenting the production
+  account/key handoff requirement.
 
 ## Assumptions
 
@@ -133,14 +149,16 @@ Do not implement:
   provider is not configured.
 * Dictionary definitions are suggestions only and may be edited before save.
 * Provider responses should be normalized to plain text before reaching the UI.
+* Automated tests should use mocked provider payloads and should not require
+  the local real API key.
 
 ## Open Questions
 
-* Which dictionary/Webster provider and plan should be used? If not decided,
-  implement the client behind a small provider interface and document the
-  required environment variables as placeholders.
 * Should lookup results be cached? If unanswered, avoid durable caching beyond
   saved source metadata in this phase.
+* Should Merriam-Webster branding be displayed in the Admin-only suggestion UI?
+  Verify current provider requirements during implementation and comply if
+  required.
 
 ---
 
@@ -172,19 +190,20 @@ git diff --check
 
 Add focused tests for:
 
-* Admin-only lookup authorization
-* successful provider response normalization
-* no-match fallback
-* provider error/rate-limit fallback
-* provider-not-configured behavior
-* accepting/editing/ignoring a suggested definition in the Admin form
-* no live API calls during automated tests
+* Admin-only lookup authorization.
+* Successful provider response normalization.
+* Multiple-definition response normalization.
+* No-match/spelling-suggestion fallback.
+* Provider error/rate-limit fallback.
+* Provider-not-configured behavior.
+* Accepting/editing/ignoring a suggested definition in the Admin form.
+* No live API calls during automated tests.
 
 Manual checks:
 
 * With provider disabled, Admin can still manually create/edit glossary entries.
-* With mocked or configured provider, Admin can request a suggestion and edit it
-  before save.
+* With the configured local provider env vars, Admin can request a suggestion
+  and edit it before save.
 * No-match terms show manual-entry fallback.
 * Existing saved definitions are not overwritten unless the Admin explicitly
   applies a suggestion.
@@ -197,7 +216,7 @@ Manual checks:
 Before implementation closeout, create:
 
 ```txt
-notes/claude_handoff_phase_FUTURE_glossary_dictionary_assist.txt
+notes/claude_handoff_phase_40_glossary_dictionary_assist.txt
 ```
 
 Ask Claude Code to review:
@@ -212,7 +231,7 @@ Ask Claude Code to review:
 Claude Code must write review output to:
 
 ```txt
-notes/claude_review_phase_FUTURE_glossary_dictionary_assist.txt
+notes/claude_review_phase_40_glossary_dictionary_assist.txt
 ```
 
 ---
