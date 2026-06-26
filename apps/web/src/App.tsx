@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "./auth/AuthContext.js";
 import { ProtectedRoute } from "./auth/ProtectedRoute.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { ToastProvider } from "./components/ToastProvider.js";
+import { AdminGlossaryPage } from "./pages/admin/AdminGlossaryPage.js";
 import { AdminReleasesPage } from "./pages/admin/AdminReleasesPage.js";
 import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
 import { AdminTagsPage } from "./pages/admin/AdminTagsPage.js";
@@ -100,6 +101,7 @@ function AppShell() {
               <Route element={<AdminRoute />}>
                 <Route element={<AdminSurveysOverview />} path="/admin" />
                 <Route element={<AdminReleasesPage />} path="/admin/releases" />
+                <Route element={<AdminGlossaryPage />} path="/admin/glossary" />
                 <Route element={<AdminUsersPage />} path="/admin/users" />
                 <Route element={<AdminUserDetailPage />} path="/admin/users/:userId" />
                 <Route element={<AdminTagsPage />} path="/admin/tags" />

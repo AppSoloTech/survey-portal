@@ -60,7 +60,9 @@ Closeout artifacts:
 Read before implementation:
 
 * `prompts/prompt_39.txt`
-* The handoff and review artifacts from Phase 39.
+* The handoff and review artifacts from Phase 39:
+  * `notes/claude_handoff_phase_39_glossary_admin.txt`
+  * `notes/claude_review_phase_39_glossary_admin.txt`
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -70,6 +72,13 @@ Read before implementation:
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
 * Current glossary APIs/UI from the completed global glossary Admin foundation.
+  In particular:
+  * `database/migrations/0035_global_glossary.sql`
+  * `apps/api/src/routes/adminGlossaryRoutes.ts`
+  * `apps/api/src/services/validation.ts`
+  * `apps/web/src/pages/admin/AdminGlossaryPage.tsx`
+  * `apps/web/src/api/glossary.ts`
+  * `packages/shared/src/index.ts`
 * Current official Merriam-Webster Dictionary API documentation, terms,
   authentication, request URL, response shape, rate limits, and branding
   requirements.
@@ -113,6 +122,9 @@ Implement:
   * `MERRIAM_WEBSTER_COLLEGIATE_API_KEY` for the provider key.
 * Server-side lookup endpoint available only to Admins.
 * No client-side direct calls to Merriam-Webster.
+* Lookup should default to the glossary form's canonical term. Do not mutate
+  the canonical term, aliases, enabled state, or saved definition merely
+  because a lookup ran.
 * Graceful states for:
   * definition found
   * multiple definitions found
@@ -120,13 +132,22 @@ Implement:
   * provider unavailable/rate-limited
   * provider not configured
 * Admin UI that lets the Admin accept, edit, or ignore a suggested definition.
-* Store source metadata on glossary entries where the Phase 39 schema supports
-  it, such as `manual`, `dictionary_suggested`, provider name, and lookup
-  timestamp.
+* Extend the existing Admin glossary form without regressing the Phase 39
+  layout/responsive polish. Keep lookup controls grouped near the canonical
+  term/definition fields and avoid broad page redesign.
+* Store source metadata using the Phase 39 fields:
+  * `definitionSource`: `manual` or `dictionary_suggested`
+  * `sourceProvider`
+  * `sourceReference`
+  * `sourceLookupAt`
 * Tests that mock provider responses instead of calling the live service.
 
 The Admin must remain in control of the saved glossary definition. Suggestions
 should never overwrite existing definitions without explicit Admin action.
+When an Admin applies a provider suggestion, save `dictionary_suggested`
+metadata even if the Admin edits that suggested text before saving. When an
+Admin ignores suggestions or manually replaces the definition without applying a
+new suggestion, save the definition as `manual` and clear provider metadata.
 
 ## Non-Goals
 
@@ -151,6 +172,9 @@ Do not implement:
 * Provider responses should be normalized to plain text before reaching the UI.
 * Automated tests should use mocked provider payloads and should not require
   the local real API key.
+* The Phase 39 `/api/admin/glossary/participant-safe` route is Admin-gated by
+  design and is not a participant route. Do not change participant exposure in
+  Phase 40.
 
 ## Open Questions
 
@@ -197,6 +221,8 @@ Add focused tests for:
 * Provider error/rate-limit fallback.
 * Provider-not-configured behavior.
 * Accepting/editing/ignoring a suggested definition in the Admin form.
+* Source metadata saved as `dictionary_suggested` only after explicit Admin
+  application of a suggestion, and reset to `manual` for fully manual edits.
 * No live API calls during automated tests.
 
 Manual checks:

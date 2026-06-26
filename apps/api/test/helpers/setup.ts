@@ -17,6 +17,8 @@ const dataTables = [
   "anonymous_survey_links",
   "survey_templates",
   "conditional_logic_rules",
+  "glossary_match_strings",
+  "glossary_entries",
   "answer_tags",
   "question_value_tags",
   "question_other_tags",

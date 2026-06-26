@@ -1,0 +1,78 @@
+Phase 39 - Global Glossary Admin Foundation
+
+Prompt:
+prompts/prompt_39.txt
+
+Branch:
+phase-39-global-glossary-admin
+
+Implementation summary:
+- Added database/migrations/0035_global_glossary.sql with glossary_entries and
+  glossary_match_strings.
+- Added shared Admin glossary and participant-safe glossary response types.
+- Added Admin-only /api/admin/glossary routes for list, read, create, update,
+  and archive-on-delete.
+- Added Admin-only /api/admin/glossary/participant-safe for the later rendering
+  phase to reuse; it returns only enabled entries and no source metadata.
+- Added /admin/glossary, linked from the Admin tools panel.
+- Added focused API tests in apps/api/test/glossary.test.ts.
+- Updated DATA_MODEL_VISION, FOLLOW_UPS, PHASE_LOG, and unreleased notes.
+
+Key implementation decisions:
+- The canonical term is persisted as the first glossary_match_strings row with
+  is_canonical = true. This makes the active case-insensitive unique index on
+  normalized_match_text cover canonical terms and aliases uniformly.
+- DELETE archives by setting deleted_at on both glossary_entries and active
+  glossary_match_strings. Archived match strings are excluded from the active
+  unique index and can be reused later.
+- Phase 39 stores dictionary-assist metadata fields but does not call any
+  external dictionary provider.
+- Participant-facing survey APIs and runner behavior were intentionally left
+  unchanged.
+
+Files most worth reviewing:
+- database/migrations/0035_global_glossary.sql
+- apps/api/src/routes/adminGlossaryRoutes.ts
+- apps/api/src/services/validation.ts
+- packages/shared/src/index.ts
+- apps/web/src/pages/admin/AdminGlossaryPage.tsx
+- apps/web/src/api/glossary.ts
+- apps/api/test/glossary.test.ts
+- apps/api/test/helpers/setup.ts
+- apps/web/src/App.tsx
+- apps/web/src/pages/admin/AdminSurveysOverview.tsx
+- apps/web/src/styles.css
+
+Review focus requested:
+- Schema separation from surveys, questions, answers, tags, reporting, and CSV.
+- Admin-only authorization boundaries.
+- Glossary validation and duplicate handling.
+- Participant-safe payload shape and metadata isolation.
+- Confirmation that there is no accidental participant rendering or survey
+  logic coupling.
+- Migration safety and idempotency.
+
+Validation already run:
+- npm run build -w packages/shared
+- npx tsc --noEmit -p apps/api/tsconfig.json
+- npx tsc --noEmit -p apps/web/tsconfig.json
+- npm run test -w apps/api -- glossary
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- git diff --check
+- npm run db:migrate
+- curl -sS http://127.0.0.1:3000/api/health
+
+Validation notes:
+- npm run build emitted the existing Vite large chunk warning.
+- npm test required approved local PostgreSQL access for API tests.
+- Local development migration applied 0035_global_glossary.sql; API health
+  returned status ok and database connected.
+
+Pending before commit readiness:
+- Manual /admin/glossary browser pass at 375/768/1280px
+
+Claude review output target:
+notes/claude_review_phase_39_glossary_admin.txt

@@ -297,6 +297,51 @@ export interface TagGroupResponse {
   group: TagGroup;
 }
 
+export type GlossaryDefinitionSource = "manual" | "dictionary_suggested";
+
+export interface AdminGlossaryAlias {
+  id: number;
+  glossaryEntryId: number;
+  matchText: string;
+  isCanonical: boolean;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminGlossaryEntry {
+  id: number;
+  canonicalTerm: string;
+  definition: string;
+  isEnabled: boolean;
+  definitionSource: GlossaryDefinitionSource;
+  sourceProvider: string | null;
+  sourceReference: string | null;
+  sourceLookupAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  aliases: AdminGlossaryAlias[];
+}
+
+export interface AdminGlossaryEntriesResponse {
+  entries: AdminGlossaryEntry[];
+}
+
+export interface AdminGlossaryEntryResponse {
+  entry: AdminGlossaryEntry;
+}
+
+export interface ParticipantGlossaryEntry {
+  id: number;
+  canonicalTerm: string;
+  definition: string;
+  matchStrings: string[];
+}
+
+export interface ParticipantGlossaryEntriesResponse {
+  entries: ParticipantGlossaryEntry[];
+}
+
 export interface AdminUserSummary {
   id: number;
   firstName: string;

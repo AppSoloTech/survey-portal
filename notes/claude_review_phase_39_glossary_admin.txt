@@ -1,0 +1,129 @@
+Phase 39 - Global Glossary Admin Foundation - Claude Review
+
+Reviewer: Claude Code
+Branch: phase-39-global-glossary-admin
+Verdict: APPROVE (no blocking issues). A few low-severity notes and
+forward-looking observations below.
+
+Independent validation run during review:
+- npm run build -w packages/shared ............ OK
+- npx tsc --noEmit -p apps/api/tsconfig.json .. OK
+- npx tsc --noEmit -p apps/web/tsconfig.json .. OK
+(API runtime tests require local Postgres and were not re-run here; the
+handoff reports the full gate passing.)
+
+================================================================
+Review focus areas
+================================================================
+
+1. Schema separation from surveys/questions/answers/tags/reporting/CSV
+   PASS. glossary_entries and glossary_match_strings are fully standalone:
+   no FKs to surveys, questions, answer_options, answer_tags, attempts, or
+   reporting tables. The only FK is match_strings -> glossary_entries
+   (on delete cascade), which is internal to the feature. Nothing in the
+   reporting/CSV/runner paths references the new tables. Matches the
+   prompt's "keep glossary independent from surveys and questions" goal.
+
+2. Admin-only authorization boundaries
+   PASS. The whole router is gated once with
+   `adminGlossaryRouter.use(requireAuth, requireRole("admin"))`, so every
+   verb (list/read/create/update/delete/participant-safe) is admin-only.
+   Router is mounted at `/api/admin/glossary` BEFORE the catch-all
+   `/api/admin` in app.ts, so no shadowing. The auth test confirms a
+   non-admin user receives 403 on GET/POST/PUT/DELETE and on
+   participant-safe.
+
+3. Glossary validation and duplicate handling
+   PASS. Two complementary layers:
+   - In-payload: validateGlossaryEntryBody normalizes (trim+lowercase) the
+     canonical term plus aliases and rejects intra-request dupes with 400
+     "Glossary match strings must be unique".
+   - Cross-entry: the partial unique index
+     glossary_match_strings_normalized_active_unique (on lower(btrim(...))
+     where deleted_at is null) enforces global uniqueness; the route maps
+     the 23505 violation to a clean 409. Length/empty/source-enum checks
+     are present and mirror the DB CHECK constraints (term 1-120,
+     definition 1-1200, provider <=80, reference <=240, source enum).
+   Good: the create/update transactions roll back fully on a unique
+   violation, so a failed PUT does not leave the entry with its match
+   strings soft-deleted.
+
+4. Participant-safe payload shape and metadata isolation
+   PASS for this phase. toParticipantGlossaryEntry projects only
+   {id, canonicalTerm, definition, matchStrings} — no definitionSource,
+   sourceProvider, sourceReference, sourceLookupAt, timestamps, or
+   per-alias records leak. enabledOnly filtering excludes disabled
+   entries. Test asserts both the exact shape and the absence of
+   definitionSource/sourceProvider.
+
+5. No accidental participant rendering or survey-logic coupling
+   PASS. No participant/runner/survey route imports the glossary router or
+   types; question text rendering is untouched. The participant-safe
+   endpoint exists but is admin-gated and unused by any participant path,
+   so nothing is exposed to survey takers yet (consistent with the
+   non-goals).
+
+6. Migration safety / idempotency
+   PASS. 0035 uses `create table/index if not exists` matching the repo
+   convention (cf. 0034). The migrate runner tracks applied files in
+   schema_migrations with checksums, so 0035 runs once and the file must
+   not be edited post-apply. The canonical-vs-alias model is handled
+   uniformly: canonical is persisted as the first match string with
+   is_canonical=true, and a second partial unique index
+   (glossary_match_strings_canonical_active_unique) guarantees one active
+   canonical per entry. Soft-delete (deleted_at) is excluded from both
+   active unique indexes, so archived strings free up their normalized
+   text for reuse — a clean design.
+
+================================================================
+Low-severity notes (non-blocking)
+================================================================
+
+L1. Full match-string replace on every update (churn).
+    PUT and the enable/disable toggle both soft-delete ALL active match
+    strings and re-insert them, even when only `isEnabled` changed. Effects:
+    alias row IDs change on every edit, and soft-deleted rows accumulate
+    indefinitely. Negligible for an admin-scale glossary, but consider (a)
+    skipping the alias rewrite when the term + alias set is unchanged, or
+    (b) a future cleanup of long-dead soft-deleted rows. Not required now.
+
+L2. Generic 409 message.
+    Cross-entry collisions return "Glossary match string already exists"
+    without naming the offending string, so an admin editing a long alias
+    list can't tell which one conflicts. Acceptable for the foundation;
+    worth improving when the UI grows.
+
+L3. participant-safe is admin-gated by design — flag for the next phase.
+    The endpoint/type are named for later participant rendering, but they
+    live behind requireRole("admin"). The rendering phase will need a
+    separate non-admin (or attempt-scoped) route; it cannot consume this
+    one as a participant. Correct and safer for now (nothing leaks before
+    rendering is built) — just calling it out so it isn't mistaken for a
+    ready-to-use participant feature.
+
+L4. Test gap: unauthenticated (401) case.
+    Tests cover non-admin (403) thoroughly but not the unauthenticated
+    (no-cookie -> 401) path. requireAuth handles it; a one-line assertion
+    would close the loop.
+
+L5. Two status codes for "duplicate" (400 intra-request vs 409 cross-entry).
+    Defensible (malformed request vs conflict with existing state) and
+    each is tested, but worth being aware of for client error handling.
+
+================================================================
+Confirmations against acceptance criteria
+================================================================
+- Create / edit / enable-disable / archive all implemented and wired from
+  the Admin tools panel (AdminSurveysOverview -> /admin/glossary).
+- One canonical term + one definition + multiple aliases per entry: yes.
+- Non-admins blocked from APIs and the page (AdminRoute + requireRole).
+- Duplicate match strings rejected (400 in-payload, 409 cross-entry).
+- No survey/validation/reporting/export/hidden-tag/response behavior
+  changed; only additive shared types and the new router/page.
+- DELETE archives via deleted_at on entry + active match strings
+  (soft-delete), consistent with the prompt's archive preference; choice
+  is documented in the handoff.
+- Glossary CSS (incl. responsive rules ~styles.css:5559/5578) is present.
+
+Outstanding before commit (per handoff): the manual browser pass at
+375/768/1280px is still pending; nothing in the diff blocks it.

@@ -15,7 +15,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Email provider selection and real delivery adapter: Phase 16 added a disabled/no-op foundation only. Choose an approved provider (Azure Communication Services, SendGrid, SMTP, or another service), define credential handling in Azure App Service settings, then implement password-reset, anonymous-invite, assignment, or receipt sending in their own phases with opt-in/opt-out handling where applicable.
 - Review and merge feature/templates-and-reporting (stacked on the dark-mode branch): duplicate-as-template, resume nudge, report date range + option distribution + tag rollup. Manual browser pass over the Results tab with real data before merging.
 - Cross-survey tag rollup: aggregate a hidden tag category across all surveys (internally stored as `tag_key`, e.g. compliance_result everywhere) — per-survey rollup shipped first.
-- Global glossary feature: prompt_22's original per-question tooltip scope is superseded. The client-reviewed glossary direction is parked in deferred staged prompts: Admin glossary foundation (`prompts/deferred_global_glossary_admin_foundation.txt`), dictionary-assisted definition suggestions (`prompts/deferred_glossary_dictionary_assist.txt`), and participant inline glossary rendering (`prompts/deferred_participant_inline_glossary_rendering.txt`).
+- Global glossary follow-on phases: Phase 39 implements the Admin glossary foundation. Phase 40 should add Admin-only Merriam-Webster dictionary suggestions using environment-held credentials, and Phase 41 should render enabled glossary matches inline for participants without changing survey logic, responses, reports, hidden tags, or CSV.
 
 ---
 
@@ -88,7 +88,12 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Run the Phase 19 manual browser pass: Account dropdown to `/settings` at 375/768/1280px, save/reload optional contact profile fields, verify survey stats after starting/completing a registered survey, confirm anonymous attempts do not change the registered user's profile stats, and confirm the Settings password reset cooldown still works.
 - Run the Phase 20 manual browser pass: admin reviews the bifurcated Administrators/Standard users sections in `/admin/users`, opens user detail and returns to the list, reviews contact profile/stat tiles, initiates a password reset without seeing token data, confirms standard-user 403 behavior from admin detail/reset endpoints, and checks the admin user list/detail/reset UI at 375/768/1280px.
 - Replace `THREE.Clock` in `apps/web/src/components/AmbientBackdrop.tsx` with the supported Three.js timing API or a local `performance.now()` timer. Manual Phase 25 browser testing surfaced the console warning: `THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.`
-- Deferred glossary prompts drafted: build the Admin glossary first, then optional dictionary-assist, then participant inline rendering. Validate that the rendering phase exposes only participant-safe glossary fields and does not affect response data, skip logic, reports, hidden tags, or CSV.
+- Phase 40 glossary dictionary assist remains pending: use the Phase 39 source metadata fields, keep provider calls server-side, and keep automated tests mocked.
+- Phase 41 participant inline glossary rendering remains pending: reuse the participant-safe glossary shape and validate that no Admin-only glossary metadata reaches participant APIs.
+- Phase 39 glossary polish: if Admin glossary usage grows, reduce update churn
+  by avoiding full alias soft-delete/reinsert when only enabled/source fields
+  change, and consider making duplicate-match conflict errors identify the
+  offending string.
 - Phase 26 test hardening: the current participant numeric-progress regression test is a source-text tripwire. Consider adding a render-level web test if the project adopts React Testing Library or another DOM test harness.
 - Future dynamic remaining-time model: Phase 27 records lightweight attempt
   activity and capped active-time aggregates, but Phase 26's participant display

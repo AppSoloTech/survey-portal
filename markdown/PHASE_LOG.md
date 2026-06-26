@@ -6,6 +6,206 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 39 — Global Glossary Admin Foundation
+
+Date:
+2026-06-26
+
+Status:
+Implemented; Claude review complete; manual browser testing passed
+
+Prompt:
+`prompts/prompt_39.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_39_glossary_admin.txt`
+- Claude review: `notes/claude_review_phase_39_glossary_admin.txt`
+
+## Goals
+
+- Add durable global glossary storage for Admin-approved participant inline
+  terms.
+- Provide Admin-only CRUD for canonical terms, definitions, aliases, and
+  enabled state.
+- Keep glossary data independent from survey logic, response storage,
+  reporting, hidden tags, and CSV.
+
+## Built
+
+- Added `database/migrations/0035_global_glossary.sql` with
+  `glossary_entries` and `glossary_match_strings`.
+- Added shared Admin and participant-safe glossary response types.
+- Added Admin-only `/api/admin/glossary` CRUD plus an Admin-only
+  `/api/admin/glossary/participant-safe` payload for later rendering reuse.
+- Added `/admin/glossary` and linked it from the Admin tools panel.
+- Added focused API tests for authorization, CRUD/archive, duplicate match
+  strings, participant-safe payload isolation, and validation.
+- Polished the glossary page layout so form controls use the full available
+  width, entry headers protect long text, and action buttons wrap cleanly on
+  narrow screens.
+- Addressed screenshot feedback where edit-mode glossary fields were using
+  browser-default styling instead of the Admin form controls.
+- Prepared app release notes for `v0.1.4` so the Admin Software updates page
+  includes the Phase 39 glossary foundation.
+- Created `notes/claude_handoff_phase_39_glossary_admin.txt`.
+
+## Important Decisions
+
+### Canonical Term As Match String
+
+Decision:
+Persist the canonical term as the first `glossary_match_strings` row with
+`is_canonical = true`.
+
+Reason:
+This lets one case-insensitive uniqueness rule cover canonical terms and
+aliases together, avoiding ambiguous participant rendering in Phase 41.
+
+Tradeoff:
+The service layer must maintain the canonical match row when entries are
+updated.
+
+### Archive-On-Delete
+
+Decision:
+The DELETE endpoint archives glossary entries by setting `deleted_at` on the
+entry and its match strings.
+
+Reason:
+The project already uses soft deletion for survey content, and archived match
+strings should no longer block future active glossary entries.
+
+Tradeoff:
+Archived glossary rows remain in the database but are excluded from Admin list
+and participant-safe reads.
+
+## Architecture Notes
+
+- Database/schema impact: adds global glossary tables independent from survey,
+  question, answer, tag, attempt, report, and CSV tables.
+- API contract impact: adds Admin glossary CRUD responses and participant-safe
+  glossary response types.
+- Auth or authorization impact: all new routes require authenticated Admin
+  users through existing route middleware.
+- Data privacy or visibility impact: participant-safe shape excludes source
+  metadata and disabled entries; no participant routes consume it yet.
+- Frontend UX impact: Admin tools now include a glossary management page.
+- Environment or deployment impact: migration required; no new environment
+  variables in Phase 39.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run build -w packages/shared
+npx tsc --noEmit -p apps/api/tsconfig.json
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/api -- glossary
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run db:migrate
+curl -sS http://127.0.0.1:3000/api/health
+npm run test -w apps/api -- glossary
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run lint -w apps/web
+npm run build -w apps/web
+npm run release:preview
+npm run release:prepare
+npm run release:check
+npm run test:release
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above.
+- `npm run build` emitted the existing Vite large chunk warning.
+- `npm test` required approved local PostgreSQL access for API tests.
+- Local development migration applied `0035_global_glossary.sql`; API health
+  returned `status: ok` and `database: connected`.
+- Post-review UI polish passed targeted web typecheck, lint, and build; the
+  build emitted the existing Vite large chunk warning.
+- `npm run release:prepare` created `markdown/releases/v0.1.4.md`, bumped the
+  root app version and lockfile to `0.1.4`, reset `unreleased.md`, and release
+  validation passed.
+
+Manual tests:
+
+- Passed per developer manual testing on 2026-06-26. Post-review UI polish was
+  checked by source-level responsive review and targeted web validation.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_39_glossary_admin.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_39_glossary_admin.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None; Claude approved the phase with no blocking issues.
+
+Suggested improvements:
+
+- Reduce match-string row churn on updates if glossary scale grows.
+- Improve cross-entry duplicate errors to name the conflicting match string.
+- Remember that the Phase 39 participant-safe endpoint is Admin-gated; Phase 41
+  will need an attempt-scoped or otherwise participant-appropriate route.
+- Keep the 400 vs 409 duplicate distinction in mind for UI error handling.
+
+Accepted fixes:
+
+- Added an unauthenticated glossary request test covering the `401`
+  `requireAuth` path.
+
+Deferred findings:
+
+- Match-string update churn and more specific duplicate-conflict messaging are
+  deferred as non-blocking Admin UX/scale polish.
+
+## Problems Encountered
+
+- Problem: Targeted API/web typechecks initially saw the stale built shared
+  package and could not find the new glossary exports.
+  Resolution: Rebuilt `packages/shared`, then reran targeted API/web
+  typechecks successfully.
+
+## Follow-Up Tasks
+
+- Phase 40: add dictionary-assisted Admin definition suggestions using the
+  Phase 39 source metadata.
+- Phase 41: expose enabled glossary entries to participant flows and render
+  inline definitions accessibly.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 38 — Collapsible Question Editor Sections
 
 Date:

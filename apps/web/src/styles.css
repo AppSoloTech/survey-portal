@@ -2620,6 +2620,113 @@ main {
   padding-left: 1.1rem;
 }
 
+.glossary-layout {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(280px, 0.38fr) minmax(0, 1fr);
+}
+
+.glossary-form {
+  min-width: 0;
+}
+
+.glossary-entry .glossary-form {
+  max-width: 720px;
+}
+
+.glossary-form h3 {
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.glossary-form input,
+.glossary-form textarea {
+  max-width: none;
+}
+
+.glossary-list {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.glossary-list-summary,
+.glossary-entry-meta,
+.glossary-alias-list,
+.glossary-entry-actions,
+.glossary-form-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.glossary-entry-actions,
+.glossary-form-actions {
+  justify-content: flex-end;
+}
+
+.glossary-form-actions {
+  margin-top: 0.25rem;
+}
+
+.glossary-list-summary span,
+.glossary-entry-meta span,
+.glossary-alias {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-label);
+  font-size: 0.75rem;
+  font-weight: 750;
+  padding: 0.25rem 0.5rem;
+}
+
+.glossary-entry {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.glossary-entry form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.glossary-entry-header {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.glossary-entry-header h3 {
+  margin: 0 0 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.glossary-entry-header p {
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.glossary-entry-meta {
+  color: var(--text-muted);
+}
+
+.glossary-entry .status-pill {
+  justify-self: end;
+  text-transform: lowercase;
+  width: fit-content;
+}
+
 .overview-survey-list {
   display: grid;
   gap: 0.5rem;
@@ -2860,7 +2967,8 @@ main {
 }
 
 .builder-form label,
-.question-editor label {
+.question-editor label,
+.glossary-form label {
   color: var(--text-label);
   display: grid;
   font-size: 0.875rem;
@@ -2873,7 +2981,10 @@ main {
 .builder-form textarea,
 .question-editor input,
 .question-editor select,
-.question-editor textarea {
+.question-editor textarea,
+.glossary-form input,
+.glossary-form select,
+.glossary-form textarea {
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -2891,7 +3002,8 @@ main {
 }
 
 .builder-form textarea,
-.question-editor textarea {
+.question-editor textarea,
+.glossary-form textarea {
   resize: vertical;
 }
 
@@ -2900,7 +3012,10 @@ main {
 .builder-form textarea:focus,
 .question-editor input:focus,
 .question-editor select:focus,
-.question-editor textarea:focus {
+.question-editor textarea:focus,
+.glossary-form input:focus,
+.glossary-form select:focus,
+.glossary-form textarea:focus {
   background: var(--surface);
   border-color: var(--brand);
   box-shadow: 0 0 0 4px var(--focus-ring);
@@ -5485,6 +5600,7 @@ main {
 
   .admin-overview-layout,
   .admin-user-detail-layout,
+  .glossary-layout,
   .release-notes-layout,
   .anonymous-directory-card,
   .anonymous-registration-grid,
@@ -5502,7 +5618,8 @@ main {
 
   .admin-overview-layout,
   .builder-workspace,
-  .builder-stack {
+  .builder-stack,
+  .glossary-layout {
     gap: 1rem;
   }
 
@@ -5556,6 +5673,26 @@ main {
 
   .survey-card-footer .status-pill {
     width: fit-content;
+  }
+
+  .glossary-entry-header {
+    grid-template-columns: 1fr;
+  }
+
+  .glossary-entry .status-pill {
+    justify-self: start;
+  }
+
+  .glossary-entry-actions,
+  .glossary-form-actions {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .glossary-entry-actions .button-link,
+  .glossary-form-actions .button-link {
+    flex: 1 1 calc(50% - 0.25rem);
+    min-width: min(100%, 9rem);
   }
 
   .survey-card-footer .button-link,
@@ -5668,8 +5805,13 @@ main {
   .question-form textarea,
   .builder-form input,
   .builder-form select,
+  .builder-form textarea,
+  .glossary-form input,
+  .glossary-form select,
+  .glossary-form textarea,
   .question-editor input,
-  .question-editor select {
+  .question-editor select,
+  .question-editor textarea {
     min-height: var(--tap-target);
   }
 

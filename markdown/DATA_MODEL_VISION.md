@@ -200,6 +200,69 @@ Notes:
 
 ---
 
+## Global Glossary Entry
+
+Represents an Admin-approved participant-facing term definition.
+
+Suggested fields:
+
+```txt
+id
+canonical_term
+definition
+is_enabled
+definition_source
+source_provider
+source_reference
+source_lookup_at
+created_at
+updated_at
+deleted_at
+```
+
+Notes:
+
+* Glossary entries are global across surveys and are not owned by surveys,
+  questions, answer options, hidden tags, attempts, reports, or CSV exports.
+* Definitions are plain text and informational only.
+* Disabled entries remain editable for Admins but must not appear in
+  participant-safe glossary payloads.
+* `deleted_at` archives entries so match strings can be retired without
+  hard-deleting historical Admin content immediately.
+* Source metadata supports later dictionary-assist workflows; Admins still own
+  the final saved definition.
+
+---
+
+## Global Glossary Match String
+
+Represents one plain-text string that can match participant-facing question
+text in a later rendering phase.
+
+Suggested fields:
+
+```txt
+id
+glossary_entry_id
+match_text
+normalized_match_text
+is_canonical
+display_order
+created_at
+updated_at
+deleted_at
+```
+
+Notes:
+
+* The canonical term is stored as the first match string with
+  `is_canonical = true`.
+* Active match strings should be unique case-insensitively across all glossary
+  entries to prevent participant rendering ambiguity.
+* Match strings are plain text, not regular expressions.
+
+---
+
 ## Survey Attempt Activity Event
 
 Represents lightweight operational timing telemetry for a participant's survey

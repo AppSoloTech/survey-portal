@@ -1,4 +1,5 @@
 import type {
+  GlossaryDefinitionSource,
   SurveyAttemptActivityEventType,
   SurveyQuestionType,
   SurveyStatus
@@ -14,6 +15,10 @@ const otherAnswerTextMaxLength = answerOptionTextMaxLength;
 const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
 const tagGroupNameMaxLength = 120;
+const glossaryTermMaxLength = 120;
+const glossaryDefinitionMaxLength = 1200;
+const glossarySourceProviderMaxLength = 80;
+const glossarySourceReferenceMaxLength = 240;
 const scaleRangeMaxValueCount = 21;
 const categoryNameMaxLength = 120;
 const surveyPageTitleMaxLength = 180;
@@ -544,6 +549,105 @@ export function validateTagReorderBody(body: unknown): ValidationResult<{
   }
 
   return { ok: true, value: { groupId, tagIds: tagIds.value } };
+}
+
+export function validateGlossaryEntryBody(body: unknown): ValidationResult<{
+  canonicalTerm: string;
+  definition: string;
+  aliases: string[];
+  isEnabled: boolean;
+  definitionSource: GlossaryDefinitionSource;
+  sourceProvider: string | null;
+  sourceReference: string | null;
+  sourceLookupAt: Date | null;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const canonicalTerm = readTextField(body, "canonicalTerm");
+  const definition = readTextField(body, "definition");
+  const aliases = readGlossaryAliasArray(body.aliases);
+  const isEnabled = body.isEnabled === undefined ? true : body.isEnabled;
+  const definitionSource = readTextField(body, "definitionSource") || "manual";
+  const sourceProvider = readOptionalTextField(body, "sourceProvider");
+  const sourceReference = readOptionalTextField(body, "sourceReference");
+  const sourceLookupAt = readOptionalDateField(body, "sourceLookupAt");
+
+  if (!canonicalTerm) {
+    return { ok: false, error: "Canonical term is required" };
+  }
+
+  if (canonicalTerm.length > glossaryTermMaxLength) {
+    return { ok: false, error: `Canonical term must be ${glossaryTermMaxLength} characters or fewer` };
+  }
+
+  if (!definition) {
+    return { ok: false, error: "Definition is required" };
+  }
+
+  if (definition.length > glossaryDefinitionMaxLength) {
+    return {
+      ok: false,
+      error: `Definition must be ${glossaryDefinitionMaxLength} characters or fewer`
+    };
+  }
+
+  if (!aliases.ok) {
+    return aliases;
+  }
+
+  if (typeof isEnabled !== "boolean") {
+    return { ok: false, error: "isEnabled must be true or false" };
+  }
+
+  if (!isGlossaryDefinitionSource(definitionSource)) {
+    return { ok: false, error: "definitionSource must be manual or dictionary_suggested" };
+  }
+
+  if (sourceProvider && sourceProvider.length > glossarySourceProviderMaxLength) {
+    return {
+      ok: false,
+      error: `sourceProvider must be ${glossarySourceProviderMaxLength} characters or fewer`
+    };
+  }
+
+  if (sourceReference && sourceReference.length > glossarySourceReferenceMaxLength) {
+    return {
+      ok: false,
+      error: `sourceReference must be ${glossarySourceReferenceMaxLength} characters or fewer`
+    };
+  }
+
+  if (sourceLookupAt === false) {
+    return { ok: false, error: "sourceLookupAt must be a valid date string or null" };
+  }
+
+  const normalizedMatches = new Set<string>();
+
+  for (const value of [canonicalTerm, ...aliases.value]) {
+    const normalized = normalizeGlossaryMatch(value);
+
+    if (normalizedMatches.has(normalized)) {
+      return { ok: false, error: "Glossary match strings must be unique" };
+    }
+
+    normalizedMatches.add(normalized);
+  }
+
+  return {
+    ok: true,
+    value: {
+      aliases: aliases.value,
+      canonicalTerm,
+      definition,
+      definitionSource,
+      isEnabled,
+      sourceLookupAt,
+      sourceProvider,
+      sourceReference
+    }
+  };
 }
 
 // Body for hidden value tags on integer/text questions. Bounds are only
@@ -1122,8 +1226,66 @@ export function readOptionalTextField(body: Record<string, unknown>, field: stri
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function readGlossaryAliasArray(value: unknown): ValidationResult<string[]> {
+  if (value === undefined || value === null) {
+    return { ok: true, value: [] };
+  }
+
+  if (!Array.isArray(value)) {
+    return { ok: false, error: "aliases must be an array" };
+  }
+
+  const aliases: string[] = [];
+
+  for (const alias of value) {
+    if (typeof alias !== "string") {
+      return { ok: false, error: "aliases must contain text values" };
+    }
+
+    const trimmed = alias.trim();
+
+    if (!trimmed) {
+      return { ok: false, error: "aliases must not be empty" };
+    }
+
+    if (trimmed.length > glossaryTermMaxLength) {
+      return { ok: false, error: `Aliases must be ${glossaryTermMaxLength} characters or fewer` };
+    }
+
+    aliases.push(trimmed);
+  }
+
+  return { ok: true, value: aliases };
+}
+
+function readOptionalDateField(
+  body: Record<string, unknown>,
+  field: string
+): Date | null | false {
+  const value = body[field];
+
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? false : parsed;
+}
+
+function normalizeGlossaryMatch(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+export function isGlossaryDefinitionSource(value: string): value is GlossaryDefinitionSource {
+  return value === "manual" || value === "dictionary_suggested";
 }
 
 export function isSurveyStatus(value: string): value is SurveyStatus {
