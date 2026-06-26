@@ -28,13 +28,13 @@ describe("admin release notes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      currentVersion: "0.1.1",
+      currentVersion: "0.1.2",
       releases: expect.any(Array)
     });
     expect(response.body.releases[0]).toMatchObject({
-      version: "0.1.1",
-      title: "Admin Release Notes",
-      releasedAt: "2026-06-25",
+      version: "0.1.2",
+      title: "Admin Template Library",
+      releasedAt: "2026-06-26",
       summary: expect.any(String),
       sections: expect.any(Array)
     });
@@ -76,7 +76,7 @@ describe("admin release notes", () => {
   it("builds a response whose latest release matches the root app version", () => {
     const response = buildSoftwareReleaseNotesResponse();
 
-    expect(response.currentVersion).toBe("0.1.1");
+    expect(response.currentVersion).toBe("0.1.2");
     expect(response.releases[0].version).toBe(response.currentVersion);
   });
 });
