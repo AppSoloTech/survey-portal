@@ -33,6 +33,10 @@ import {
   validateSurveyCanPublish
 } from "../services/surveyBuilder.js";
 import {
+  insertPageTemplateIntoSurvey,
+  savePageTemplateFromSurveyPage
+} from "../services/surveyPageTemplates.js";
+import {
   deleteAnswerOptionsForQuestion,
   fetchConditionalRuleForSurvey,
   fetchOptionForQuestion,
@@ -49,6 +53,8 @@ import {
   validateAnswerTagBody,
   validateConditionalRuleBody,
   validateQuestionValueTagBody,
+  validatePageTemplateBody,
+  validatePageTemplateInsertBody,
   validateQuestionBody,
   validateReorderBody,
   validateSurveyPageBody,
@@ -661,6 +667,119 @@ surveyBuilderRouter.patch(
       res.json({ survey: updatedSurvey });
     } catch (error) {
       next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.post(
+  "/:id/pages/:pageId/template",
+  requireAuth,
+  requireRole("admin"),
+  rejectDeletedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const pageId = readPositiveIntegerParam(req.params.pageId);
+
+    if (!surveyId || !pageId) {
+      res.status(400).json({ error: "Survey id and page id must be positive integers" });
+      return;
+    }
+
+    const validation = validatePageTemplateBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const survey = await fetchSurveyRecord(pool, surveyId);
+
+      if (!survey) {
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
+
+      const user = (req as AuthenticatedRequest).user;
+      const template = await savePageTemplateFromSurveyPage(pool, {
+        survey,
+        pageId,
+        ...validation.value,
+        userId: user.id
+      });
+
+      if (!template) {
+        res.status(404).json({ error: "Page not found" });
+        return;
+      }
+
+      res.status(201).json({ template });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.post(
+  "/:id/page-templates/:templateId/insert",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const templateId = readPositiveIntegerParam(req.params.templateId);
+
+    if (!surveyId || !templateId) {
+      res.status(400).json({ error: "Survey id and template id must be positive integers" });
+      return;
+    }
+
+    const validation = validatePageTemplateInsertBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const survey = await fetchSurveyRecord(client, surveyId);
+
+      if (!survey) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
+
+      const insertResult = await insertPageTemplateIntoSurvey(client, {
+        surveyId,
+        templateId,
+        displayOrder: validation.value.displayOrder
+      });
+
+      if (insertResult === "template-not-found") {
+        await client.query("rollback");
+        res.status(404).json({ error: "Template not found" });
+        return;
+      }
+
+      await client.query("commit");
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      await client.query("rollback");
+      next(error);
+    } finally {
+      client.release();
     }
   }
 );

@@ -16,6 +16,7 @@ import {
   anonymousSurveyDirectoryRouter,
   anonymousSurveyPublicRouter
 } from "./routes/anonymousSurveyRoutes.js";
+import { adminPageTemplatesRouter } from "./routes/adminPageTemplatesRoutes.js";
 import { authRouter } from "./routes/auth.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { healthRouter } from "./routes/health.js";
@@ -49,6 +50,7 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/anonymous-survey-directory", anonymousSurveyDirectoryRouter);
   app.use("/api/anonymous-surveys", anonymousSurveyPublicRouter);
+  app.use("/api/admin/page-templates", adminPageTemplatesRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/surveys", surveysRouter);
   app.use("/api/my-surveys", mySurveysRouter);

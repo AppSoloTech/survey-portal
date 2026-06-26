@@ -1,0 +1,31 @@
+# Phase 34 Claude Review
+
+Code review - Phase 34: admin page-template library
+
+Overall this is solid, well-structured work. Snapshot/insert separation is clean, the page-belongs-to-survey check is enforced in SQL (`buildPageTemplateSnapshot` keys on `id = $1` and `survey_id = $2`, so mismatched ids correctly 404), draft-only insertion is guarded by `rejectStructurallyLockedSurvey`, the insert runs in a real transaction with rollback, and scale options are correctly rebuilt from `scaleMin`/`scaleMax` on insert. Tests cover the important paths: admin-only, snapshot fidelity, no-rule-copy, and published rejection. No correctness bugs found.
+
+## Findings
+
+1. List endpoint transfers full JSONB just to count - efficiency.
+
+`listPageTemplates` selects `payload` and `excluded_logic` for every template, then `mapTemplateSummary` only uses them to compute `questionCount` and `excludedLogicCount` in JS. For `GET /api/admin/page-templates`, the summary list the Organize dropdown hits on every mount, this pulls the entire snapshot of every saved page across the library to derive two integers. As the template library grows this is unbounded payload over the wire. Compute the counts in SQL and drop the two JSONB columns from the list query:
+
+```sql
+jsonb_array_length(payload->'page'->'questions') as question_count,
+jsonb_array_length(excluded_logic) as excluded_logic_count
+```
+
+`fetchPageTemplateRecord`, used by detail/insert, still needs the full columns.
+
+2. Organize page only fetches templates on mount - minor UX.
+
+The `useEffect` has empty deps, so a template you save on the Questions tab will not appear in the Organize dropdown until the page remounts. Not a bug, but a reasonable surprise for an admin doing save-then-insert in one session. Optional: refetch on tab focus, or note it as expected.
+
+3. Test gaps, not blocking.
+
+No coverage for the admin detail/update/delete routes, the template-not-found 404 on insert, the page-not-found 404 on save, or insert with an explicit `displayOrder`. The validation logic in `validatePageTemplateInsertBody` (`displayOrder === false`) is entirely untested. Given the phase's validation gate, consider at least one update/delete round-trip test.
+
+## Confirmed Intended
+
+- Save allowed on published/retired surveys: the save route uses `rejectDeletedSurvey`, not `rejectStructurallyLockedSurvey`, so you can snapshot a page from a published survey. This is read-only and safe. Insert is correctly draft-only.
+- No FKs on `source_survey_id` / `source_entity_id`: consistent with snapshot semantics. The template survives source deletion, and `source_*_title` values are frozen copies.

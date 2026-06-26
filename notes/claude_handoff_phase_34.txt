@@ -1,0 +1,43 @@
+# Phase 34 Implementation Handoff
+
+Implemented the shared admin page-template library.
+
+Summary:
+
+- Added `survey_templates` with `template_kind = 'page'`, versioned JSONB payloads, source snapshots, and persisted excluded-logic manifests.
+- Added shared page-template response/snapshot/excluded-logic types.
+- Added admin-only template list/detail/update/delete routes under `/api/admin/page-templates`.
+- Added save-page-as-template and insert-page-template builder routes under `/api/surveys`.
+- Insert creates fresh page/question/option/hidden-tag rows and intentionally does not copy conditional rules.
+- Added admin UI controls to save a page from Questions and insert a saved page from Organize.
+- Template save metadata is separated from inserted page content:
+  - `Template name` labels the library item.
+  - `Inserted page title` is stored in the template snapshot and used for newly inserted pages.
+  - Saving a template with a different inserted page title must not rename the source survey page.
+- The Organize template picker uses string-based select state, refreshes on window focus, and includes a manual `Refresh templates` button so newly saved templates can be loaded without leaving the workspace.
+- The Organize insert control now includes an `Insert position` selector for beginning, after any existing page, or end. It passes `displayOrder` through the existing insert route.
+- The template list endpoint computes `questionCount` and `excludedLogicCount` in SQL instead of transferring full JSONB payloads for summary rows.
+- Updated `markdown/releases/unreleased.md`.
+
+Review notes addressed:
+
+- Preserved the supplied review in `notes/claude_review_phase_34.txt`.
+- Added route coverage for admin detail/update/delete, missing page on save, missing template on insert, invalid insert `displayOrder`, and explicit insert ordering.
+- Added regression coverage for saving a template page title override without mutating the source page.
+
+Validation run:
+
+- `npm run build -w packages/shared`
+- `npm run typecheck -w apps/api`
+- `npm run typecheck -w apps/web`
+- `npm run test -w apps/api -- test/surveyPageTemplates.test.ts`
+- `npm run lint`
+- `git diff --check`
+
+Suggested Claude review focus:
+
+- Confirm the save-template UI now clearly separates template metadata from the inserted page title.
+- Confirm the backend preserves source provenance (`source_page_title`) while allowing the snapshot page title override.
+- Confirm the Organize dropdown refresh behavior is sufficient for save-then-insert manual workflow.
+- Confirm the new insert-position selector maps to the intended page order.
+- Confirm participant-facing survey reads still do not expose template payloads or hidden tags.

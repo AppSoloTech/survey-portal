@@ -18,6 +18,8 @@ const scaleRangeMaxValueCount = 21;
 const categoryNameMaxLength = 120;
 const surveyPageTitleMaxLength = 180;
 const surveyPageDescriptionMaxLength = 600;
+const surveyPageTemplateNameMaxLength = 180;
+const surveyPageTemplateDescriptionMaxLength = 600;
 const anonymousContactEmailMaxLength = 320;
 const surveyTimingOverrideMinutesMax = 24 * 60;
 
@@ -297,6 +299,61 @@ export function validateSurveyPageBody(body: unknown): ValidationResult<{
   }
 
   return { ok: true, value: { title, description, displayOrder } };
+}
+
+export function validatePageTemplateBody(body: unknown): ValidationResult<{
+  name: string;
+  description: string | null;
+  pageTitle: string | null;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const name = readTextField(body, "name");
+  const description = readOptionalTextField(body, "description");
+  const pageTitle = readOptionalTextField(body, "pageTitle");
+
+  if (!name) {
+    return { ok: false, error: "Template name is required" };
+  }
+
+  if (name.length > surveyPageTemplateNameMaxLength) {
+    return { ok: false, error: `Template name must be ${surveyPageTemplateNameMaxLength} characters or fewer` };
+  }
+
+  if (description && description.length > surveyPageTemplateDescriptionMaxLength) {
+    return {
+      ok: false,
+      error: `Template description must be ${surveyPageTemplateDescriptionMaxLength} characters or fewer`
+    };
+  }
+
+  if (pageTitle && pageTitle.length > surveyPageTitleMaxLength) {
+    return { ok: false, error: `Inserted page title must be ${surveyPageTitleMaxLength} characters or fewer` };
+  }
+
+  return { ok: true, value: { name, description, pageTitle } };
+}
+
+export function validatePageTemplateInsertBody(body: unknown): ValidationResult<{
+  displayOrder: number | null;
+}> {
+  if (body === undefined || body === null) {
+    return { ok: true, value: { displayOrder: null } };
+  }
+
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const displayOrder = readOptionalPositiveIntegerField(body, "displayOrder");
+
+  if (displayOrder === false) {
+    return { ok: false, error: "Display order must be a positive integer" };
+  }
+
+  return { ok: true, value: { displayOrder } };
 }
 
 export function validateAnswerOptionBody(body: unknown): ValidationResult<{

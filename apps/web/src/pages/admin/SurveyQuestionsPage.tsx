@@ -21,6 +21,7 @@ import {
   deleteQuestion,
   reorderAnswerOptions,
   reorderQuestions,
+  saveSurveyPageTemplate,
   updateAnswerOption,
   updateAnswerTag,
   updateQuestionOtherTag,
@@ -62,6 +63,7 @@ export function SurveyQuestionsPage() {
       : survey.pages[0]?.id ?? null;
   });
   const [catalogTags, setCatalogTags] = useState<TagDefinition[]>([]);
+  const [isTemplateSaving, setIsTemplateSaving] = useState(false);
 
   // Keep the active page valid when pages change (reordered, deleted, or the
   // workspace switched to a different survey). Falls back to the first page.
@@ -179,6 +181,43 @@ export function SurveyQuestionsPage() {
         }),
       `Page ${page.displayOrder} saved`
     );
+  }
+
+  async function handleSavePageTemplate(event: FormEvent<HTMLFormElement>, page: SurveyPage) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+
+    setIsTemplateSaving(true);
+    setFeedback({ error: null, notice: null });
+
+    try {
+      const response = await saveSurveyPageTemplate({
+        surveyId: survey.id,
+        pageId: page.id,
+        name: readFormText(data, "name"),
+        description: readNullableFormText(data, "description"),
+        pageTitle: readFormText(data, "pageTitle")
+      });
+      const excludedCount = response.template.excludedLogic.length;
+
+      setFeedback({
+        error: null,
+        notice:
+          excludedCount > 0
+            ? `Template saved. ${excludedCount} conditional ${excludedCount === 1 ? "rule was" : "rules were"} recorded but will not be copied.`
+            : "Template saved"
+      });
+      form.reset();
+    } catch (error) {
+      setFeedback({
+        error: error instanceof Error ? error.message : "Request failed",
+        notice: null
+      });
+    } finally {
+      setIsTemplateSaving(false);
+    }
   }
 
   async function handleSaveQuestion(
@@ -662,6 +701,58 @@ export function SurveyQuestionsPage() {
               type="submit"
             >
               Add question
+            </button>
+          </form>
+
+          <form
+            className="builder-form"
+            key={`save-template-${activePage.id}`}
+            onSubmit={(event) => void handleSavePageTemplate(event, activePage)}
+          >
+            <div className="builder-section-heading">
+              <div>
+                <p className="eyebrow">Template library</p>
+                <h3>Save this page</h3>
+                <p className="builder-heading-note">
+                  Saves the page, questions, options, scale ranges, and hidden tags.
+                  Conditional rules are recorded as warnings and are not copied.
+                </p>
+              </div>
+            </div>
+            <div className="builder-grid two-columns">
+              <label>
+                Template name
+                <input
+                  defaultValue={activePage.title}
+                  disabled={isTemplateSaving}
+                  name="name"
+                  required
+                />
+              </label>
+              <label>
+                Inserted page title
+                <input
+                  defaultValue={activePage.title}
+                  disabled={isTemplateSaving}
+                  name="pageTitle"
+                  required
+                />
+              </label>
+              <label>
+                Template note
+                <input
+                  disabled={isTemplateSaving}
+                  name="description"
+                  placeholder="Optional note for admins"
+                />
+              </label>
+            </div>
+            <button
+              className="button-link compact-button secondary-button"
+              disabled={isSubmitting || isTemplateSaving}
+              type="submit"
+            >
+              Save as template
             </button>
           </form>
 

@@ -2804,6 +2804,30 @@ main {
   max-width: 680px;
 }
 
+.template-library-summary {
+  align-self: end;
+  color: var(--text-muted);
+  display: grid;
+  font-size: 0.875rem;
+  min-height: 2.6rem;
+}
+
+.template-summary-inline {
+  align-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 0.25rem;
+  min-height: 2.6rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.template-summary-inline strong {
+  color: var(--warn-text);
+  font-size: 0.8rem;
+}
+
 .question-meta-strip {
   display: flex;
   flex-wrap: wrap;

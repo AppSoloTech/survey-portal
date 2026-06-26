@@ -352,6 +352,105 @@ export interface SurveyResponse {
   survey: Survey;
 }
 
+export type SurveyTemplateKind = "page";
+
+export interface SurveyTemplateExcludedLogicLocator {
+  pageId: number | null;
+  pageTitle: string | null;
+  questionId: number | null;
+  questionText: string | null;
+  answerOptionId: number | null;
+  answerOptionText: string | null;
+}
+
+export interface SurveyTemplateExcludedLogicEntry {
+  sourceRuleId: number;
+  conditionLabel: string;
+  actionLabel: string;
+  source: SurveyTemplateExcludedLogicLocator;
+  target: SurveyTemplateExcludedLogicLocator;
+  crossesPageBoundary: boolean;
+}
+
+export interface SurveyPageTemplateSnapshotAnswerTag {
+  tagKey: string;
+  tagValue: string;
+}
+
+export interface SurveyPageTemplateSnapshotAnswerOption {
+  optionText: string;
+  displayOrder: number;
+  answerTags: SurveyPageTemplateSnapshotAnswerTag[];
+}
+
+export interface SurveyPageTemplateSnapshotValueTag {
+  integerMin: number | null;
+  integerMax: number | null;
+  tagKey: string;
+  tagValue: string;
+}
+
+export interface SurveyPageTemplateSnapshotOtherTag {
+  tagKey: string;
+  tagValue: string;
+}
+
+export interface SurveyPageTemplateSnapshotQuestion {
+  questionText: string;
+  questionType: SurveyQuestionType;
+  allowOther: boolean;
+  scaleMin: number | null;
+  scaleMax: number | null;
+  displayOrder: number;
+  isRequired: boolean;
+  helpText: string | null;
+  answerOptions: SurveyPageTemplateSnapshotAnswerOption[];
+  valueTags: SurveyPageTemplateSnapshotValueTag[];
+  otherTags: SurveyPageTemplateSnapshotOtherTag[];
+}
+
+export interface SurveyPageTemplateSnapshot {
+  schemaVersion: number;
+  kind: "page";
+  page: {
+    title: string;
+    description: string | null;
+    questions: SurveyPageTemplateSnapshotQuestion[];
+  };
+}
+
+export interface SurveyPageTemplateSummary {
+  id: number;
+  templateKind: SurveyTemplateKind;
+  name: string;
+  description: string | null;
+  sourceEntityKind: string | null;
+  sourceEntityId: number | null;
+  sourceSurveyId: number | null;
+  sourceSurveyTitle: string | null;
+  sourcePageTitle: string | null;
+  payloadSchemaVersion: number;
+  questionCount: number;
+  excludedLogicCount: number;
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SurveyPageTemplateDetail extends SurveyPageTemplateSummary {
+  page: SurveyPageTemplateSnapshot["page"];
+  excludedLogic: SurveyTemplateExcludedLogicEntry[];
+}
+
+export interface SurveyPageTemplatesResponse {
+  templates: SurveyPageTemplateSummary[];
+}
+
+export interface SurveyPageTemplateResponse {
+  template: SurveyPageTemplateDetail;
+}
+
 export interface SurveyResponseAnswer {
   id: number;
   surveyAttemptId: number;

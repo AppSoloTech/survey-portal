@@ -1,4 +1,4 @@
-import type { SurveyPage, SurveyQuestion } from "@survey-portal/shared";
+import type { SurveyPage, SurveyPageTemplateSummary, SurveyQuestion } from "@survey-portal/shared";
 import {
   DndContext,
   DragOverlay,
@@ -18,13 +18,15 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import {
   createSurveyPage,
   deleteSurveyPage,
   deleteQuestion,
+  fetchPageTemplates,
+  insertPageTemplate,
   moveQuestionToPage,
   reorderQuestions,
   reorderSurveyPages
@@ -43,13 +45,15 @@ import { formatQuestionLocator } from "../../components/admin/SurveyBuilderCompo
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 
 type ActiveDrag = { label: string; type: "page" | "question" } | null;
+const insertAtEndValue = "end";
+const insertAtBeginningValue = "1";
 
 // The Organize tab: a low-clutter drag-and-drop board for arranging survey
 // structure. Reorder pages, reorder questions within a page, and drag a
 // question into another page — all on existing endpoints. Heavy question
 // editing stays on the Questions tab.
 export function SurveyOrganizePage() {
-  const { isSubmitting, runSurveyMutation, survey } = useSurveyWorkspace();
+  const { isSubmitting, runSurveyMutation, setFeedback, survey } = useSurveyWorkspace();
   const isDraft = survey.status === "draft";
 
   const sensors = useSensors(
@@ -62,6 +66,88 @@ export function SurveyOrganizePage() {
   // reordering unwieldy. Purely a view concern — available even on locked
   // surveys. Stale ids for deleted pages are harmless.
   const [collapsedPageIds, setCollapsedPageIds] = useState<Set<number>>(new Set());
+  const [templates, setTemplates] = useState<SurveyPageTemplateSummary[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedInsertPosition, setSelectedInsertPosition] = useState(insertAtEndValue);
+  const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
+
+  const refreshTemplates = useCallback(async (options: { silent?: boolean } = {}) => {
+    setIsTemplateListLoading(true);
+
+    try {
+      const response = await fetchPageTemplates();
+      setTemplates(response.templates);
+      setSelectedTemplateId((current) =>
+        current && response.templates.some((template) => String(template.id) === current)
+          ? current
+          : String(response.templates[0]?.id ?? "")
+      );
+    } catch (error) {
+      setTemplates([]);
+      setSelectedTemplateId("");
+
+      if (!options.silent) {
+        setFeedback({
+          error: error instanceof Error ? error.message : "Could not load page templates",
+          notice: null
+        });
+      }
+    } finally {
+      setIsTemplateListLoading(false);
+    }
+  }, [setFeedback]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void refreshTemplates({ silent: true }).finally(() => {
+      if (!isActive) {
+        return;
+      }
+    });
+
+    function handleFocus() {
+      if (isActive) {
+        void refreshTemplates({ silent: true });
+      }
+    }
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      isActive = false;
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [refreshTemplates]);
+
+  useEffect(() => {
+    if (templates.length === 0) {
+      setSelectedTemplateId("");
+      return;
+    }
+
+    setSelectedTemplateId((current) =>
+      current && templates.some((template) => String(template.id) === current)
+        ? current
+        : String(templates[0].id)
+    );
+  }, [templates]);
+
+  useEffect(() => {
+    setFeedback({ error: null, notice: null });
+  }, [selectedTemplateId, setFeedback]);
+
+  useEffect(() => {
+    setSelectedInsertPosition((current) =>
+      current === insertAtEndValue || insertPositionOptions(survey.pages).some((option) => option.value === current)
+        ? current
+        : insertAtEndValue
+    );
+  }, [survey.pages]);
+
+  async function handleRefreshTemplates() {
+    await refreshTemplates();
+  }
 
   function toggleCollapse(pageId: number) {
     setCollapsedPageIds((current) => {
@@ -143,6 +229,35 @@ export function SurveyOrganizePage() {
     await runSurveyMutation(
       () => deleteQuestion({ surveyId: survey.id, questionId }),
       "Question deleted"
+    );
+  }
+
+  async function handleInsertTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (survey.status !== "draft") {
+      setFeedback({ error: "Templates can only be inserted into draft surveys", notice: null });
+      return;
+    }
+
+    const templateId = Number(selectedTemplateId);
+
+    if (!Number.isSafeInteger(templateId) || templateId <= 0) {
+      setFeedback({ error: "Choose a page template to insert", notice: null });
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        insertPageTemplate({
+          surveyId: survey.id,
+          templateId,
+          displayOrder:
+            selectedInsertPosition === insertAtEndValue
+              ? null
+              : Number(selectedInsertPosition)
+        }),
+      "Template inserted"
     );
   }
 
@@ -274,6 +389,80 @@ export function SurveyOrganizePage() {
         </button>
       </form>
 
+      <form className="builder-form" onSubmit={handleInsertTemplate}>
+        <div className="builder-section-heading">
+          <div>
+            <p className="eyebrow">Template library</p>
+            <h3>Insert saved page</h3>
+            <p className="builder-heading-note">
+              Inserts a fresh copy at the selected position. Conditional rules from
+              the template source are not copied.
+            </p>
+          </div>
+        </div>
+        <div className="builder-grid two-columns">
+          <label>
+            Saved page
+            <select
+              disabled={!isDraft || isSubmitting || isTemplateListLoading || templates.length === 0}
+              onChange={(event) => setSelectedTemplateId(event.target.value)}
+              value={selectedTemplateId}
+            >
+              {templates.length === 0 ? (
+                <option value="">
+                  {isTemplateListLoading ? "Loading templates..." : "No saved templates"}
+                </option>
+              ) : (
+                templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name} · {template.questionCount}{" "}
+                    {template.questionCount === 1 ? "question" : "questions"}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <label>
+            Insert position
+            <select
+              disabled={!isDraft || isSubmitting || survey.pages.length === 0}
+              onChange={(event) => setSelectedInsertPosition(event.target.value)}
+              value={selectedInsertPosition}
+            >
+              {insertPositionOptions(survey.pages).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="template-library-summary">
+            {selectedTemplateId ? (
+              <TemplateSummary template={templates.find((template) => String(template.id) === selectedTemplateId) ?? null} />
+            ) : (
+              <span className="builder-heading-note">Save a page from the Questions tab first.</span>
+            )}
+          </div>
+        </div>
+        <div className="inline-actions">
+          <button
+            className="button-link compact-button secondary-button"
+            disabled={isSubmitting || !isDraft || !selectedTemplateId}
+            type="submit"
+          >
+            Insert template
+          </button>
+          <button
+            className="button-link compact-button ghost-button"
+            disabled={isSubmitting || isTemplateListLoading}
+            onClick={() => void handleRefreshTemplates()}
+            type="button"
+          >
+            Refresh templates
+          </button>
+        </div>
+      </form>
+
       {survey.pages.length === 0 ? (
         <div className="builder-empty-state">
           <strong>No pages yet</strong>
@@ -328,6 +517,40 @@ export function SurveyOrganizePage() {
             ) : null}
           </DragOverlay>
         </DndContext>
+      )}
+    </div>
+  );
+}
+
+function insertPositionOptions(pages: SurveyPage[]): { label: string; value: string }[] {
+  return [
+    { label: "At beginning", value: insertAtBeginningValue },
+    ...pages.map((page) => ({
+      label: `After page ${page.displayOrder}: ${page.title}`,
+      value: String(page.displayOrder + 1)
+    })),
+    { label: "At end", value: insertAtEndValue }
+  ];
+}
+
+function TemplateSummary({ template }: { template: SurveyPageTemplateSummary | null }) {
+  if (!template) {
+    return <span className="builder-heading-note">Template details unavailable.</span>;
+  }
+
+  return (
+    <div className="template-summary-inline">
+      <span>
+        From {template.sourceSurveyTitle ?? "a survey"}
+        {template.sourcePageTitle ? ` / ${template.sourcePageTitle}` : ""}
+      </span>
+      {template.excludedLogicCount > 0 ? (
+        <strong>
+          {template.excludedLogicCount} conditional{" "}
+          {template.excludedLogicCount === 1 ? "rule" : "rules"} not copied
+        </strong>
+      ) : (
+        <span>No conditional rules recorded</span>
       )}
     </div>
   );

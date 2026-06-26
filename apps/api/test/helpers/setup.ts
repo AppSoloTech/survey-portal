@@ -15,6 +15,7 @@ const dataTables = [
   "anonymous_rate_limits",
   "survey_timing_overrides",
   "anonymous_survey_links",
+  "survey_templates",
   "conditional_logic_rules",
   "answer_tags",
   "question_value_tags",

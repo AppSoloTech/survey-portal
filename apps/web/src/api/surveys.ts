@@ -18,6 +18,8 @@ import type {
   SurveyAttemptActivityResponse,
   SurveyAttemptsListResponse,
   SurveyListResponse,
+  SurveyPageTemplateResponse,
+  SurveyPageTemplatesResponse,
   SurveyQuestionType,
   SurveyReportResponse,
   SurveyResponse,
@@ -423,6 +425,46 @@ export async function reorderSurveyPages(input: {
     body: JSON.stringify({ pageIds: input.pageIds }),
     method: "PATCH"
   });
+}
+
+export async function fetchPageTemplates(): Promise<SurveyPageTemplatesResponse> {
+  return apiRequest<SurveyPageTemplatesResponse>("/api/admin/page-templates");
+}
+
+export async function saveSurveyPageTemplate(input: {
+  surveyId: number;
+  pageId: number;
+  name: string;
+  description: string | null;
+  pageTitle: string | null;
+}): Promise<SurveyPageTemplateResponse> {
+  return apiRequest<SurveyPageTemplateResponse>(
+    `/api/surveys/${input.surveyId}/pages/${input.pageId}/template`,
+    {
+      body: JSON.stringify({
+        name: input.name,
+        description: input.description,
+        pageTitle: input.pageTitle
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function insertPageTemplate(input: {
+  surveyId: number;
+  templateId: number;
+  displayOrder?: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/page-templates/${input.templateId}/insert`,
+    {
+      body: JSON.stringify({
+        displayOrder: input.displayOrder ?? null
+      }),
+      method: "POST"
+    }
+  );
 }
 
 export async function createQuestion(input: {
