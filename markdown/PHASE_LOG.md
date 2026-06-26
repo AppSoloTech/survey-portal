@@ -6,6 +6,345 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 38 — Collapsible Question Editor Sections
+
+Date:
+2026-06-26
+
+Status:
+Implemented; Claude review complete; manual browser testing passed
+
+Prompt:
+`prompts/prompt_38.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_38.txt`
+- Claude review: `notes/claude_review_phase_38.txt`
+
+## Goals
+
+- Reduce clutter in the admin Questions page.
+- Keep each question parent identified by its locator, such as `P1-Q1`.
+- Make heavier question tooling collapsible with useful section labels.
+
+## Built
+
+- Added `prompts/prompt_38.txt` as the implementation source of truth.
+- Refactored `QuestionEditor` so the question parent header remains visible and
+  question move controls stay at the parent level.
+- Added local native collapsible sections for question details, template saving,
+  text/integer answer tags, answer options or scale values, and Other tags.
+- Defaulted Question details open and heavier sections collapsed.
+- Added section counts for option/value/Other tag tooling.
+- Cleaned up the Questions page Editing page selector so it stacks cleanly on
+  narrow screens.
+- Updated `markdown/releases/unreleased.md`.
+- Promoted release notes into `markdown/releases/v0.1.3.md` and bumped the
+  root app version to `0.1.3` during deploy prep.
+- Created `notes/claude_handoff_phase_38.txt`.
+
+## Important Decisions
+
+### Local Disclosure State
+
+Decision:
+Use local React state around native `details` controls; do not persist section
+open state.
+
+Reason:
+The feedback asked for focus and cleanup, not saved per-admin preferences.
+
+Tradeoff:
+Collapsed/open state resets when the question editor remounts.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: none; hidden tags remain admin-only.
+- Frontend UX impact: question tooling is grouped into collapsible sections.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/components/admin/tagCatalogDrag.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+npx tsc --noEmit -p apps/api/tsconfig.json
+npm run build -w apps/web
+npm run release:preview
+npm run release:prepare
+npm run release:check
+```
+
+Results:
+
+- Passed: all commands above.
+- `npm run build` emitted the existing Vite large chunk warning.
+- `npm test` required approved local PostgreSQL access for API tests.
+- After Claude review, reran `npx tsc --noEmit -p apps/web/tsconfig.json`,
+  `npx tsc --noEmit -p apps/api/tsconfig.json`, `npm run lint`, and
+  `git diff --check`; all passed.
+- After the small-screen Editing page selector follow-up, reran
+  `npm run build -w apps/web` and `git diff --check`; both passed.
+- During deploy prep, `npm run release:prepare` created
+  `markdown/releases/v0.1.3.md`, bumped the root app version and lockfile to
+  `0.1.3`, reset `markdown/releases/unreleased.md`, and `npm run release:check`
+  passed.
+
+Manual tests:
+
+- Passed on 2026-06-26 per user manual browser testing.
+- Covered the Questions page collapsible sections and small-screen Editing page
+  selector follow-up.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_38.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_38.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None
+
+Suggested improvements:
+
+- Claude suggested documenting controlled `details` behavior and noted minor
+  count-label convention/manual narrow-width review items.
+
+Accepted fixes:
+
+- Added a short comment documenting the controlled native `details` state.
+
+Deferred findings:
+
+- Per-admin or lifted section-open state remains out of scope.
+- Manual narrow-width browser testing passed on 2026-06-26.
+
+## Problems Encountered
+
+- Problem: Initial TypeScript pass caught a widened catalog section key while
+  Phase 37/38 validation was running.
+  Resolution: Narrowed the section array typing and rebuilt shared types before
+  rerunning validation successfully.
+
+## Follow-Up Tasks
+
+- None.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
+## Phase 37 — Admin Navigation And Tag Catalog Polish
+
+Date:
+2026-06-26
+
+Status:
+Implemented; Claude review complete; manual browser testing passed
+
+Prompt:
+`prompts/prompt_37.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_37.txt`
+- Claude review: `notes/claude_review_phase_37.txt`
+
+## Goals
+
+- Make survey workspace tab overflow discoverable on narrow screens.
+- Update visible tag catalog bucket wording from group to category.
+- Let admins persist the order of the Ungrouped tag catalog section.
+
+## Built
+
+- Added `prompts/prompt_37.txt` as the implementation source of truth.
+- Added `database/migrations/0034_tag_catalog_settings.sql`.
+- Extended tag catalog responses with `ungroupedDisplayOrder`.
+- Added admin-only `PUT /api/tags/sections/reorder`.
+- Updated tag catalog drag logic so Ungrouped and custom categories reorder as
+  catalog sections.
+- Updated `/admin/tags` visible copy to use category language for higher-level
+  catalog buckets while keeping internal group-shaped names.
+- Made narrow survey workspace tabs show a horizontal scrollbar instead of
+  hiding the scroll affordance.
+- Added focused API tests and pure drag tests.
+- Updated `markdown/releases/unreleased.md`.
+- Promoted release notes into `markdown/releases/v0.1.3.md` and bumped the
+  root app version to `0.1.3` during deploy prep.
+- Created `notes/claude_handoff_phase_37.txt`.
+
+## Important Decisions
+
+### Persist Ungrouped As Settings
+
+Decision:
+Persist Ungrouped display order in a singleton `tag_catalog_settings` row.
+
+Reason:
+Ungrouped is a virtual bucket for tags with `group_id = null`, not a real
+category row.
+
+Tradeoff:
+Section ordering combines one virtual section with real `tag_groups` rows.
+
+### Category Copy Without Internal Rename
+
+Decision:
+Use category language in visible admin copy and API error strings, but keep
+existing group-shaped route paths, DB tables, and shared type names.
+
+Reason:
+This satisfies the UX feedback without a broad compatibility-breaking rename.
+
+Tradeoff:
+Implementers still see `groupId` internally.
+
+## Architecture Notes
+
+- Database/schema impact: adds `tag_catalog_settings` singleton table.
+- API contract impact: adds `PUT /api/tags/sections/reorder` and
+  `ungroupedDisplayOrder` on tag catalog responses.
+- Auth or authorization impact: new route is protected by existing
+  admin-only tag router middleware.
+- Data privacy or visibility impact: none; tag catalog remains admin-only and
+  hidden tags remain excluded from participant payloads.
+- Frontend UX impact: tag catalog section ordering and category wording change;
+  mobile workspace tabs show scroll affordance.
+- Environment or deployment impact: migration required.
+
+## Validation
+
+Commands run:
+
+```bash
+npx tsc --noEmit -p apps/web/tsconfig.json
+npx tsc --noEmit -p apps/api/tsconfig.json
+npm run test -w apps/web -- src/components/admin/tagCatalogDrag.test.ts
+npm run test -w apps/api -- tagCatalog
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run release:preview
+npm run release:prepare
+npm run release:check
+```
+
+Results:
+
+- Passed: all commands above.
+- `npm run build` emitted the existing Vite large chunk warning.
+- Focused and full API tests required approved local PostgreSQL access.
+- After Claude review, reran `npx tsc --noEmit -p apps/web/tsconfig.json`,
+  `npx tsc --noEmit -p apps/api/tsconfig.json`, `npm run lint`, and
+  `git diff --check`; all passed.
+- During deploy prep, `npm run release:prepare` created
+  `markdown/releases/v0.1.3.md`, bumped the root app version and lockfile to
+  `0.1.3`, reset `markdown/releases/unreleased.md`, and `npm run release:check`
+  passed.
+
+Manual tests:
+
+- Passed on 2026-06-26 per user manual browser testing.
+- Covered narrow survey workspace tabs and `/admin/tags` category/Ungrouped
+  ordering behavior.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_37.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_37.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None
+
+Suggested improvements:
+
+- Claude suggested removing an unused web helper and documenting deterministic
+  section-order tie/gap behavior.
+
+Accepted fixes:
+
+- Removed the unused `reorderTagGroups` web API helper.
+- Added comments for merged section-order display-order gaps and initial
+  Ungrouped/category order ties.
+
+Deferred findings:
+
+- Manual browser testing passed on 2026-06-26.
+
+## Problems Encountered
+
+- Problem: The first API test attempt in the sandbox could not connect to local
+  PostgreSQL.
+  Resolution: Reran focused and full API tests with approved local PostgreSQL
+  access; they passed.
+
+## Follow-Up Tasks
+
+- None.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no critical issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 36 — Published Survey Hidden Tag Maintenance
 
 Date:

@@ -1,0 +1,170 @@
+# Phase 37 — Admin Navigation And Tag Catalog Polish
+
+## Purpose
+
+Address the first three items in `test_notes.txt`: discoverable survey workspace
+tab overflow, tag catalog "group" wording cleanup, and persisted drag ordering
+for the Ungrouped tag catalog section.
+
+Source feedback:
+
+```txt
+test_notes.txt
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_37.txt`
+* Claude review: `notes/claude_review_phase_37.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `test_notes.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* recent `markdown/PHASE_LOG.md`
+* `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx`
+* `apps/web/src/pages/admin/AdminTagsPage.tsx`
+* `apps/web/src/components/admin/tagCatalogDrag.ts`
+* `apps/api/src/routes/tags.ts`
+* `apps/api/test/tagCatalog.test.ts`
+* `apps/web/src/styles.css`
+
+---
+
+# Received Feedback
+
+1. The survey workspace tab bar clips on narrow screens without a clear scroll
+   affordance.
+2. The `/admin/tags` page should use "category" for higher-level tag catalog
+   buckets instead of visible "group" wording.
+3. The Ungrouped holding section should be movable like custom category groups.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+* Bug or regression: clipped survey workspace tabs on narrow screens.
+* UX polish: tag catalog wording should match the higher-level category concept.
+* Feature request: persisted ordering for the Ungrouped catalog section.
+* Database/schema change: yes, add a small persisted catalog setting.
+* API contract change: yes, add an admin-only section reorder endpoint and
+  include Ungrouped display order in the existing catalog response.
+* Participant-facing survey behavior: no.
+* Hidden-tag visibility: no participant exposure.
+* Authentication or authorization: preserve admin-only tag catalog access.
+
+---
+
+# Scope
+
+Implement:
+
+* Make `.workspace-tabs` scrollable and discoverably overflowing on narrow
+  screens without changing the existing route/tab structure.
+* Update visible `/admin/tags` copy from "group" to "category" for the
+  higher-level catalog buckets, including labels, buttons, helper copy,
+  success/error/toast/confirm strings, and aria labels.
+* Keep existing internal names such as `TagCatalogGroup`, `groupId`, and
+  database `tag_groups` unless a visible API/type rename is unavoidable.
+* Persist an ordered position for the Ungrouped catalog section.
+* Add an admin-only catalog section reorder API that accepts exactly one
+  Ungrouped virtual section plus every real tag category exactly once.
+* Add response data needed by the frontend, such as `ungroupedDisplayOrder`,
+  while preserving the existing `groups`, `tags`, and `ungroupedTags` response
+  shape.
+* Update drag logic so dragging a category or Ungrouped among sections persists
+  section order; dragging tags still reorders and moves tags as today.
+* Add/update focused API and pure drag tests.
+* Update `markdown/releases/unreleased.md`, `markdown/PHASE_LOG.md`, and
+  `notes/claude_handoff_phase_37.txt`.
+
+## Non-Goals
+
+Do not implement:
+
+* Database table or shared type renames from group to category.
+* Participant-facing survey payload changes.
+* Hidden-tag meaning, tag key/value behavior, or survey builder tag editing
+  changes.
+* A broad admin workspace navigation redesign.
+
+## Assumptions
+
+* "Ungrouped should be movable just like custom category groups" means persisted
+  ordering, not temporary frontend-only ordering.
+* "Group" can remain an internal implementation term; visible admin copy changes
+  to "category".
+
+## Open Questions
+
+* None blocking V1.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* On narrow screens, survey workspace tabs can be scrolled and visibly indicate
+  more tabs are available.
+* `/admin/tags` no longer shows user-facing "group" copy for the higher-level
+  catalog buckets.
+* Ungrouped can be dragged above, between, or below custom categories.
+* Ungrouped position persists after reload.
+* Tag dragging to and from Ungrouped still works.
+* Existing category creation, rename, delete, tag move, and tag reorder workflows
+  still work.
+
+---
+
+# Testing Requirements
+
+Default validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update:
+
+* API tests in `apps/api/test/tagCatalog.test.ts`.
+* Pure drag tests in `apps/web/src/components/admin/tagCatalogDrag.test.ts`.
+
+Manual checks to perform or document:
+
+* A survey workspace route at desktop and narrow widths.
+* `/admin/tags` category reorder, Ungrouped reorder, and tag move to/from
+  Ungrouped.
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `markdown/releases/unreleased.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_37.txt`

@@ -286,6 +286,7 @@ export interface TagDefinitionsResponse {
   tags: TagDefinition[];
   groups: TagCatalogGroup[];
   ungroupedTags: TagDefinition[];
+  ungroupedDisplayOrder: number;
 }
 
 export interface TagDefinitionResponse {

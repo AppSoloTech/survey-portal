@@ -1,0 +1,133 @@
+# Claude Review Handoff — Phase 37
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_37.txt
+```
+
+## Review Goal
+
+Please review this phase for architectural consistency, product UX alignment,
+maintainability, security, auth/data exposure safety, and environment safety.
+
+## Reference Documents
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_37.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Added `prompts/prompt_37.txt`.
+- Added `database/migrations/0034_tag_catalog_settings.sql` for persisted
+  Ungrouped section ordering.
+- Extended tag catalog responses with `ungroupedDisplayOrder`.
+- Added admin-only `PUT /api/tags/sections/reorder`.
+- Updated `/admin/tags` visible copy to use category language for catalog
+  buckets while keeping internal group-shaped APIs/types.
+- Updated tag catalog drag logic so Ungrouped and custom categories reorder as
+  sortable sections.
+- Made mobile survey workspace tabs show a visible horizontal scrollbar.
+- Added focused API and drag tests.
+- Updated `markdown/releases/unreleased.md`.
+
+Non-goals:
+
+- No participant-facing payload changes.
+- No hidden-tag meaning or survey-builder tag editing changes.
+- No database/shared type rename from group to category.
+- No broad admin navigation redesign.
+
+Known tradeoffs:
+
+- The public admin API still uses `groups`/`groupId` internally for
+  compatibility; only visible admin copy says category.
+- Ungrouped order is persisted as a singleton setting rather than converting
+  Ungrouped into a real `tag_groups` row.
+
+Deferred work:
+
+- None.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Key files:
+
+- `database/migrations/0034_tag_catalog_settings.sql`
+- `apps/api/src/routes/tags.ts`
+- `apps/web/src/pages/admin/AdminTagsPage.tsx`
+- `apps/web/src/components/admin/tagCatalogDrag.ts`
+- `apps/web/src/styles.css`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npx tsc --noEmit -p apps/web/tsconfig.json
+npx tsc --noEmit -p apps/api/tsconfig.json
+npm run test -w apps/web -- src/components/admin/tagCatalogDrag.test.ts
+npm run test -w apps/api -- tagCatalog
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above.
+- Note: `npm run build` emitted the existing Vite large chunk warning.
+- Note: API tests required approved local PostgreSQL access.
+
+Manual testing:
+
+- Not run in browser during this pass. Please manually check a survey workspace
+  route at a narrow viewport and `/admin/tags` category/Ungrouped drag ordering.
+
+## Specific Questions
+
+- Does the singleton settings table keep the data model simple enough for the
+  persisted virtual Ungrouped section?
+- Does the section reorder API validate the virtual section and real categories
+  tightly enough?
+- Is any user-facing "group" wording still visible on `/admin/tags` for catalog
+  buckets?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_37.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

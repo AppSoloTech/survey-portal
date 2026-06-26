@@ -43,6 +43,10 @@ interface TagGroupRecord {
   updated_at: Date;
 }
 
+interface TagCatalogSettingsRecord {
+  ungrouped_display_order: number;
+}
+
 function mapTagDefinitionRecord(record: TagDefinitionRecord): TagDefinition {
   return {
     id: record.id,
@@ -66,7 +70,7 @@ function mapTagGroupRecord(record: TagGroupRecord): TagGroup {
 }
 
 async function fetchTagCatalog(queryable: Queryable = pool): Promise<TagDefinitionsResponse> {
-  const [groupResult, tagResult] = await Promise.all([
+  const [groupResult, tagResult, settingsResult] = await Promise.all([
     queryable.query<TagGroupRecord>(
       `select id, name, display_order, created_at, updated_at
        from tag_groups
@@ -76,6 +80,11 @@ async function fetchTagCatalog(queryable: Queryable = pool): Promise<TagDefiniti
       `select id, tag_key, tag_value, group_id, display_order, created_at, updated_at
        from tag_definitions
        order by group_id nulls first, display_order, tag_key, tag_value, id`
+    ),
+    queryable.query<TagCatalogSettingsRecord>(
+      `select ungrouped_display_order
+       from tag_catalog_settings
+       where id = true`
     )
   ]);
 
@@ -100,7 +109,8 @@ async function fetchTagCatalog(queryable: Queryable = pool): Promise<TagDefiniti
   return {
     tags,
     groups: [...groupsById.values()],
-    ungroupedTags
+    ungroupedTags,
+    ungroupedDisplayOrder: settingsResult.rows[0]?.ungrouped_display_order ?? 1
   };
 }
 
@@ -174,6 +184,54 @@ async function reorderGroups(queryable: Queryable, groupIds: number[]): Promise<
   });
 }
 
+async function reorderCatalogSections(
+  queryable: Queryable,
+  sections: CatalogSectionOrder[]
+): Promise<void> {
+  const groupOrders = sections
+    .map((section, index) => ({ ...section, displayOrder: index + 1 }))
+    .filter(
+      (section): section is Extract<CatalogSectionOrder, { type: "group" }> & { displayOrder: number } =>
+        section.type === "group"
+    );
+  const ungrouped = sections.find((section) => section.type === "ungrouped");
+
+  if (!ungrouped) {
+    return;
+  }
+
+  await queryable.query(
+    `insert into tag_catalog_settings (id, ungrouped_display_order)
+     values (true, $1)
+     on conflict (id) do update
+       set ungrouped_display_order = excluded.ungrouped_display_order,
+           updated_at = now()`,
+    [sections.indexOf(ungrouped) + 1]
+  );
+
+  if (groupOrders.length > 0) {
+    // Group display_order mirrors the merged section position, so gaps are
+    // expected when the virtual Ungrouped section sits between real categories.
+    const valuesSql = groupOrders
+      .map((_, index) => {
+        const idParam = index * 2 + 1;
+        const orderParam = index * 2 + 2;
+        return `($${idParam}::int, $${orderParam}::int)`;
+      })
+      .join(", ");
+    const values = groupOrders.flatMap((section) => [section.groupId, section.displayOrder]);
+
+    await queryable.query(
+      `update tag_groups
+       set display_order = ordered.display_order,
+           updated_at = now()
+       from (values ${valuesSql}) as ordered(id, display_order)
+       where tag_groups.id = ordered.id`,
+      values
+    );
+  }
+}
+
 async function reorderTags(
   queryable: Queryable,
   groupId: number | null,
@@ -244,8 +302,59 @@ function isTagGroupNameUniqueViolation(error: unknown): boolean {
   );
 }
 
+type CatalogSectionOrder = { type: "ungrouped" } | { groupId: number; type: "group" };
+
+function validateCatalogSectionReorderBody(
+  body: unknown
+): { error: string; ok: false } | { ok: true; value: { sections: CatalogSectionOrder[] } } {
+  if (!body || typeof body !== "object" || !("sectionIds" in body)) {
+    return { ok: false, error: "sectionIds is required" };
+  }
+
+  const sectionIds = (body as { sectionIds?: unknown }).sectionIds;
+
+  if (!Array.isArray(sectionIds)) {
+    return { ok: false, error: "sectionIds must be an array" };
+  }
+
+  const sections: CatalogSectionOrder[] = [];
+  let ungroupedCount = 0;
+  const seenGroupIds = new Set<number>();
+
+  for (const value of sectionIds) {
+    if (value === "ungrouped") {
+      ungroupedCount += 1;
+      sections.push({ type: "ungrouped" });
+      continue;
+    }
+
+    if (typeof value !== "string" || !value.startsWith("group:")) {
+      return { ok: false, error: "sectionIds must contain ungrouped and group:<id> values" };
+    }
+
+    const groupId = Number(value.slice("group:".length));
+
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) {
+      return { ok: false, error: "sectionIds category ids must be positive integers" };
+    }
+
+    if (seenGroupIds.has(groupId)) {
+      return { ok: false, error: "sectionIds must not repeat tag categories" };
+    }
+
+    seenGroupIds.add(groupId);
+    sections.push({ groupId, type: "group" });
+  }
+
+  if (ungroupedCount !== 1) {
+    return { ok: false, error: "sectionIds must include ungrouped exactly once" };
+  }
+
+  return { ok: true, value: { sections } };
+}
+
 // The tag catalog is admin-only: tags drive hidden classification and must
-// never reach participants. Groups are admin-only catalog housing metadata.
+// never reach participants. Groups are internal catalog category metadata.
 export const tagsRouter = express.Router();
 
 tagsRouter.use(requireAuth, requireRole("admin"));
@@ -277,7 +386,7 @@ tagsRouter.post("/groups", async (req, res, next) => {
     res.status(201).json({ group: mapTagGroupRecord(result.rows[0]) });
   } catch (error) {
     if (isTagGroupNameUniqueViolation(error)) {
-      res.status(409).json({ error: "Tag group already exists" });
+      res.status(409).json({ error: "Tag category already exists" });
       return;
     }
 
@@ -302,11 +411,47 @@ tagsRouter.put("/groups/reorder", async (req, res, next) => {
 
     if (!sameIdSet(existingIds, validation.value.ids)) {
       await client.query("rollback");
-      res.status(400).json({ error: "groupIds must include every tag group exactly once" });
+      res.status(400).json({ error: "groupIds must include every tag category exactly once" });
       return;
     }
 
     await reorderGroups(client, validation.value.ids);
+    await client.query("commit");
+
+    res.json(await fetchTagCatalog());
+  } catch (error) {
+    await client.query("rollback");
+    next(error);
+  } finally {
+    client.release();
+  }
+});
+
+tagsRouter.put("/sections/reorder", async (req, res, next) => {
+  const validation = validateCatalogSectionReorderBody(req.body);
+
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const existingIds = await fetchTagGroupIds(client);
+    const sectionGroupIds = validation.value.sections.flatMap((section) =>
+      section.type === "group" ? [section.groupId] : []
+    );
+
+    if (!sameIdSet(existingIds, sectionGroupIds)) {
+      await client.query("rollback");
+      res.status(400).json({ error: "sectionIds must include every tag category exactly once" });
+      return;
+    }
+
+    await reorderCatalogSections(client, validation.value.sections);
     await client.query("commit");
 
     res.json(await fetchTagCatalog());
@@ -323,7 +468,7 @@ tagsRouter.put("/groups/:groupId", async (req, res, next) => {
     const groupId = readPositiveIntegerParam(req.params.groupId);
 
     if (!groupId) {
-      res.status(400).json({ error: "Group id must be a positive integer" });
+      res.status(400).json({ error: "Category id must be a positive integer" });
       return;
     }
 
@@ -344,14 +489,14 @@ tagsRouter.put("/groups/:groupId", async (req, res, next) => {
     );
 
     if (result.rowCount === 0) {
-      res.status(404).json({ error: "Tag group not found" });
+      res.status(404).json({ error: "Tag category not found" });
       return;
     }
 
     res.json({ group: mapTagGroupRecord(result.rows[0]) });
   } catch (error) {
     if (isTagGroupNameUniqueViolation(error)) {
-      res.status(409).json({ error: "Tag group already exists" });
+      res.status(409).json({ error: "Tag category already exists" });
       return;
     }
 
@@ -363,7 +508,7 @@ tagsRouter.delete("/groups/:groupId", async (req, res, next) => {
   const groupId = readPositiveIntegerParam(req.params.groupId);
 
   if (!groupId) {
-    res.status(400).json({ error: "Group id must be a positive integer" });
+    res.status(400).json({ error: "Category id must be a positive integer" });
     return;
   }
 
@@ -383,7 +528,7 @@ tagsRouter.delete("/groups/:groupId", async (req, res, next) => {
 
     if (groupResult.rowCount === 0) {
       await client.query("rollback");
-      res.status(404).json({ error: "Tag group not found" });
+      res.status(404).json({ error: "Tag category not found" });
       return;
     }
 
@@ -415,7 +560,7 @@ tagsRouter.put("/reorder", async (req, res, next) => {
 
     if (validation.value.groupId !== null && !(await groupExists(client, validation.value.groupId))) {
       await client.query("rollback");
-      res.status(404).json({ error: "Tag group not found" });
+      res.status(404).json({ error: "Tag category not found" });
       return;
     }
 
@@ -455,7 +600,7 @@ tagsRouter.post("/", async (req, res, next) => {
 
     if (groupId !== null && !(await groupExists(client, groupId))) {
       await client.query("rollback");
-      res.status(404).json({ error: "Tag group not found" });
+      res.status(404).json({ error: "Tag category not found" });
       return;
     }
 
@@ -519,7 +664,7 @@ tagsRouter.patch("/:id/group", async (req, res, next) => {
 
     if (validation.value.groupId !== null && !(await groupExists(client, validation.value.groupId))) {
       await client.query("rollback");
-      res.status(404).json({ error: "Tag group not found" });
+      res.status(404).json({ error: "Tag category not found" });
       return;
     }
 
@@ -594,7 +739,7 @@ tagsRouter.put("/:id", async (req, res, next) => {
 
     if (nextGroupId !== null && !(await groupExists(client, nextGroupId))) {
       await client.query("rollback");
-      res.status(404).json({ error: "Tag group not found" });
+      res.status(404).json({ error: "Tag category not found" });
       return;
     }
 

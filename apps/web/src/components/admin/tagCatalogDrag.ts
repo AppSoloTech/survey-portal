@@ -1,11 +1,11 @@
 export type TagCatalogDragData =
-  | { groupId: number; type: "group" }
+  | { groupId: number | null; sectionId: string; type: "section" }
   | { groupId: number | null; type: "groupdrop" }
   | { groupId: number | null; type: "tag" }
   | undefined;
 
 export type TagCatalogDragOutcome =
-  | { groupIds: number[]; type: "reorder-groups" }
+  | { sectionIds: string[]; type: "reorder-sections" }
   | { groupId: number | null; tagIds: number[]; type: "reorder-tags" }
   | { displayOrder: number; groupId: number | null; tagId: number; type: "move-tag" }
   | null;
@@ -13,12 +13,32 @@ export type TagCatalogDragOutcome =
 export function resolveOverTagGroupId(overData: TagCatalogDragData): number | null | undefined {
   if (
     overData &&
-    (overData.type === "group" || overData.type === "groupdrop" || overData.type === "tag")
+    (overData.type === "section" || overData.type === "groupdrop" || overData.type === "tag")
   ) {
     return overData.groupId;
   }
 
   return undefined;
+}
+
+function resolveOverSectionId(overData: TagCatalogDragData): string | undefined {
+  if (!overData) {
+    return undefined;
+  }
+
+  if (overData.type === "section") {
+    return overData.sectionId;
+  }
+
+  if (overData.type === "groupdrop" || overData.type === "tag") {
+    return getCatalogSectionId(overData.groupId);
+  }
+
+  return undefined;
+}
+
+export function getCatalogSectionId(groupId: number | null): string {
+  return groupId === null ? "ungrouped" : `group:${groupId}`;
 }
 
 export function parseCatalogEntityId(id: string): number {
@@ -35,27 +55,31 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
 export function resolveTagCatalogDragOutcome(input: {
   activeData: TagCatalogDragData;
   activeId: string;
-  groupIds: number[];
   overData: TagCatalogDragData;
   overId: string;
+  sectionIds: string[];
   tagIdsByGroup: Map<number | null, number[]>;
 }): TagCatalogDragOutcome {
-  const { activeData, activeId, groupIds, overData, overId, tagIdsByGroup } = input;
+  const { activeData, activeId, overData, overId, sectionIds, tagIdsByGroup } = input;
   const overGroupId = resolveOverTagGroupId(overData);
 
   if (!activeData || overGroupId === undefined) {
     return null;
   }
 
-  if (activeData.type === "group") {
-    const oldIndex = groupIds.indexOf(activeData.groupId);
-    const newIndex = overGroupId === null ? -1 : groupIds.indexOf(overGroupId);
+  if (activeData.type === "section") {
+    const overSectionId = resolveOverSectionId(overData);
+    const oldIndex = sectionIds.indexOf(activeData.sectionId);
+    const newIndex = overSectionId === undefined ? -1 : sectionIds.indexOf(overSectionId);
 
     if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
       return null;
     }
 
-    return { groupIds: moveItem(groupIds, oldIndex, newIndex), type: "reorder-groups" };
+    return {
+      sectionIds: moveItem(sectionIds, oldIndex, newIndex),
+      type: "reorder-sections"
+    };
   }
 
   if (activeData.type === "tag") {

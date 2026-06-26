@@ -27,13 +27,14 @@ import {
   deleteTagGroup,
   fetchTagDefinitions,
   moveTagDefinition,
-  reorderTagGroups,
+  reorderTagCatalogSections,
   reorderTags,
   updateTagDefinition,
   updateTagGroup
 } from "../../api/tags.js";
 import { confirmAdminAction } from "../../components/admin/builderForm.js";
 import {
+  getCatalogSectionId,
   resolveTagCatalogDragOutcome,
   type TagCatalogDragData
 } from "../../components/admin/tagCatalogDrag.js";
@@ -42,10 +43,26 @@ import { useToast } from "../../components/ToastProvider.js";
 type ActiveDrag = { label: string; type: "group" | "tag" } | null;
 const ungroupedSectionKey = "ungrouped";
 
+type CatalogSection =
+  | {
+      displayOrder: number;
+      groupId: null;
+      key: "ungrouped";
+      type: "ungrouped";
+    }
+  | {
+      displayOrder: number;
+      group: TagCatalogGroup;
+      groupId: number;
+      key: string;
+      type: "group";
+    };
+
 export function AdminTagsPage() {
   const toast = useToast();
   const [groups, setGroups] = useState<TagCatalogGroup[]>([]);
   const [ungroupedTags, setUngroupedTags] = useState<TagDefinition[]>([]);
+  const [ungroupedDisplayOrder, setUngroupedDisplayOrder] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,12 +142,35 @@ export function AdminTagsPage() {
     () => [ungroupedSectionKey, ...groups.map((group) => getGroupSectionKey(group.id))],
     [groups]
   );
+  const catalogSections = useMemo<CatalogSection[]>(
+    () => {
+      const sections: CatalogSection[] = [
+        {
+          displayOrder: ungroupedDisplayOrder,
+          groupId: null,
+          key: "ungrouped",
+          type: "ungrouped" as const
+        },
+        ...groups.map((group) => ({
+          displayOrder: group.displayOrder,
+          group,
+          groupId: group.id,
+          key: getCatalogSectionId(group.id),
+          type: "group" as const
+        }))
+      ];
+
+      return sections.sort(compareCatalogSections);
+    },
+    [groups, ungroupedDisplayOrder]
+  );
   const allSectionsCollapsed =
     allSectionKeys.length > 0 && allSectionKeys.every((key) => collapsedSectionKeys.has(key));
 
   function applyCatalog(catalog: TagDefinitionsResponse) {
     setGroups(catalog.groups);
     setUngroupedTags(catalog.ungroupedTags);
+    setUngroupedDisplayOrder(catalog.ungroupedDisplayOrder);
   }
 
   async function refreshCatalog() {
@@ -172,7 +212,7 @@ export function AdminTagsPage() {
       await createTagGroup({ name });
       setNewGroupName("");
       await refreshCatalog();
-    }, "Tag group added");
+    }, "Tag category added");
   }
 
   async function handleSaveGroup(event: FormEvent<HTMLFormElement>, group: TagCatalogGroup) {
@@ -183,7 +223,7 @@ export function AdminTagsPage() {
       await updateTagGroup({ groupId: group.id, name });
       setEditingGroupId(null);
       await refreshCatalog();
-    }, "Tag group saved");
+    }, "Tag category saved");
   }
 
   async function handleDeleteGroup(group: TagCatalogGroup) {
@@ -198,7 +238,7 @@ export function AdminTagsPage() {
     await runCatalogMutation(async () => {
       await deleteTagGroup({ groupId: group.id });
       await refreshCatalog();
-    }, "Tag group deleted");
+    }, "Tag category deleted");
   }
 
   async function handleCreateTag(event: FormEvent<HTMLFormElement>) {
@@ -296,9 +336,12 @@ export function AdminTagsPage() {
   function handleDragStart(event: DragStartEvent) {
     const data = event.active.data.current as TagCatalogDragData;
 
-    if (data?.type === "group") {
-      const group = groups.find((item) => item.id === data.groupId);
-      setActiveDrag({ label: group?.name ?? "Tag group", type: "group" });
+    if (data?.type === "section") {
+      const group = data.groupId === null ? null : groups.find((item) => item.id === data.groupId);
+      setActiveDrag({
+        label: group?.name ?? "Ungrouped",
+        type: "group"
+      });
       return;
     }
 
@@ -327,9 +370,9 @@ export function AdminTagsPage() {
     const outcome = resolveTagCatalogDragOutcome({
       activeData: active.data.current as TagCatalogDragData,
       activeId: String(active.id),
-      groupIds: groups.map((group) => group.id),
       overData: over.data.current as TagCatalogDragData,
       overId: String(over.id),
+      sectionIds: catalogSections.map((section) => section.key),
       tagIdsByGroup
     });
 
@@ -337,10 +380,10 @@ export function AdminTagsPage() {
       return;
     }
 
-    if (outcome.type === "reorder-groups") {
+    if (outcome.type === "reorder-sections") {
       void runCatalogMutation(async () => {
-        applyCatalog(await reorderTagGroups({ groupIds: outcome.groupIds }));
-      }, "Group order saved");
+        applyCatalog(await reorderTagCatalogSections({ sectionIds: outcome.sectionIds }));
+      }, "Category order saved");
       return;
     }
 
@@ -362,7 +405,7 @@ export function AdminTagsPage() {
     }, "Tag moved");
   }
 
-  const groupItemIds = groups.map((group) => `group:${group.id}`);
+  const sectionItemIds = catalogSections.map((section) => `section:${section.key}`);
 
   return (
     <section className="page admin-builder-page">
@@ -371,8 +414,8 @@ export function AdminTagsPage() {
         <h2>Tag catalog</h2>
         <p>
           Reusable hidden tag categories and values. Tags saved in the survey builder
-          register here automatically; groups help admins arrange catalog pairs without
-          changing participant-facing data.
+          register here automatically; categories help admins arrange catalog pairs
+          without changing participant-facing data.
         </p>
       </div>
 
@@ -380,15 +423,15 @@ export function AdminTagsPage() {
 
       <div className="builder-workspace tag-catalog-workspace">
         <form className="builder-form tag-catalog-create" onSubmit={handleCreateGroup}>
-          <div className="builder-section-heading">
-            <div>
-              <p className="eyebrow">Groups</p>
-              <h3>Create group</h3>
+            <div className="builder-section-heading">
+              <div>
+              <p className="eyebrow">Categories</p>
+              <h3>Create category</h3>
             </div>
           </div>
           <div className="builder-grid two-columns">
             <label>
-              Group name
+              Category name
               <input
                 name="name"
                 onChange={(event) => setNewGroupName(event.target.value)}
@@ -403,7 +446,7 @@ export function AdminTagsPage() {
               disabled={isSubmitting}
               type="submit"
             >
-              Add group
+              Add category
             </button>
           </div>
         </form>
@@ -436,7 +479,7 @@ export function AdminTagsPage() {
             </label>
             <TagGroupSelect
               groups={groups}
-              label="Group"
+              label="Category"
               onChange={setNewTagGroupId}
               value={newTagGroupId}
             />
@@ -475,7 +518,7 @@ export function AdminTagsPage() {
           >
             <div className="tag-catalog-board-toolbar">
               <span className="builder-heading-note">
-                {groups.length} {groups.length === 1 ? "group" : "groups"} · {tags.length}{" "}
+                {groups.length} {groups.length === 1 ? "category" : "categories"} · {tags.length}{" "}
                 {tags.length === 1 ? "tag" : "tags"}
               </span>
               <button
@@ -488,70 +531,73 @@ export function AdminTagsPage() {
             </div>
 
             <div className="tag-catalog-board">
-              <TagSection
-                collapsed={collapsedSectionKeys.has(ungroupedSectionKey)}
-                disabled={isSubmitting}
-                editingTagGroupId={editingTagGroupId}
-                editingTagId={editingTagId}
-                editingTagKey={editingTagKey}
-                editingTagValue={editingTagValue}
-                groupId={null}
-                groupOptions={groups}
-                isDuplicateEditPair={isDuplicateEditPair}
-                isSubmitting={isSubmitting}
-                onCancelEdit={() => setEditingTagId(null)}
-                onDeleteTag={handleDeleteTag}
-                onEditingTagGroupChange={setEditingTagGroupId}
-                onEditingTagKeyChange={setEditingTagKey}
-                onEditingTagValueChange={setEditingTagValue}
-                onMoveSelectedTag={handleMoveSelectedTag}
-                onSaveTag={handleSaveTag}
-                onStartMoveTag={startMovingTag}
-                onStartEditTag={startEditingTag}
-                onToggleCollapse={() => toggleSection(ungroupedSectionKey)}
-                selectedMoveGroupId={selectedMoveGroupId}
-                selectedMoveTagId={selectedMoveTagId}
-                onSelectedMoveGroupChange={setSelectedMoveGroupId}
-                tags={ungroupedTags}
-                title="Ungrouped"
-              />
-
-              <SortableContext items={groupItemIds} strategy={verticalListSortingStrategy}>
-                {groups.map((group) => (
-                  <SortableTagGroupCard
-                    collapsed={collapsedSectionKeys.has(getGroupSectionKey(group.id))}
-                    disabled={isSubmitting}
-                    editingGroupId={editingGroupId}
-                    editingGroupName={editingGroupName}
-                    editingTagGroupId={editingTagGroupId}
-                    editingTagId={editingTagId}
-                    editingTagKey={editingTagKey}
-                    editingTagValue={editingTagValue}
-                    group={group}
-                    groupOptions={groups}
-                    isDuplicateEditPair={isDuplicateEditPair}
-                    isSubmitting={isSubmitting}
-                    key={group.id}
-                    onCancelEditGroup={() => setEditingGroupId(null)}
-                    onCancelEditTag={() => setEditingTagId(null)}
-                    onDeleteGroup={handleDeleteGroup}
-                    onDeleteTag={handleDeleteTag}
-                    onEditingGroupNameChange={setEditingGroupName}
-                    onEditingTagGroupChange={setEditingTagGroupId}
-                    onEditingTagKeyChange={setEditingTagKey}
-                    onEditingTagValueChange={setEditingTagValue}
-                    onMoveSelectedTag={handleMoveSelectedTag}
-                    onSaveGroup={handleSaveGroup}
-                    onSaveTag={handleSaveTag}
-                    onSelectedMoveGroupChange={setSelectedMoveGroupId}
-                    onStartEditGroup={startEditingGroup}
-                    onStartEditTag={startEditingTag}
-                    onStartMoveTag={startMovingTag}
-                    onToggleCollapse={() => toggleSection(getGroupSectionKey(group.id))}
-                    selectedMoveGroupId={selectedMoveGroupId}
-                    selectedMoveTagId={selectedMoveTagId}
-                  />
-                ))}
+              <SortableContext items={sectionItemIds} strategy={verticalListSortingStrategy}>
+                {catalogSections.map((section) =>
+                  section.type === "ungrouped" ? (
+                    <TagSection
+                      collapsed={collapsedSectionKeys.has(ungroupedSectionKey)}
+                      disabled={isSubmitting}
+                      editingTagGroupId={editingTagGroupId}
+                      editingTagId={editingTagId}
+                      editingTagKey={editingTagKey}
+                      editingTagValue={editingTagValue}
+                      groupId={null}
+                      groupOptions={groups}
+                      isDuplicateEditPair={isDuplicateEditPair}
+                      isSubmitting={isSubmitting}
+                      key={section.key}
+                      onCancelEdit={() => setEditingTagId(null)}
+                      onDeleteTag={handleDeleteTag}
+                      onEditingTagGroupChange={setEditingTagGroupId}
+                      onEditingTagKeyChange={setEditingTagKey}
+                      onEditingTagValueChange={setEditingTagValue}
+                      onMoveSelectedTag={handleMoveSelectedTag}
+                      onSaveTag={handleSaveTag}
+                      onStartMoveTag={startMovingTag}
+                      onStartEditTag={startEditingTag}
+                      onToggleCollapse={() => toggleSection(ungroupedSectionKey)}
+                      selectedMoveGroupId={selectedMoveGroupId}
+                      selectedMoveTagId={selectedMoveTagId}
+                      onSelectedMoveGroupChange={setSelectedMoveGroupId}
+                      tags={ungroupedTags}
+                      title="Ungrouped"
+                    />
+                  ) : (
+                    <SortableTagGroupCard
+                      collapsed={collapsedSectionKeys.has(getGroupSectionKey(section.group.id))}
+                      disabled={isSubmitting}
+                      editingGroupId={editingGroupId}
+                      editingGroupName={editingGroupName}
+                      editingTagGroupId={editingTagGroupId}
+                      editingTagId={editingTagId}
+                      editingTagKey={editingTagKey}
+                      editingTagValue={editingTagValue}
+                      group={section.group}
+                      groupOptions={groups}
+                      isDuplicateEditPair={isDuplicateEditPair}
+                      isSubmitting={isSubmitting}
+                      key={section.key}
+                      onCancelEditGroup={() => setEditingGroupId(null)}
+                      onCancelEditTag={() => setEditingTagId(null)}
+                      onDeleteGroup={handleDeleteGroup}
+                      onDeleteTag={handleDeleteTag}
+                      onEditingGroupNameChange={setEditingGroupName}
+                      onEditingTagGroupChange={setEditingTagGroupId}
+                      onEditingTagKeyChange={setEditingTagKey}
+                      onEditingTagValueChange={setEditingTagValue}
+                      onMoveSelectedTag={handleMoveSelectedTag}
+                      onSaveGroup={handleSaveGroup}
+                      onSaveTag={handleSaveTag}
+                      onSelectedMoveGroupChange={setSelectedMoveGroupId}
+                      onStartEditGroup={startEditingGroup}
+                      onStartEditTag={startEditingTag}
+                      onStartMoveTag={startMovingTag}
+                      onToggleCollapse={() => toggleSection(getGroupSectionKey(section.group.id))}
+                      selectedMoveGroupId={selectedMoveGroupId}
+                      selectedMoveTagId={selectedMoveTagId}
+                    />
+                  )
+                )}
               </SortableContext>
             </div>
 
@@ -631,9 +677,9 @@ function SortableTagGroupCard({
   selectedMoveTagId: number | null;
 }) {
   const { attributes, isDragging, listeners, setNodeRef, transform, transition } = useSortable({
-    data: { groupId: group.id, type: "group" },
+    data: { groupId: group.id, sectionId: getCatalogSectionId(group.id), type: "section" },
     disabled,
-    id: `group:${group.id}`
+    id: `section:${getCatalogSectionId(group.id)}`
   });
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -648,7 +694,7 @@ function SortableTagGroupCard({
     >
       <div className="tag-group-card-header">
         <button
-          aria-label={`Reorder group ${group.name}`}
+          aria-label={`Reorder category ${group.name}`}
           className="drag-handle"
           disabled={disabled}
           type="button"
@@ -669,7 +715,7 @@ function SortableTagGroupCard({
         {editingGroupId === group.id ? (
           <form className="tag-group-edit-form" onSubmit={(event) => onSaveGroup(event, group)}>
             <label>
-              Group name
+              Category name
               <input
                 name="name"
                 onChange={(event) => onEditingGroupNameChange(event.target.value)}
@@ -699,7 +745,7 @@ function SortableTagGroupCard({
           <>
             <div className="tag-group-card-heading">
               <p className="eyebrow">
-                Group {group.displayOrder} · {group.tags.length}{" "}
+                Category {group.displayOrder} · {group.tags.length}{" "}
                 {group.tags.length === 1 ? "tag" : "tags"}
               </p>
               <h3>{group.name}</h3>
@@ -719,7 +765,7 @@ function SortableTagGroupCard({
                 onClick={() => onDeleteGroup(group)}
                 type="button"
               >
-                Delete group
+                Delete category
               </button>
             </div>
           </>
@@ -810,9 +856,34 @@ function TagSection({
   tags: TagDefinition[];
   title: string;
 }) {
+  const sectionId = getCatalogSectionId(groupId);
+  const { attributes, isDragging, listeners, setNodeRef, transform, transition } = useSortable({
+    data: { groupId, sectionId, type: "section" },
+    disabled,
+    id: `section:${sectionId}`
+  });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition
+  };
+
   return (
-    <section className="tag-group-card ungrouped">
+    <section
+      className={isDragging ? "tag-group-card ungrouped dragging" : "tag-group-card ungrouped"}
+      ref={setNodeRef}
+      style={style}
+    >
       <div className="tag-group-card-header">
+        <button
+          aria-label="Reorder Ungrouped"
+          className="drag-handle"
+          disabled={disabled}
+          type="button"
+          {...attributes}
+          {...listeners}
+        >
+          <span aria-hidden="true">⠿</span>
+        </button>
         <button
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
@@ -1041,7 +1112,7 @@ function SortableTagRow({
         </label>
         <TagGroupSelect
           groups={groupOptions}
-          label="Group"
+          label="Category"
           onChange={onEditingGroupChange}
           value={editingGroupId}
         />
@@ -1186,6 +1257,30 @@ function CollapsedTagDropZone({
 
 function getGroupSectionKey(groupId: number): string {
   return `group:${groupId}`;
+}
+
+function compareCatalogSections(left: CatalogSection, right: CatalogSection): number {
+  const byOrder = left.displayOrder - right.displayOrder;
+
+  if (byOrder !== 0) {
+    return byOrder;
+  }
+
+  // Fresh installs can tie Ungrouped's default order with the first category;
+  // keep the initial paint deterministic until an admin saves a custom order.
+  if (left.type === "ungrouped" && right.type !== "ungrouped") {
+    return -1;
+  }
+
+  if (right.type === "ungrouped" && left.type !== "ungrouped") {
+    return 1;
+  }
+
+  if (left.type === "group" && right.type === "group") {
+    return left.group.name.localeCompare(right.group.name) || left.group.id - right.group.id;
+  }
+
+  return 0;
 }
 
 function TagGroupSelect({

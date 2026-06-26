@@ -72,9 +72,11 @@ export async function deleteTagGroup(input: { groupId: number }): Promise<TagGro
   });
 }
 
-export async function reorderTagGroups(input: { groupIds: number[] }): Promise<TagDefinitionsResponse> {
-  return apiRequest<TagDefinitionsResponse>("/api/tags/groups/reorder", {
-    body: JSON.stringify({ groupIds: input.groupIds }),
+export async function reorderTagCatalogSections(input: {
+  sectionIds: string[];
+}): Promise<TagDefinitionsResponse> {
+  return apiRequest<TagDefinitionsResponse>("/api/tags/sections/reorder", {
+    body: JSON.stringify({ sectionIds: input.sectionIds }),
     method: "PUT"
   });
 }

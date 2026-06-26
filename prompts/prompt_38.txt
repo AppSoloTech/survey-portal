@@ -1,0 +1,165 @@
+# Phase 38 — Collapsible Question Editor Sections
+
+## Purpose
+
+Address item 4 in `test_notes.txt`: reduce clutter in
+`/admin/surveys/:id/questions` by adding clearly labeled collapsible sections
+inside each question editor parent, using `P1-Q1` as the parent identity.
+
+Source feedback:
+
+```txt
+test_notes.txt
+screenshot/Screenshot 2026-06-26 125612.png
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_38.txt`
+* Claude review: `notes/claude_review_phase_38.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `test_notes.txt`
+* `screenshot/Screenshot 2026-06-26 125612.png`
+* `notes/ui_ux_questions_builder_split.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/FLOW.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* recent `markdown/PHASE_LOG.md`
+* `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+* `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+* `apps/web/src/styles.css`
+
+---
+
+# Received Feedback
+
+1. The Questions page editor area has grown too dense.
+2. Each question parent, for example `P1-Q1`, should contain well-labeled
+   collapsible and expandable sections so admins can focus on specific tooling.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+* UX polish / workflow clarity: reduce visual density in a heavy admin editor.
+* Frontend-only change: no API, schema, survey runtime, reporting, or auth
+  behavior changes.
+
+This phase changes:
+
+* Frontend UX: yes.
+* Database schema or migrations: no.
+* API contracts: no.
+* Participant-facing survey behavior: no.
+* Hidden-tag visibility: no.
+* Authentication or authorization: no.
+
+---
+
+# Scope
+
+Implement:
+
+* Keep each question editor as the parent container labeled by
+  `formatQuestionLocator`, such as `P1-Q1`.
+* Add accessible collapsible subsections inside `QuestionEditor`.
+* Default state:
+  * `Question details` open.
+  * `Save as question template` collapsed.
+  * `Hidden tags for answers` collapsed for text/integer questions.
+  * `Answer options` or `Scale values` collapsed for option-backed questions.
+  * `Hidden tags for Other` collapsed when applicable.
+* Section labels should include useful counts where natural, for example
+  `Answer options (3)`, `Hidden tags for answers (2)`, `Other tags (1)`.
+* Preserve all existing edit, lock, published-survey, template-saving, and
+  hidden-tag behavior.
+* Keep section state local to the rendered editor; do not persist section state
+  across sessions.
+* Ensure keyboard and screen-reader accessibility with native `details` behavior
+  or equivalent `aria-expanded` behavior.
+* Keep styling consistent with the existing admin builder.
+* Update `markdown/releases/unreleased.md`, `markdown/PHASE_LOG.md`, and
+  `notes/claude_handoff_phase_38.txt`.
+
+## Non-Goals
+
+Do not implement:
+
+* API contract, database schema, survey structure, reporting, template, or
+  conditional logic changes.
+* Moving question editing to another route.
+* Removing existing question, option, template, or tag capability.
+* Per-admin saved preferences for expanded/collapsed sections.
+* A broader visual redesign.
+
+## Assumptions
+
+* Item 4 is intentionally separate because it touches dense editor structure and
+  needs its own manual QA pass.
+
+## Open Questions
+
+* None blocking V1.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The question page no longer shows all heavy tooling expanded by default.
+* Admins can expand/collapse each subsection independently inside each question.
+* The `P1-Q1` parent header remains visible and meaningful.
+* Published surveys still lock structural controls while allowing the
+  already-approved hidden-tag maintenance behavior.
+* Text, integer, single-select, multi-select, and scale questions all render
+  appropriate sections.
+* Empty states and action buttons remain reachable when their section is
+  expanded.
+
+---
+
+# Testing Requirements
+
+Default validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Manual checks to perform or document:
+
+* `/admin/surveys/:id/questions` with at least one text/integer question, one
+  single-select question with options/tags, one scale question, and one
+  selection question with Other enabled.
+* Desktop and narrow widths for non-overlapping labels/buttons.
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `markdown/releases/unreleased.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_38.txt`

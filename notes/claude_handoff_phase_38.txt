@@ -1,0 +1,122 @@
+# Claude Review Handoff — Phase 38
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_38.txt
+```
+
+## Review Goal
+
+Please review this phase for product UX alignment, accessibility,
+maintainability, and regression risk in the admin question editor.
+
+## Reference Documents
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_38.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Added `prompts/prompt_38.txt`.
+- Kept the `P1-Q1` question parent header visible with question move controls.
+- Added local, accessible collapsible sections inside `QuestionEditor`.
+- Defaulted Question details open.
+- Defaulted template, value-tag, answer option/scale, and Other tag tooling
+  collapsed.
+- Added useful counts to collapsed section headers.
+- Preserved published-survey structural locking and hidden-tag edit behavior.
+- Updated `markdown/releases/unreleased.md`.
+
+Non-goals:
+
+- No API, schema, reporting, template, conditional logic, or participant-facing
+  changes.
+- No per-admin persisted expand/collapse preferences.
+- No route change or broad redesign.
+
+Known tradeoffs:
+
+- Section open state is local React state and resets when the editor remounts.
+- Native `details` controls are styled to fit the existing builder instead of
+  introducing a custom disclosure component.
+
+Deferred work:
+
+- None.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Key files:
+
+- `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+- `apps/web/src/styles.css`
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/components/admin/tagCatalogDrag.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above.
+- Note: `npm run build` emitted the existing Vite large chunk warning.
+- Note: full `npm test` required approved local PostgreSQL access for API tests.
+
+Manual testing:
+
+- Not run in browser during this pass. Please manually check
+  `/admin/surveys/:id/questions` with text/integer, single-select, scale, and
+  Other-enabled selection questions at desktop and narrow widths.
+
+## Specific Questions
+
+- Are the section defaults aligned with the requested "Core open" behavior?
+- Are the collapsed headers clear enough for admins to understand what tooling
+  is hidden?
+- Does the native details styling avoid layout overlap at narrow widths?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_38.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

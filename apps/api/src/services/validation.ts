@@ -492,11 +492,11 @@ export function validateTagGroupBody(body: unknown): ValidationResult<{ name: st
   const name = readTextField(body, "name");
 
   if (!name) {
-    return { ok: false, error: "Group name is required" };
+    return { ok: false, error: "Category name is required" };
   }
 
   if (name.length > tagGroupNameMaxLength) {
-    return { ok: false, error: `Group name must be ${tagGroupNameMaxLength} characters or fewer` };
+    return { ok: false, error: `Category name must be ${tagGroupNameMaxLength} characters or fewer` };
   }
 
   return { ok: true, value: { name } };

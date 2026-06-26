@@ -81,6 +81,12 @@ describe("tag catalog", () => {
       .send({ groupIds: [1] });
     expect(reorderGroupsResponse.status).toBe(403);
 
+    const reorderSectionsResponse = await request(app)
+      .put("/api/tags/sections/reorder")
+      .set("Cookie", user.cookie)
+      .send({ sectionIds: ["ungrouped", "group:1"] });
+    expect(reorderSectionsResponse.status).toBe(403);
+
     const deleteGroupResponse = await request(app)
       .delete("/api/tags/groups/1")
       .set("Cookie", user.cookie);
@@ -159,6 +165,56 @@ describe("tag catalog", () => {
     const finalList = await request(app).get("/api/tags").set("Cookie", admin.cookie);
     expect(finalList.body.groups.map((group: { id: number }) => group.id)).toEqual([firstGroup.id]);
     expect(finalList.body.groups[0].displayOrder).toBe(1);
+  });
+
+  it("persists the ungrouped catalog section order with tag categories", async () => {
+    const admin = await registerAdmin(app);
+    const firstGroup = await createTagGroup(admin, "Section Alpha");
+    const secondGroup = await createTagGroup(admin, "Section Beta");
+
+    const reorderResponse = await request(app)
+      .put("/api/tags/sections/reorder")
+      .set("Cookie", admin.cookie)
+      .send({ sectionIds: [`group:${secondGroup.id}`, "ungrouped", `group:${firstGroup.id}`] });
+
+    expect(reorderResponse.status).toBe(200);
+    expect(reorderResponse.body.ungroupedDisplayOrder).toBe(2);
+    expect(
+      reorderResponse.body.groups.map((group: { displayOrder: number; id: number }) => ({
+        displayOrder: group.displayOrder,
+        id: group.id
+      }))
+    ).toEqual([
+      { displayOrder: 1, id: secondGroup.id },
+      { displayOrder: 3, id: firstGroup.id }
+    ]);
+
+    const listResponse = await request(app).get("/api/tags").set("Cookie", admin.cookie);
+    expect(listResponse.body.ungroupedDisplayOrder).toBe(2);
+    expect(listResponse.body.groups.map((group: { id: number }) => group.id)).toEqual([
+      secondGroup.id,
+      firstGroup.id
+    ]);
+  });
+
+  it("rejects catalog section reorder payloads missing ungrouped or a category", async () => {
+    const admin = await registerAdmin(app);
+    const firstGroup = await createTagGroup(admin, "Required section A");
+    await createTagGroup(admin, "Required section B");
+
+    const missingUngrouped = await request(app)
+      .put("/api/tags/sections/reorder")
+      .set("Cookie", admin.cookie)
+      .send({ sectionIds: [`group:${firstGroup.id}`] });
+    expect(missingUngrouped.status).toBe(400);
+    expect(missingUngrouped.body.error).toBe("sectionIds must include ungrouped exactly once");
+
+    const missingCategory = await request(app)
+      .put("/api/tags/sections/reorder")
+      .set("Cookie", admin.cookie)
+      .send({ sectionIds: ["ungrouped", `group:${firstGroup.id}`] });
+    expect(missingCategory.status).toBe(400);
+    expect(missingCategory.body.error).toBe("sectionIds must include every tag category exactly once");
   });
 
   it("creates tags with and without group assignment", async () => {

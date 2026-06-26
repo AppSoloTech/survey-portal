@@ -8,7 +8,7 @@ import {
   type SurveyQuestionType,
   type SurveyStatus
 } from "@survey-portal/shared";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 export const questionTypes: SurveyQuestionType[] = [
   "text",
@@ -216,6 +216,12 @@ export function QuestionEditor({
   const supportsOther = selectedQuestionType === "single_select" || selectedQuestionType === "multi_select";
   const isOptionBacked = isSelectionQuestion(question) || question.questionType === "scale";
   const areTagsLocked = !canEditTags;
+  const valueTagCount = question.valueTags?.length ?? 0;
+  const optionTagCount = question.answerOptions.reduce(
+    (count, option) => count + (option.answerTags?.length ?? 0),
+    0
+  );
+  const otherTagCount = question.otherTags?.length ?? 0;
 
   useEffect(() => {
     setSelectedQuestionType(question.questionType);
@@ -223,183 +229,187 @@ export function QuestionEditor({
 
   return (
     <section className="question-editor">
-      <form onSubmit={(event) => void onSaveQuestion(event, question)}>
-        <div className="builder-section-heading">
-          <div>
-            <p className="eyebrow">{questionLocator}</p>
-            <h3>{question.questionText}</h3>
-            <QuestionMetaStrip
-              isPublished={isPublished}
-              question={question}
-              questionLocator={questionLocator}
-            />
-          </div>
-          <div className="inline-actions">
-            <button
-              className="button-link compact-button ghost-button"
-              disabled={isSubmitting || isPublished || isFirst}
-              onClick={() => void onMoveQuestion(question.id, -1)}
-              type="button"
-            >
-              Up
-            </button>
-            <button
-              className="button-link compact-button ghost-button"
-              disabled={isSubmitting || isPublished || isLast}
-              onClick={() => void onMoveQuestion(question.id, 1)}
-              type="button"
-            >
-              Down
-            </button>
-          </div>
-        </div>
-
-        <div className="builder-grid two-columns">
-          <label>
-            Question text
-            <input
-              defaultValue={question.questionText}
-              disabled={isPublished}
-              name="questionText"
-              required
-            />
-          </label>
-          <label>
-            Type
-            <select
-              defaultValue={question.questionType}
-              disabled={isPublished}
-              name={isPublished ? undefined : "questionType"}
-              onChange={(event) =>
-                setSelectedQuestionType(event.target.value as SurveyQuestionType)
-              }
-            >
-              {questionTypes.map((type) => (
-                <option key={type} value={type}>
-                  {formatQuestionType(type)}
-                </option>
-              ))}
-            </select>
-            {isPublished ? (
-              <input name="questionType" type="hidden" value={question.questionType} />
-            ) : null}
-          </label>
-        </div>
-        {isScale ? (
-          <ScaleRangeFields
-            disabled={isPublished}
-            scaleMax={question.scaleMax ?? 10}
-            scaleMin={question.scaleMin ?? 0}
+      <div className="builder-section-heading question-editor-heading">
+        <div>
+          <p className="eyebrow">{questionLocator}</p>
+          <h3>{question.questionText}</h3>
+          <QuestionMetaStrip
+            isPublished={isPublished}
+            question={question}
+            questionLocator={questionLocator}
           />
-        ) : null}
-        <label>
-          Help text
-          <input defaultValue={question.helpText ?? ""} disabled={isPublished} name="helpText" />
-        </label>
-        <label className="checkbox-label">
-          <input
-            defaultChecked={question.isRequired}
-            disabled={isPublished}
-            name="isRequired"
-            type="checkbox"
-          />
-          Required
-        </label>
-        {supportsOther ? (
-          <label className="checkbox-label">
-            <input
-              defaultChecked={
-                question.allowOther &&
-                (question.questionType === "single_select" ||
-                  question.questionType === "multi_select")
-              }
-              disabled={isPublished}
-              name="allowOther"
-              type="checkbox"
-            />
-            Allow Other
-          </label>
-        ) : null}
+        </div>
         <div className="inline-actions">
           <button
-            className="button-link compact-button primary-button"
-            disabled={isSubmitting || isPublished}
-            type="submit"
-          >
-            Save question
-          </button>
-          <button
-            className="button-link compact-button danger-button"
-            disabled={isSubmitting || isPublished}
-            onClick={() => void onDeleteQuestion(question.id)}
+            className="button-link compact-button ghost-button"
+            disabled={isSubmitting || isPublished || isFirst}
+            onClick={() => void onMoveQuestion(question.id, -1)}
             type="button"
           >
-            Delete question
+            Up
+          </button>
+          <button
+            className="button-link compact-button ghost-button"
+            disabled={isSubmitting || isPublished || isLast}
+            onClick={() => void onMoveQuestion(question.id, 1)}
+            type="button"
+          >
+            Down
           </button>
         </div>
-      </form>
+      </div>
 
-      {onSaveQuestionTemplate ? (
+      <QuestionEditorSection defaultOpen title="Question details">
         <form
-          className="option-editor"
-          key={`question-template-${question.id}`}
-          onSubmit={(event) => void onSaveQuestionTemplate(event, question)}
+          className="question-details-form"
+          onSubmit={(event) => void onSaveQuestion(event, question)}
         >
-          <div>
-            <h4>Save as question template</h4>
-            <p className="builder-heading-note">
-              Saves this question, answer options, scale range, and hidden tags. Conditional
-              rules are recorded as warnings and are not copied.
-            </p>
-          </div>
           <div className="builder-grid two-columns">
             <label>
-              Template name
+              Question text
               <input
                 defaultValue={question.questionText}
-                disabled={isSubmitting || isTemplateSaving || isPublished}
-                name="name"
-                required
-              />
-            </label>
-            <label>
-              Inserted question text
-              <input
-                defaultValue={question.questionText}
-                disabled={isSubmitting || isTemplateSaving || isPublished}
+                disabled={isPublished}
                 name="questionText"
                 required
               />
             </label>
             <label>
-              Template note
-              <input
-                disabled={isSubmitting || isTemplateSaving || isPublished}
-                name="description"
-                placeholder="Optional note for admins"
-              />
+              Type
+              <select
+                defaultValue={question.questionType}
+                disabled={isPublished}
+                name={isPublished ? undefined : "questionType"}
+                onChange={(event) =>
+                  setSelectedQuestionType(event.target.value as SurveyQuestionType)
+                }
+              >
+                {questionTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {formatQuestionType(type)}
+                  </option>
+                ))}
+              </select>
+              {isPublished ? (
+                <input name="questionType" type="hidden" value={question.questionType} />
+              ) : null}
             </label>
           </div>
-          <button
-            className="button-link compact-button secondary-button"
-            disabled={isSubmitting || isTemplateSaving || isPublished}
-            type="submit"
-          >
-            Save question template
-          </button>
+          {isScale ? (
+            <ScaleRangeFields
+              disabled={isPublished}
+              scaleMax={question.scaleMax ?? 10}
+              scaleMin={question.scaleMin ?? 0}
+            />
+          ) : null}
+          <label>
+            Help text
+            <input defaultValue={question.helpText ?? ""} disabled={isPublished} name="helpText" />
+          </label>
+          <label className="checkbox-label">
+            <input
+              defaultChecked={question.isRequired}
+              disabled={isPublished}
+              name="isRequired"
+              type="checkbox"
+            />
+            Required
+          </label>
+          {supportsOther ? (
+            <label className="checkbox-label">
+              <input
+                defaultChecked={
+                  question.allowOther &&
+                  (question.questionType === "single_select" ||
+                    question.questionType === "multi_select")
+                }
+                disabled={isPublished}
+                name="allowOther"
+                type="checkbox"
+              />
+              Allow Other
+            </label>
+          ) : null}
+          <div className="inline-actions">
+            <button
+              className="button-link compact-button primary-button"
+              disabled={isSubmitting || isPublished}
+              type="submit"
+            >
+              Save question
+            </button>
+            <button
+              className="button-link compact-button danger-button"
+              disabled={isSubmitting || isPublished}
+              onClick={() => void onDeleteQuestion(question.id)}
+              type="button"
+            >
+              Delete question
+            </button>
+          </div>
         </form>
+      </QuestionEditorSection>
+
+      {onSaveQuestionTemplate ? (
+        <QuestionEditorSection
+          key={`question-template-${question.id}`}
+          title="Save as question template"
+        >
+          <form
+            className="option-editor"
+            onSubmit={(event) => void onSaveQuestionTemplate(event, question)}
+          >
+            <p className="builder-heading-note">
+              Saves this question, answer options, scale range, and hidden tags. Conditional
+              rules are recorded as warnings and are not copied.
+            </p>
+            <div className="builder-grid two-columns">
+              <label>
+                Template name
+                <input
+                  defaultValue={question.questionText}
+                  disabled={isSubmitting || isTemplateSaving || isPublished}
+                  name="name"
+                  required
+                />
+              </label>
+              <label>
+                Inserted question text
+                <input
+                  defaultValue={question.questionText}
+                  disabled={isSubmitting || isTemplateSaving || isPublished}
+                  name="questionText"
+                  required
+                />
+              </label>
+              <label>
+                Template note
+                <input
+                  disabled={isSubmitting || isTemplateSaving || isPublished}
+                  name="description"
+                  placeholder="Optional note for admins"
+                />
+              </label>
+            </div>
+            <button
+              className="button-link compact-button secondary-button"
+              disabled={isSubmitting || isTemplateSaving || isPublished}
+              type="submit"
+            >
+              Save question template
+            </button>
+          </form>
+        </QuestionEditorSection>
       ) : null}
 
       {question.questionType === "text" || question.questionType === "integer" ? (
-        <div className="option-editor value-tag-editor">
-          <div>
-            <h4>Hidden tags for answers</h4>
+        <QuestionEditorSection title={`Hidden tags for answers (${valueTagCount})`}>
+          <div className="option-editor value-tag-editor">
             <p className="builder-heading-note">
               {question.questionType === "integer"
                 ? "Tag respondents based on the number they enter. Bounds are inclusive; leave both blank to tag any answered value."
                 : "Tags apply whenever the respondent gives a non-blank answer."}
             </p>
-          </div>
 
           {(question.valueTags ?? []).map((valueTag) => (
             <form
@@ -507,19 +517,25 @@ export function QuestionEditor({
               </button>
             </div>
           </form>
-        </div>
+          </div>
+        </QuestionEditorSection>
       ) : null}
 
       {isOptionBacked ? (
-        <div className="option-editor">
-          <div>
-            <h4>{question.questionType === "scale" ? "Scale values" : "Answer options"}</h4>
+        <QuestionEditorSection
+          title={
+            question.questionType === "scale"
+              ? `Scale values (${question.answerOptions.length})`
+              : `Answer options (${question.answerOptions.length})`
+          }
+          meta={optionTagCount > 0 ? `${formatCount(optionTagCount, "hidden tag")}` : undefined}
+        >
+          <div className="option-editor">
             <p className="builder-heading-note">
               {question.questionType === "scale"
                 ? "Scale values are generated from the range. Hidden tags are saved per value."
                 : "Option text, order, and hidden tags are saved with separate actions."}
             </p>
-          </div>
           {question.answerOptions.length === 0 ? (
             <div className="builder-empty-state compact">
               <strong>
@@ -684,17 +700,16 @@ export function QuestionEditor({
               </button>
             </form>
           ) : null}
-        </div>
+          </div>
+        </QuestionEditorSection>
       ) : null}
 
       {isSelectionQuestion(question) && question.allowOther ? (
-        <div className="option-editor">
-          <div>
-            <h4>Hidden tags for Other</h4>
+        <QuestionEditorSection title={`Other tags (${otherTagCount})`}>
+          <div className="option-editor">
             <p className="builder-heading-note">
               Tags apply when a respondent enters an Other answer. Other is not an answer option and cannot drive jump rules.
             </p>
-          </div>
           {(question.otherTags ?? []).map((tag) => (
             <form
               className="tag-row"
@@ -748,9 +763,40 @@ export function QuestionEditor({
               Add hidden tag
             </button>
           </form>
-        </div>
+          </div>
+        </QuestionEditorSection>
       ) : null}
     </section>
+  );
+}
+
+function QuestionEditorSection({
+  children,
+  defaultOpen = false,
+  meta,
+  title
+}: {
+  children: ReactNode;
+  defaultOpen?: boolean;
+  meta?: string;
+  title: string;
+}) {
+  // Keep the native details element controlled so local open state survives
+  // rerenders while still resetting when the question editor remounts.
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <details
+      className="question-editor-section"
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      open={isOpen}
+    >
+      <summary>
+        <span>{title}</span>
+        {meta ? <em>{meta}</em> : null}
+      </summary>
+      <div className="question-editor-section-body">{children}</div>
+    </details>
   );
 }
 

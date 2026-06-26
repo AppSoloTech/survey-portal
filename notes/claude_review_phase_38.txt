@@ -1,0 +1,75 @@
+# Claude Review — Phase 38 (Collapsible QuestionEditor Sections)
+
+Reviewed: working-tree diff for
+apps/web/src/components/admin/SurveyBuilderComponents.tsx and
+apps/web/src/styles.css.
+
+## 1. Critical issues
+
+None. The refactor is structural/presentational, preserves all existing form
+fields, handlers, and the published-survey lock semantics, and type-checks/lints
+clean.
+
+## 2. Suggested improvements
+
+- Section open state resets on remount (acknowledged tradeoff). `QuestionEditorSection`
+  holds isOpen in local React state seeded from defaultOpen. Because the editor
+  remounts on data refresh, an admin who expands "Answer options," saves a tag,
+  and triggers a refresh will see the section collapse back to default. Fine for
+  this pass; if it gets annoying in use, lift the open-state into the page keyed
+  by question id, or persist per-admin (explicitly a non-goal here).
+
+- Count labels are slightly inconsistent. The value-tag and Other sections inline
+  the count in the title ("Hidden tags for answers (N)", "Other tags (N)"), while
+  the Answer options section puts the option count in the title and the hidden-
+  tag count in the `meta` slot, shown only when > 0. The mixed convention is
+  readable but a future reader may wonder why one section hides its count at 0.
+  Consider a single convention (e.g., always title-count, meta for secondary
+  counts). Minor.
+
+- Controlled <details>. `<details open={isOpen} onToggle=...>` is the right
+  pattern and works, but note it makes the element fully controlled — if any
+  future code sets `open` imperatively it must go through setIsOpen. A brief
+  comment would prevent a regression.
+
+## 3. Acceptable tradeoffs
+
+- Native <details>/<summary> styled to match the builder rather than a custom
+  disclosure widget. This is the better call: native gives keyboard focus,
+  Enter/Space toggle, and the open/closed a11y state for free. The custom marker
+  (::before "▸" rotating on [open], ::-webkit-details-marker hidden) is cosmetic
+  only and does not break semantics.
+- Question parent header (P-Q locator, title, meta strip) and the Up/Down move
+  controls were pulled out of the collapsible body into an always-visible
+  `question-editor-heading`. Matches the "keep header + move controls visible"
+  requirement.
+
+## 4. Questions / assumptions answered
+
+- "Defaults aligned with 'Core open'?" Yes. Only "Question details" passes
+  defaultOpen; template, value-tag, answer-option/scale, and Other sections
+  default collapsed.
+- "Collapsed headers clear enough?" Mostly yes — titles name the tooling and
+  carry counts. See the consistency note in section 2; the 0-count suppression on
+  the options' hidden-tag meta is the only mild ambiguity.
+- "Native details styling avoid overlap at narrow widths?" The summary uses
+  flex with `span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere }` and
+  a non-shrinking marker/meta, so long titles wrap rather than overlap. Looks
+  safe; still worth the manual narrow-width pass the handoff requested, since no
+  browser run was done.
+
+## 5. Product UX alignment notes
+
+- Locking is preserved: every field/button retained its
+  disabled={... || isPublished} / areTagsLocked guard; collapsing only hides,
+  never unlocks. Published structural lock and the Phase 36 hidden-tag edit
+  exception both remain intact.
+- The collapse-by-default reduces scroll on long questions, which aligns with the
+  "focus on one part at a time" goal. Counts on collapsed headers give admins a
+  reason to expand.
+
+## 6. Commit readiness
+
+Ready to commit. No blocking issues. Recommended (non-blocking): unify the count-
+label convention, and do the manual narrow-width browser pass across
+text/integer, single-select, scale, and Other-enabled questions before release.

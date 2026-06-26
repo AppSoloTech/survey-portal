@@ -1,0 +1,83 @@
+# Claude Review — Phase 37 (Tag Catalog Section Ordering + Category Copy)
+
+Reviewed: working-tree diff for tags.ts, validation.ts, packages/shared,
+api/tags.ts, tagCatalogDrag.ts(+test), AdminTagsPage.tsx, styles.css,
+database/migrations/0034_tag_catalog_settings.sql, tagCatalog.test.ts.
+
+## 1. Critical issues
+
+None. The phase is correct, admin-scoped, and well-validated. Safe to commit.
+
+## 2. Suggested improvements
+
+- Orphaned web helper. `reorderTagGroups` (apps/web/src/api/tags.ts:75 ->
+  PUT /api/tags/groups/reorder) no longer has any frontend caller; AdminTagsPage
+  now uses `reorderTagCatalogSections`. The backend `/groups/reorder` route is
+  still exercised by tagCatalog.test.ts so it is intentional surface, but the
+  web helper is dead code. Remove the web helper, or add a one-line note on why
+  both reorder paths are kept.
+
+- displayOrder collisions on first load. `compareCatalogSections`
+  (AdminTagsPage.tsx) tie-breaks equal displayOrder by putting Ungrouped first.
+  Immediately after the migration, ungrouped_display_order = 1 ties with the
+  first real category's display_order = 1, and a freshly created category gets
+  display_order = max+1 which can also tie Ungrouped's persisted slot until the
+  admin drags. Behavior is deterministic, but consider normalizing section order
+  on read (or seeding Ungrouped beyond the category range) so the initial paint
+  matches the persisted intent without a tie-break crutch.
+
+- Gap in group display_order after reorder. `reorderCatalogSections` derives each
+  group's displayOrder from its absolute index in the merged list (including the
+  Ungrouped slot), so persisted group orders can be 1,3,5... Harmless because
+  ordering is relative, but a short comment would save the next reader a
+  double-take.
+
+## 3. Acceptable tradeoffs
+
+- Singleton `tag_catalog_settings` row (id boolean primary key, singleton +
+  positive-order CHECK constraints, upsert on conflict) to persist the virtual
+  Ungrouped position, rather than materializing Ungrouped as a real tag_groups
+  row. Keeps the virtual section virtual and respects the stated non-goal of not
+  renaming/restructuring the group data model. Reasonable.
+
+- Internal API/types keep groups/groupId; only visible admin copy says
+  "category." Avoids a churny rename across schema + shared types. Acceptable per
+  the declared non-goal.
+
+## 4. Questions / assumptions answered
+
+- "Singleton settings table simple enough?" Yes. One row, two columns of intent,
+  guarded by CHECK constraints and an idempotent seed. Appropriate weight.
+
+- "Section reorder API validate tightly enough?" Yes.
+  validateCatalogSectionReorderBody enforces: sectionIds present + array; exactly
+  one "ungrouped"; every other entry "group:<id>" with a positive safe integer;
+  no repeated category ids. The route then runs sameIdSet(existingIds,
+  sectionGroupIds) inside the transaction and rolls back + 400s if the set does
+  not match the live categories. Tight. Transaction handling is correct
+  (begin/commit, rollback on mismatch and on error, release in finally).
+
+- "Any user-facing 'group' wording left for catalog buckets?" No. Visible copy,
+  buttons, eyebrows, toasts, aria-labels, and validation messages were moved to
+  "category." Remaining "group" tokens are internal only (class names like
+  tag-group-card, prop/var names, the drag-overlay label type) plus the
+  intentional "Ungrouped" section title and the "ungrouped catalog area" delete
+  hint. CSS class names are not user-visible, so no action needed.
+
+## 5. Product UX alignment notes
+
+- Ungrouped is now a draggable sortable section with its own drag handle
+  (aria-label "Reorder Ungrouped") consistent with category cards, and its
+  position survives reload. Matches the intent.
+- Mobile workspace-tabs now expose a thin horizontal scrollbar (scrollbar-width:
+  thin + styled ::-webkit-scrollbar thumb/track) instead of hiding the
+  affordance. Good discoverability win at narrow widths.
+- Security posture unchanged: tagsRouter remains requireAuth + requireRole
+  ("admin"); no participant-facing payload touched; shared
+  TagDefinitionsResponse only gains ungroupedDisplayOrder (admin-only response).
+
+## 6. Commit readiness
+
+Ready to commit. No blocking issues. Recommended (non-blocking) follow-ups:
+remove the now-unused `reorderTagGroups` web helper (or document why it stays),
+and add a brief comment on the section-order gap/tie-break logic.

@@ -2943,9 +2943,77 @@ main {
   justify-self: start;
 }
 
-.question-editor > form {
+.question-editor > form,
+.question-details-form {
   display: grid;
   gap: 0.75rem;
+}
+
+.question-editor-heading {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.9rem;
+}
+
+.question-editor-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  overflow: hidden;
+}
+
+.question-editor-section > summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-weight: 850;
+  gap: 0.75rem;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 3rem;
+  padding: 0.7rem 0.9rem;
+}
+
+.question-editor-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.question-editor-section > summary::before {
+  color: var(--brand);
+  content: "▸";
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  transition: transform var(--speed-fast) var(--ease-out);
+}
+
+.question-editor-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.question-editor-section > summary span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.question-editor-section > summary em {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.question-editor-section-body {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.9rem;
+}
+
+.question-editor-section-body > .option-editor {
+  border-top: 0;
+  padding-top: 0;
 }
 
 .option-editor {
@@ -5344,14 +5412,25 @@ main {
     border-radius: var(--radius-md);
     flex-wrap: nowrap;
     overflow-x: auto;
+    padding-bottom: 0.55rem;
     position: sticky;
-    scrollbar-width: none;
+    scrollbar-color: var(--border-strong) transparent;
+    scrollbar-width: thin;
     top: 4.25rem;
     z-index: 2;
   }
 
   .workspace-tabs::-webkit-scrollbar {
-    display: none;
+    height: 0.45rem;
+  }
+
+  .workspace-tabs::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: var(--radius-pill);
+  }
+
+  .workspace-tabs::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   .workspace-tabs a {
@@ -5425,6 +5504,30 @@ main {
   .builder-workspace,
   .builder-stack {
     gap: 1rem;
+  }
+
+  .page-switcher {
+    border-radius: var(--radius-lg);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    justify-content: stretch;
+    padding: 0.75rem;
+  }
+
+  .page-switcher-label,
+  .page-switcher-meta {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .page-switcher-select {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .page-switcher-meta {
+    justify-self: center;
   }
 
   .release-version-panel {
