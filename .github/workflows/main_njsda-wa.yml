@@ -57,7 +57,7 @@ jobs:
           fi
 
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
 
       # Tests must run before the prune strips devDependencies (vitest,
       # supertest). Type checking is covered by tsc inside each workspace
