@@ -12,6 +12,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -29,6 +30,65 @@ function git(args) {
   }
 
   return result.stdout.trim();
+}
+
+function readJson(relativePath) {
+  return JSON.parse(readFileSync(path.join(rootDir, relativePath), "utf8"));
+}
+
+function readLatestReleaseSummary() {
+  const releasesDir = path.join(rootDir, "markdown", "releases");
+
+  if (!existsSync(releasesDir)) {
+    return null;
+  }
+
+  const fileName = readdirSync(releasesDir)
+    .filter((candidate) => /^v\d+\.\d+\.\d+\.md$/.test(candidate))
+    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))[0];
+
+  if (!fileName) {
+    return null;
+  }
+
+  const content = readFileSync(path.join(releasesDir, fileName), "utf8");
+  const title = content.match(/^# v\d+\.\d+\.\d+ - (.+)$/m)?.[1] ?? "Untitled release";
+  const releaseDate = content.match(/^Release date: (\d{4}-\d{2}-\d{2})$/m)?.[1] ?? "unknown date";
+
+  return { fileName, releaseDate, title };
+}
+
+function printDeployPreflight({ ahead }) {
+  const packageJson = readJson("package.json");
+  const release = readLatestReleaseSummary();
+  const migrationsDir = path.join(rootDir, "database", "migrations");
+  const migrationCount = existsSync(migrationsDir)
+    ? readdirSync(migrationsDir).filter((fileName) => fileName.endsWith(".sql")).length
+    : 0;
+  const changedFiles = git(["diff", "--name-only", "origin/main...HEAD"])
+    .split(/\r?\n/)
+    .map((fileName) => fileName.trim())
+    .filter(Boolean);
+  const changedMigrations = changedFiles.filter(
+    (fileName) => fileName.startsWith("database/migrations/") && fileName.endsWith(".sql")
+  );
+
+  console.log("Deploy preflight");
+  console.log(`- Branch: main`);
+  console.log(`- Version: ${packageJson.version}`);
+  console.log(
+    release
+      ? `- Latest release note: ${release.fileName} (${release.releaseDate}) — ${release.title}`
+      : "- Latest release note: none found"
+  );
+  console.log(`- Commits ahead of origin/main: ${ahead}`);
+  console.log(`- Migration files: ${migrationCount}`);
+  console.log(
+    changedMigrations.length > 0
+      ? `- New/changed migrations in push: ${changedMigrations.join(", ")}`
+      : "- New/changed migrations in push: none"
+  );
+  console.log("");
 }
 
 const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -50,6 +110,8 @@ const ahead = Number(counts[1]);
 if (behind > 0) {
   fail(`Local main is ${behind} commit(s) behind origin/main. Pull and reconcile first.`);
 }
+
+printDeployPreflight({ ahead });
 
 if (ahead === 0) {
   console.log("Nothing to push; origin/main already matches local main.");

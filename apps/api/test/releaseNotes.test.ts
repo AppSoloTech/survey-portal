@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   buildSoftwareReleaseNotesResponse,
-  parseSoftwareReleaseNote
+  parseSoftwareReleaseNote,
+  readRootPackageVersion
 } from "../src/services/releaseNotes.js";
 import { registerAdmin, registerUser } from "./helpers/factories.js";
 
@@ -23,18 +24,19 @@ describe("admin release notes", () => {
 
   it("returns current version and release history to admins", async () => {
     const admin = await registerAdmin(app);
+    const currentVersion = readRootPackageVersion();
 
     const response = await request(app).get("/api/admin/releases").set("Cookie", admin.cookie);
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      currentVersion: "0.1.2",
+      currentVersion,
       releases: expect.any(Array)
     });
     expect(response.body.releases[0]).toMatchObject({
-      version: "0.1.2",
-      title: "Admin Template Library",
-      releasedAt: "2026-06-26",
+      version: currentVersion,
+      title: expect.any(String),
+      releasedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       summary: expect.any(String),
       sections: expect.any(Array)
     });
@@ -76,7 +78,7 @@ describe("admin release notes", () => {
   it("builds a response whose latest release matches the root app version", () => {
     const response = buildSoftwareReleaseNotesResponse();
 
-    expect(response.currentVersion).toBe("0.1.2");
+    expect(response.currentVersion).toBe(readRootPackageVersion());
     expect(response.releases[0].version).toBe(response.currentVersion);
   });
 });

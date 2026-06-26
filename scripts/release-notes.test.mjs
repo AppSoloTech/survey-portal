@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildReleaseNoteFromDraft,
+  buildPreviewReleaseMarkdown,
   checkReleaseNotes,
   parseReleaseNote,
   parseUnreleasedNote,
@@ -93,4 +94,35 @@ test("validatePublishableDraft rejects placeholder draft text", () => {
 
 test("checkReleaseNotes validates the current committed release notes", () => {
   assert.doesNotThrow(() => checkReleaseNotes());
+});
+
+test("buildPreviewReleaseMarkdown renders the next version without writing files", () => {
+  const preview = buildPreviewReleaseMarkdown(
+    `# Unreleased\n\nRelease title: Preview Release\n\nSummary: Preview release notes before promotion.\n\n## Changed\n\n- Show the generated release note.\n`,
+    {
+      currentVersion: "2.3.4",
+      releaseDate: "2026-06-25",
+      sourceName: "unreleased.md",
+      versionOrBump: "patch"
+    }
+  );
+
+  assert.match(preview, /^# v2\.3\.5 - Preview Release/);
+  assert.match(preview, /- Show the generated release note\./);
+});
+
+test("buildPreviewReleaseMarkdown rejects placeholder draft notes before showing output", () => {
+  assert.throws(
+    () =>
+      buildPreviewReleaseMarkdown(
+        `# Unreleased\n\nRelease title: Next Release\n\nSummary: Replace this with a short summary before running \`npm run release:prepare\`.\n\n## Changed\n\n- Add release-note bullets here during implementation.\n`,
+        {
+          currentVersion: "2.3.4",
+          releaseDate: "2026-06-25",
+          sourceName: "unreleased.md",
+          versionOrBump: "patch"
+        }
+      ),
+    /release title|placeholder/
+  );
 });

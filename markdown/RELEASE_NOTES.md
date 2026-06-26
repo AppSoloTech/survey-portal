@@ -87,6 +87,10 @@ During each coding session that changes production behavior, update
 developer-only review notes, raw commit messages, and temporary implementation
 details in phase notes instead.
 
+Only user-facing or deployment-relevant changes belong in `unreleased.md`.
+Keep implementation handoffs, review findings, and temporary investigation
+notes in `notes/` or the phase log.
+
 ## Creating Notes
 
 For one-off manual release files, update the root package version and scaffold
@@ -104,6 +108,23 @@ For the normal automated release path, promote the draft note:
 ```bash
 npm run release:prepare
 ```
+
+To preview the exact versioned Markdown that would be generated without
+writing files, run:
+
+```bash
+npm run release:preview
+```
+
+For local dev release prep, run the convenience command:
+
+```bash
+npm run release:dev
+```
+
+This promotes the draft to the next patch version, updates the root package
+version and lockfile, resets the draft, validates release notes, and runs the
+release-note unit tests.
 
 By default this prepares the next patch version. To choose a specific bump or
 version:
@@ -141,8 +162,10 @@ This verifies:
 - the latest release note matches the root app version
 
 `npm run deploy` also runs release validation against `origin/main` before it
-pushes. The GitHub Actions production workflow runs the same validation for
-direct pushes to `main`.
+pushes. It prints a deploy preflight summary with the current version, latest
+release-note file, commit count, and migration-file summary before pushing. The
+GitHub Actions production workflow runs the same validation for direct pushes
+to `main`.
 
 ## Admin Publishing Model
 

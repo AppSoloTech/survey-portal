@@ -36,6 +36,17 @@ function main() {
       return;
     }
 
+    if (command === "preview") {
+      previewRelease({ versionOrBump: readPrepareVersionArg(args) });
+      return;
+    }
+
+    if (command === "dev") {
+      prepareRelease({ versionOrBump: readPrepareVersionArg(args) });
+      runReleaseUnitTests();
+      return;
+    }
+
     if (command === "check") {
       const since = readSinceArg(args);
       checkReleaseNotes({ since });
@@ -43,7 +54,7 @@ function main() {
     }
 
     throw new Error(
-      "Usage: node scripts/release-notes.mjs notes|draft|prepare|check [--version patch|minor|major|X.Y.Z] [--since <ref>]"
+      "Usage: node scripts/release-notes.mjs notes|draft|preview|prepare|dev|check [--version patch|minor|major|X.Y.Z] [--since <ref>]"
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -125,6 +136,49 @@ export function prepareRelease({ versionOrBump = "patch", releaseDate = todayIso
   console.log(`Reset ${path.relative(rootDir, unreleasedPath)}`);
 }
 
+export function previewRelease({ versionOrBump = "patch", releaseDate = todayIsoDate() } = {}) {
+  if (!existsSync(unreleasedPath)) {
+    throw new Error(`Missing ${path.relative(rootDir, unreleasedPath)}; run npm run release:draft`);
+  }
+
+  const currentVersion = readRootVersion(rootDir);
+  const content = buildPreviewReleaseMarkdown(readFileSync(unreleasedPath, "utf8"), {
+    currentVersion,
+    releaseDate,
+    sourceName: unreleasedFileName,
+    versionOrBump
+  });
+
+  console.log(content.trimEnd());
+}
+
+export function buildPreviewReleaseMarkdown(
+  markdown,
+  {
+    currentVersion,
+    releaseDate = todayIsoDate(),
+    sourceName = unreleasedFileName,
+    versionOrBump = "patch"
+  }
+) {
+  const nextVersion = resolveNextVersion(currentVersion, versionOrBump);
+  const draft = parseUnreleasedNote(markdown, { sourceName });
+
+  validatePublishableDraft(draft, sourceName);
+
+  const content = buildReleaseNoteFromDraft(draft, {
+    releaseDate,
+    version: nextVersion
+  });
+
+  parseReleaseNote(content, {
+    expectedVersion: nextVersion,
+    sourceName: `v${nextVersion}.md`
+  });
+
+  return content;
+}
+
 export function checkReleaseNotes({ since } = {}) {
   const currentVersion = readRootVersion(rootDir);
   validateSemver(currentVersion, "Root package.json version");
@@ -148,6 +202,17 @@ export function checkReleaseNotes({ since } = {}) {
   }
 
   console.log(`Release notes OK for v${currentVersion}`);
+}
+
+function runReleaseUnitTests() {
+  const result = spawnSync(process.execPath, ["--test", path.join(__dirname, "release-notes.test.mjs")], {
+    cwd: rootDir,
+    stdio: "inherit"
+  });
+
+  if (result.status !== 0) {
+    throw new Error("Release-note unit tests failed");
+  }
 }
 
 export function parseReleaseNote(markdown, { expectedVersion, sourceName = "release note" } = {}) {
