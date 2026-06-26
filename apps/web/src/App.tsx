@@ -25,6 +25,7 @@ import { SurveyPreviewPage } from "./pages/admin/SurveyPreviewPage.js";
 import { SurveyQuestionsPage } from "./pages/admin/SurveyQuestionsPage.js";
 import { SurveyResultsPage } from "./pages/admin/SurveyResultsPage.js";
 import { SurveySetupPage } from "./pages/admin/SurveySetupPage.js";
+import { SurveyTemplatesPage } from "./pages/admin/SurveyTemplatesPage.js";
 import { SurveyWorkspaceLayout } from "./pages/admin/SurveyWorkspaceLayout.js";
 import { RouteTransition } from "./motion/RouteTransition.js";
 import { AccountSettings } from "./pages/AccountSettings.js";
@@ -107,6 +108,7 @@ function AppShell() {
                   <Route element={<SurveySetupPage />} path="setup" />
                   <Route element={<SurveyQuestionsPage />} path="questions" />
                   <Route element={<SurveyOrganizePage />} path="organize" />
+                  <Route element={<SurveyTemplatesPage />} path="templates" />
                   <Route element={<SurveyLogicPage />} path="logic" />
                   <Route element={<SurveyPreviewPage />} path="preview" />
                   <Route element={<SurveyResultsPage />} path="results" />

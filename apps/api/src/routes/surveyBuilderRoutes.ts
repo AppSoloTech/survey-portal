@@ -33,7 +33,9 @@ import {
   validateSurveyCanPublish
 } from "../services/surveyBuilder.js";
 import {
+  insertQuestionTemplateIntoSurveyPage,
   insertPageTemplateIntoSurvey,
+  saveQuestionTemplateFromSurveyQuestion,
   savePageTemplateFromSurveyPage
 } from "../services/surveyPageTemplates.js";
 import {
@@ -55,6 +57,7 @@ import {
   validateQuestionValueTagBody,
   validatePageTemplateBody,
   validatePageTemplateInsertBody,
+  validateQuestionTemplateBody,
   validateQuestionBody,
   validateReorderBody,
   validateSurveyPageBody,
@@ -721,6 +724,55 @@ surveyBuilderRouter.post(
 );
 
 surveyBuilderRouter.post(
+  "/:id/questions/:questionId/template",
+  requireAuth,
+  requireRole("admin"),
+  rejectDeletedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey id and question id must be positive integers" });
+      return;
+    }
+
+    const validation = validateQuestionTemplateBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const survey = await fetchSurveyRecord(pool, surveyId);
+
+      if (!survey) {
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
+
+      const user = (req as AuthenticatedRequest).user;
+      const template = await saveQuestionTemplateFromSurveyQuestion(pool, {
+        survey,
+        questionId,
+        ...validation.value,
+        userId: user.id
+      });
+
+      if (!template) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      res.status(201).json({ template });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.post(
   "/:id/page-templates/:templateId/insert",
   requireAuth,
   requireRole("admin"),
@@ -756,6 +808,80 @@ surveyBuilderRouter.post(
 
       const insertResult = await insertPageTemplateIntoSurvey(client, {
         surveyId,
+        templateId,
+        displayOrder: validation.value.displayOrder
+      });
+
+      if (insertResult === "template-not-found") {
+        await client.query("rollback");
+        res.status(404).json({ error: "Template not found" });
+        return;
+      }
+
+      await client.query("commit");
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      await client.query("rollback");
+      next(error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+surveyBuilderRouter.post(
+  "/:id/pages/:pageId/question-templates/:templateId/insert",
+  requireAuth,
+  requireRole("admin"),
+  rejectStructurallyLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const pageId = readPositiveIntegerParam(req.params.pageId);
+    const templateId = readPositiveIntegerParam(req.params.templateId);
+
+    if (!surveyId || !pageId || !templateId) {
+      res.status(400).json({ error: "Survey id, page id, and template id must be positive integers" });
+      return;
+    }
+
+    const validation = validatePageTemplateInsertBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const survey = await fetchSurveyRecord(client, surveyId);
+
+      if (!survey) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
+
+      const page = await fetchPageForSurvey(client, pageId, surveyId);
+
+      if (!page) {
+        await client.query("rollback");
+        res.status(404).json({ error: "Page not found" });
+        return;
+      }
+
+      const insertResult = await insertQuestionTemplateIntoSurveyPage(client, {
+        surveyId,
+        pageId,
         templateId,
         displayOrder: validation.value.displayOrder
       });

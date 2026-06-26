@@ -266,6 +266,7 @@ export function SurveyWorkspaceLayout() {
         <WorkspaceTab label="Setup" to="setup" />
         <WorkspaceTab label={`Questions (${survey.questions.length})`} to="questions" />
         <WorkspaceTab label={`Organize (${survey.pages.length})`} to="organize" />
+        <WorkspaceTab label="Templates" to="templates" />
         <WorkspaceTab label={`Logic (${survey.conditionalLogicRules.length})`} to="logic" />
         <WorkspaceTab label="Preview" to="preview" />
         <WorkspaceTab label="Results" to="results" />

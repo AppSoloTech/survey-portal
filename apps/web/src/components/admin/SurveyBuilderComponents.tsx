@@ -125,6 +125,7 @@ export function QuestionEditor({
   isLast,
   isPublished,
   isSubmitting,
+  isTemplateSaving = false,
   onAddOption,
   onAddOtherTag,
   onAddTag,
@@ -139,6 +140,7 @@ export function QuestionEditor({
   onSaveOption,
   onSaveOtherTag,
   onSaveQuestion,
+  onSaveQuestionTemplate,
   onSaveTag,
   question,
   questionLocator,
@@ -148,6 +150,7 @@ export function QuestionEditor({
   isLast: boolean;
   isPublished: boolean;
   isSubmitting: boolean;
+  isTemplateSaving?: boolean;
   onAddOption: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
   onAddOtherTag: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
   onAddTag: (
@@ -182,6 +185,10 @@ export function QuestionEditor({
     tagId: number
   ) => Promise<void>;
   onSaveQuestion: (
+    event: FormEvent<HTMLFormElement>,
+    question: SurveyQuestion
+  ) => Promise<void>;
+  onSaveQuestionTemplate?: (
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion
   ) => Promise<void>;
@@ -321,6 +328,57 @@ export function QuestionEditor({
           </button>
         </div>
       </form>
+
+      {onSaveQuestionTemplate ? (
+        <form
+          className="option-editor"
+          key={`question-template-${question.id}`}
+          onSubmit={(event) => void onSaveQuestionTemplate(event, question)}
+        >
+          <div>
+            <h4>Save as question template</h4>
+            <p className="builder-heading-note">
+              Saves this question, answer options, scale range, and hidden tags. Conditional
+              rules are recorded as warnings and are not copied.
+            </p>
+          </div>
+          <div className="builder-grid two-columns">
+            <label>
+              Template name
+              <input
+                defaultValue={question.questionText}
+                disabled={isSubmitting || isTemplateSaving}
+                name="name"
+                required
+              />
+            </label>
+            <label>
+              Inserted question text
+              <input
+                defaultValue={question.questionText}
+                disabled={isSubmitting || isTemplateSaving}
+                name="questionText"
+                required
+              />
+            </label>
+            <label>
+              Template note
+              <input
+                disabled={isSubmitting || isTemplateSaving}
+                name="description"
+                placeholder="Optional note for admins"
+              />
+            </label>
+          </div>
+          <button
+            className="button-link compact-button secondary-button"
+            disabled={isSubmitting || isTemplateSaving}
+            type="submit"
+          >
+            Save question template
+          </button>
+        </form>
+      ) : null}
 
       {question.questionType === "text" || question.questionType === "integer" ? (
         <div className="option-editor value-tag-editor">

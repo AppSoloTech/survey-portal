@@ -1,0 +1,378 @@
+# Phase 35 — Admin Question Templates And Template Library Management
+
+## Purpose
+
+Expand the Phase 34 page-template foundation into a broader admin template
+system. Phase 35 should add individual question templates and improve the
+template library management experience enough that admins can understand,
+find, preview, rename, delete, and reuse templates as the library grows.
+
+This phase is the next safe step before multi-page segment templates. It must
+reuse the existing `survey_templates` table and kind-discriminated JSONB payload
+envelope, add `template_kind = 'question'`, and continue excluding conditional
+logic from reusable template insertion.
+
+Source planning note:
+
+```txt
+Chat-approved Phase 35 prompt scaffold expanding Phase 34's admin page-template
+library into question templates and template library management. No separate
+notes/client_review_YYYY-MM-DD.txt file is required for this phase unless the
+human developer chooses to preserve raw feedback separately.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_35.txt`
+* Claude review: `notes/claude_review_phase_35.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `prompts/prompt_34.txt`
+* `notes/claude_handoff_phase_34.txt`
+* `notes/claude_review_phase_34.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `markdown/SCALE_QUESTION_DATA_MODEL.md`
+* `database/migrations/0032_survey_templates.sql`
+* `apps/api/src/routes/adminPageTemplatesRoutes.ts`
+* `apps/api/src/routes/surveyBuilderRoutes.ts`
+* `apps/api/src/services/surveyPageTemplates.ts`
+* `apps/api/src/services/surveyBuilder.ts`
+* `apps/api/src/services/surveyStructure.ts`
+* `apps/api/test/surveyPageTemplates.test.ts`
+* `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+* `apps/web/src/pages/admin/SurveyOrganizePage.tsx`
+* `apps/web/src/pages/admin/SurveyWorkspaceLayout.tsx`
+* `apps/web/src/api/surveys.ts`
+* `packages/shared/src/index.ts`
+
+---
+
+# Received Feedback
+
+1. Expand the Phase 34 page-template system into a broader template library.
+2. Add individual question templates as the next safe step before multi-page
+   segment templates.
+3. Let admins save an existing question as a reusable template.
+4. Let admins insert a saved question template into any page of a draft survey.
+5. Let admins choose the insert position within the target page.
+6. Copy the reusable question content admins expect: question text, question
+   type, required flag, help text, answer options, scale ranges, answer hidden
+   tags, question value hidden tags, and Other hidden tags.
+7. Keep conditional logic out of question templates, but record rules that
+   reference the saved question in an excluded-logic manifest and warn admins.
+8. Improve the template library UX with kind labels, search/filter, source
+   metadata, detail preview, rename, and delete.
+9. Preserve the Phase 34 lesson that template metadata must stay separate from
+   inserted content naming.
+10. During implementation, update only `markdown/releases/unreleased.md` for
+    release/patch notes.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+* Feature request: question templates and a richer admin template library.
+* Broken workflow/time-saver: admins can reuse whole pages but still recreate
+  common individual questions manually.
+* UX polish: the library needs kind labels, search/filter, previews, and
+  management controls before it grows further.
+* Security/privacy/data-visibility risk: templates can include hidden tags, so
+  all template APIs and payloads must remain admin-only and never leak to
+  participant survey payloads.
+* Database/schema change: expand the existing template kind constraint to allow
+  `question`.
+* API contract change: add shared question-template types and admin/builder
+  routes for listing, saving, previewing, updating, deleting, and inserting.
+* Frontend UX change: add save-question-template and insert-question-template
+  controls plus a combined template library surface.
+
+This phase changes:
+
+* Database schema or migrations: yes, update the `survey_templates`
+  `template_kind` constraint to allow `question`.
+* API contracts: yes, add question-template contracts and combined template
+  library responses.
+* Hidden-tag visibility: yes, hidden tags are copied for admins but must remain
+  excluded from participant-facing payloads.
+* Authentication or authorization: yes, all template APIs remain server-side
+  admin-only.
+* Validation/test expectations: yes, add copy-fidelity, auth, insert-position,
+  non-disclosure, and excluded-logic tests.
+
+This phase does not change:
+
+* Participant-facing survey behavior.
+* Survey attempt or response storage.
+* Conditional navigation runtime behavior.
+* Production secret handling.
+* Deployment flow beyond ordinary migration/release-note expectations.
+
+Ask for clarification only if a safe implementation cannot be inferred from
+this prompt and the required reading.
+
+---
+
+# Scope
+
+Implement:
+
+* `prompts/prompt_35.txt` as this phase source of truth.
+* `template_kind = 'question'` support in the existing `survey_templates` table.
+* A question-template payload envelope with `schemaVersion` and `kind =
+  'question'`, parallel to the Phase 34 page-template envelope.
+* Save-question-as-template from an existing survey question.
+* Insert-question-template into any selected page of a draft survey.
+* Insert-position selection within the target page, including beginning, after
+  an existing question, and end.
+* Copy question text, question type, required flag, help text, allow-Other flag,
+  answer options, scale ranges, answer hidden tags, question value hidden tags,
+  and Other hidden tags.
+* Preserve separate template metadata from inserted content naming:
+  * template name labels the library item;
+  * inserted question text defaults to the source question text;
+  * admins may override inserted question text when saving the template without
+    mutating the source question.
+* Exclude conditional logic rules from saved and inserted question template
+  content.
+* Compute and persist an excluded-logic manifest when saving a question
+  template:
+  * include rules that reference the question as source or target;
+  * include rules that reference one of the question's answer options;
+  * snapshot source/target locator labels, action/condition labels, and whether
+    the rule crosses the question/page boundary;
+  * surface a clear admin warning listing how many rules will not be copied.
+* A combined admin template library surface that can show both page and question
+  templates.
+* Template kind labels, search by template name, filter by kind, source survey /
+  page / question metadata, detail preview, rename, and delete controls.
+* Server-side admin-only authorization for all template APIs.
+* Draft-only insertion using the existing structural-lock behavior.
+* Focused shared API types, backend services/routes, frontend API helpers, and
+  admin UI controls.
+* `markdown/releases/unreleased.md` with admin-readable draft release notes.
+* `markdown/PHASE_LOG.md` phase entry after implementation/review status is
+  known.
+* `notes/claude_handoff_phase_35.txt` before claiming implementation complete.
+
+Suggested API surface:
+
+* Keep Phase 34 page-template routes working.
+* Add combined library routes:
+  * `GET /api/admin/templates?kind=all|page|question&search=...`
+  * `GET /api/admin/templates/:templateId`
+  * `PUT /api/admin/templates/:templateId`
+  * `DELETE /api/admin/templates/:templateId`
+* Add question-specific builder routes:
+  * `POST /api/surveys/:surveyId/questions/:questionId/template`
+  * `POST /api/surveys/:surveyId/pages/:pageId/question-templates/:templateId/insert`
+
+Suggested shared types:
+
+* `SurveyTemplateKind = 'page' | 'question'`
+* `SurveyTemplateSummary`
+* `SurveyTemplateDetail`
+* `SurveyTemplatesResponse`
+* `SurveyTemplateResponse`
+* `SurveyQuestionTemplateSummary`
+* `SurveyQuestionTemplateDetail`
+* `SurveyQuestionTemplateSnapshot`
+* `SurveyQuestionTemplateResponse`
+* `SurveyTemplateExcludedLogicEntry` reused for both page and question templates
+* Reuse `SurveyResponse` for insertion results.
+
+The combined library types should support both template kinds without forcing
+page-only and question-only clients to parse irrelevant payload detail. Summary
+responses should not transfer full JSONB payloads just to compute counts.
+
+## Non-Goals
+
+Do not implement:
+
+* Multi-page segment/"chunk" templates.
+* Conditional logic copying, logic recreation, or logic repair workflows.
+* Logic-safe segment detection beyond the read-only excluded-logic manifests.
+* Template sharing permissions, private templates, teams, or ownership scopes.
+* In-app template version history, restore, or rollback workflows.
+* Participant-facing template APIs, payload fields, or UI.
+* Hidden-tag exposure to participants.
+* Broad survey-builder redesign or admin navigation redesign.
+* Template insertion into published, retired, or deleted surveys.
+* Any feature implementation before this prompt is explicitly started as
+  Phase 35.
+
+## Assumptions
+
+* Phase 34 has been implemented and committed before Phase 35 begins.
+* Templates remain shared across all admins.
+* The existing `survey_templates` table is the durable template store; Phase 35
+  should extend it, not create a separate question-template table.
+* Conditional logic is intentionally excluded from copy/insert for safety; Phase
+  35 only records a read-only manifest of which rules were excluded.
+* Question template snapshots are admin template artifacts, not live survey
+  definition storage.
+* Scale question minimum and maximum values are derived from the option-backed
+  scale rows and recreated through existing scale-option behavior.
+* The first combined library UI can live inside existing admin builder surfaces;
+  it does not require a full admin navigation redesign.
+
+## Open Questions
+
+* None blocking V1. Future segment templates still need a confirmed rule for
+  handling rules that target pages/questions outside a copied segment (reject,
+  drop, or remap). Out of scope for this phase.
+
+---
+
+# Deferred Work / Roadmap
+
+Question templates are the bridge from page-only templates toward a future
+logic-aware templating system. These are intentionally out of Phase 35 scope but
+the implementation must not preclude them:
+
+1. Segment ("chunk") templates: save/insert a contiguous multi-page run as
+   `template_kind = 'segment'`, preserving intra-segment conditional logic.
+2. Logic-safe segment detection: use excluded-logic manifests to identify
+   segment boundaries where no rule crosses.
+3. Logic recreation on insert for segment kinds, with rules referencing targets
+   outside the copied content handled by a confirmed boundary policy.
+4. Template visibility scopes such as private, shared, team, or archived.
+5. Template version history and restore.
+
+---
+
+# Implementation Guidance
+
+Keep the implementation consistent with the Phase 34 template foundation:
+
+* Reuse the existing template row metadata and JSONB payload pattern.
+* Add only the schema migration needed to allow `template_kind = 'question'`
+  and any small generic metadata/index improvements required for efficient
+  combined library listing.
+* Keep live survey definition data relational; use JSONB only for the admin
+  template snapshot.
+* Build question snapshot/insert code beside the page-template service code,
+  reusing copy helpers where doing so reduces real duplication.
+* Preserve source provenance separately from inserted content labels. For
+  example, `source_question_text` should remain a frozen source label even if
+  the template snapshot's inserted question text is overridden.
+* Inserted questions, options, and hidden tags must always receive fresh row ids.
+* Insertion must run inside a transaction and return the updated admin survey
+  structure with hidden tags included.
+* Do not expose template payloads, hidden tags, or excluded-logic manifests
+  through participant-facing survey routes.
+* Prefer count fields computed in SQL for library summaries instead of loading
+  entire template payloads.
+* Keep UI controls dense and builder-like, matching the existing admin survey
+  workspace rather than adding a marketing-style or decorative page.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can save an existing question as a reusable question template.
+* Saving a question template does not mutate the source question.
+* Admins can optionally set a template name and inserted question text as
+  separate concepts.
+* Admins can insert a question template into any page of a draft survey.
+* Admins can choose beginning, after an existing question, or end as the insert
+  position.
+* Inserted questions receive fresh question ids, option ids, and hidden-tag ids.
+* Inserted question templates copy supported options, scale ranges, answer
+  hidden tags, value hidden tags, and Other hidden tags.
+* Conditional rules are not copied or recreated from question templates.
+* Saving a question template records excluded rules that reference the question
+  or its answer options and warns admins.
+* Combined template library list/detail/update/delete works for both page and
+  question templates.
+* Template library search and kind filtering work without loading full JSONB
+  payloads for summary rows.
+* Published, retired, or deleted survey insertion is blocked by existing
+  structural-lock/deleted-survey behavior.
+* Participant-facing survey responses never include template payloads,
+  template metadata, excluded-logic manifests, or hidden tags.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a
+  documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update automated tests for:
+
+* admin-only access to combined template library and question-template routes;
+* save-question-template snapshot fidelity;
+* insert-question-template copy fidelity;
+* insert positioning within a page;
+* no conditional-rule copying;
+* excluded-logic manifest entries for source-question, target-question, and
+  source-option references;
+* template list/detail/update/delete for both page and question templates;
+* search and kind filtering;
+* not-found, invalid-position, wrong-survey, and locked-survey failures;
+* participant non-disclosure of template payloads and hidden tags.
+
+Manual checks to perform or document:
+
+* Save a question template, override inserted question text, and confirm the
+  source question is unchanged.
+* Insert a question template at the beginning, middle, and end of a target page.
+* Verify copied hidden tags in the admin builder and verify they remain hidden
+  from participant survey payloads.
+* Verify template library search/filter/preview/rename/delete workflows.
+* Verify rules referenced in the excluded-logic warning are not copied into the
+  target draft survey.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for
+  production-bound changes. During implementation, update only this release
+  note file for release/patch notes.
+* `markdown/FOLLOW_UPS.md` for deferred or newly discovered follow-ups.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* README, `.env.example`, or database docs only if setup/operator behavior
+  changes.
+* `notes/claude_handoff_phase_35.txt` before marking implementation complete.

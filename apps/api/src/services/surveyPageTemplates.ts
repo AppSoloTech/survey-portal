@@ -6,8 +6,13 @@ import type {
   SurveyPageTemplateSnapshotAnswerOption,
   SurveyPageTemplateSnapshotQuestion,
   SurveyPageTemplateSummary,
-  SurveyQuestionType,
-  SurveyTemplateExcludedLogicEntry
+  SurveyQuestionTemplateDetail,
+  SurveyQuestionTemplateSnapshot,
+  SurveyTemplateDetail,
+  SurveyTemplateExcludedLogicEntry,
+  SurveyTemplateKind,
+  SurveyTemplateSummary,
+  SurveyQuestionType
 } from "@survey-portal/shared";
 
 import {
@@ -18,15 +23,19 @@ import {
 } from "./surveyRecords.js";
 import {
   fetchNextPageDisplayOrder,
+  fetchNextQuestionDisplayOrder,
   registerTagDefinition,
-  shiftPageDisplayOrdersForInsert
+  shiftPageDisplayOrdersForInsert,
+  shiftQuestionDisplayOrdersForInsert
 } from "./surveyBuilder.js";
 
-const pageTemplateSchemaVersion = 1;
+const templateSchemaVersion = 1;
+
+type SurveyTemplatePayload = SurveyPageTemplateSnapshot | SurveyQuestionTemplateSnapshot;
 
 interface SurveyTemplateRecord {
   id: number;
-  template_kind: "page";
+  template_kind: SurveyTemplateKind;
   name: string;
   description: string | null;
   source_entity_kind: string | null;
@@ -34,8 +43,9 @@ interface SurveyTemplateRecord {
   source_survey_id: number | null;
   source_survey_title: string | null;
   source_page_title: string | null;
+  source_question_title: string | null;
   payload_schema_version: number;
-  payload: SurveyPageTemplateSnapshot;
+  payload: SurveyTemplatePayload;
   excluded_logic: SurveyTemplateExcludedLogicEntry[];
   created_by_user_id: number | null;
   updated_by_user_id: number | null;
@@ -45,7 +55,7 @@ interface SurveyTemplateRecord {
 
 interface SurveyTemplateSummaryRecord {
   id: number;
-  template_kind: "page";
+  template_kind: SurveyTemplateKind;
   name: string;
   description: string | null;
   source_entity_kind: string | null;
@@ -53,6 +63,7 @@ interface SurveyTemplateSummaryRecord {
   source_survey_id: number | null;
   source_survey_title: string | null;
   source_page_title: string | null;
+  source_question_title: string | null;
   payload_schema_version: number;
   question_count: number;
   excluded_logic_count: number;
@@ -76,6 +87,11 @@ interface QuestionSnapshotRow {
   display_order: number;
   is_required: boolean;
   help_text: string | null;
+}
+
+interface QuestionWithPageSnapshotRow extends QuestionSnapshotRow {
+  page_id: number;
+  page_title: string;
 }
 
 interface OptionSnapshotRow {
@@ -123,7 +139,7 @@ interface ExcludedLogicRow {
   target_question_page_title: string | null;
 }
 
-function mapTemplateSummary(record: SurveyTemplateSummaryRecord): SurveyPageTemplateSummary {
+function mapTemplateSummary(record: SurveyTemplateSummaryRecord): SurveyTemplateSummary {
   return {
     id: record.id,
     templateKind: record.template_kind,
@@ -134,6 +150,7 @@ function mapTemplateSummary(record: SurveyTemplateSummaryRecord): SurveyPageTemp
     sourceSurveyId: record.source_survey_id,
     sourceSurveyTitle: record.source_survey_title,
     sourcePageTitle: record.source_page_title,
+    sourceQuestionTitle: record.source_question_title,
     payloadSchemaVersion: record.payload_schema_version,
     questionCount: record.question_count,
     excludedLogicCount: record.excluded_logic_count,
@@ -144,19 +161,37 @@ function mapTemplateSummary(record: SurveyTemplateSummaryRecord): SurveyPageTemp
   };
 }
 
-function mapTemplateDetail(record: SurveyTemplateRecord): SurveyPageTemplateDetail {
+function questionCountFromPayload(payload: SurveyTemplatePayload): number {
+  return payload.kind === "page" ? payload.page.questions.length : 1;
+}
+
+function mapTemplateDetail(record: SurveyTemplateRecord): SurveyTemplateDetail {
+  const summary = mapTemplateSummary({
+    ...record,
+    question_count: questionCountFromPayload(record.payload),
+    excluded_logic_count: record.excluded_logic.length
+  });
+
+  if (record.payload.kind === "page") {
+    return {
+      ...summary,
+      page: record.payload.page,
+      excludedLogic: record.excluded_logic
+    };
+  }
+
   return {
-    ...mapTemplateSummary({
-      ...record,
-      question_count: record.payload.page.questions.length,
-      excluded_logic_count: record.excluded_logic.length
-    }),
-    page: record.payload.page,
+    ...summary,
+    question: record.payload.question,
     excludedLogic: record.excluded_logic
   };
 }
 
-export async function listPageTemplates(queryable: Queryable): Promise<SurveyPageTemplateSummary[]> {
+export async function listTemplates(
+  queryable: Queryable,
+  input: { kind?: SurveyTemplateKind | null; search?: string | null } = {}
+): Promise<SurveyTemplateSummary[]> {
+  const normalizedSearch = input.search?.trim() ? input.search.trim() : null;
   const result = await queryable.query<SurveyTemplateSummaryRecord>(
     `select
        id,
@@ -168,35 +203,61 @@ export async function listPageTemplates(queryable: Queryable): Promise<SurveyPag
        source_survey_id,
        source_survey_title,
        source_page_title,
+       source_question_title,
        payload_schema_version,
-       jsonb_array_length(payload->'page'->'questions') as question_count,
+       case
+         when template_kind = 'page' then jsonb_array_length(payload->'page'->'questions')
+         else 1
+       end as question_count,
        jsonb_array_length(excluded_logic) as excluded_logic_count,
        created_by_user_id,
        updated_by_user_id,
        created_at,
        updated_at
      from survey_templates
-     where template_kind = 'page'
-     order by lower(name), id`
+     where ($1::text is null or template_kind = $1)
+       and (
+         $2::text is null
+         or lower(name) like '%' || lower($2) || '%'
+         or lower(coalesce(description, '')) like '%' || lower($2) || '%'
+         or lower(coalesce(source_survey_title, '')) like '%' || lower($2) || '%'
+         or lower(coalesce(source_page_title, '')) like '%' || lower($2) || '%'
+         or lower(coalesce(source_question_title, '')) like '%' || lower($2) || '%'
+       )
+     order by template_kind, lower(name), id`,
+    [input.kind ?? null, normalizedSearch]
   );
 
   return result.rows.map(mapTemplateSummary);
+}
+
+export async function listPageTemplates(queryable: Queryable): Promise<SurveyPageTemplateSummary[]> {
+  return (await listTemplates(queryable, { kind: "page" })) as SurveyPageTemplateSummary[];
+}
+
+export async function fetchTemplate(
+  queryable: Queryable,
+  templateId: number
+): Promise<SurveyTemplateDetail | null> {
+  const record = await fetchTemplateRecord(queryable, templateId);
+
+  return record ? mapTemplateDetail(record) : null;
 }
 
 export async function fetchPageTemplate(
   queryable: Queryable,
   templateId: number
 ): Promise<SurveyPageTemplateDetail | null> {
-  const record = await fetchPageTemplateRecord(queryable, templateId);
+  const record = await fetchTemplateRecord(queryable, templateId, "page");
 
-  return record ? mapTemplateDetail(record) : null;
+  return record ? (mapTemplateDetail(record) as SurveyPageTemplateDetail) : null;
 }
 
-export async function updatePageTemplateMetadata(
+export async function updateTemplateMetadata(
   queryable: Queryable,
   templateId: number,
-  input: { name: string; description: string | null; userId: number }
-): Promise<SurveyPageTemplateDetail | null> {
+  input: { name: string; description: string | null; userId: number; kind?: SurveyTemplateKind }
+): Promise<SurveyTemplateDetail | null> {
   const result = await queryable.query<SurveyTemplateRecord>(
     `update survey_templates
      set name = $2,
@@ -204,42 +265,45 @@ export async function updatePageTemplateMetadata(
          updated_by_user_id = $4,
          updated_at = now()
      where id = $1
-       and template_kind = 'page'
+       and ($5::text is null or template_kind = $5)
      returning
-       id,
-       template_kind,
-       name,
-       description,
-       source_entity_kind,
-       source_entity_id,
-       source_survey_id,
-       source_survey_title,
-       source_page_title,
-       payload_schema_version,
-       payload,
-       excluded_logic,
-       created_by_user_id,
-       updated_by_user_id,
-       created_at,
-       updated_at`,
-    [templateId, input.name, input.description, input.userId]
+       ${templateRecordColumns}`,
+    [templateId, input.name, input.description, input.userId, input.kind ?? null]
   );
 
   return result.rows[0] ? mapTemplateDetail(result.rows[0]) : null;
+}
+
+export async function updatePageTemplateMetadata(
+  queryable: Queryable,
+  templateId: number,
+  input: { name: string; description: string | null; userId: number }
+): Promise<SurveyPageTemplateDetail | null> {
+  const template = await updateTemplateMetadata(queryable, templateId, { ...input, kind: "page" });
+
+  return template ? (template as SurveyPageTemplateDetail) : null;
+}
+
+export async function deleteTemplate(
+  queryable: Queryable,
+  templateId: number,
+  kind?: SurveyTemplateKind
+): Promise<boolean> {
+  const result = await queryable.query(
+    `delete from survey_templates
+     where id = $1
+       and ($2::text is null or template_kind = $2)`,
+    [templateId, kind ?? null]
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function deletePageTemplate(
   queryable: Queryable,
   templateId: number
 ): Promise<boolean> {
-  const result = await queryable.query(
-    `delete from survey_templates
-     where id = $1
-       and template_kind = 'page'`,
-    [templateId]
-  );
-
-  return (result.rowCount ?? 0) > 0;
+  return deleteTemplate(queryable, templateId, "page");
 }
 
 export async function savePageTemplateFromSurveyPage(
@@ -265,7 +329,7 @@ export async function savePageTemplateFromSurveyPage(
     snapshot.page.title = input.pageTitle;
   }
 
-  const excludedLogic = await buildExcludedLogicManifest(
+  const excludedLogic = await buildPageExcludedLogicManifest(
     queryable,
     input.survey.id,
     input.pageId
@@ -281,15 +345,77 @@ export async function savePageTemplateFromSurveyPage(
        source_survey_id,
        source_survey_title,
        source_page_title,
+       source_question_title,
        payload_schema_version,
        payload,
        excluded_logic,
        created_by_user_id,
        updated_by_user_id
      )
-     values ('page', $1, $2, 'survey_page', $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $10)
+     values ('page', $1, $2, 'survey_page', $3, $4, $5, $6, null, $7, $8::jsonb, $9::jsonb, $10, $10)
      returning
-       id,
+       ${templateRecordColumns}`,
+    [
+      input.name,
+      input.description,
+      input.pageId,
+      input.survey.id,
+      input.survey.title,
+      sourcePageTitle,
+      templateSchemaVersion,
+      JSON.stringify(snapshot),
+      JSON.stringify(excludedLogic),
+      input.userId
+    ]
+  );
+
+  return mapTemplateDetail(result.rows[0]) as SurveyPageTemplateDetail;
+}
+
+export async function saveQuestionTemplateFromSurveyQuestion(
+  queryable: Queryable,
+  input: {
+    survey: SurveyRecord;
+    questionId: number;
+    name: string;
+    description: string | null;
+    questionText: string | null;
+    userId: number;
+  }
+): Promise<SurveyQuestionTemplateDetail | null> {
+  const source = await fetchQuestionSnapshotSource(queryable, input.survey.id, input.questionId);
+
+  if (!source) {
+    return null;
+  }
+
+  const snapshotMap = await buildQuestionSnapshotMap(queryable, [source]);
+  const question = snapshotMap.get(source.id);
+
+  if (!question) {
+    return null;
+  }
+
+  const sourceQuestionTitle = question.questionText;
+
+  if (input.questionText !== null) {
+    question.questionText = input.questionText;
+  }
+
+  const snapshot: SurveyQuestionTemplateSnapshot = {
+    schemaVersion: templateSchemaVersion,
+    kind: "question",
+    question
+  };
+  const excludedLogic = await buildQuestionExcludedLogicManifest(
+    queryable,
+    input.survey.id,
+    input.questionId,
+    source.page_id
+  );
+
+  const result = await queryable.query<SurveyTemplateRecord>(
+    `insert into survey_templates (
        template_kind,
        name,
        description,
@@ -298,28 +424,32 @@ export async function savePageTemplateFromSurveyPage(
        source_survey_id,
        source_survey_title,
        source_page_title,
+       source_question_title,
        payload_schema_version,
        payload,
        excluded_logic,
        created_by_user_id,
-       updated_by_user_id,
-       created_at,
-       updated_at`,
+       updated_by_user_id
+     )
+     values ('question', $1, $2, 'survey_question', $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $11)
+     returning
+       ${templateRecordColumns}`,
     [
       input.name,
       input.description,
-      input.pageId,
+      input.questionId,
       input.survey.id,
       input.survey.title,
-      sourcePageTitle,
-      pageTemplateSchemaVersion,
+      source.page_title,
+      sourceQuestionTitle,
+      templateSchemaVersion,
       JSON.stringify(snapshot),
       JSON.stringify(excludedLogic),
       input.userId
     ]
   );
 
-  return mapTemplateDetail(result.rows[0]);
+  return mapTemplateDetail(result.rows[0]) as SurveyQuestionTemplateDetail;
 }
 
 export async function insertPageTemplateIntoSurvey(
@@ -330,9 +460,9 @@ export async function insertPageTemplateIntoSurvey(
     displayOrder: number | null;
   }
 ): Promise<"template-not-found" | void> {
-  const template = await fetchPageTemplateRecord(queryable, input.templateId);
+  const template = await fetchTemplateRecord(queryable, input.templateId, "page");
 
-  if (!template) {
+  if (!template || template.payload.kind !== "page") {
     return "template-not-found";
   }
 
@@ -351,103 +481,70 @@ export async function insertPageTemplateIntoSurvey(
   const newPageId = pageResult.rows[0].id;
 
   for (const question of snapshot.page.questions) {
-    const questionResult = await queryable.query<{ id: number }>(
-      `insert into survey_questions (
-         survey_id,
-         page_id,
-         question_text,
-         question_type,
-         allow_other,
-         display_order,
-         is_required,
-         help_text
-       )
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
-       returning id`,
-      [
-        input.surveyId,
-        newPageId,
-        question.questionText,
-        question.questionType,
-        question.allowOther,
-        question.displayOrder,
-        question.isRequired,
-        question.helpText
-      ]
-    );
-    const newQuestionId = questionResult.rows[0].id;
-
-    for (const option of optionsForInsert(question)) {
-      const optionResult = await queryable.query<{ id: number }>(
-        `insert into answer_options (question_id, option_text, display_order)
-         values ($1, $2, $3)
-         returning id`,
-        [newQuestionId, option.optionText, option.displayOrder]
-      );
-      const newOptionId = optionResult.rows[0].id;
-
-      for (const tag of option.answerTags) {
-        await queryable.query(
-          `insert into answer_tags (answer_option_id, tag_key, tag_value)
-           values ($1, $2, $3)`,
-          [newOptionId, tag.tagKey, tag.tagValue]
-        );
-        await registerTagDefinition(queryable, tag.tagKey, tag.tagValue);
-      }
-    }
-
-    for (const valueTag of question.valueTags) {
-      await queryable.query(
-        `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value)
-         values ($1, $2, $3, $4, $5)`,
-        [
-          newQuestionId,
-          valueTag.integerMin,
-          valueTag.integerMax,
-          valueTag.tagKey,
-          valueTag.tagValue
-        ]
-      );
-      await registerTagDefinition(queryable, valueTag.tagKey, valueTag.tagValue);
-    }
-
-    for (const otherTag of question.otherTags) {
-      await queryable.query(
-        `insert into question_other_tags (question_id, tag_key, tag_value)
-         values ($1, $2, $3)`,
-        [newQuestionId, otherTag.tagKey, otherTag.tagValue]
-      );
-      await registerTagDefinition(queryable, otherTag.tagKey, otherTag.tagValue);
-    }
+    await insertQuestionSnapshot(queryable, input.surveyId, newPageId, question, question.displayOrder);
   }
 }
 
-async function fetchPageTemplateRecord(
+export async function insertQuestionTemplateIntoSurveyPage(
   queryable: Queryable,
-  templateId: number
+  input: {
+    surveyId: number;
+    pageId: number;
+    templateId: number;
+    displayOrder: number | null;
+  }
+): Promise<"template-not-found" | void> {
+  const template = await fetchTemplateRecord(queryable, input.templateId, "question");
+
+  if (!template || template.payload.kind !== "question") {
+    return "template-not-found";
+  }
+
+  const displayOrder =
+    input.displayOrder ?? (await fetchNextQuestionDisplayOrder(queryable, input.pageId));
+
+  await shiftQuestionDisplayOrdersForInsert(queryable, input.pageId, displayOrder);
+  await insertQuestionSnapshot(
+    queryable,
+    input.surveyId,
+    input.pageId,
+    template.payload.question,
+    displayOrder
+  );
+}
+
+const templateRecordColumns = `
+  id,
+  template_kind,
+  name,
+  description,
+  source_entity_kind,
+  source_entity_id,
+  source_survey_id,
+  source_survey_title,
+  source_page_title,
+  source_question_title,
+  payload_schema_version,
+  payload,
+  excluded_logic,
+  created_by_user_id,
+  updated_by_user_id,
+  created_at,
+  updated_at
+`;
+
+async function fetchTemplateRecord(
+  queryable: Queryable,
+  templateId: number,
+  kind?: SurveyTemplateKind
 ): Promise<SurveyTemplateRecord | null> {
   const result = await queryable.query<SurveyTemplateRecord>(
     `select
-       id,
-       template_kind,
-       name,
-       description,
-       source_entity_kind,
-       source_entity_id,
-       source_survey_id,
-       source_survey_title,
-       source_page_title,
-       payload_schema_version,
-       payload,
-       excluded_logic,
-       created_by_user_id,
-       updated_by_user_id,
-       created_at,
-       updated_at
+       ${templateRecordColumns}
      from survey_templates
      where id = $1
-       and template_kind = 'page'`,
-    [templateId]
+       and ($2::text is null or template_kind = $2)`,
+    [templateId, kind ?? null]
   );
 
   return result.rows[0] ?? null;
@@ -479,7 +576,55 @@ async function buildPageTemplateSnapshot(
      order by display_order, id`,
     [surveyId, pageId]
   );
-  const questionIds = questionsResult.rows.map((question) => question.id);
+  const questionSnapshots = await buildQuestionSnapshotMap(queryable, questionsResult.rows);
+
+  return {
+    schemaVersion: templateSchemaVersion,
+    kind: "page",
+    page: {
+      title: page.title,
+      description: page.description,
+      questions: questionsResult.rows.flatMap((question) => {
+        const snapshot = questionSnapshots.get(question.id);
+        return snapshot ? [snapshot] : [];
+      })
+    }
+  };
+}
+
+async function fetchQuestionSnapshotSource(
+  queryable: Queryable,
+  surveyId: number,
+  questionId: number
+): Promise<QuestionWithPageSnapshotRow | null> {
+  const result = await queryable.query<QuestionWithPageSnapshotRow>(
+    `select
+       questions.id,
+       questions.question_text,
+       questions.question_type,
+       questions.allow_other,
+       questions.display_order,
+       questions.is_required,
+       questions.help_text,
+       questions.page_id,
+       pages.title as page_title
+     from survey_questions questions
+     join survey_pages pages
+       on pages.id = questions.page_id
+      and pages.survey_id = questions.survey_id
+     where questions.id = $1
+       and questions.survey_id = $2`,
+    [questionId, surveyId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function buildQuestionSnapshotMap(
+  queryable: Queryable,
+  questions: QuestionSnapshotRow[]
+): Promise<Map<number, SurveyPageTemplateSnapshotQuestion>> {
+  const questionIds = questions.map((question) => question.id);
 
   const optionsResult =
     questionIds.length > 0
@@ -567,42 +712,162 @@ async function buildPageTemplateSnapshot(
     otherTagsByQuestionId.set(tag.question_id, tags);
   }
 
-  const questions = questionsResult.rows.map((question) => {
-    const answerOptions = optionsByQuestionId.get(question.id) ?? [];
-    const scaleRange = deriveScaleRange(question.question_type, answerOptions);
+  return new Map(
+    questions.map((question) => {
+      const answerOptions = optionsByQuestionId.get(question.id) ?? [];
+      const scaleRange = deriveScaleRange(question.question_type, answerOptions);
 
-    return {
-      questionText: question.question_text,
-      questionType: question.question_type,
-      allowOther: question.allow_other,
-      scaleMin: scaleRange?.min ?? null,
-      scaleMax: scaleRange?.max ?? null,
-      displayOrder: question.display_order,
-      isRequired: question.is_required,
-      helpText: question.help_text,
-      answerOptions,
-      valueTags: valueTagsByQuestionId.get(question.id) ?? [],
-      otherTags: otherTagsByQuestionId.get(question.id) ?? []
-    };
-  });
-
-  return {
-    schemaVersion: pageTemplateSchemaVersion,
-    kind: "page",
-    page: {
-      title: page.title,
-      description: page.description,
-      questions
-    }
-  };
+      return [
+        question.id,
+        {
+          questionText: question.question_text,
+          questionType: question.question_type,
+          allowOther: question.allow_other,
+          scaleMin: scaleRange?.min ?? null,
+          scaleMax: scaleRange?.max ?? null,
+          displayOrder: question.display_order,
+          isRequired: question.is_required,
+          helpText: question.help_text,
+          answerOptions,
+          valueTags: valueTagsByQuestionId.get(question.id) ?? [],
+          otherTags: otherTagsByQuestionId.get(question.id) ?? []
+        }
+      ];
+    })
+  );
 }
 
-async function buildExcludedLogicManifest(
+async function insertQuestionSnapshot(
+  queryable: Queryable,
+  surveyId: number,
+  pageId: number,
+  question: SurveyPageTemplateSnapshotQuestion,
+  displayOrder: number
+): Promise<number> {
+  const questionResult = await queryable.query<{ id: number }>(
+    `insert into survey_questions (
+       survey_id,
+       page_id,
+       question_text,
+       question_type,
+       allow_other,
+       display_order,
+       is_required,
+       help_text
+     )
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     returning id`,
+    [
+      surveyId,
+      pageId,
+      question.questionText,
+      question.questionType,
+      question.allowOther,
+      displayOrder,
+      question.isRequired,
+      question.helpText
+    ]
+  );
+  const newQuestionId = questionResult.rows[0].id;
+
+  for (const option of optionsForInsert(question)) {
+    const optionResult = await queryable.query<{ id: number }>(
+      `insert into answer_options (question_id, option_text, display_order)
+       values ($1, $2, $3)
+       returning id`,
+      [newQuestionId, option.optionText, option.displayOrder]
+    );
+    const newOptionId = optionResult.rows[0].id;
+
+    for (const tag of option.answerTags) {
+      await queryable.query(
+        `insert into answer_tags (answer_option_id, tag_key, tag_value)
+         values ($1, $2, $3)`,
+        [newOptionId, tag.tagKey, tag.tagValue]
+      );
+      await registerTagDefinition(queryable, tag.tagKey, tag.tagValue);
+    }
+  }
+
+  for (const valueTag of question.valueTags) {
+    await queryable.query(
+      `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value)
+       values ($1, $2, $3, $4, $5)`,
+      [
+        newQuestionId,
+        valueTag.integerMin,
+        valueTag.integerMax,
+        valueTag.tagKey,
+        valueTag.tagValue
+      ]
+    );
+    await registerTagDefinition(queryable, valueTag.tagKey, valueTag.tagValue);
+  }
+
+  for (const otherTag of question.otherTags) {
+    await queryable.query(
+      `insert into question_other_tags (question_id, tag_key, tag_value)
+       values ($1, $2, $3)`,
+      [newQuestionId, otherTag.tagKey, otherTag.tagValue]
+    );
+    await registerTagDefinition(queryable, otherTag.tagKey, otherTag.tagValue);
+  }
+
+  return newQuestionId;
+}
+
+async function buildPageExcludedLogicManifest(
   queryable: Queryable,
   surveyId: number,
   pageId: number
 ): Promise<SurveyTemplateExcludedLogicEntry[]> {
-  const result = await queryable.query<ExcludedLogicRow>(
+  const result = await fetchExcludedLogicRows(
+    queryable,
+    `rules.survey_id = $1
+       and (
+         coalesce(rules.source_page_id, source_question.page_id) = $2
+         or target_question.page_id = $2
+         or rules.target_page_id = $2
+       )`,
+    [surveyId, pageId]
+  );
+
+  return result.rows.map((rule) => mapExcludedLogicRule(rule, pageId));
+}
+
+async function buildQuestionExcludedLogicManifest(
+  queryable: Queryable,
+  surveyId: number,
+  questionId: number,
+  pageId: number
+): Promise<SurveyTemplateExcludedLogicEntry[]> {
+  const optionResult = await queryable.query<{ id: number }>(
+    `select id
+     from answer_options
+     where question_id = $1`,
+    [questionId]
+  );
+  const optionIds = optionResult.rows.map((option) => option.id);
+  const result = await fetchExcludedLogicRows(
+    queryable,
+    `rules.survey_id = $1
+       and (
+         rules.source_question_id = $2
+         or rules.target_question_id = $2
+         or ($3::int[] <> '{}'::int[] and rules.source_answer_option_id = any($3::int[]))
+       )`,
+    [surveyId, questionId, optionIds]
+  );
+
+  return result.rows.map((rule) => mapExcludedLogicRule(rule, pageId));
+}
+
+async function fetchExcludedLogicRows(
+  queryable: Queryable,
+  whereSql: string,
+  values: unknown[]
+): Promise<{ rows: ExcludedLogicRow[] }> {
+  return queryable.query<ExcludedLogicRow>(
     `select
        rules.id,
        rules.condition_operator,
@@ -638,44 +903,42 @@ async function buildExcludedLogicManifest(
      left join survey_pages target_page
        on target_page.id = rules.target_page_id
       and target_page.survey_id = rules.survey_id
-     where rules.survey_id = $1
-       and (
-         coalesce(rules.source_page_id, source_question.page_id) = $2
-         or target_question.page_id = $2
-         or rules.target_page_id = $2
-       )
+     where ${whereSql}
      order by rules.id`,
-    [surveyId, pageId]
+    values
   );
+}
 
-  return result.rows.map((rule) => {
-    const targetPageId = rule.target_page_id ?? rule.target_question_page_id;
-    const targetPageTitle = rule.target_page_title ?? rule.target_question_page_title;
+function mapExcludedLogicRule(
+  rule: ExcludedLogicRow,
+  sourcePageId: number
+): SurveyTemplateExcludedLogicEntry {
+  const targetPageId = rule.target_page_id ?? rule.target_question_page_id;
+  const targetPageTitle = rule.target_page_title ?? rule.target_question_page_title;
 
-    return {
-      sourceRuleId: rule.id,
-      conditionLabel: formatConditionLabel(rule),
-      actionLabel: formatActionLabel(rule),
-      source: {
-        pageId: rule.source_page_id,
-        pageTitle: rule.source_page_title,
-        questionId: rule.source_question_id,
-        questionText: rule.source_question_text,
-        answerOptionId: rule.source_answer_option_id,
-        answerOptionText: rule.source_answer_option_text
-      },
-      target: {
-        pageId: targetPageId,
-        pageTitle: targetPageTitle,
-        questionId: rule.target_question_id,
-        questionText: rule.target_question_text,
-        answerOptionId: null,
-        answerOptionText: null
-      },
-      crossesPageBoundary:
-        rule.source_page_id !== pageId || (targetPageId !== null && targetPageId !== pageId)
-    };
-  });
+  return {
+    sourceRuleId: rule.id,
+    conditionLabel: formatConditionLabel(rule),
+    actionLabel: formatActionLabel(rule),
+    source: {
+      pageId: rule.source_page_id,
+      pageTitle: rule.source_page_title,
+      questionId: rule.source_question_id,
+      questionText: rule.source_question_text,
+      answerOptionId: rule.source_answer_option_id,
+      answerOptionText: rule.source_answer_option_text
+    },
+    target: {
+      pageId: targetPageId,
+      pageTitle: targetPageTitle,
+      questionId: rule.target_question_id,
+      questionText: rule.target_question_text,
+      answerOptionId: null,
+      answerOptionText: null
+    },
+    crossesPageBoundary:
+      rule.source_page_id !== sourcePageId || (targetPageId !== null && targetPageId !== sourcePageId)
+  };
 }
 
 function deriveScaleRange(

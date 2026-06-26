@@ -20,6 +20,10 @@ import type {
   SurveyListResponse,
   SurveyPageTemplateResponse,
   SurveyPageTemplatesResponse,
+  SurveyQuestionTemplateResponse,
+  SurveyTemplateKind,
+  SurveyTemplateResponse,
+  SurveyTemplatesResponse,
   SurveyQuestionType,
   SurveyReportResponse,
   SurveyResponse,
@@ -431,6 +435,45 @@ export async function fetchPageTemplates(): Promise<SurveyPageTemplatesResponse>
   return apiRequest<SurveyPageTemplatesResponse>("/api/admin/page-templates");
 }
 
+export async function fetchTemplates(input: {
+  kind?: SurveyTemplateKind | "all";
+  search?: string | null;
+} = {}): Promise<SurveyTemplatesResponse> {
+  const params = new URLSearchParams();
+
+  if (input.kind) {
+    params.set("kind", input.kind);
+  }
+
+  if (input.search?.trim()) {
+    params.set("search", input.search.trim());
+  }
+
+  const query = params.toString();
+
+  return apiRequest<SurveyTemplatesResponse>(`/api/admin/templates${query ? `?${query}` : ""}`);
+}
+
+export async function updateTemplate(input: {
+  templateId: number;
+  name: string;
+  description: string | null;
+}): Promise<SurveyTemplateResponse> {
+  return apiRequest<SurveyTemplateResponse>(`/api/admin/templates/${input.templateId}`, {
+    body: JSON.stringify({
+      name: input.name,
+      description: input.description
+    }),
+    method: "PUT"
+  });
+}
+
+export async function deleteTemplate(templateId: number): Promise<void> {
+  await apiRequest<void>(`/api/admin/templates/${templateId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function saveSurveyPageTemplate(input: {
   surveyId: number;
   pageId: number;
@@ -451,6 +494,26 @@ export async function saveSurveyPageTemplate(input: {
   );
 }
 
+export async function saveSurveyQuestionTemplate(input: {
+  surveyId: number;
+  questionId: number;
+  name: string;
+  description: string | null;
+  questionText: string | null;
+}): Promise<SurveyQuestionTemplateResponse> {
+  return apiRequest<SurveyQuestionTemplateResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/template`,
+    {
+      body: JSON.stringify({
+        name: input.name,
+        description: input.description,
+        questionText: input.questionText
+      }),
+      method: "POST"
+    }
+  );
+}
+
 export async function insertPageTemplate(input: {
   surveyId: number;
   templateId: number;
@@ -458,6 +521,23 @@ export async function insertPageTemplate(input: {
 }): Promise<SurveyResponse> {
   return apiRequest<SurveyResponse>(
     `/api/surveys/${input.surveyId}/page-templates/${input.templateId}/insert`,
+    {
+      body: JSON.stringify({
+        displayOrder: input.displayOrder ?? null
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function insertQuestionTemplate(input: {
+  surveyId: number;
+  pageId: number;
+  templateId: number;
+  displayOrder?: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/pages/${input.pageId}/question-templates/${input.templateId}/insert`,
     {
       body: JSON.stringify({
         displayOrder: input.displayOrder ?? null

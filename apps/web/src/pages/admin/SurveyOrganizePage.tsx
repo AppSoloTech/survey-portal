@@ -1,4 +1,8 @@
-import type { SurveyPage, SurveyPageTemplateSummary, SurveyQuestion } from "@survey-portal/shared";
+import type {
+  SurveyPage,
+  SurveyPageTemplateSummary,
+  SurveyQuestion
+} from "@survey-portal/shared";
 import {
   DndContext,
   DragOverlay,
@@ -18,7 +22,7 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -70,12 +74,20 @@ export function SurveyOrganizePage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedInsertPosition, setSelectedInsertPosition] = useState(insertAtEndValue);
   const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
+  const pageTemplateRefreshId = useRef(0);
 
   const refreshTemplates = useCallback(async (options: { silent?: boolean } = {}) => {
+    const refreshId = pageTemplateRefreshId.current + 1;
+    pageTemplateRefreshId.current = refreshId;
     setIsTemplateListLoading(true);
 
     try {
       const response = await fetchPageTemplates();
+
+      if (pageTemplateRefreshId.current !== refreshId) {
+        return;
+      }
+
       setTemplates(response.templates);
       setSelectedTemplateId((current) =>
         current && response.templates.some((template) => String(template.id) === current)
@@ -83,6 +95,10 @@ export function SurveyOrganizePage() {
           : String(response.templates[0]?.id ?? "")
       );
     } catch (error) {
+      if (pageTemplateRefreshId.current !== refreshId) {
+        return;
+      }
+
       setTemplates([]);
       setSelectedTemplateId("");
 
@@ -93,7 +109,9 @@ export function SurveyOrganizePage() {
         });
       }
     } finally {
-      setIsTemplateListLoading(false);
+      if (pageTemplateRefreshId.current === refreshId) {
+        setIsTemplateListLoading(false);
+      }
     }
   }, [setFeedback]);
 

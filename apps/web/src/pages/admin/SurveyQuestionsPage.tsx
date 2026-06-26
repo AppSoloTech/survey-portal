@@ -2,10 +2,11 @@ import type {
   AnswerOption,
   SurveyPage,
   SurveyQuestion,
+  SurveyTemplateSummary,
   SurveyQuestionType,
   TagDefinition
 } from "@survey-portal/shared";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import {
@@ -21,7 +22,10 @@ import {
   deleteQuestion,
   reorderAnswerOptions,
   reorderQuestions,
+  fetchTemplates,
+  insertQuestionTemplate,
   saveSurveyPageTemplate,
+  saveSurveyQuestionTemplate,
   updateAnswerOption,
   updateAnswerTag,
   updateQuestionOtherTag,
@@ -64,6 +68,41 @@ export function SurveyQuestionsPage() {
   });
   const [catalogTags, setCatalogTags] = useState<TagDefinition[]>([]);
   const [isTemplateSaving, setIsTemplateSaving] = useState(false);
+  const [isTemplateListLoading, setIsTemplateListLoading] = useState(false);
+  const [questionTemplates, setQuestionTemplates] = useState<SurveyTemplateSummary[]>([]);
+  const [questionTemplateSearch, setQuestionTemplateSearch] = useState("");
+  const [selectedQuestionTemplateId, setSelectedQuestionTemplateId] = useState<number | null>(null);
+  const [selectedQuestionInsertPosition, setSelectedQuestionInsertPosition] = useState("end");
+  const questionTemplateRefreshId = useRef(0);
+  const isTemplateSaveInFlight = useRef(false);
+
+  const refreshQuestionTemplates = useCallback(async () => {
+    const refreshId = questionTemplateRefreshId.current + 1;
+    questionTemplateRefreshId.current = refreshId;
+    setIsTemplateListLoading(true);
+
+    try {
+      const response = await fetchTemplates({ kind: "question" });
+      const templates = response.templates.filter((template) => template.templateKind === "question");
+
+      if (questionTemplateRefreshId.current !== refreshId) {
+        return;
+      }
+
+      setQuestionTemplates(templates);
+      setSelectedQuestionTemplateId((current) =>
+        current && templates.some((template) => template.id === current)
+          ? current
+          : templates[0]?.id ?? null
+      );
+    } catch {
+      // Template insertion remains optional; surface fetch errors only when an action runs.
+    } finally {
+      if (questionTemplateRefreshId.current === refreshId) {
+        setIsTemplateListLoading(false);
+      }
+    }
+  }, []);
 
   // Keep the active page valid when pages change (reordered, deleted, or the
   // workspace switched to a different survey). Falls back to the first page.
@@ -80,7 +119,12 @@ export function SurveyQuestionsPage() {
   // half-configured question never carries over to a different page.
   useEffect(() => {
     setNewQuestionType("text");
+    setSelectedQuestionInsertPosition("end");
   }, [activePageId]);
+
+  useEffect(() => {
+    void refreshQuestionTemplates();
+  }, [refreshQuestionTemplates, survey.id]);
 
   // Tag suggestions come from the persistent tag catalog plus the current
   // survey's live tags. Tags saved here register in the catalog server-side.
@@ -127,6 +171,28 @@ export function SurveyQuestionsPage() {
   const pageQuestions = activePage
     ? survey.questions.filter((question) => question.pageId === activePage.id)
     : [];
+  const visibleQuestionTemplates = useMemo(() => {
+    const query = questionTemplateSearch.trim().toLowerCase();
+
+    if (!query) {
+      return questionTemplates;
+    }
+
+    return questionTemplates.filter((template) =>
+      [
+        template.name,
+        template.description ?? "",
+        template.sourceSurveyTitle ?? "",
+        template.sourcePageTitle ?? "",
+        template.sourceQuestionTitle ?? ""
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [questionTemplateSearch, questionTemplates]);
+  const selectedQuestionTemplate =
+    questionTemplates.find((template) => template.id === selectedQuestionTemplateId) ?? null;
 
   async function handleAddQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -189,6 +255,11 @@ export function SurveyQuestionsPage() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
+    if (isTemplateSaveInFlight.current) {
+      return;
+    }
+
+    isTemplateSaveInFlight.current = true;
     setIsTemplateSaving(true);
     setFeedback({ error: null, notice: null });
 
@@ -216,7 +287,100 @@ export function SurveyQuestionsPage() {
         notice: null
       });
     } finally {
+      isTemplateSaveInFlight.current = false;
       setIsTemplateSaving(false);
+    }
+  }
+
+  async function handleSaveQuestionTemplate(
+    event: FormEvent<HTMLFormElement>,
+    question: SurveyQuestion
+  ) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+
+    if (isTemplateSaveInFlight.current) {
+      return;
+    }
+
+    isTemplateSaveInFlight.current = true;
+    setIsTemplateSaving(true);
+    setFeedback({ error: null, notice: null });
+
+    try {
+      const response = await saveSurveyQuestionTemplate({
+        surveyId: survey.id,
+        questionId: question.id,
+        name: readFormText(data, "name"),
+        description: readNullableFormText(data, "description"),
+        questionText: readFormText(data, "questionText")
+      });
+      const excludedCount = response.template.excludedLogic.length;
+
+      await refreshQuestionTemplates();
+      setSelectedQuestionTemplateId(response.template.id);
+      setFeedback({
+        error: null,
+        notice:
+          excludedCount > 0
+            ? `Question template saved. ${excludedCount} conditional ${excludedCount === 1 ? "rule was" : "rules were"} recorded but will not be copied.`
+            : "Question template saved"
+      });
+      form.reset();
+    } catch (error) {
+      setFeedback({
+        error: error instanceof Error ? error.message : "Request failed",
+        notice: null
+      });
+    } finally {
+      isTemplateSaveInFlight.current = false;
+      setIsTemplateSaving(false);
+    }
+  }
+
+  function resolveQuestionTemplateDisplayOrder(): number | null {
+    if (selectedQuestionInsertPosition === "start") {
+      return 1;
+    }
+
+    if (selectedQuestionInsertPosition.startsWith("after:")) {
+      const questionId = Number(selectedQuestionInsertPosition.slice("after:".length));
+      const question = pageQuestions.find((item) => item.id === questionId);
+
+      return question ? question.displayOrder + 1 : null;
+    }
+
+    return null;
+  }
+
+  async function handleInsertQuestionTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!activePage) {
+      setFeedback({ error: "Select a page before inserting a question template", notice: null });
+      return;
+    }
+
+    if (!selectedQuestionTemplateId) {
+      setFeedback({ error: "Select a question template to insert", notice: null });
+      return;
+    }
+
+    const didSave = await runSurveyMutation(
+      () =>
+        insertQuestionTemplate({
+          surveyId: survey.id,
+          pageId: activePage.id,
+          templateId: selectedQuestionTemplateId,
+          displayOrder: resolveQuestionTemplateDisplayOrder()
+        }),
+      "Question template inserted"
+    );
+
+    if (didSave) {
+      setSelectedQuestionInsertPosition("end");
     }
   }
 
@@ -706,6 +870,94 @@ export function SurveyQuestionsPage() {
 
           <form
             className="builder-form"
+            onSubmit={(event) => void handleInsertQuestionTemplate(event)}
+          >
+            <div className="builder-section-heading">
+              <div>
+                <p className="eyebrow">Template library</p>
+                <h3>Insert saved question</h3>
+                <p className="builder-heading-note">
+                  Inserts a copied question into this page with fresh question and option IDs.
+                </p>
+              </div>
+              <button
+                className="button-link compact-button ghost-button"
+                disabled={isTemplateListLoading}
+                onClick={() => void refreshQuestionTemplates()}
+                type="button"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="builder-grid two-columns">
+              <label>
+                Search templates
+                <input
+                  disabled={isTemplateListLoading}
+                  onChange={(event) => setQuestionTemplateSearch(event.target.value)}
+                  placeholder="Name, source survey, page, or question"
+                  value={questionTemplateSearch}
+                />
+              </label>
+              <label>
+                Question template
+                <select
+                  disabled={isTemplateListLoading || visibleQuestionTemplates.length === 0}
+                  onChange={(event) => setSelectedQuestionTemplateId(Number(event.target.value))}
+                  value={selectedQuestionTemplateId ?? ""}
+                >
+                  {visibleQuestionTemplates.length === 0 ? (
+                    <option value="">No question templates</option>
+                  ) : null}
+                  {visibleQuestionTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Position
+                <select
+                  disabled={!isDraft || visibleQuestionTemplates.length === 0}
+                  onChange={(event) => setSelectedQuestionInsertPosition(event.target.value)}
+                  value={selectedQuestionInsertPosition}
+                >
+                  <option value="start">Beginning of page</option>
+                  {pageQuestions.map((question) => (
+                    <option key={question.id} value={`after:${question.id}`}>
+                      After {formatQuestionLocator(survey, question)}
+                    </option>
+                  ))}
+                  <option value="end">End of page</option>
+                </select>
+              </label>
+            </div>
+            {selectedQuestionTemplate ? (
+              <p className="builder-heading-note">
+                {selectedQuestionTemplate.sourceSurveyTitle ?? "Unknown survey"}
+                {selectedQuestionTemplate.sourcePageTitle
+                  ? ` / ${selectedQuestionTemplate.sourcePageTitle}`
+                  : ""}
+                {selectedQuestionTemplate.sourceQuestionTitle
+                  ? ` / ${selectedQuestionTemplate.sourceQuestionTitle}`
+                  : ""}
+                {selectedQuestionTemplate.excludedLogicCount > 0
+                  ? `; ${selectedQuestionTemplate.excludedLogicCount} rule ${selectedQuestionTemplate.excludedLogicCount === 1 ? "warning" : "warnings"}`
+                  : ""}
+              </p>
+            ) : null}
+            <button
+              className="button-link compact-button secondary-button"
+              disabled={isSubmitting || !isDraft || !selectedQuestionTemplateId}
+              type="submit"
+            >
+              Insert question template
+            </button>
+          </form>
+
+          <form
+            className="builder-form"
             key={`save-template-${activePage.id}`}
             onSubmit={(event) => void handleSavePageTemplate(event, activePage)}
           >
@@ -771,6 +1023,7 @@ export function SurveyQuestionsPage() {
                   isLast={index === pageQuestions.length - 1}
                   isPublished={!isDraft}
                   isSubmitting={isSubmitting}
+                  isTemplateSaving={isTemplateSaving}
                   onAddOption={handleAddOption}
                   onAddOtherTag={handleAddOtherTag}
                   onAddTag={handleAddTag}
@@ -785,6 +1038,7 @@ export function SurveyQuestionsPage() {
                   onSaveOption={handleSaveOption}
                   onSaveOtherTag={handleSaveOtherTag}
                   onSaveQuestion={handleSaveQuestion}
+                  onSaveQuestionTemplate={handleSaveQuestionTemplate}
                   onSaveTag={handleSaveTag}
                   question={question}
                   questionLocator={formatQuestionLocator(survey, question)}

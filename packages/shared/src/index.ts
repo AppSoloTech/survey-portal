@@ -352,7 +352,7 @@ export interface SurveyResponse {
   survey: Survey;
 }
 
-export type SurveyTemplateKind = "page";
+export type SurveyTemplateKind = "page" | "question";
 
 export interface SurveyTemplateExcludedLogicLocator {
   pageId: number | null;
@@ -419,7 +419,13 @@ export interface SurveyPageTemplateSnapshot {
   };
 }
 
-export interface SurveyPageTemplateSummary {
+export interface SurveyQuestionTemplateSnapshot {
+  schemaVersion: number;
+  kind: "question";
+  question: SurveyPageTemplateSnapshotQuestion;
+}
+
+export interface SurveyTemplateSummary {
   id: number;
   templateKind: SurveyTemplateKind;
   name: string;
@@ -429,6 +435,7 @@ export interface SurveyPageTemplateSummary {
   sourceSurveyId: number | null;
   sourceSurveyTitle: string | null;
   sourcePageTitle: string | null;
+  sourceQuestionTitle: string | null;
   payloadSchemaVersion: number;
   questionCount: number;
   excludedLogicCount: number;
@@ -438,9 +445,36 @@ export interface SurveyPageTemplateSummary {
   updatedAt: string;
 }
 
+export interface SurveyPageTemplateSummary extends SurveyTemplateSummary {
+  templateKind: "page";
+}
+
+export interface SurveyQuestionTemplateSummary extends SurveyTemplateSummary {
+  templateKind: "question";
+}
+
+export interface SurveyTemplateDetail extends SurveyTemplateSummary {
+  page?: SurveyPageTemplateSnapshot["page"];
+  question?: SurveyQuestionTemplateSnapshot["question"];
+  excludedLogic: SurveyTemplateExcludedLogicEntry[];
+}
+
 export interface SurveyPageTemplateDetail extends SurveyPageTemplateSummary {
   page: SurveyPageTemplateSnapshot["page"];
   excludedLogic: SurveyTemplateExcludedLogicEntry[];
+}
+
+export interface SurveyQuestionTemplateDetail extends SurveyQuestionTemplateSummary {
+  question: SurveyQuestionTemplateSnapshot["question"];
+  excludedLogic: SurveyTemplateExcludedLogicEntry[];
+}
+
+export interface SurveyTemplatesResponse {
+  templates: SurveyTemplateSummary[];
+}
+
+export interface SurveyTemplateResponse {
+  template: SurveyTemplateDetail;
 }
 
 export interface SurveyPageTemplatesResponse {
@@ -449,6 +483,14 @@ export interface SurveyPageTemplatesResponse {
 
 export interface SurveyPageTemplateResponse {
   template: SurveyPageTemplateDetail;
+}
+
+export interface SurveyQuestionTemplatesResponse {
+  templates: SurveyQuestionTemplateSummary[];
+}
+
+export interface SurveyQuestionTemplateResponse {
+  template: SurveyQuestionTemplateDetail;
 }
 
 export interface SurveyResponseAnswer {

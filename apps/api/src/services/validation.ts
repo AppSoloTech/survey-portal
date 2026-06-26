@@ -336,6 +336,41 @@ export function validatePageTemplateBody(body: unknown): ValidationResult<{
   return { ok: true, value: { name, description, pageTitle } };
 }
 
+export function validateQuestionTemplateBody(body: unknown): ValidationResult<{
+  name: string;
+  description: string | null;
+  questionText: string | null;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const name = readTextField(body, "name");
+  const description = readOptionalTextField(body, "description");
+  const questionText = readOptionalTextField(body, "questionText");
+
+  if (!name) {
+    return { ok: false, error: "Template name is required" };
+  }
+
+  if (name.length > surveyPageTemplateNameMaxLength) {
+    return { ok: false, error: `Template name must be ${surveyPageTemplateNameMaxLength} characters or fewer` };
+  }
+
+  if (description && description.length > surveyPageTemplateDescriptionMaxLength) {
+    return {
+      ok: false,
+      error: `Template description must be ${surveyPageTemplateDescriptionMaxLength} characters or fewer`
+    };
+  }
+
+  if (questionText && questionText.length > questionTextMaxLength) {
+    return { ok: false, error: `Inserted question text must be ${questionTextMaxLength} characters or fewer` };
+  }
+
+  return { ok: true, value: { name, description, questionText } };
+}
+
 export function validatePageTemplateInsertBody(body: unknown): ValidationResult<{
   displayOrder: number | null;
 }> {

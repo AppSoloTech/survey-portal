@@ -1,0 +1,56 @@
+Phase 35 — Admin Question Templates And Template Library Management
+
+Status
+- Implemented question templates on top of the existing survey_templates table.
+- Existing page-template APIs remain available for Phase 34 compatibility.
+- Added combined admin template list/detail/update/delete APIs for page and question templates.
+- Added Questions-tab UI to save individual question templates and insert saved question templates into the active page at a selected position.
+- Added Organize-tab combined template library management for search/filter, source metadata preview, rename, and delete.
+
+Database/shared contracts
+- Added database/migrations/0033_question_templates.sql.
+- survey_templates.template_kind now allows page and question.
+- survey_templates now includes source_question_title.
+- packages/shared/src/index.ts now exposes generic SurveyTemplate* types plus question-template snapshot/response types.
+
+Backend/API
+- New generic admin routes:
+  - GET /api/admin/templates?kind=all|page|question&search=...
+  - GET /api/admin/templates/:templateId
+  - PUT /api/admin/templates/:templateId
+  - DELETE /api/admin/templates/:templateId
+- New builder routes:
+  - POST /api/surveys/:surveyId/questions/:questionId/template
+  - POST /api/surveys/:surveyId/pages/:pageId/question-templates/:templateId/insert
+- Question template save is admin-only and allowed for non-deleted surveys.
+- Question template insert is admin-only and blocked by existing structural-lock behavior for published/retired/deleted surveys.
+- Conditional logic is not copied. Rules referencing the saved question as source, target, or source option are recorded in excludedLogic.
+
+Frontend
+- apps/web/src/pages/admin/SurveyQuestionsPage.tsx:
+  - Per-question "Save as question template" form.
+  - Question-template insert panel with search and position controls.
+- apps/web/src/pages/admin/SurveyOrganizePage.tsx:
+  - Page-template insertion remains available for placing reusable pages into survey structure.
+- apps/web/src/pages/admin/SurveyTemplatesPage.tsx:
+  - Dedicated combined page/question template library management page.
+- apps/web/src/api/surveys.ts:
+  - Generic template helpers plus question template save/insert helpers.
+
+Tests run
+- npm run typecheck
+- npm run test -w apps/api -- test/surveyQuestionTemplates.test.ts
+- npm run test -w apps/api -- test/surveyPageTemplates.test.ts
+
+Post-review fixes
+- Reset question-template insert position when switching active pages so stale after-question ids cannot append while the UI appears to show "Beginning".
+- Added stale-response guards for Questions-tab question-template refreshes, Organize-tab page-template refreshes, and Templates-tab library refreshes.
+- Threaded template-save disabled state into per-question template forms and added an in-flight save guard to prevent duplicate saves.
+- Expanded question-template tests for excluded-rule manifest branches, default append insertion, locked retired/deleted insertion, save-route 404/deleted cases, and generic template kind/search validation.
+- Moved combined template library management out of the Organize tab into a dedicated Templates tab to keep Organize focused on page/question structure.
+
+Review focus
+- Verify the generic template service keeps page-template behavior unchanged while adding question snapshots.
+- Check question-template excluded logic selection, especially source answer option references.
+- Check UI ergonomics for repeated per-question save forms and the combined library management panel.
+- Consider whether a future pass should extract the combined library management into its own route/page before segment templates expand the library further.
