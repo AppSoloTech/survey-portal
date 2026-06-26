@@ -44,9 +44,10 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
       <div className="builder-state-banner locked">
         <strong>Published survey</strong>
         <span>
-          Users can access this survey. Questions, options, tags, and rules are locked to
-          protect existing responses — create an editable draft copy to make structural
-          changes. Title, description, and category stay editable.
+          Users can access this survey. Questions, options, and rules are locked to
+          protect existing responses, while hidden tags can still be maintained for
+          reporting. Title, description, and category stay editable. Create an editable
+          draft copy to make structural changes.
         </span>
       </div>
     );
@@ -121,6 +122,7 @@ export function StatusActionPanel({
 }
 
 export function QuestionEditor({
+  canEditTags,
   isFirst,
   isLast,
   isPublished,
@@ -142,10 +144,12 @@ export function QuestionEditor({
   onSaveQuestion,
   onSaveQuestionTemplate,
   onSaveTag,
+  onSaveValueTag,
   question,
   questionLocator,
   tagPresets
 }: {
+  canEditTags: boolean;
   isFirst: boolean;
   isLast: boolean;
   isPublished: boolean;
@@ -198,6 +202,11 @@ export function QuestionEditor({
     option: AnswerOption,
     tagId: number
   ) => Promise<void>;
+  onSaveValueTag: (
+    event: FormEvent<HTMLFormElement>,
+    question: SurveyQuestion,
+    valueTagId: number
+  ) => Promise<void>;
   question: SurveyQuestion;
   questionLocator: string;
   tagPresets: TagPreset[];
@@ -206,6 +215,7 @@ export function QuestionEditor({
   const isScale = selectedQuestionType === "scale";
   const supportsOther = selectedQuestionType === "single_select" || selectedQuestionType === "multi_select";
   const isOptionBacked = isSelectionQuestion(question) || question.questionType === "scale";
+  const areTagsLocked = !canEditTags;
 
   useEffect(() => {
     setSelectedQuestionType(question.questionType);
@@ -347,7 +357,7 @@ export function QuestionEditor({
               Template name
               <input
                 defaultValue={question.questionText}
-                disabled={isSubmitting || isTemplateSaving}
+                disabled={isSubmitting || isTemplateSaving || isPublished}
                 name="name"
                 required
               />
@@ -356,7 +366,7 @@ export function QuestionEditor({
               Inserted question text
               <input
                 defaultValue={question.questionText}
-                disabled={isSubmitting || isTemplateSaving}
+                disabled={isSubmitting || isTemplateSaving || isPublished}
                 name="questionText"
                 required
               />
@@ -364,7 +374,7 @@ export function QuestionEditor({
             <label>
               Template note
               <input
-                disabled={isSubmitting || isTemplateSaving}
+                disabled={isSubmitting || isTemplateSaving || isPublished}
                 name="description"
                 placeholder="Optional note for admins"
               />
@@ -372,7 +382,7 @@ export function QuestionEditor({
           </div>
           <button
             className="button-link compact-button secondary-button"
-            disabled={isSubmitting || isTemplateSaving}
+            disabled={isSubmitting || isTemplateSaving || isPublished}
             type="submit"
           >
             Save question template
@@ -392,22 +402,66 @@ export function QuestionEditor({
           </div>
 
           {(question.valueTags ?? []).map((valueTag) => (
-            <div className="value-tag-row" key={valueTag.id}>
-              <span className="results-hidden-tag">
-                {valueTag.tagKey}={valueTag.tagValue}
-              </span>
-              <span className="value-tag-condition">
-                {describeValueTagCondition(question.questionType, valueTag)}
-              </span>
+            <form
+              className="builder-grid value-tag-form"
+              key={valueTag.id}
+              onSubmit={(event) => void onSaveValueTag(event, question, valueTag.id)}
+            >
+              <TagFields
+                disabled={areTagsLocked}
+                existingTags={(question.valueTags ?? [])
+                  .filter((item) => item.id !== valueTag.id)
+                  .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
+                initialTagKey={valueTag.tagKey}
+                initialTagValue={valueTag.tagValue}
+                tagPresets={tagPresets}
+              />
+              {question.questionType === "integer" ? (
+                <>
+                  <label>
+                    Min value (optional)
+                    <input
+                      autoComplete="off"
+                      defaultValue={valueTag.integerMin ?? ""}
+                      disabled={areTagsLocked}
+                      inputMode="numeric"
+                      name="integerMin"
+                      type="number"
+                    />
+                  </label>
+                  <label>
+                    Max value (optional)
+                    <input
+                      autoComplete="off"
+                      defaultValue={valueTag.integerMax ?? ""}
+                      disabled={areTagsLocked}
+                      inputMode="numeric"
+                      name="integerMax"
+                      type="number"
+                    />
+                  </label>
+                </>
+              ) : (
+                <span className="value-tag-condition">
+                  {describeValueTagCondition(question.questionType, valueTag)}
+                </span>
+              )}
+              <button
+                className="button-link compact-button secondary-button"
+                disabled={isSubmitting || areTagsLocked}
+                type="submit"
+              >
+                Save tag
+              </button>
               <button
                 className="button-link compact-button danger-button"
-                disabled={isSubmitting || isPublished}
+                disabled={isSubmitting || areTagsLocked}
                 onClick={() => void onDeleteValueTag(question, valueTag.id)}
                 type="button"
               >
                 Remove
               </button>
-            </div>
+            </form>
           ))}
 
           <form
@@ -416,24 +470,37 @@ export function QuestionEditor({
           >
             <TagFields
               existingTags={question.valueTags ?? []}
+              disabled={areTagsLocked}
               tagPresets={tagPresets}
             />
             {question.questionType === "integer" ? (
               <>
                 <label>
                   Min value (optional)
-                  <input autoComplete="off" inputMode="numeric" name="integerMin" type="number" />
+                  <input
+                    autoComplete="off"
+                    disabled={areTagsLocked}
+                    inputMode="numeric"
+                    name="integerMin"
+                    type="number"
+                  />
                 </label>
                 <label>
                   Max value (optional)
-                  <input autoComplete="off" inputMode="numeric" name="integerMax" type="number" />
+                  <input
+                    autoComplete="off"
+                    disabled={areTagsLocked}
+                    inputMode="numeric"
+                    name="integerMax"
+                    type="number"
+                  />
                 </label>
               </>
             ) : null}
             <div className="inline-actions">
               <button
                 className="button-link compact-button primary-button"
-                disabled={isSubmitting || isPublished}
+                disabled={isSubmitting || areTagsLocked}
                 type="submit"
               >
                 Add hidden tag
@@ -551,6 +618,7 @@ export function QuestionEditor({
                       onSubmit={(event) => void onSaveTag(event, question, option, tag.id)}
                     >
                       <TagFields
+                        disabled={areTagsLocked}
                         existingTags={(option.answerTags ?? [])
                           .filter((item) => item.id !== tag.id)
                           .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
@@ -560,14 +628,14 @@ export function QuestionEditor({
                       />
                       <button
                         className="button-link compact-button secondary-button"
-                        disabled={isSubmitting || isPublished}
+                        disabled={isSubmitting || areTagsLocked}
                         type="submit"
                       >
                         Save tag
                       </button>
                       <button
                         className="button-link compact-button danger-button"
-                        disabled={isSubmitting || isPublished}
+                        disabled={isSubmitting || areTagsLocked}
                         onClick={() => void onDeleteTag(question, option, tag.id)}
                         type="button"
                       >
@@ -581,6 +649,7 @@ export function QuestionEditor({
                     onSubmit={(event) => void onAddTag(event, question, option)}
                   >
                     <TagFields
+                      disabled={areTagsLocked}
                       existingTags={(option.answerTags ?? []).map((item) => ({
                         tagKey: item.tagKey,
                         tagValue: item.tagValue
@@ -589,7 +658,7 @@ export function QuestionEditor({
                     />
                     <button
                       className="button-link compact-button primary-button"
-                      disabled={isSubmitting || isPublished}
+                      disabled={isSubmitting || areTagsLocked}
                       type="submit"
                     >
                       Add hidden tag
@@ -633,6 +702,7 @@ export function QuestionEditor({
               onSubmit={(event) => void onSaveOtherTag(event, question, tag.id)}
             >
               <TagFields
+                disabled={areTagsLocked}
                 existingTags={(question.otherTags ?? [])
                   .filter((item) => item.id !== tag.id)
                   .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
@@ -642,14 +712,14 @@ export function QuestionEditor({
               />
               <button
                 className="button-link compact-button secondary-button"
-                disabled={isSubmitting || isPublished}
+                disabled={isSubmitting || areTagsLocked}
                 type="submit"
               >
                 Save tag
               </button>
               <button
                 className="button-link compact-button danger-button"
-                disabled={isSubmitting || isPublished}
+                disabled={isSubmitting || areTagsLocked}
                 onClick={() => void onDeleteOtherTag(question, tag.id)}
                 type="button"
               >
@@ -663,6 +733,7 @@ export function QuestionEditor({
             onSubmit={(event) => void onAddOtherTag(event, question)}
           >
             <TagFields
+              disabled={areTagsLocked}
               existingTags={(question.otherTags ?? []).map((item) => ({
                 tagKey: item.tagKey,
                 tagValue: item.tagValue
@@ -671,7 +742,7 @@ export function QuestionEditor({
             />
             <button
               className="button-link compact-button primary-button"
-              disabled={isSubmitting || isPublished}
+              disabled={isSubmitting || areTagsLocked}
               type="submit"
             >
               Add hidden tag
@@ -883,11 +954,13 @@ export function describeValueTagCondition(
 }
 
 function TagFields({
+  disabled = false,
   existingTags = [],
   initialTagKey,
   initialTagValue,
   tagPresets
 }: {
+  disabled?: boolean;
   existingTags?: { tagKey: string; tagValue: string }[];
   initialTagKey?: string;
   initialTagValue?: string;
@@ -936,6 +1009,7 @@ function TagFields({
       <label>
         Tag category
         <select
+          disabled={disabled}
           name={isCustomKey ? undefined : "tagKey"}
           onChange={(event) => handleKeyChange(event.target.value)}
           required
@@ -952,6 +1026,7 @@ function TagFields({
         {isCustomKey ? (
           <input
             autoComplete="off"
+            disabled={disabled}
             name="tagKey"
             onChange={(event) => setCustomKey(event.target.value)}
             placeholder="Enter tag category"
@@ -965,7 +1040,7 @@ function TagFields({
         {isCustomKey || isCustomValue || valueOptions.length === 0 ? (
           <input
             autoComplete="off"
-            disabled={!activeKey.trim()}
+            disabled={disabled || !activeKey.trim()}
             name="tagValue"
             onChange={(event) => setCustomValue(event.target.value)}
             placeholder="Enter tag value"
@@ -974,7 +1049,7 @@ function TagFields({
           />
         ) : (
           <select
-            disabled={!activeKey.trim()}
+            disabled={disabled || !activeKey.trim()}
             name="tagValue"
             onChange={(event) => setSelectedValue(event.target.value)}
             required

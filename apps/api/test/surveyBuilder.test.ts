@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   addOption,
+  addOtherTag,
   addPage,
   addQuestion,
   addRule,
+  addTag,
   createDraftSurvey,
   createPublishedJumpSurvey,
   findQuestion,
@@ -668,12 +670,6 @@ describe("published survey structural lock", () => {
           optionIds: routeQuestion.answerOptions.map((option) => option.id).reverse()
         }),
       request(app)
-        .post(
-          `/api/surveys/${survey.id}/questions/${routeQuestion.id}/options/${jumpOptionId}/tags`
-        )
-        .set("Cookie", admin.cookie)
-        .send({ tagKey: "late", tagValue: "tag" }),
-      request(app)
         .post(`/api/surveys/${survey.id}/rules`)
         .set("Cookie", admin.cookie)
         .send({
@@ -750,5 +746,138 @@ describe("published survey structural lock", () => {
 
     const retired = await setSurveyStatus(app, admin, survey.id, "retired");
     expect(retired.status).toBe("retired");
+  });
+
+  it("allows hidden tag metadata maintenance on published surveys", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Published tag maintenance");
+    survey = await addQuestion(app, admin, survey.id, {
+      allowOther: true,
+      questionText: "Pick",
+      questionType: "single_select"
+    });
+    const question = findQuestion(survey, "Pick");
+    survey = await addOption(app, admin, survey.id, question.id, "Yes");
+    const option = findQuestion(survey, "Pick").answerOptions[0];
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const createdOptionTag = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "review", tagValue: "initial" });
+
+    expect(createdOptionTag.status).toBe(201);
+    const optionTag = findQuestion(createdOptionTag.body.survey, "Pick").answerOptions[0]
+      .answerTags[0];
+    expect(optionTag).toMatchObject({ tagKey: "review", tagValue: "initial" });
+
+    const updatedOptionTag = await request(app)
+      .put(
+        `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${optionTag.id}`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "review", tagValue: "updated" });
+
+    expect(updatedOptionTag.status).toBe(200);
+    expect(
+      findQuestion(updatedOptionTag.body.survey, "Pick").answerOptions[0].answerTags[0]
+    ).toMatchObject({ tagKey: "review", tagValue: "updated" });
+
+    const deletedOptionTag = await request(app)
+      .delete(
+        `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${optionTag.id}`
+      )
+      .set("Cookie", admin.cookie);
+
+    expect(deletedOptionTag.status).toBe(200);
+    expect(findQuestion(deletedOptionTag.body.survey, "Pick").answerOptions[0].answerTags).toEqual(
+      []
+    );
+
+    const createdOtherTag = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${question.id}/other-tags`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "other_review", tagValue: "initial" });
+
+    expect(createdOtherTag.status).toBe(201);
+    const otherTag = findQuestion(createdOtherTag.body.survey, "Pick").otherTags[0];
+    expect(otherTag).toMatchObject({ tagKey: "other_review", tagValue: "initial" });
+
+    const updatedOtherTag = await request(app)
+      .put(`/api/surveys/${survey.id}/questions/${question.id}/other-tags/${otherTag.id}`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "other_review", tagValue: "updated" });
+
+    expect(updatedOtherTag.status).toBe(200);
+    expect(findQuestion(updatedOtherTag.body.survey, "Pick").otherTags[0]).toMatchObject({
+      tagKey: "other_review",
+      tagValue: "updated"
+    });
+
+    const deletedOtherTag = await request(app)
+      .delete(`/api/surveys/${survey.id}/questions/${question.id}/other-tags/${otherTag.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(deletedOtherTag.status).toBe(200);
+    expect(findQuestion(deletedOtherTag.body.survey, "Pick").otherTags).toEqual([]);
+  });
+
+  it("keeps hidden tag metadata locked on retired surveys", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Retired tag lock");
+    survey = await addQuestion(app, admin, survey.id, {
+      allowOther: true,
+      questionText: "Pick",
+      questionType: "single_select"
+    });
+    const question = findQuestion(survey, "Pick");
+    survey = await addOption(app, admin, survey.id, question.id, "Yes");
+    const option = findQuestion(survey, "Pick").answerOptions[0];
+    survey = await addTag(app, admin, survey.id, question.id, option.id, "review", "initial");
+    survey = await addOtherTag(app, admin, survey.id, question.id, "other_review", "initial");
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+    survey = await setSurveyStatus(app, admin, survey.id, "retired");
+
+    const retiredQuestion = findQuestion(survey, "Pick");
+    const retiredOption = retiredQuestion.answerOptions[0];
+    const retiredOptionTag = retiredOption.answerTags[0];
+    const retiredOtherTag = retiredQuestion.otherTags[0];
+
+    const attempts = [
+      request(app)
+        .post(`/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags`)
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "late", tagValue: "tag" }),
+      request(app)
+        .put(
+          `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${retiredOptionTag.id}`
+        )
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "review", tagValue: "updated" }),
+      request(app)
+        .delete(
+          `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${retiredOptionTag.id}`
+        )
+        .set("Cookie", admin.cookie),
+      request(app)
+        .post(`/api/surveys/${survey.id}/questions/${question.id}/other-tags`)
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "late_other", tagValue: "tag" }),
+      request(app)
+        .put(`/api/surveys/${survey.id}/questions/${question.id}/other-tags/${retiredOtherTag.id}`)
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "other_review", tagValue: "updated" }),
+      request(app)
+        .delete(`/api/surveys/${survey.id}/questions/${question.id}/other-tags/${retiredOtherTag.id}`)
+        .set("Cookie", admin.cookie)
+    ];
+
+    for (const attempt of attempts) {
+      const response = await attempt;
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe(
+        "Hidden tags can only be edited while the survey is a draft or published"
+      );
+    }
   });
 });

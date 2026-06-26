@@ -1,0 +1,176 @@
+# Phase 36 — Published Survey Hidden Tag Maintenance
+
+## Purpose
+
+Allow admins to maintain hidden tag metadata on published surveys without
+unlocking structural survey edits. Reports, attempt detail, and CSV exports
+should reflect the current tag metadata for already answered questions, while
+participant response rows and participant-facing payloads remain unchanged.
+
+Source planning note:
+
+```txt
+Chat-approved Phase 36 plan for published-survey hidden tag maintenance.
+No separate notes/client_review_YYYY-MM-DD.txt file is required for this phase.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_36.txt`
+* Claude review: `notes/claude_review_phase_36.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `apps/api/src/routes/surveyBuilderRoutes.ts`
+* `apps/api/src/services/surveyReporting.ts`
+* `apps/api/src/services/surveyStructure.ts`
+* `apps/web/src/pages/admin/SurveyQuestionsPage.tsx`
+* `apps/web/src/components/admin/SurveyBuilderComponents.tsx`
+* `apps/web/src/api/surveys.ts`
+
+---
+
+# Received Feedback
+
+1. Admins currently cannot edit any part of a published survey.
+2. Keep questions, answers, pages, rules, and survey structure immutable on
+   published surveys.
+3. Allow admins to edit hidden tags on published survey questions/options.
+4. Updated hidden tags should apply to already answered questions through
+   reporting/admin views.
+5. Do not mutate participant answers to store tag snapshots.
+6. Keep retired surveys locked as archival records.
+7. During implementation, update only `markdown/releases/unreleased.md` for
+   release notes.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+* Feature request: hidden-tag maintenance on published surveys.
+* Reporting/data question: already answered questions should reflect current tag
+  metadata.
+* Security/privacy/data-visibility risk: hidden tags must remain admin-only.
+* API contract change: add value-tag update support and relax tag route locking
+  for published surveys.
+* Frontend UX change: enable tag controls on published surveys while keeping
+  structural controls locked.
+
+This phase changes:
+
+* Database schema or migrations: no.
+* API contracts: yes, add `PUT /api/surveys/:id/questions/:questionId/value-tags/:valueTagId`.
+* Participant-facing survey behavior: no.
+* Hidden-tag visibility: no participant exposure; admin editability changes.
+* Authentication or authorization: all tag mutation routes remain admin-only.
+* Validation/test expectations: yes.
+
+---
+
+# Scope
+
+Implement:
+
+* A tag-metadata lock guard that allows hidden-tag mutations on `draft` and
+  `published` surveys, blocks `retired` and deleted surveys, and preserves
+  admin-only authorization.
+* Published-survey add/update/delete support for:
+  * answer-option hidden tags;
+  * Other hidden tags;
+  * text/integer value tags.
+* Value-tag update support in the API and admin UI.
+* Admin Questions UI behavior that keeps structural controls disabled on
+  published surveys but enables hidden-tag controls.
+* Admin copy explaining that published survey structure is locked while hidden
+  tags can be maintained for reporting.
+* Focused tests for published tag editability, retired tag locking, reporting
+  recomputation, and participant non-disclosure.
+* `markdown/releases/unreleased.md` with admin-readable release notes.
+* `markdown/PHASE_LOG.md` and `notes/claude_handoff_phase_36.txt` before
+  implementation closeout.
+
+## Non-Goals
+
+Do not implement:
+
+* Editing question text, option text/order, pages, rules, templates, or survey
+  structure on published surveys.
+* Tag snapshot storage on response rows.
+* Retired-survey tag editing.
+* Participant-facing hidden-tag fields.
+* A new tag audit/history system.
+
+## Assumptions
+
+* Reporting already derives hidden tags from current metadata, so propagation is
+  achieved by reading updated tag rows.
+* No database migration is required.
+* Retired surveys remain archival and read-only for hidden tags.
+
+## Open Questions
+
+* None blocking V1.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Published surveys still reject structural mutations.
+* Published surveys allow admin hidden-tag add/update/delete for option, Other,
+  and value tags.
+* Retired surveys reject hidden-tag mutations.
+* Reports, attempt detail, and CSV exports reflect updated tags for answers
+  saved before the tag edit.
+* Participant and anonymous participant payloads still omit hidden tag fields.
+
+---
+
+# Testing Requirements
+
+Default validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Focused API tests should cover builder locks, value-tag CRUD/update behavior,
+reporting recomputation, and non-disclosure regressions.
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `markdown/releases/unreleased.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_36.txt`

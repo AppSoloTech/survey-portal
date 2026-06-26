@@ -6,6 +6,154 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 36 — Published Survey Hidden Tag Maintenance
+
+Date:
+2026-06-26
+
+Status:
+Implemented; Claude review complete; manual testing passed
+
+Prompt:
+`prompts/prompt_36.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_36.txt`
+- Claude review: `notes/claude_review_phase_36.txt`
+
+## Goals
+
+- Allow admins to maintain hidden tag metadata on published surveys.
+- Keep questions, answer options, pages, rules, templates, and structural
+  survey behavior locked once published.
+- Keep retired surveys archival and locked.
+- Ensure reporting, attempt detail, and CSV exports reflect current tag metadata
+  for already answered questions without mutating participant answer rows.
+- Preserve participant hidden-tag non-disclosure.
+
+## Built
+
+- Added `prompts/prompt_36.txt` as the implementation source of truth.
+- Added a tag-specific backend lock guard that allows hidden-tag mutations on
+  draft and published surveys while blocking deleted and retired surveys.
+- Moved answer-option tag, Other tag, and value-tag routes from the structural
+  draft-only guard to the new tag metadata guard.
+- Added value-tag update support:
+  - `PUT /api/surveys/:id/questions/:questionId/value-tags/:valueTagId`
+  - matching web API helper
+  - admin Questions UI edit forms for existing value tags
+- Updated published-survey admin copy to clarify that structure remains locked
+  while hidden tags can be maintained for reporting.
+- Updated `markdown/releases/unreleased.md`.
+- Created `notes/claude_handoff_phase_36.txt`.
+
+## Important Decisions
+
+### Metadata-Driven Propagation
+
+Decision:
+Do not store hidden-tag snapshots on participant answer rows.
+
+Reason:
+Existing reporting reads hidden tags from current survey metadata. Updating the
+tag tables is enough for admin report/detail/CSV views to reflect corrected
+metadata for already answered questions.
+
+Tradeoff:
+Historical reports intentionally change when admins correct hidden tags on a
+published survey.
+
+### Retired Surveys Stay Archival
+
+Decision:
+Hidden-tag edits are allowed on draft and published surveys only.
+
+Reason:
+Published surveys are operational and may need reporting taxonomy corrections;
+retired surveys are treated as closed records.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: added value-tag update route.
+- Auth or authorization impact: all tag mutation routes remain admin-only.
+- Data privacy or visibility impact: hidden tags remain excluded from
+  participant and anonymous participant payloads.
+- Frontend UX impact: structural controls remain locked on published surveys;
+  hidden-tag controls are enabled for published surveys and disabled for
+  retired surveys.
+- Environment or deployment impact: no migration required.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test -w apps/api -- test/surveyBuilder.test.ts
+npm test -w apps/api -- test/valueTags.test.ts
+npm test -w apps/api -- test/reporting.test.ts
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/surveyBuilder.test.ts` (30 tests)
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/valueTags.test.ts` (9 tests)
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/reporting.test.ts` (20 tests)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 54 tests
+  - web: 59 tests
+  - API: 256 tests
+  - release notes: 9 tests
+- Passed: `git diff --check`
+
+Notes:
+
+- Initial focused API tests were attempted in parallel and failed because the
+  suites share/reset the same local PostgreSQL test database. They were rerun
+  sequentially and passed.
+
+## Follow-Up Tasks
+
+- Claude review completed and found no correctness bugs.
+- Claude review minor nits were addressed by removing dead value-tag CSS and
+  restoring the published-survey banner note that title, description, and
+  category stay editable.
+- Manual testing completed on 2026-06-26. Admin updates to hidden tag values on
+  published surveys propagated through reporting/admin views for users who had
+  already completed and submitted a survey, and for in-progress users who had
+  already selected an answer and moved to the next question.
+- Retired surveys remain intentionally non-editable; previously answered
+  retired survey questions do not receive hidden-tag corrections through this
+  maintenance workflow.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no correctness bugs and automated
+  non-disclosure coverage remains in the full test suite
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 33 — Admin Release Notes And Version Tracking
 
 Date:

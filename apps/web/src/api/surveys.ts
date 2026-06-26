@@ -814,6 +814,29 @@ export async function createQuestionValueTag(input: {
   );
 }
 
+export async function updateQuestionValueTag(input: {
+  surveyId: number;
+  questionId: number;
+  valueTagId: number;
+  tagKey: string;
+  tagValue: string;
+  integerMin: number | null;
+  integerMax: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/value-tags/${input.valueTagId}`,
+    {
+      body: JSON.stringify({
+        tagKey: input.tagKey,
+        tagValue: input.tagValue,
+        integerMin: input.integerMin,
+        integerMax: input.integerMax
+      }),
+      method: "PUT"
+    }
+  );
+}
+
 export async function deleteQuestionValueTag(input: {
   surveyId: number;
   questionId: number;

@@ -29,6 +29,7 @@ import {
   updateAnswerOption,
   updateAnswerTag,
   updateQuestionOtherTag,
+  updateQuestionValueTag,
   updateQuestion,
   updateSurveyPage
 } from "../../api/surveys.js";
@@ -604,6 +605,35 @@ export function SurveyQuestionsPage() {
     );
   }
 
+  async function handleSaveValueTag(
+    event: FormEvent<HTMLFormElement>,
+    question: SurveyQuestion,
+    valueTagId: number
+  ) {
+    event.preventDefault();
+
+    const data = new FormData(event.currentTarget);
+    const readOptionalBound = (field: string): number | null => {
+      const raw = String(data.get(field) ?? "").trim();
+
+      return raw === "" ? null : Number(raw);
+    };
+
+    await runSurveyMutation(
+      () =>
+        updateQuestionValueTag({
+          surveyId: survey.id,
+          questionId: question.id,
+          valueTagId,
+          tagKey: readFormText(data, "tagKey"),
+          tagValue: readFormText(data, "tagValue"),
+          integerMin: question.questionType === "integer" ? readOptionalBound("integerMin") : null,
+          integerMax: question.questionType === "integer" ? readOptionalBound("integerMax") : null
+        }),
+      "Hidden tag saved"
+    );
+  }
+
   async function handleAddOtherTag(event: FormEvent<HTMLFormElement>, question: SurveyQuestion) {
     event.preventDefault();
 
@@ -749,6 +779,7 @@ export function SurveyQuestionsPage() {
   }
 
   const isDraft = survey.status === "draft";
+  const canEditTags = survey.status === "draft" || survey.status === "published";
 
   return (
     <div className="builder-workspace">
@@ -976,7 +1007,7 @@ export function SurveyQuestionsPage() {
                 Template name
                 <input
                   defaultValue={activePage.title}
-                  disabled={isTemplateSaving}
+                  disabled={isTemplateSaving || !isDraft}
                   name="name"
                   required
                 />
@@ -985,7 +1016,7 @@ export function SurveyQuestionsPage() {
                 Inserted page title
                 <input
                   defaultValue={activePage.title}
-                  disabled={isTemplateSaving}
+                  disabled={isTemplateSaving || !isDraft}
                   name="pageTitle"
                   required
                 />
@@ -993,7 +1024,7 @@ export function SurveyQuestionsPage() {
               <label>
                 Template note
                 <input
-                  disabled={isTemplateSaving}
+                  disabled={isTemplateSaving || !isDraft}
                   name="description"
                   placeholder="Optional note for admins"
                 />
@@ -1001,7 +1032,7 @@ export function SurveyQuestionsPage() {
             </div>
             <button
               className="button-link compact-button secondary-button"
-              disabled={isSubmitting || isTemplateSaving}
+              disabled={isSubmitting || isTemplateSaving || !isDraft}
               type="submit"
             >
               Save as template
@@ -1024,6 +1055,7 @@ export function SurveyQuestionsPage() {
                   isPublished={!isDraft}
                   isSubmitting={isSubmitting}
                   isTemplateSaving={isTemplateSaving}
+                  canEditTags={canEditTags}
                   onAddOption={handleAddOption}
                   onAddOtherTag={handleAddOtherTag}
                   onAddTag={handleAddTag}
@@ -1040,6 +1072,7 @@ export function SurveyQuestionsPage() {
                   onSaveQuestion={handleSaveQuestion}
                   onSaveQuestionTemplate={handleSaveQuestionTemplate}
                   onSaveTag={handleSaveTag}
+                  onSaveValueTag={handleSaveValueTag}
                   question={question}
                   questionLocator={formatQuestionLocator(survey, question)}
                   tagPresets={tagPresets}

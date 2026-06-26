@@ -1,0 +1,80 @@
+# Claude Handoff — Phase 36 Published Survey Hidden Tag Maintenance
+
+## Summary
+
+Phase 36 adds a narrow admin-only exception to the published survey structural
+lock. Admins can now maintain hidden tag metadata on draft and published
+surveys, while retired/deleted surveys and all structural survey edits remain
+locked.
+
+## Implemented
+
+- Added `prompts/prompt_36.txt`.
+- Added a tag-specific backend lock guard in
+  `apps/api/src/routes/surveyBuilderRoutes.ts`.
+- Switched answer-option tag, Other tag, and value-tag routes from the
+  structural draft-only guard to the new tag metadata guard.
+- Added `PUT /api/surveys/:id/questions/:questionId/value-tags/:valueTagId`.
+- Added the matching web API helper and admin Questions UI edit forms for value
+  tags.
+- Updated the admin published-survey banner copy to explain that structure is
+  locked while hidden tags can be maintained for reporting.
+- Kept retired surveys locked for tag metadata.
+- Updated `markdown/releases/unreleased.md`.
+
+## Important Behavior
+
+- Published surveys still reject question, page, option text/order, template,
+  and conditional-rule structural changes.
+- Published surveys allow admin hidden-tag add/update/delete for:
+  - answer-option hidden tags;
+  - Other hidden tags;
+  - text/integer value tags.
+- Reporting propagation is metadata-driven: reports, attempt detail, and CSV
+  exports read current tag metadata and do not mutate participant answer rows.
+- Participant and anonymous participant payloads still omit hidden tags.
+
+## Tests Added Or Updated
+
+- `apps/api/test/surveyBuilder.test.ts`
+  - removed option-tag creation from the published structural-lock failure list;
+  - added published option/Other tag CRUD coverage;
+  - added retired option/Other tag lock coverage.
+- `apps/api/test/valueTags.test.ts`
+  - added published value-tag create/update/delete coverage;
+  - added retired value-tag lock coverage;
+  - added value-tag reporting recomputation coverage for already answered
+    surveys.
+- `apps/api/test/reporting.test.ts`
+  - added option-tag reporting recomputation coverage for already answered
+    surveys.
+
+## Validation
+
+Passed:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test -w apps/api -- test/surveyBuilder.test.ts
+npm test -w apps/api -- test/valueTags.test.ts
+npm test -w apps/api -- test/reporting.test.ts
+npm test
+git diff --check
+```
+
+Notes:
+
+- API tests require local PostgreSQL access on `127.0.0.1:5432`.
+- The first parallel focused API test attempt was invalid because the API test
+  suites share and reset the same test database. The focused suites were rerun
+  sequentially and passed.
+- `npm run build` emitted the existing Vite large-chunk warning.
+
+## Review Focus
+
+- Confirm the new tag-metadata guard is applied only to hidden-tag routes.
+- Confirm conditional-rule and structural survey routes remain draft-only.
+- Confirm value-tag update validation mirrors create validation.
+- Confirm participant hidden-tag non-disclosure remains intact.

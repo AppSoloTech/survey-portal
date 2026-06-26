@@ -153,6 +153,48 @@ async function rejectStructurallyLockedSurvey(
   }
 }
 
+// Hidden-tag metadata is admin-only and safe to correct on published surveys:
+// reporting derives tags from current metadata, while participant response rows
+// and survey structure stay untouched. Retired surveys remain archival.
+async function rejectTagMetadataLockedSurvey(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): Promise<void> {
+  const surveyId = readPositiveIntegerParam(req.params.id);
+
+  if (!surveyId) {
+    next();
+    return;
+  }
+
+  try {
+    const result = await pool.query<{ status: string; deleted_at: Date | null }>(
+      `select status, deleted_at
+       from surveys
+       where id = $1`,
+      [surveyId]
+    );
+    const survey = result.rows[0];
+
+    if (survey?.deleted_at) {
+      res.status(409).json({ error: "Survey has been deleted" });
+      return;
+    }
+
+    if (survey && survey.status === "retired") {
+      res.status(409).json({
+        error: "Hidden tags can only be edited while the survey is a draft or published"
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 surveyBuilderRouter.post("/", requireAuth, requireRole("admin"), async (req, res, next) => {
   try {
     const validation = validateSurveyBody(req.body);
@@ -1749,7 +1791,7 @@ surveyBuilderRouter.post(
   "/:id/questions/:questionId/options/:optionId/tags",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -1804,7 +1846,7 @@ surveyBuilderRouter.put(
   "/:id/questions/:questionId/options/:optionId/tags/:tagId",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -1864,7 +1906,7 @@ surveyBuilderRouter.delete(
   "/:id/questions/:questionId/options/:optionId/tags/:tagId",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -1917,7 +1959,7 @@ surveyBuilderRouter.post(
   "/:id/questions/:questionId/other-tags",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -1981,7 +2023,7 @@ surveyBuilderRouter.put(
   "/:id/questions/:questionId/other-tags/:tagId",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -2057,7 +2099,7 @@ surveyBuilderRouter.delete(
   "/:id/questions/:questionId/other-tags/:tagId",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -2101,13 +2143,13 @@ surveyBuilderRouter.delete(
 );
 
 // Value tags: hidden tags conditioned on the respondent's entered value,
-// for questions without answer options (text and integer types). Structural
-// like option tags — draft-only.
+// for questions without answer options (text and integer types). These remain
+// admin-only metadata and may be maintained on draft or published surveys.
 surveyBuilderRouter.post(
   "/:id/questions/:questionId/value-tags",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);
@@ -2173,11 +2215,95 @@ surveyBuilderRouter.post(
   }
 );
 
+surveyBuilderRouter.put(
+  "/:id/questions/:questionId/value-tags/:valueTagId",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+    const valueTagId = readPositiveIntegerParam(req.params.valueTagId);
+
+    if (!surveyId || !questionId || !valueTagId) {
+      res.status(400).json({ error: "Survey, question, and value tag ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateQuestionValueTagBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      if (question.question_type !== "text" && question.question_type !== "integer") {
+        res.status(400).json({
+          error: "Value tags are only supported on text and integer questions; tag the answer options instead"
+        });
+        return;
+      }
+
+      if (
+        question.question_type === "text" &&
+        (validation.value.integerMin !== null || validation.value.integerMax !== null)
+      ) {
+        res.status(400).json({ error: "Text questions do not support integer bounds" });
+        return;
+      }
+
+      const result = await pool.query(
+        `update question_value_tags
+         set integer_min = $3,
+             integer_max = $4,
+             tag_key = $5,
+             tag_value = $6,
+             updated_at = now()
+         where id = $1
+           and question_id = $2`,
+        [
+          valueTagId,
+          questionId,
+          validation.value.integerMin,
+          validation.value.integerMax,
+          validation.value.tagKey,
+          validation.value.tagValue
+        ]
+      );
+
+      if (result.rowCount === 0) {
+        res.status(404).json({ error: "Value tag not found" });
+        return;
+      }
+
+      await registerTagDefinition(pool, validation.value.tagKey, validation.value.tagValue);
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 surveyBuilderRouter.delete(
   "/:id/questions/:questionId/value-tags/:valueTagId",
   requireAuth,
   requireRole("admin"),
-  rejectStructurallyLockedSurvey,
+  rejectTagMetadataLockedSurvey,
   async (req, res, next) => {
     const surveyId = readPositiveIntegerParam(req.params.id);
     const questionId = readPositiveIntegerParam(req.params.questionId);

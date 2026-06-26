@@ -136,17 +136,88 @@ describe("question value tag CRUD", () => {
     expect(invertedBounds.body.error).toBe("integerMin must be less than or equal to integerMax");
   });
 
-  it("locks value tags after publishing", async () => {
+  it("allows value tag metadata maintenance after publishing", async () => {
     const admin = await registerAdmin(app);
     const { survey, findings } = await seedValueTagSurvey(admin);
     await setSurveyStatus(app, admin, survey.id, "published");
 
-    const response = await request(app)
+    const createResponse = await request(app)
       .post(`/api/surveys/${survey.id}/questions/${findings.id}/value-tags`)
       .set("Cookie", admin.cookie)
-      .send({ tagKey: "late", tagValue: "tag" });
+      .send({ tagKey: "late", tagValue: "tag", integerMin: 10 });
 
-    expect(response.status).toBe(409);
+    expect(createResponse.status).toBe(201);
+    const createdTag = findQuestion(createResponse.body.survey, "Findings").valueTags?.find(
+      (tag: { tagKey: string; tagValue: string }) =>
+        tag.tagKey === "late" && tag.tagValue === "tag"
+    );
+    expect(createdTag).toMatchObject({ integerMin: 10, integerMax: null });
+
+    if (!createdTag) {
+      throw new Error("Created value tag was not returned");
+    }
+
+    const updateResponse = await request(app)
+      .put(`/api/surveys/${survey.id}/questions/${findings.id}/value-tags/${createdTag.id}`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "late", tagValue: "updated", integerMin: 2, integerMax: 4 });
+
+    expect(updateResponse.status).toBe(200);
+    expect(
+      findQuestion(updateResponse.body.survey, "Findings").valueTags?.find(
+        (tag: { id: number }) => tag.id === createdTag.id
+      )
+    ).toMatchObject({
+      tagKey: "late",
+      tagValue: "updated",
+      integerMin: 2,
+      integerMax: 4
+    });
+
+    const deleteResponse = await request(app)
+      .delete(`/api/surveys/${survey.id}/questions/${findings.id}/value-tags/${createdTag.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(deleteResponse.status).toBe(200);
+    expect(
+      findQuestion(deleteResponse.body.survey, "Findings").valueTags?.some(
+        (tag: { id: number }) => tag.id === createdTag.id
+      )
+    ).toBe(false);
+  });
+
+  it("keeps value tags locked on retired surveys", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, findings } = await seedValueTagSurvey(admin);
+    const published = await setSurveyStatus(app, admin, survey.id, "published");
+    const retired = await setSurveyStatus(app, admin, survey.id, "retired");
+    const valueTag = findQuestion(published, "Findings").valueTags?.[0];
+
+    if (!valueTag) {
+      throw new Error("Value tag fixture was not created");
+    }
+
+    const attempts = [
+      request(app)
+        .post(`/api/surveys/${retired.id}/questions/${findings.id}/value-tags`)
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "late", tagValue: "tag", integerMin: 10 }),
+      request(app)
+        .put(`/api/surveys/${retired.id}/questions/${findings.id}/value-tags/${valueTag.id}`)
+        .set("Cookie", admin.cookie)
+        .send({ tagKey: "severity", tagValue: "updated", integerMin: 1 }),
+      request(app)
+        .delete(`/api/surveys/${retired.id}/questions/${findings.id}/value-tags/${valueTag.id}`)
+        .set("Cookie", admin.cookie)
+    ];
+
+    for (const attempt of attempts) {
+      const response = await attempt;
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe(
+        "Hidden tags can only be edited while the survey is a draft or published"
+      );
+    }
   });
 
   it("copies value tags when duplicating a survey", async () => {
@@ -268,4 +339,62 @@ describe("value tags in reporting", () => {
     expect(csv.text).toContain("severity=high");
     expect(csv.text).toContain("blocker=reported");
   });
+
+  it("reflects value tag edits for already answered published surveys", async () => {
+    const admin = await registerAdmin(app);
+    const { survey, findings } = await seedValueTagSurvey(admin);
+    const published = await setSurveyStatus(app, admin, survey.id, "published");
+    const highTag = findQuestion(published, "Findings").valueTags?.find(
+      (tag: { tagValue: string }) => tag.tagValue === "high"
+    );
+
+    if (!highTag) {
+      throw new Error("High severity value tag was not created");
+    }
+
+    const user = await registerUser(app);
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: findings.id,
+      answerInteger: 7
+    });
+
+    const update = await request(app)
+      .put(`/api/surveys/${survey.id}/questions/${findings.id}/value-tags/${highTag.id}`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "severity", tagValue: "critical", integerMin: 5 });
+
+    expect(update.status).toBe(200);
+
+    const report = await request(app)
+      .get(`/api/surveys/${survey.id}/report`)
+      .set("Cookie", admin.cookie);
+
+    expect(report.body.report.tagStats).toContainEqual({
+      tagKey: "severity",
+      tagValue: "critical",
+      selectionCount: 1,
+      respondentCount: 1
+    });
+
+    const detail = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(findingsAnswer(detail.body.answers)).toMatchObject({
+      valueTags: [{ tagKey: "severity", tagValue: "critical" }]
+    });
+
+    const csv = await request(app)
+      .get(`/api/surveys/${survey.id}/export.csv`)
+      .set("Cookie", admin.cookie);
+
+    expect(csv.text).toContain("severity=critical");
+    expect(csv.text).not.toContain("severity=high");
+  });
 });
+
+function findingsAnswer(answers: { questionText: string }[]) {
+  return answers.find((answer) => answer.questionText === "Findings");
+}

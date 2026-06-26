@@ -385,6 +385,66 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
     ]);
   });
 
+  it("reflects option tag edits for already answered published surveys", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+
+    let survey = await createDraftSurvey(app, admin, "Published option tag report survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Outcome?",
+      questionType: "single_select"
+    });
+    const questionId = findQuestion(survey, "Outcome?").id;
+    survey = await addOption(app, admin, survey.id, questionId, "Escalate");
+    const option = findQuestion(survey, "Outcome?").answerOptions[0];
+    survey = await addTag(app, admin, survey.id, questionId, option.id, "action", "initial");
+    const tag = findQuestion(survey, "Outcome?").answerOptions[0].answerTags?.[0];
+
+    if (!tag) {
+      throw new Error("Option tag fixture was not created");
+    }
+
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId,
+      selectedAnswerOptionIds: [option.id]
+    });
+    await completeAttempt(app, user, survey.id, started.attempt.id);
+
+    const update = await request(app)
+      .put(`/api/surveys/${survey.id}/questions/${questionId}/options/${option.id}/tags/${tag.id}`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "action", tagValue: "updated" });
+
+    expect(update.status).toBe(200);
+
+    const report = await request(app)
+      .get(`/api/surveys/${survey.id}/report`)
+      .set("Cookie", admin.cookie);
+
+    expect(report.body.report.tagStats).toEqual([
+      { tagKey: "action", tagValue: "updated", selectionCount: 1, respondentCount: 1 }
+    ]);
+
+    const detail = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(detail.body.answers[0].selectedOptions[0].hiddenTags).toEqual([
+      { tagKey: "action", tagValue: "updated" }
+    ]);
+
+    const csv = await request(app)
+      .get(`/api/surveys/${survey.id}/export.csv`)
+      .set("Cookie", admin.cookie);
+
+    expect(csv.text).toContain("action=updated");
+    expect(csv.text).not.toContain("action=initial");
+  });
+
   it("returns 404 when the attempt belongs to a different survey", async () => {
     const admin = await registerAdmin(app);
     const fixture = await seedReportingFixture(admin);

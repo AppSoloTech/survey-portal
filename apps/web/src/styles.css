@@ -3061,21 +3061,6 @@ main {
   gap: 0.75rem;
 }
 
-.value-tag-row {
-  align-items: center;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  padding: 0.5rem 0.75rem;
-}
-
-.value-tag-row .button-link {
-  margin-left: auto;
-}
-
 .value-tag-condition {
   color: var(--text-muted);
   font-size: 0.875rem;
