@@ -331,6 +331,29 @@ export interface AdminGlossaryEntryResponse {
   entry: AdminGlossaryEntry;
 }
 
+export type DictionaryLookupStatus =
+  | "found"
+  | "no_match"
+  | "not_configured"
+  | "provider_error"
+  | "rate_limited";
+
+export interface AdminDictionaryDefinitionSuggestion {
+  definition: string;
+  sourceProvider: string;
+  sourceReference: string;
+  sourceLookupAt: string;
+}
+
+export interface AdminDictionaryLookupResponse {
+  term: string;
+  status: DictionaryLookupStatus;
+  providerLabel: string | null;
+  suggestions: AdminDictionaryDefinitionSuggestion[];
+  spellingSuggestions: string[];
+  message: string;
+}
+
 export interface ParticipantGlossaryEntry {
   id: number;
   canonicalTerm: string;

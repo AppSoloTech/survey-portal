@@ -1,35 +1,47 @@
-import type { AdminGlossaryEntry } from "@survey-portal/shared";
+import type {
+  AdminDictionaryDefinitionSuggestion,
+  AdminDictionaryLookupResponse,
+  AdminGlossaryEntry
+} from "@survey-portal/shared";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   archiveGlossaryEntry,
   createGlossaryEntry,
   fetchGlossaryEntries,
+  lookupGlossaryDefinition,
   updateGlossaryEntry,
-  type GlossaryEntryInput
 } from "../../api/glossary.js";
 import { confirmAdminAction } from "../../components/admin/builderForm.js";
 import { useToast } from "../../components/ToastProvider.js";
+import {
+  applyDictionarySuggestion,
+  emptyGlossaryForm,
+  ignoreDictionarySuggestion,
+  toFormState,
+  toGlossaryInput,
+  type GlossaryFormState
+} from "./glossaryForm.js";
 
-interface GlossaryFormState {
-  aliasesText: string;
-  canonicalTerm: string;
-  definition: string;
-  isEnabled: boolean;
+interface DictionaryLookupState {
+  error: string | null;
+  isLoading: boolean;
+  result: AdminDictionaryLookupResponse | null;
 }
 
-const emptyForm: GlossaryFormState = {
-  aliasesText: "",
-  canonicalTerm: "",
-  definition: "",
-  isEnabled: true
+const emptyLookupState: DictionaryLookupState = {
+  error: null,
+  isLoading: false,
+  result: null
 };
 
 export function AdminGlossaryPage() {
   const toast = useToast();
   const [entries, setEntries] = useState<AdminGlossaryEntry[]>([]);
-  const [createForm, setCreateForm] = useState<GlossaryFormState>(emptyForm);
-  const [editForm, setEditForm] = useState<GlossaryFormState>(emptyForm);
+  const [createForm, setCreateForm] = useState<GlossaryFormState>(emptyGlossaryForm);
+  const [editForm, setEditForm] = useState<GlossaryFormState>(emptyGlossaryForm);
+  const [createLookup, setCreateLookup] = useState<DictionaryLookupState>(emptyLookupState);
+  const [editLookup, setEditLookup] = useState<DictionaryLookupState>(emptyLookupState);
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,7 +101,8 @@ export function AdminGlossaryPage() {
 
     await runGlossaryMutation(async () => {
       await createGlossaryEntry(toGlossaryInput(createForm));
-      setCreateForm(emptyForm);
+      setCreateForm(emptyGlossaryForm);
+      setCreateLookup(emptyLookupState);
       await refreshGlossary();
     }, "Glossary entry added");
   }
@@ -100,6 +113,7 @@ export function AdminGlossaryPage() {
     await runGlossaryMutation(async () => {
       await updateGlossaryEntry(entry.id, toGlossaryInput(editForm));
       setEditingEntryId(null);
+      setEditLookup(emptyLookupState);
       await refreshGlossary();
     }, "Glossary entry saved");
   }
@@ -130,6 +144,36 @@ export function AdminGlossaryPage() {
   function startEditing(entry: AdminGlossaryEntry) {
     setEditingEntryId(entry.id);
     setEditForm(toFormState(entry));
+    setEditLookup(emptyLookupState);
+  }
+
+  async function handleDictionaryLookup(
+    form: GlossaryFormState,
+    setLookup: (next: DictionaryLookupState) => void
+  ) {
+    const term = form.canonicalTerm.trim();
+
+    if (!term) {
+      setLookup({
+        error: "Enter a canonical term before requesting a suggestion.",
+        isLoading: false,
+        result: null
+      });
+      return;
+    }
+
+    setLookup({ error: null, isLoading: true, result: null });
+
+    try {
+      const result = await lookupGlossaryDefinition(term);
+      setLookup({ error: null, isLoading: false, result });
+    } catch (lookupError) {
+      setLookup({
+        error: lookupError instanceof Error ? lookupError.message : "Dictionary lookup failed",
+        isLoading: false,
+        result: null
+      });
+    }
   }
 
   return (
@@ -150,7 +194,15 @@ export function AdminGlossaryPage() {
           <GlossaryFields
             form={createForm}
             isSubmitting={isSubmitting}
+            lookup={createLookup}
+            onApplySuggestion={(suggestion) =>
+              setCreateForm((current) => applyDictionarySuggestion(current, suggestion))
+            }
             onChange={setCreateForm}
+            onIgnoreSuggestions={() =>
+              setCreateForm((current) => ignoreDictionarySuggestion(current))
+            }
+            onLookup={() => void handleDictionaryLookup(createForm, setCreateLookup)}
           />
           <div className="glossary-form-actions">
             <button
@@ -191,7 +243,15 @@ export function AdminGlossaryPage() {
                     <GlossaryFields
                       form={editForm}
                       isSubmitting={isSubmitting}
+                      lookup={editLookup}
+                      onApplySuggestion={(suggestion) =>
+                        setEditForm((current) => applyDictionarySuggestion(current, suggestion))
+                      }
                       onChange={setEditForm}
+                      onIgnoreSuggestions={() =>
+                        setEditForm((current) => ignoreDictionarySuggestion(current))
+                      }
+                      onLookup={() => void handleDictionaryLookup(editForm, setEditLookup)}
                     />
                     <div className="glossary-entry-actions">
                       <button
@@ -204,7 +264,10 @@ export function AdminGlossaryPage() {
                       <button
                         className="button-link compact-button secondary-button"
                         disabled={isSubmitting}
-                        onClick={() => setEditingEntryId(null)}
+                        onClick={() => {
+                          setEditingEntryId(null);
+                          setEditLookup(emptyLookupState);
+                        }}
                         type="button"
                       >
                         Cancel
@@ -276,11 +339,19 @@ export function AdminGlossaryPage() {
 function GlossaryFields({
   form,
   isSubmitting,
-  onChange
+  lookup,
+  onApplySuggestion,
+  onChange,
+  onIgnoreSuggestions,
+  onLookup
 }: {
   form: GlossaryFormState;
   isSubmitting: boolean;
+  lookup: DictionaryLookupState;
+  onApplySuggestion: (suggestion: AdminDictionaryDefinitionSuggestion) => void;
   onChange: (next: GlossaryFormState) => void;
+  onIgnoreSuggestions: () => void;
+  onLookup: () => void;
 }) {
   return (
     <>
@@ -294,6 +365,32 @@ function GlossaryFields({
           value={form.canonicalTerm}
         />
       </label>
+      <div className="glossary-lookup-panel">
+        <div className="glossary-lookup-actions">
+          <button
+            className="button-link compact-button secondary-button"
+            disabled={isSubmitting || lookup.isLoading}
+            onClick={onLookup}
+            type="button"
+          >
+            {lookup.isLoading ? "Looking up..." : "Suggest definition"}
+          </button>
+          {form.appliedSuggestion ? (
+            <button
+              className="button-link compact-button secondary-button"
+              disabled={isSubmitting}
+              onClick={onIgnoreSuggestions}
+              type="button"
+            >
+              Use manual source
+            </button>
+          ) : null}
+        </div>
+        <DictionaryLookupResult
+          lookup={lookup}
+          onApplySuggestion={onApplySuggestion}
+        />
+      </div>
       <label className="glossary-definition-field">
         Definition
         <textarea
@@ -305,6 +402,12 @@ function GlossaryFields({
           value={form.definition}
         />
       </label>
+      {form.appliedSuggestion ? (
+        <p className="glossary-source-note">
+          Dictionary suggestion applied. Edits to this definition will keep dictionary source
+          metadata unless manual source is selected.
+        </p>
+      ) : null}
       <label className="glossary-alias-field">
         Match strings / aliases
         <textarea
@@ -328,36 +431,62 @@ function GlossaryFields({
   );
 }
 
-function toGlossaryInput(form: GlossaryFormState): GlossaryEntryInput {
-  return {
-    aliases: parseAliases(form.aliasesText),
-    canonicalTerm: form.canonicalTerm.trim(),
-    definition: form.definition.trim(),
-    definitionSource: "manual",
-    isEnabled: form.isEnabled,
-    sourceLookupAt: null,
-    sourceProvider: null,
-    sourceReference: null
-  };
-}
+function DictionaryLookupResult({
+  lookup,
+  onApplySuggestion
+}: {
+  lookup: DictionaryLookupState;
+  onApplySuggestion: (suggestion: AdminDictionaryDefinitionSuggestion) => void;
+}) {
+  if (lookup.error) {
+    return <p className="status error">{lookup.error}</p>;
+  }
 
-function toFormState(entry: AdminGlossaryEntry): GlossaryFormState {
-  return {
-    aliasesText: entry.aliases
-      .filter((alias) => !alias.isCanonical)
-      .map((alias) => alias.matchText)
-      .join("\n"),
-    canonicalTerm: entry.canonicalTerm,
-    definition: entry.definition,
-    isEnabled: entry.isEnabled
-  };
-}
+  if (!lookup.result) {
+    return null;
+  }
 
-function parseAliases(value: string): string[] {
-  return value
-    .split(/\r?\n|,/)
-    .map((alias) => alias.trim())
-    .filter(Boolean);
+  const { result } = lookup;
+
+  return (
+    <div className="glossary-lookup-result" aria-live="polite">
+      <p className="status muted">{result.message}</p>
+
+      {result.providerLabel ? (
+        <p className="glossary-provider-credit">
+          Suggested by {result.providerLabel}. Merriam-Webster API use is limited to the
+          client-owned provider account and key.
+        </p>
+      ) : null}
+
+      {result.spellingSuggestions.length > 0 ? (
+        <div className="glossary-spelling-suggestions">
+          {result.spellingSuggestions.map((suggestion) => (
+            <span className="glossary-alias" key={suggestion}>
+              {suggestion}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {result.suggestions.length > 0 ? (
+        <div className="glossary-suggestion-list">
+          {result.suggestions.map((suggestion) => (
+            <div className="glossary-suggestion" key={`${suggestion.sourceReference}-${suggestion.definition}`}>
+              <p>{suggestion.definition}</p>
+              <button
+                className="button-link compact-button primary-button"
+                onClick={() => onApplySuggestion(suggestion)}
+                type="button"
+              >
+                Apply
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function formatCount(count: number, label: string): string {

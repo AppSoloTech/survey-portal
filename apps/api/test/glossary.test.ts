@@ -1,7 +1,8 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app.js";
+import { setDictionaryLookupOverrideForTests } from "../src/services/dictionary.js";
 import { registerAdmin, registerUser, uniqueEmail } from "./helpers/factories.js";
 
 const app = createApp();
@@ -46,6 +47,10 @@ async function createGlossaryEntry(
   };
 }
 
+afterEach(() => {
+  setDictionaryLookupOverrideForTests(null);
+});
+
 describe("admin glossary", () => {
   it("rejects unauthenticated glossary requests", async () => {
     const response = await request(app).get("/api/admin/glossary");
@@ -81,6 +86,66 @@ describe("admin glossary", () => {
       .get("/api/admin/glossary/participant-safe")
       .set("Cookie", user.cookie);
     expect(participantSafeResponse.status).toBe(403);
+
+    const lookupResponse = await request(app)
+      .post("/api/admin/glossary/lookup")
+      .set("Cookie", user.cookie)
+      .send({ term: "Risk" });
+    expect(lookupResponse.status).toBe(403);
+  });
+
+  it("returns disabled-provider lookup state without blocking manual entry", async () => {
+    const admin = await registerAdmin(app);
+
+    const response = await request(app)
+      .post("/api/admin/glossary/lookup")
+      .set("Cookie", admin.cookie)
+      .send({ term: "Risk" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      message: "Dictionary suggestions are not configured. Enter the definition manually.",
+      status: "not_configured",
+      suggestions: [],
+      term: "Risk"
+    });
+  });
+
+  it("returns mocked lookup suggestions through the admin-only endpoint", async () => {
+    const admin = await registerAdmin(app);
+    setDictionaryLookupOverrideForTests(async (term) => ({
+      message: "Review the suggested definition before saving.",
+      providerLabel: "Mock Dictionary",
+      spellingSuggestions: [],
+      status: "found",
+      suggestions: [
+        {
+          definition: "A mocked definition.",
+          sourceLookupAt: "2026-06-26T12:00:00.000Z",
+          sourceProvider: "mock-dictionary",
+          sourceReference: "mock:risk"
+        }
+      ],
+      term
+    }));
+
+    const response = await request(app)
+      .post("/api/admin/glossary/lookup")
+      .set("Cookie", admin.cookie)
+      .send({ term: "Risk" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      status: "found",
+      suggestions: [
+        {
+          definition: "A mocked definition.",
+          sourceProvider: "mock-dictionary",
+          sourceReference: "mock:risk"
+        }
+      ],
+      term: "Risk"
+    });
   });
 
   it("creates, lists, updates, and archives glossary entries", async () => {
@@ -201,6 +266,102 @@ describe("admin glossary", () => {
     ]);
     expect(response.body.entries[0]).not.toHaveProperty("definitionSource");
     expect(response.body.entries[0]).not.toHaveProperty("sourceProvider");
+  });
+
+  it("saves dictionary source metadata only when explicitly requested", async () => {
+    const admin = await registerAdmin(app);
+
+    const createResponse = await request(app)
+      .post("/api/admin/glossary")
+      .set("Cookie", admin.cookie)
+      .send({
+        aliases: [],
+        canonicalTerm: uniqueTerm("Suggested"),
+        definition: "A suggested definition edited by an admin.",
+        definitionSource: "dictionary_suggested",
+        isEnabled: true,
+        sourceLookupAt: "2026-06-26T12:00:00.000Z",
+        sourceProvider: "merriam-webster-collegiate",
+        sourceReference: "collegiate:risk"
+      });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.entry).toMatchObject({
+      definitionSource: "dictionary_suggested",
+      sourceLookupAt: "2026-06-26T12:00:00.000Z",
+      sourceProvider: "merriam-webster-collegiate",
+      sourceReference: "collegiate:risk"
+    });
+
+    const updateResponse = await request(app)
+      .put(`/api/admin/glossary/${createResponse.body.entry.id}`)
+      .set("Cookie", admin.cookie)
+      .send({
+        aliases: [],
+        canonicalTerm: createResponse.body.entry.canonicalTerm,
+        definition: "Manual replacement.",
+        definitionSource: "manual",
+        isEnabled: true,
+        sourceLookupAt: null,
+        sourceProvider: null,
+        sourceReference: null
+      });
+
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.entry).toMatchObject({
+      definition: "Manual replacement.",
+      definitionSource: "manual",
+      sourceLookupAt: null,
+      sourceProvider: null,
+      sourceReference: null
+    });
+  });
+
+  it("rejects incomplete dictionary source metadata", async () => {
+    const admin = await registerAdmin(app);
+
+    const response = await request(app)
+      .post("/api/admin/glossary")
+      .set("Cookie", admin.cookie)
+      .send({
+        aliases: [],
+        canonicalTerm: uniqueTerm("Incomplete source"),
+        definition: "Definition from a provider.",
+        definitionSource: "dictionary_suggested",
+        isEnabled: true,
+        sourceProvider: "merriam-webster-collegiate"
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe(
+      "Dictionary-suggested definitions require sourceProvider, sourceReference, and sourceLookupAt"
+    );
+  });
+
+  it("clears source metadata for direct manual API saves", async () => {
+    const admin = await registerAdmin(app);
+
+    const response = await request(app)
+      .post("/api/admin/glossary")
+      .set("Cookie", admin.cookie)
+      .send({
+        aliases: [],
+        canonicalTerm: uniqueTerm("Manual with stale source"),
+        definition: "Manual definition.",
+        definitionSource: "manual",
+        isEnabled: true,
+        sourceLookupAt: "2026-06-26T12:00:00.000Z",
+        sourceProvider: "merriam-webster-collegiate",
+        sourceReference: "collegiate:risk"
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.entry).toMatchObject({
+      definitionSource: "manual",
+      sourceLookupAt: null,
+      sourceProvider: null,
+      sourceReference: null
+    });
   });
 
   it("validates empty and long glossary fields", async () => {

@@ -1,4 +1,5 @@
 import type {
+  AdminDictionaryLookupResponse,
   AdminGlossaryEntriesResponse,
   AdminGlossaryEntryResponse,
   GlossaryDefinitionSource,
@@ -24,6 +25,15 @@ export async function fetchGlossaryEntries(): Promise<AdminGlossaryEntriesRespon
 
 export async function fetchParticipantSafeGlossary(): Promise<ParticipantGlossaryEntriesResponse> {
   return apiRequest<ParticipantGlossaryEntriesResponse>("/api/admin/glossary/participant-safe");
+}
+
+export async function lookupGlossaryDefinition(
+  term: string
+): Promise<AdminDictionaryLookupResponse> {
+  return apiRequest<AdminDictionaryLookupResponse>("/api/admin/glossary/lookup", {
+    body: JSON.stringify({ term }),
+    method: "POST"
+  });
 }
 
 export async function createGlossaryEntry(

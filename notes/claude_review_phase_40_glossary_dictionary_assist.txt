@@ -1,0 +1,144 @@
+Phase 40 - Dictionary-Assisted Glossary Definitions - Claude Review
+
+Reviewer: Claude Code
+Branch: prompt-40-glossary-rendering (see note P1 — name mismatch)
+Verdict: APPROVE (no blocking issues). A few low-severity notes and one
+process/naming flag below.
+
+Independent validation run during review:
+- npm run build -w packages/shared ............ OK
+- npx tsc --noEmit -p apps/api/tsconfig.json .. OK
+- npx tsc --noEmit -p apps/web/tsconfig.json .. OK
+- web  src/pages/admin/glossaryForm.test.ts ... 3/3 pass
+- api  test/dictionary.test.ts ................ 5/5 pass
+(Full DB-backed glossary.test.ts not re-run here; handoff reports the
+full gate green, and the new cases read correctly on inspection.)
+
+================================================================
+Review focus areas
+================================================================
+
+1. Provider secret handling + test-mode no-live-call guard
+   PASS. The API key is read only from env (config.ts
+   readDictionaryConfigFromEnv) and never crosses to the client: the
+   lookup response type (AdminDictionaryLookupResponse) carries only
+   term/status/providerLabel/suggestions/spellingSuggestions/message — no
+   key, no URL. Two layers of test safety:
+   - readDictionaryConfigFromEnv short-circuits to provider:"disabled"
+     when NODE_ENV==="test", so even a real local .env key cannot trigger
+     a live call from config-driven paths.
+   - setDictionaryLookupOverrideForTests + per-test afterEach reset lets
+     the suite inject deterministic results.
+   Startup validation throws if provider=merriam-webster without a key,
+   which fails fast rather than silently degrading.
+
+2. Server-side-only access (no browser key exposure)
+   PASS. The web client calls POST /api/admin/glossary/lookup
+   (api/glossary.ts lookupGlossaryDefinition); the actual Merriam-Webster
+   fetch happens only in apps/api/src/services/dictionary.ts. No frontend
+   code references dictionaryapi.com or the key. The .env examples and
+   prod example document DICTIONARY_PROVIDER/MERRIAM_WEBSTER_*_KEY as
+   placeholders only (no real secrets committed), and prod example steers
+   the key to Azure App Service settings.
+
+3. Graceful failure / rate-limit / no-match / not-configured states
+   PASS. lookupMerriamWebsterCollegiate maps every path to a typed status
+   instead of throwing: 429 -> rate_limited, other !ok -> provider_error,
+   thrown/abort -> provider_error, non-array payload -> provider_error,
+   all-string array -> no_match (+spellingSuggestions), empty/zero defs ->
+   no_match, success -> found. Disabled provider and missing key ->
+   not_configured. A 5s AbortSignal.timeout prevents hung requests. None
+   of these block manual entry — the UI always leaves the definition
+   field editable. Tests cover not_configured, found (single+multi),
+   spelling-suggestion no_match, rate_limited, and provider_error.
+
+4. Admin approval/editing flow + source-metadata reset behavior
+   PASS, and the metadata semantics match the prompt precisely
+   (glossaryForm.ts):
+   - Apply a suggestion -> appliedSuggestion set -> save sends
+     definitionSource:"dictionary_suggested" + provider/reference/lookupAt.
+   - Editing the applied text before save keeps dictionary_suggested
+     (tested).
+   - "Use manual source" (ignoreDictionarySuggestion) clears
+     appliedSuggestion -> save sends manual + null metadata (tested).
+   - A fresh manual definition with no applied suggestion -> manual.
+   - Editing an existing entry reconstructs appliedSuggestion from saved
+     metadata only when source==dictionary_suggested AND all three fields
+     are present, so a half-populated row falls back to manual cleanly.
+   Lookups never mutate canonical term, aliases, enabled state, or the
+   saved definition until the admin clicks Apply — matches the
+   "Admin stays in control" requirement.
+
+5. Merriam-Webster branding / license / rate-limit
+   PARTIAL/INFO (not a code defect). The Admin-only result panel shows
+   text attribution ("Suggested by Merriam-Webster's Collegiate Dictionary
+   API ...") and the handoff documents the 1000/day free-tier limit and
+   client-owned-key expectation. The handoff itself flags that production
+   may require an approved Merriam-Webster logo asset before enabling the
+   provider for client use. Carry that forward as an explicit
+   pre-enablement checklist item (see N4); nothing blocks this phase since
+   the provider ships disabled by default.
+
+6. No participant glossary-rendering drift
+   PASS. The only route added is POST /api/admin/glossary/lookup, behind
+   the existing requireAuth+requireRole("admin"). participant-safe is
+   unchanged and still admin-gated; no participant/runner/survey code
+   touches the new service. Question rendering is untouched. Correctly
+   honors the "no participant inline rendering in Phase 40" non-goal.
+
+================================================================
+Notes (non-blocking)
+================================================================
+
+P1. Branch name mismatch / misleading name.
+    The working branch is `prompt-40-glossary-rendering`, but the prompt
+    and closeout artifacts call for `phase-40-glossary-dictionary-assist`.
+    "rendering" is also actively misleading: participant rendering is an
+    explicit non-goal of this phase and belongs to a later one. Recommend
+    renaming the branch before merge (or at minimum using an accurate
+    commit/PR title) so history doesn't imply rendering shipped here.
+
+N2. No server-side consistency check on source metadata.
+    validateGlossaryEntryBody validates field lengths/enum but does not
+    enforce that definitionSource:"dictionary_suggested" requires
+    provider/reference, or that "manual" forbids them. A direct API caller
+    could persist an inconsistent combination. The UI always sends
+    consistent values, and the data is informational only, so this is
+    low-risk — but a small cross-field check (or clearing provider fields
+    server-side when source==manual) would harden it.
+
+N3. No throttle/cache on the lookup endpoint.
+    Each "Suggest definition" click is one provider call; the button is
+    disabled only while a single request is in flight. With the free tier
+    at 1000 queries/day, repeated admin lookups could exhaust quota.
+    Durable caching was intentionally deferred per the prompt's open
+    question, so this is just a forward note — consider a light per-term
+    in-memory cache or basic rate-limit when the provider is enabled for
+    the client.
+
+N4. Branding asset gate (carry-forward). Before flipping
+    DICTIONARY_PROVIDER=merriam-webster for the client, confirm whether
+    Merriam-Webster's current branding guidelines require a logo asset in
+    addition to the text attribution already present.
+
+N5. Nit: DATA_MODEL_VISION.md not updated. The prompt lists it under
+    "update as needed"; since Phase 40 reuses the Phase 39 source-metadata
+    columns and adds no schema, leaving it untouched is acceptable —
+    flagging only for completeness.
+
+================================================================
+Confirmations against acceptance criteria
+================================================================
+- Admins can request a suggestion, and accept / edit / ignore it.
+- No-match and provider-error states are clear and never block manual
+  entry.
+- Non-admins cannot call /lookup (403 test present).
+- Secrets come from env only; nothing committed.
+- Tests use mocks/overrides; no live network dependency.
+- Participant-facing behavior unchanged.
+
+Outstanding before commit (per handoff): manual browser pass at
+375/768/1280px for the lookup controls (disabled/manual, mocked or local
+suggestion apply/edit/save, use-manual-source, no-match/suggestions, and
+existing entry edit/toggle). Nothing in the diff blocks it. Recommend
+also resolving P1 (branch name) before opening the PR.

@@ -6,6 +6,224 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 40 — Dictionary-Assisted Glossary Definitions
+
+Date:
+2026-06-26
+
+Status:
+Implemented; Claude review complete; manual browser testing passed
+
+Prompt:
+`prompts/prompt_40.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_40_glossary_dictionary_assist.txt`
+- Claude review: `notes/claude_review_phase_40_glossary_dictionary_assist.txt`
+
+## Goals
+
+- Add Admin-only dictionary suggestions for global glossary definitions.
+- Keep dictionary provider calls server-side and environment-driven.
+- Preserve manual Admin approval/editing of final glossary definitions.
+- Avoid participant inline glossary rendering or participant API exposure.
+
+## Built
+
+- Added shared Admin dictionary lookup response and suggestion types.
+- Added optional dictionary provider config:
+  `DICTIONARY_PROVIDER=disabled` by default, or
+  `DICTIONARY_PROVIDER=merriam-webster` with
+  `MERRIAM_WEBSTER_COLLEGIATE_API_KEY`.
+- Added a Merriam-Webster Collegiate Dictionary API client that normalizes
+  `shortdef` values to plain text and treats string-array responses as spelling
+  suggestions/no exact match.
+- Added Admin-only `POST /api/admin/glossary/lookup`.
+- Added test-mode protection so automated tests disable live dictionary
+  lookups even when local `.env` contains a real provider key.
+- Extended `/admin/glossary` with lookup controls near the canonical term and
+  definition fields, suggestion results, apply buttons, and a manual-source
+  control.
+- Added source metadata handling so applied suggestions save as
+  `dictionary_suggested`, while ignored/manual entries save as `manual` and
+  clear provider metadata.
+- Hardened server-side source metadata validation so
+  `dictionary_suggested` requires provider metadata and direct manual API saves
+  clear stale provider fields.
+- Added focused API/service tests and web form-helper tests.
+- Updated `.env.example`, `.env.prod.example`,
+  `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`, and
+  `markdown/releases/unreleased.md`.
+
+## Important Decisions
+
+### Server-Side Provider Access Only
+
+Decision:
+The browser calls only the app API. Merriam-Webster requests happen in the API
+service layer.
+
+Reason:
+The provider key must remain an environment secret, and Admin authorization
+must be enforced server-side.
+
+Tradeoff:
+The API now owns provider timeout/error mapping and response normalization.
+
+### Test-Mode Provider Guard
+
+Decision:
+When `NODE_ENV=test`, dictionary provider config resolves to disabled.
+
+Reason:
+Local development may have a real provider key in `.env`, but automated tests
+must never make live API calls or consume provider quota.
+
+Tradeoff:
+Provider-enabled behavior is tested through direct mocked service tests and a
+mocked route override rather than live route calls.
+
+### Explicit Source Application
+
+Decision:
+Dictionary metadata is sent only when an Admin applies a suggestion.
+
+Reason:
+Lookup should never mutate saved glossary metadata by itself; the Admin remains
+the approver of the final definition.
+
+Tradeoff:
+Admins use a visible "Use manual source" control when they want to clear an
+applied/existing dictionary source while editing.
+
+## Architecture Notes
+
+- Database/schema impact: none; Phase 39 source metadata fields are reused.
+- API contract impact: adds Admin dictionary lookup response types and
+  `POST /api/admin/glossary/lookup`.
+- Auth or authorization impact: the lookup route inherits the existing
+  authenticated Admin-only glossary router gate.
+- Data privacy or visibility impact: provider keys stay server-side; no
+  participant-facing routes or payloads changed.
+- Frontend UX impact: Admin glossary forms can request, review, apply, edit, or
+  ignore dictionary suggestions.
+- Environment or deployment impact: optional dictionary provider variables are
+  documented; disabled remains the safe default.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run build -w packages/shared
+npx tsc --noEmit -p apps/api/tsconfig.json
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/pages/admin/glossaryForm.test.ts
+npm run test -w apps/api -- test/dictionary.test.ts test/glossary.test.ts
+npm run lint
+npm run build
+npm run typecheck
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above.
+- `npm run build` emitted the existing Vite large chunk warning.
+- API tests required approved local PostgreSQL access.
+- An initial focused API test run revealed that local `.env` had a real
+  dictionary provider configured, causing an accidental live lookup in a route
+  test. The implementation was hardened so `NODE_ENV=test` disables dictionary
+  provider access by default, then focused and full suites passed.
+
+Manual tests:
+
+- Passed per developer manual testing on 2026-06-26. Covered
+  `/admin/glossary` lookup controls at 375/768/1280px, including provider
+  disabled/manual entry, suggestion lookup, apply/edit/save, use manual source,
+  no-match/suggestions, and existing entry edit/toggle behavior.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_40_glossary_dictionary_assist.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_40_glossary_dictionary_assist.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None; Claude approved the phase with no blocking issues.
+
+Suggested improvements:
+
+- Rename the branch from `prompt-40-glossary-rendering` to
+  `phase-40-glossary-dictionary-assist` to avoid implying Phase 41 participant
+  rendering shipped here.
+- Harden direct API source metadata consistency for `manual` and
+  `dictionary_suggested` saves.
+- Consider a light lookup throttle or cache when the provider is enabled for
+  client use.
+- Confirm Merriam-Webster branding asset requirements before production
+  enablement.
+
+Accepted fixes:
+
+- Renamed the branch to `phase-40-glossary-dictionary-assist`.
+- Added server-side validation requiring complete source metadata for
+  `dictionary_suggested` saves and clearing provider metadata for manual saves.
+- Added API tests for incomplete dictionary metadata rejection and direct manual
+  metadata clearing.
+
+Deferred findings:
+
+- Lookup throttle/cache deferred until provider enablement or observed Admin
+  usage requires quota protection beyond the in-flight button state.
+- Merriam-Webster logo/branding asset confirmation remains a production
+  enablement follow-up because the provider ships disabled by default.
+
+## Problems Encountered
+
+- Problem: Automated route tests initially used the local real dictionary
+  provider because `.env` already had provider configuration.
+  Resolution: Forced dictionary config to disabled under `NODE_ENV=test`; added
+  mocked service/route coverage and reran focused/full tests successfully.
+
+## Follow-Up Tasks
+
+- Confirm with the client/production account owner whether the Admin-only
+  suggestion UI needs an approved Merriam-Webster logo asset before enabling
+  the provider in production.
+- Consider a lightweight lookup throttle/cache before enabling the
+  Merriam-Webster provider for broader Admin use.
+- Phase 41: expose enabled glossary entries to participant flows and render
+  inline definitions accessibly.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 39 — Global Glossary Admin Foundation
 
 Date:

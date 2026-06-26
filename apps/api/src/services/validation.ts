@@ -623,6 +623,15 @@ export function validateGlossaryEntryBody(body: unknown): ValidationResult<{
     return { ok: false, error: "sourceLookupAt must be a valid date string or null" };
   }
 
+  if (definitionSource === "dictionary_suggested") {
+    if (!sourceProvider || !sourceReference || !sourceLookupAt) {
+      return {
+        ok: false,
+        error: "Dictionary-suggested definitions require sourceProvider, sourceReference, and sourceLookupAt"
+      };
+    }
+  }
+
   const normalizedMatches = new Set<string>();
 
   for (const value of [canonicalTerm, ...aliases.value]) {
@@ -643,9 +652,9 @@ export function validateGlossaryEntryBody(body: unknown): ValidationResult<{
       definition,
       definitionSource,
       isEnabled,
-      sourceLookupAt,
-      sourceProvider,
-      sourceReference
+      sourceLookupAt: definitionSource === "manual" ? null : sourceLookupAt,
+      sourceProvider: definitionSource === "manual" ? null : sourceProvider,
+      sourceReference: definitionSource === "manual" ? null : sourceReference
     }
   };
 }

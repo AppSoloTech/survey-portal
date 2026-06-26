@@ -77,6 +77,8 @@ EMAIL_ENABLED=
 EMAIL_PROVIDER=
 EMAIL_FROM_ADDRESS=
 EMAIL_REPLY_TO_ADDRESS=
+DICTIONARY_PROVIDER=
+MERRIAM_WEBSTER_COLLEGIATE_API_KEY=
 ADMIN_FIRST_NAME=
 ADMIN_LAST_NAME=
 ADMIN_EMAIL=
@@ -98,6 +100,19 @@ EMAIL_PROVIDER=disabled
 Use `EMAIL_ENABLED=true` with `EMAIL_PROVIDER=noop` only for local non-sending
 development checks. Production must keep email disabled until an approved real
 provider adapter and Azure-held credentials are implemented.
+
+Admin glossary dictionary suggestions are optional and disabled by default:
+
+```txt
+DICTIONARY_PROVIDER=disabled
+```
+
+Use `DICTIONARY_PROVIDER=merriam-webster` only when a client-owned
+Merriam-Webster Collegiate Dictionary API key is supplied through
+`MERRIAM_WEBSTER_COLLEGIATE_API_KEY`. Provider keys belong in `.env` locally and
+Azure App Service settings in production, never in tracked files. Automated
+tests run with dictionary lookups disabled even if local development `.env`
+contains a real provider key.
 
 `WEB_ORIGIN` is used when the API builds user-facing links, including anonymous
 survey links and password reset links. Keep it set to the deployed web origin in

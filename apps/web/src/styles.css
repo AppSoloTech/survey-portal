@@ -2671,6 +2671,63 @@ main {
   margin-top: 0.25rem;
 }
 
+.glossary-lookup-panel,
+.glossary-lookup-result,
+.glossary-suggestion-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.glossary-lookup-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.glossary-lookup-result {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+.glossary-lookup-result .status {
+  margin: 0;
+}
+
+.glossary-provider-credit,
+.glossary-source-note {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.glossary-spelling-suggestions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.glossary-suggestion {
+  align-items: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.75rem;
+}
+
+.glossary-suggestion p {
+  line-height: 1.5;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .glossary-list-summary span,
 .glossary-entry-meta span,
 .glossary-alias {
@@ -5684,15 +5741,21 @@ main {
   }
 
   .glossary-entry-actions,
-  .glossary-form-actions {
+  .glossary-form-actions,
+  .glossary-lookup-actions {
     align-items: stretch;
     justify-content: stretch;
   }
 
   .glossary-entry-actions .button-link,
-  .glossary-form-actions .button-link {
+  .glossary-form-actions .button-link,
+  .glossary-lookup-actions .button-link {
     flex: 1 1 calc(50% - 0.25rem);
     min-width: min(100%, 9rem);
+  }
+
+  .glossary-suggestion {
+    grid-template-columns: 1fr;
   }
 
   .survey-card-footer .button-link,

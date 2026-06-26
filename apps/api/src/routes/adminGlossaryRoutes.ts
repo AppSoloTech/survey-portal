@@ -9,7 +9,9 @@ import pg from "pg";
 
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { lookupDictionaryTerm } from "../services/dictionary.js";
 import {
+  readTextField,
   readPositiveIntegerParam,
   validateGlossaryEntryBody
 } from "../services/validation.js";
@@ -193,6 +195,21 @@ adminGlossaryRouter.get("/participant-safe", async (req, res, next) => {
   try {
     const entries = await fetchGlossaryEntries(pool, { enabledOnly: true });
     res.json({ entries: entries.map(toParticipantGlossaryEntry) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminGlossaryRouter.post("/lookup", async (req, res, next) => {
+  const term = readTextField(req.body, "term");
+
+  if (!term) {
+    res.status(400).json({ error: "term is required" });
+    return;
+  }
+
+  try {
+    res.json(await lookupDictionaryTerm(term));
   } catch (error) {
     next(error);
   }

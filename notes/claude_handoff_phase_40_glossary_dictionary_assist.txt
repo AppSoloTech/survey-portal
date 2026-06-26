@@ -1,0 +1,103 @@
+Phase 40 - Dictionary-Assisted Glossary Definitions
+
+Prompt:
+prompts/prompt_40.txt
+
+Branch:
+phase-40-glossary-dictionary-assist
+
+Implementation summary:
+- Added shared Admin dictionary lookup response/suggestion types.
+- Added environment-driven dictionary provider config with disabled default:
+  DICTIONARY_PROVIDER=disabled or DICTIONARY_PROVIDER=merriam-webster.
+- Added server-side Merriam-Webster Collegiate Dictionary API client in
+  apps/api/src/services/dictionary.ts.
+- Added Admin-only POST /api/admin/glossary/lookup. The route returns graceful
+  lookup statuses instead of blocking manual entry on provider failures.
+- Added test-mode protection so NODE_ENV=test disables provider lookups by
+  default, even if local .env contains a real Merriam-Webster key.
+- Extended /admin/glossary so Admins can request suggestions, apply one into
+  the definition field, edit it before saving, or ignore/use manual source.
+- Preserved Phase 39 source metadata behavior:
+  dictionary_suggested metadata is sent only after explicit suggestion
+  application; manual source clears provider metadata.
+- Updated .env examples, global environment docs, and unreleased notes.
+
+Official provider docs checked during implementation:
+- Product/API endpoint and response shape:
+  https://dictionaryapi.com/products/api-collegiate-dictionary
+- JSON structure / shortdef docs:
+  https://dictionaryapi.com/products/json
+- Terms/rate limit:
+  https://dictionaryapi.com/info/terms-of-service
+- Branding:
+  https://dictionaryapi.com/info/branding-guidelines
+
+Provider notes:
+- Request URL used:
+  https://www.dictionaryapi.com/api/v3/references/collegiate/json/{term}?key={key}
+- Response normalization prefers shortdef values, strips Merriam-Webster text
+  tokens to plain text, caps returned suggestions at 6, and treats string-array
+  responses as spelling suggestions/no exact match.
+- Terms page currently states free non-commercial API use is limited to
+  1000 queries/day/reference work. Production account/key ownership should stay
+  with the client.
+- Branding page currently requires Merriam-Webster branding when content is
+  displayed. The Admin-only UI uses proper Merriam-Webster product naming and
+  source attribution text; please review whether the production UI also needs
+  an approved logo asset before enabling the provider for client use.
+
+Files most worth reviewing:
+- apps/api/src/services/dictionary.ts
+- apps/api/src/config.ts
+- apps/api/src/routes/adminGlossaryRoutes.ts
+- apps/api/test/dictionary.test.ts
+- apps/api/test/glossary.test.ts
+- packages/shared/src/index.ts
+- apps/web/src/pages/admin/AdminGlossaryPage.tsx
+- apps/web/src/pages/admin/glossaryForm.ts
+- apps/web/src/pages/admin/glossaryForm.test.ts
+- apps/web/src/api/glossary.ts
+- apps/web/src/styles.css
+- .env.example
+- .env.prod.example
+- markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt
+- markdown/releases/unreleased.md
+
+Review focus requested:
+- Provider secret handling and test-mode no-live-call guard.
+- Server-side-only Merriam-Webster access; no browser key exposure.
+- Graceful provider failure, rate-limit, no-match, and not-configured states.
+- Admin approval/editing flow and source metadata reset behavior.
+- Merriam-Webster branding/license/rate-limit notes.
+- No participant glossary rendering drift.
+
+Validation run:
+- npm run build -w packages/shared
+- npx tsc --noEmit -p apps/api/tsconfig.json
+- npx tsc --noEmit -p apps/web/tsconfig.json
+- npm run test -w apps/web -- src/pages/admin/glossaryForm.test.ts
+- npm run test -w apps/api -- test/dictionary.test.ts test/glossary.test.ts
+- npm run lint
+- npm run build
+- npm run typecheck
+- npm test
+- git diff --check
+
+Validation notes:
+- Passed: all commands above.
+- npm run build emitted the existing Vite large chunk warning.
+- API tests required approved local PostgreSQL access.
+- An initial focused API test run accidentally used the real local dictionary
+  provider because .env was configured. This was fixed by forcing dictionary
+  lookups disabled under NODE_ENV=test, and the focused/full suites passed
+  after the fix.
+
+Pending before commit readiness:
+- Manual browser pass at 375/768/1280px for /admin/glossary lookup controls:
+  provider disabled/manual entry, mocked or locally configured suggestion
+  lookup, apply/edit/save, use manual source, no-match/suggestions, and existing
+  entry edit/toggle behavior.
+
+Claude review output target:
+notes/claude_review_phase_40_glossary_dictionary_assist.txt

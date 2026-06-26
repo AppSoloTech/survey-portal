@@ -13,6 +13,7 @@ dotenv.config({ path: workspaceEnvPath });
 
 type RunEnvironment = "dev" | "prod";
 export type EmailProvider = "disabled" | "noop";
+export type DictionaryProvider = "disabled" | "merriam-webster";
 const localJwtSecretPlaceholder = "replace_with_a_local_development_secret";
 
 function readRunEnv(): RunEnvironment {
@@ -167,6 +168,40 @@ function readEmailProvider(rawValue: string | undefined, enabled: boolean): Emai
   throw new Error("EMAIL_PROVIDER must be either disabled or noop");
 }
 
+function readDictionaryProvider(rawValue: string | undefined): DictionaryProvider {
+  const value = rawValue ?? "disabled";
+
+  if (value === "disabled" || value === "merriam-webster") {
+    return value;
+  }
+
+  throw new Error("DICTIONARY_PROVIDER must be either disabled or merriam-webster");
+}
+
+export function readDictionaryConfigFromEnv(env: NodeJS.ProcessEnv) {
+  if (env.NODE_ENV === "test") {
+    return {
+      provider: "disabled",
+      merriamWebsterCollegiateApiKey: undefined
+    } as const;
+  }
+
+  const provider = readDictionaryProvider(env.DICTIONARY_PROVIDER);
+  const merriamWebsterCollegiateApiKey =
+    env.MERRIAM_WEBSTER_COLLEGIATE_API_KEY || undefined;
+
+  if (provider === "merriam-webster" && !merriamWebsterCollegiateApiKey) {
+    throw new Error(
+      "MERRIAM_WEBSTER_COLLEGIATE_API_KEY is required when DICTIONARY_PROVIDER=merriam-webster"
+    );
+  }
+
+  return {
+    provider,
+    merriamWebsterCollegiateApiKey
+  } as const;
+}
+
 export function readEmailConfigFromEnv(
   env: NodeJS.ProcessEnv,
   runEnv: RunEnvironment
@@ -239,5 +274,6 @@ export const config = {
     "ANONYMOUS_SURVEY_RATE_LIMIT_MAX",
     120
   ),
+  dictionary: readDictionaryConfigFromEnv(process.env),
   email: readEmailConfigFromEnv(process.env, runEnv)
 } as const;
