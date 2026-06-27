@@ -1,0 +1,133 @@
+Claude Code Review - Phase 45: User-Facing Accessibility
+
+Reviewer: Claude Code
+Scope reviewed: working-tree diff for Phase 45 only
+Source files changed:
+  - apps/web/src/components/InlineGlossaryText.tsx
+  - apps/web/src/components/SurveySummaryCard.tsx
+  - apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx
+  - apps/web/src/pages/CategorySurveysPage.tsx
+  - apps/web/src/pages/Home.tsx
+  - apps/web/src/pages/UserDashboard.tsx
+  - apps/web/src/components/UserFacingAccessibility.test.ts (new)
+  - markdown/* docs
+
+Local validation re-run during review:
+  - npm run typecheck -w apps/web : pass
+  - npm run lint -w apps/web : pass
+  - npm run test -w apps/web -- UserFacingAccessibility.test.ts : pass (5/5)
+
+
+1. CRITICAL ISSUES
+
+None. Nothing in this diff blocks commit on correctness, security, or
+data-exchange grounds. The changes are presentational/ARIA only:
+no API, auth, hidden-tag, reporting, CSV, or survey-flow behavior is touched.
+All injected text (survey.title, survey.surveyTitle, group.categoryName) is
+rendered as React text children and is auto-escaped, so the visually hidden
+suffixes introduce no XSS surface.
+
+
+2. SUGGESTED IMPROVEMENTS
+
+(a) [Medium] Category empty state now "breathes" like a loading indicator.
+    CategorySurveysPage renders the terminal empty state as
+    <AlertMessage className="builder-empty-state" variant="info">. For
+    variant="info", AlertMessage emits class "status muted builder-empty-state".
+    The rule .status.muted (styles.css:949) applies
+    `animation: status-breathe 1.8s ease-in-out infinite`, which exists
+    specifically for loading lines ("Loading lines breathe instead of sitting
+    flat"). The category empty state is NOT a loading state - it is a terminal
+    "no surveys in this group" message - so it will now pulse indefinitely,
+    which is semantically misleading and visually distracting.
+    Note: a global prefers-reduced-motion block (styles.css:5279) neutralizes
+    the animation for reduced-motion users, so this is a UX/polish issue, not a
+    hard a11y violation. Recommend a non-animated info treatment for terminal
+    states (e.g. an AlertMessage variant or class that does not inherit
+    .status.muted), or keep the empty state as its own primitive and only adopt
+    the polite live-region role.
+
+(b) [Low] Conflicting display/border declarations resolved only by source order.
+    Stacking "status muted builder-empty-state" on one <p> means
+    .builder-empty-state (styles.css:2940, display:grid, dashed border,
+    radius-md, 1rem padding, surface bg) silently overrides the .status
+    equivalents (line 936, display:inline-flex, solid border, radius-sm) purely
+    because it is declared later at equal specificity. The current visual result
+    happens to match the old block layout, but it is fragile - reordering or
+    re-theming .status would change the empty state unexpectedly. A dedicated
+    class would be more maintainable than relying on cascade order.
+
+(c) [Low / optional] The {" "} text node between <strong> and <span> in the
+    converted empty state is inert under display:grid (whitespace-only nodes are
+    ignored as grid items). Harmless, but it signals the markup was shaped for an
+    inline-flow layout that the grid display does not actually use. Drop it or
+    confirm the intended layout.
+
+(d) [Nit] Home.tsx "View anonymous surveys" is a single, non-repeated link, so
+    the visually hidden " in the public directory" suffix is not strictly needed
+    for disambiguation (unlike the repeated card/list actions, where it is
+    valuable). It is still a reasonable clarity improvement; flagging only so the
+    pattern is applied intentionally rather than uniformly.
+
+
+3. ACCEPTABLE TRADEOFFS
+
+(a) Source-level (readFileSync + toContain) tests. They do not render DOM or
+    simulate AT, but they match the established project convention
+    (AccessibleModal.test.ts, FormFeedback.test.ts) and the toolchain has no
+    jsdom/RTL. Consistent and acceptable; just be aware they assert source
+    strings, not rendered accessibility behavior, and break on benign
+    refactors.
+
+(b) Glossary aria-describedby now permanently targets the popover, with the
+    popover kept mounted and toggled via hidden={!isOpen}. This is the correct
+    and idiomatic improvement: aria-description (ARIA 1.3) had effectively no
+    AT support, whereas aria-describedby -> a role="tooltip" element that is
+    removed from the accessibility tree while hidden is well-supported. When
+    closed, the HTML hidden attribute keeps the description out of the a11y tree
+    (no premature announcement); when open it is exposed. Keyboard (Escape +
+    blur), pointer (hover enter/leave), touch, focus, and click-toggle behavior
+    are unchanged - only the render condition changed. Good call.
+
+(c) Visually hidden contextual suffixes. Accessible names become e.g.
+    "Resume survey: <title>", "Start survey: <title>", "View surveys in
+    <category>" while the visible labels stay short. This is the standard
+    technique for disambiguating repeated actions and does not alter the visible
+    UI. Verified .visually-hidden (styles.css:5262) is a correct clip/inset
+    off-screen utility, not display:none, so the text stays in the a11y tree.
+
+
+4. QUESTIONS OR ASSUMPTIONS
+
+(a) Is the breathing animation on the category empty state (2a) intended? I am
+    assuming not - it reads as an oversight from reusing variant="info"
+    (loading) styling for a terminal state.
+(b) Assumption: the category empty-state copy change ("No surveys in this
+    group." with trailing period, and "Back to dashboard.") is an intentional
+    microcopy adjustment, not accidental.
+(c) The glossary trigger retains aria-expanded (pre-existing, unchanged). For a
+    pure tooltip pattern aria-expanded is non-standard, but since it predates
+    this phase I treat it as out of scope.
+
+
+5. PRODUCT UX ALIGNMENT NOTES
+
+- Aligns with the accessibility-remediation track: improves names of repeated
+  user-facing actions and live-region consistency without redesigning the UI.
+- Stayed within user-facing scope: no Admin grouped-select, results table/chart,
+  users table, disclosure, or drag-and-drop changes; the only shared component
+  touched (builder-empty-state) is used here solely via the public category page.
+- Survey runner answer controls, app shell/modal routes, and the auth/account
+  form foundation were left unchanged, matching the stated non-goals.
+- The one UX wrinkle is 2a: a terminal empty state that animates like a loading
+  state weakens the "this is the final state" signal. Worth resolving before it
+  becomes a copied pattern for other empty states.
+
+
+6. COMMIT READINESS
+
+Ready to commit with a minor follow-up. No critical or security issues; typecheck,
+lint, and the focused web tests pass. Recommend addressing 2a (loading-style
+"breathe" animation on the terminal category empty state) either in this phase or
+as an explicitly logged follow-up, since it changes perceived state semantics.
+Items 2b-2d and section 4 are optional polish/clarifications.

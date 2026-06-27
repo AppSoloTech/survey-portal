@@ -61,6 +61,7 @@ export function Home() {
         </div>
         <Link className="button-link primary-button" to="/anonymous-surveys">
           View anonymous surveys
+          <span className="visually-hidden"> in the public directory</span>
         </Link>
       </article>
 

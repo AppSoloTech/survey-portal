@@ -63,8 +63,7 @@ function GlossaryTerm({
       }}
     >
       <button
-        aria-describedby={isOpen ? popoverId : undefined}
-        aria-description="Definition available"
+        aria-describedby={popoverId}
         aria-expanded={isOpen}
         className="inline-glossary-trigger"
         onBlur={() => {
@@ -90,12 +89,10 @@ function GlossaryTerm({
       >
         {text}
       </button>
-      {isOpen ? (
-        <span className="inline-glossary-popover" id={popoverId} role="tooltip">
-          <strong>{canonicalTerm}</strong>
-          <span>{definition}</span>
-        </span>
-      ) : null}
+      <span className="inline-glossary-popover" hidden={!isOpen} id={popoverId} role="tooltip">
+        <strong>{canonicalTerm}</strong>
+        <span>{definition}</span>
+      </span>
     </span>
   );
 }

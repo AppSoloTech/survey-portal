@@ -6,6 +6,188 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 45 — User Dashboard And Public Directory Accessibility Polish
+
+Date:
+2026-06-27
+
+Status:
+Implemented; Claude review complete; manual browser and assistive-technology
+testing pending
+
+Prompt:
+`prompts/prompt_45.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_45_user_facing_accessibility.txt`
+- Claude review: `notes/claude_review_phase_45_user_facing_accessibility.txt`
+
+## Goals
+
+- Add contextual accessible names to repeated public and registered-user survey actions.
+- Keep Phase 44 pagination and status primitives intact while correcting any scoped inconsistency.
+- Tighten participant-facing inline glossary ARIA without changing survey data, responses, hidden tags, reporting, or CSV behavior.
+- Keep Admin-only accessibility findings out of implementation scope.
+
+## Built
+
+- Added visually hidden survey-title context inside repeated dashboard and category survey action buttons.
+- Added visually hidden context to the dashboard resume nudge and category group drill-in action.
+- Added visually hidden survey-title context to public anonymous directory start links and clarified the homepage public-directory entry link.
+- Added polite live-region semantics to the category empty state while preserving the non-animated empty-state visual treatment and back-to-dashboard link.
+- Replaced inline glossary `aria-description` with stable `aria-describedby` pointing at a mounted tooltip definition hidden when closed.
+- Added focused source-level web tests for the Phase 45 accessible-name, status, and glossary ARIA wiring.
+- Updated draft release notes and the follow-up backlog.
+
+## Important Decisions
+
+### Visible Labels Stay Stable
+
+Decision:
+Use visually hidden context inside controls instead of replacing visible labels with `aria-label`.
+
+Reason:
+This keeps the visible button/link text unchanged while making screen-reader button and link lists specific enough to distinguish repeated actions.
+
+### Pagination Remains Unchanged
+
+Decision:
+Do not modify `PaginationRow` in Phase 45.
+
+Reason:
+Phase 44 already added a concise polite atomic status region, and Phase 45 review did not find a scoped regression in dashboard or category usage.
+
+### Terminal Empty State Does Not Use Loading Animation
+
+Decision:
+Use `role="status"` and `aria-live="polite"` directly on the category empty-state container instead of wrapping it in `AlertMessage`.
+
+Reason:
+`AlertMessage` info styling inherits the animated `.status.muted` treatment intended for loading/status lines. The category empty state is terminal, so it should not pulse like loading feedback.
+
+### Release Notes And Versioning
+
+Decision:
+Update `markdown/releases/unreleased.md` and leave the root app version at `0.1.5`.
+
+Reason:
+The project release workflow keeps production-bound implementation notes in the draft release file during phase work. Root version bumps and versioned release files are handled by release-preparation commands.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: none; hidden tags, survey answers, reporting, and CSV behavior are untouched.
+- Frontend UX impact: repeated public/user actions now expose more context to assistive technology; inline glossary definitions use a more robust described-by target.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+git checkout -b phase-45-user-facing-accessibility-polish
+git commit --allow-empty -m "checkpoint before phase 45"
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run test -w apps/web -- UserFacingAccessibility.test.ts FormFeedback.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm test # rerun with approved local PostgreSQL access after sandbox EPERM
+npm run release:check
+git diff --check
+
+# post-review focused checks
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run test -w apps/web -- UserFacingAccessibility.test.ts FormFeedback.test.ts
+
+# post-review full matrix rerun
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm test # rerun with approved local PostgreSQL access after sandbox EPERM
+npm run release:check
+git diff --check
+```
+
+Results:
+
+- Passed: focused web typecheck, lint, focused web tests, full typecheck, full lint, full build, approved full `npm test`, `npm run release:check`, `git diff --check`, post-review focused web checks, and the post-review full matrix rerun.
+- The sandboxed `npm test` attempt passed shared and web tests, then the API suite could not connect to local PostgreSQL due to sandbox `EPERM` on `127.0.0.1:5432`.
+- The approved `npm test` rerun passed shared, web, API, and release-note tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+
+Manual tests:
+
+- Not run in this implementation pass; tracked in `markdown/FOLLOW_UPS.md` for browser, keyboard, responsive, and assistive-technology verification.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_45_user_facing_accessibility.txt`
+- Claude review status before commit: Completed; accepted fix applied
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_45_user_facing_accessibility.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None
+
+Suggested improvements:
+
+- Claude noted that the category terminal empty state inherited `.status.muted`
+  loading animation when rendered through `AlertMessage`, and suggested avoiding
+  the animated status styling for a final empty result.
+- Claude also noted optional cascade fragility and inert whitespace from stacking
+  `status muted builder-empty-state`; these were resolved by the same accepted
+  markup change.
+- Claude flagged the homepage anonymous-directory hidden suffix as optional but
+  acceptable clarity.
+
+Accepted fixes:
+
+- Changed the category empty state to use its original `builder-empty-state`
+  container with `role="status"`, `aria-live="polite"`, and `aria-atomic="true"`
+  instead of the animated `AlertMessage` info styling.
+
+Deferred findings:
+
+- Manual browser/assistive-technology verification remains pending and is tracked in `markdown/FOLLOW_UPS.md`.
+
+## Follow-Up Tasks
+
+- Complete the Phase 45 manual browser/assistive-technology pass recorded in `markdown/FOLLOW_UPS.md`.
+- Complete any human-approved manual verification and commit decision.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no security or data-exchange issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: No; manual browser/assistive-technology pass remains tracked as a follow-up
+- Ready to commit: Yes; human approved commit after automated tests and Claude review, with manual verification follow-up still tracked
+
+---
+
 ## Phase 44 — Form Feedback And Required Field Accessibility
 
 Date:

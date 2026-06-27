@@ -52,11 +52,16 @@ export function CategorySurveysPage() {
       {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
       {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
       {!isLoading && categorySummaries.length === 0 ? (
-        <div className="builder-empty-state">
-          <strong>No surveys in this group</strong>
+        <div
+          aria-atomic="true"
+          aria-live="polite"
+          className="builder-empty-state"
+          role="status"
+        >
+          <strong>No surveys in this group.</strong>
           <span>
             The group may have been removed or its surveys unpublished.{" "}
-            <Link to="/dashboard">Back to dashboard</Link>
+            <Link to="/dashboard">Back to dashboard</Link>.
           </span>
         </div>
       ) : null}

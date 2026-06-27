@@ -132,6 +132,7 @@ function ResumeNudge({ summaries }: { summaries: SurveyAttemptSummary[] }) {
         type="button"
       >
         Resume survey
+        <span className="visually-hidden">: {latest.survey.title}</span>
       </button>
     </div>
   );
@@ -159,6 +160,7 @@ function CategoryGroupCard({ group }: { group: CategoryGroupSummary }) {
           type="button"
         >
           View surveys
+          <span className="visually-hidden"> in {group.categoryName}</span>
         </button>
       </div>
     </article>

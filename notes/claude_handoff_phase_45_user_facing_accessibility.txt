@@ -1,0 +1,146 @@
+Claude Review Handoff - Phase 45
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_45_user_facing_accessibility.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- architectural consistency
+- product UX alignment
+- maintainability
+- unnecessary complexity
+- security concerns
+- auth and data exchange security concerns
+- app environment safety
+- no Admin-specific remediation drift
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `prompts/prompt_45.txt`
+- `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+- `prompts/accessibility_remediation_prompt_plan.txt`
+- `notes/claude_handoff_phase_44_form_feedback_accessibility.txt`
+- `notes/claude_review_phase_44_form_feedback_accessibility.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Added contextual visually hidden survey-title text inside repeated dashboard survey-card action buttons.
+- Added contextual visually hidden text to the dashboard resume nudge action and category group drill-in action.
+- Added contextual visually hidden survey-title text to public anonymous directory start links.
+- Added a small contextual visually hidden suffix to the homepage anonymous-survey directory link.
+- Added polite live-region semantics to the category empty state without using animated loading-style status classes.
+- Replaced inline glossary `aria-description` with stable `aria-describedby` pointing to a mounted tooltip definition hidden while closed.
+- Added `apps/web/src/components/UserFacingAccessibility.test.ts` with focused source-level checks for the Phase 45 wiring.
+- Updated `markdown/releases/unreleased.md`, `markdown/FOLLOW_UPS.md`, and `markdown/PHASE_LOG.md`.
+
+Non-goals:
+
+- No Admin grouped select, results table/chart, users table, disclosure, or drag-and-drop remediation.
+- No survey runner answer-control changes.
+- No app shell/modal route changes.
+- No auth/account form-field foundation changes beyond documenting the reset cooldown regression target.
+- No API, database, hidden-tag, reporting, CSV, auth, or survey-flow behavior changes.
+- No broad visual redesign.
+
+Known tradeoffs:
+
+- Source-level tests match the current project testing convention but do not render DOM or simulate screen reader behavior.
+- `aria-describedby` now points at the glossary definition even while the tooltip is visually hidden; this favors a stable description target and preserves the existing open-on-focus/hover/click behavior.
+- The category empty state keeps the existing block treatment and adds `role="status"`/`aria-live="polite"` directly so it does not inherit loading-style animation.
+
+Deferred work:
+
+- Manual browser, keyboard-only, responsive, and assistive-technology checks remain pending and are recorded in `markdown/FOLLOW_UPS.md`.
+- Claude review is pending and must be written to `notes/claude_review_phase_45_user_facing_accessibility.txt`.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+This phase started from checkpoint commit:
+
+```bash
+git diff bbd8f41..HEAD
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run test -w apps/web -- UserFacingAccessibility.test.ts FormFeedback.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm test # rerun with approved local PostgreSQL access after sandbox EPERM
+npm run release:check
+git diff --check
+```
+
+Results:
+
+- Passed: focused web typecheck, lint, focused web tests, full typecheck, full lint, full build, approved full `npm test`, `npm run release:check`, and `git diff --check`.
+- The sandboxed `npm test` attempt passed shared and web tests, then the API suite could not connect to local PostgreSQL due to sandbox `EPERM` on `127.0.0.1:5432`.
+- The approved `npm test` rerun passed shared, web, API, and release-note tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+
+Manual testing:
+
+- Not run in this implementation pass.
+- Please review against the pending manual checklist in `markdown/FOLLOW_UPS.md`.
+
+## Specific Questions
+
+- Do the visually hidden contextual suffixes produce clear button/link names without hiding the visible labels?
+- Does the category empty-state live-region treatment preserve user-facing UX without implying a loading state?
+- Is the inline glossary `aria-describedby` approach preferable to the previous unsupported `aria-description` usage while preserving keyboard, pointer, touch, and Escape behavior?
+- Did the implementation stay out of Admin-only remediation scope?
+- Are there any response, hidden-tag, reporting, CSV, auth, or survey-flow regressions in the diff?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_45_user_facing_accessibility.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

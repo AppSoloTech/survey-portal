@@ -21,6 +21,7 @@ export function SurveySummaryCard({ summary }: { summary: SurveyAttemptSummary }
           type="button"
         >
           {getSurveyActionLabel(summary.attempt?.status)}
+          <span className="visually-hidden">: {summary.survey.title}</span>
         </button>
       </div>
     </article>

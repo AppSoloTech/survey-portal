@@ -16,3 +16,4 @@ Summary: Improves participant survey-taking, app navigation, and dialog accessib
 - Password reset and anonymous follow-up email dialogs now use shared modal focus management with focus trapping, Escape handling, return focus, and background inert behavior.
 - Auth and account forms now expose required/optional field context, invalid states, helper text, and announced form errors more consistently.
 - Public and registered-user status messages, pagination updates, and toast notifications now use clearer live-region semantics with dedicated dismiss controls for toasts.
+- Dashboard, category, and public anonymous survey actions now include survey or group context for assistive technology, and inline glossary definitions use more reliable described-by semantics.

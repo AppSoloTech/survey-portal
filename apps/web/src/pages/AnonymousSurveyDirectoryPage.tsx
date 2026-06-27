@@ -80,6 +80,7 @@ export function AnonymousSurveyDirectoryPage() {
               </div>
               <a className="button-link compact-button primary-button" href={survey.publicUrl}>
                 Start survey
+                <span className="visually-hidden">: {survey.surveyTitle}</span>
               </a>
             </article>
           ))}
