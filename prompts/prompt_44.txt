@@ -35,6 +35,8 @@ Default arrangement:
 
 Branch:
 
+Start after Phase 43 is committed and available on `main`.
+
 ```bash
 git checkout main
 git checkout -b phase-44-form-feedback-accessibility
@@ -53,6 +55,7 @@ Read before implementation:
 
 * `docs/ACCESSIBILITY_AUDIT_REPORT.md`
 * `prompts/accessibility_remediation_prompt_plan.txt`
+* `prompts/prompt_43.txt`
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -61,7 +64,11 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
+* Phase 43 closeout artifacts:
+  * `notes/claude_handoff_phase_43_shell_modal_accessibility.txt`
+  * `notes/claude_review_phase_43_shell_modal_accessibility.txt`
 * Current form and feedback components/pages:
+  * `apps/web/src/App.tsx`
   * `apps/web/src/pages/Login.tsx`
   * `apps/web/src/pages/Register.tsx`
   * `apps/web/src/pages/ForgotPassword.tsx`
@@ -70,6 +77,7 @@ Read before implementation:
   * `apps/web/src/pages/UserDashboard.tsx`
   * `apps/web/src/pages/CategorySurveysPage.tsx`
   * `apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx`
+  * `apps/web/src/components/AccessibleModal.tsx`
   * `apps/web/src/components/ToastProvider.tsx`
   * `apps/web/src/components/PaginationRow.tsx`
   * `apps/web/src/styles.css`
@@ -89,6 +97,19 @@ Forms and feedback patterns need consistent accessibility:
    affordance.
 5. Disabled buttons often lack discoverable explanations.
 6. Pagination status changes are visible but not announced.
+
+Phase 43 baseline now in place:
+
+* Public and registered-user routes already update document title, move focus
+  to `#main-content`, and announce navigation through the app shell.
+* The skip link, public/user heading hierarchy, and account disclosure
+  semantics are already implemented.
+* `AccessibleModal` already owns modal focus trapping, Escape behavior, return
+  focus, and background inert behavior for the password reset success modal and
+  anonymous follow-up email modal.
+* Claude review for Phase 43 approved the work with no blockers. Its
+  non-blocking nits are tracked in `markdown/FOLLOW_UPS.md`; do not fold them
+  into Phase 44 unless they become necessary for form/status feedback.
 
 ---
 
@@ -134,6 +155,8 @@ Implement:
 * Add explanatory text for important disabled actions where users need to know
   why an action is unavailable, such as password reset cooldown or disabled
   survey/contact actions.
+* Preserve Phase 43 route, heading, skip-link, account disclosure, and
+  `AccessibleModal` behavior while improving form feedback/status semantics.
 * Preserve existing form submission behavior, API calls, validation rules, and
   visual style.
 
@@ -143,6 +166,11 @@ Do not implement:
 
 * Survey runner answer-control work already owned by Phase 42.
 * Modal focus management already owned by Phase 43.
+* Route title/focus/live-announcement behavior, skip link, public/user heading
+  hierarchy, or account disclosure semantics already owned by Phase 43.
+* Phase 43 Claude nits unless needed directly for Phase 44 form/status work:
+  neutral modal CSS naming, repeated-title route live-region re-announcement,
+  and jsdom modal focus tests can remain follow-ups.
 * Admin grouped select/reporting/table/drag fixes. These are deferred from the
   user-facing accessibility plan.
 * Admin form migration.
@@ -158,6 +186,9 @@ Do not implement:
   need to relabel every input from scratch.
 * Existing server errors should be displayed more accessibly without changing
   their response shape.
+* Reset password success feedback may be improved inside the existing
+  `AccessibleModal`, but the modal primitive and close/focus behavior should
+  remain intact.
 
 ## Open Questions
 
@@ -179,6 +210,7 @@ The phase is ready for review when:
 * User-facing dashboard/category/public directory statuses are announced where
   content updates.
 * Existing validation, submission, and API behavior is unchanged.
+* Phase 43 shell and modal behavior remains intact.
 * New primitives are small, local, and consistent with current React patterns.
 
 ---
@@ -207,6 +239,9 @@ Manual checks:
 * Login invalid credentials.
 * Register missing/invalid fields.
 * Forgot/reset password success and error states.
+* Password reset success modal still traps focus, restores focus/continues
+  predictably, and exposes improved status copy without regressing Phase 43
+  modal behavior.
 * Account settings invalid phone and successful save.
 * User-facing toast/status behavior where present.
 * Pagination Next/Previous announcement on dashboard and category survey lists.
