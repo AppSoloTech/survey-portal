@@ -2,6 +2,7 @@ import {
   getOrderedQuestions,
   type AnswerOption,
   type ConditionalLogicRule,
+  type ParticipantGlossaryEntry,
   type QuestionValueTag,
   type Survey,
   type SurveyQuestion,
@@ -9,6 +10,8 @@ import {
   type SurveyStatus
 } from "@survey-portal/shared";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+
+import { InlineGlossaryText } from "../InlineGlossaryText.js";
 
 export const questionTypes: SurveyQuestionType[] = [
   "text",
@@ -863,7 +866,13 @@ export function ScaleRangeFields({
   );
 }
 
-export function SurveyPreviewPanel({ survey }: { survey: Survey }) {
+export function SurveyPreviewPanel({
+  glossaryEntries = [],
+  survey
+}: {
+  glossaryEntries?: ParticipantGlossaryEntry[];
+  survey: Survey;
+}) {
   const orderedQuestions = getOrderedQuestions(survey);
 
   return (
@@ -901,7 +910,9 @@ export function SurveyPreviewPanel({ survey }: { survey: Survey }) {
                 <p className="option-subheading">{formatQuestionLocator(survey, question)}</p>
                 <span>{question.isRequired ? "Required" : "Optional"}</span>
               </div>
-              <h5>{question.questionText}</h5>
+              <h5>
+                <InlineGlossaryText entries={glossaryEntries} text={question.questionText} />
+              </h5>
               {question.helpText ? <p className="preview-help-text">{question.helpText}</p> : null}
               <PreviewQuestionControl question={question} />
             </article>

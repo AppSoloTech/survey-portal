@@ -1710,12 +1710,77 @@ main {
   font-size: clamp(1.25rem, 2.4vw, 1.5rem);
   font-weight: 700;
   letter-spacing: -0.015em;
-  margin: 0;
+  margin: 0 0 0.35rem;
   max-width: var(--answer-max);
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: normal;
   width: 100%;
+}
+
+.inline-glossary {
+  display: inline;
+  position: relative;
+  vertical-align: baseline;
+}
+
+.inline-glossary-trigger {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0.2rem;
+  color: inherit;
+  cursor: help;
+  display: inline;
+  font: inherit;
+  letter-spacing: 0;
+  line-height: inherit;
+  margin: 0;
+  padding: 0 0.1em;
+  text-align: inherit;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 0.14em;
+  text-decoration-color: color-mix(in srgb, var(--accent-strong) 78%, var(--ink));
+  text-underline-offset: 0.18em;
+}
+
+.inline-glossary-trigger:hover,
+.inline-glossary-trigger[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.inline-glossary-trigger:focus-visible {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--accent-strong) 46%, transparent);
+  outline-offset: 3px;
+}
+
+.inline-glossary-popover {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  display: grid;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 500;
+  gap: 0.25rem;
+  left: 0;
+  line-height: 1.45;
+  max-width: min(20rem, calc(100vw - 2rem));
+  min-width: min(15rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+  padding: 0.75rem;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  z-index: 30;
+}
+
+.inline-glossary-popover strong {
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .question-form input[type="number"],
@@ -6046,6 +6111,21 @@ main {
 
   .question-form .question-prompt {
     font-size: 1.125rem;
+  }
+
+  .inline-glossary {
+    position: static;
+  }
+
+  .inline-glossary-popover {
+    bottom: 1rem;
+    left: 1rem;
+    max-width: calc(100vw - 2rem);
+    min-width: 0;
+    position: fixed;
+    right: 1rem;
+    top: auto;
+    transform: translateY(0.4rem);
   }
 
   .completion-summary dd {

@@ -3,6 +3,7 @@ import {
   getQuestionsForPage,
   resolveAttemptPagePath,
   resolveProgressivePageState,
+  type ParticipantGlossaryEntry,
   type Survey,
   type SurveyAttempt,
   type SurveyAttemptActivityEventType,
@@ -40,10 +41,12 @@ import {
 } from "../api/surveys.js";
 import { useAuth } from "../auth/AuthContext.js";
 import { AnimatedNumber } from "../components/AnimatedNumber.js";
+import { InlineGlossaryText } from "../components/InlineGlossaryText.js";
 import { prefersReducedMotion, useReveal } from "../motion/motion.js";
 
 interface ActiveSurveyState {
   survey: Survey;
+  glossaryEntries: ParticipantGlossaryEntry[];
   attempt: SurveyAttempt;
   attemptAccessToken: string | null;
   currentQuestion: SurveyQuestion | null;
@@ -395,6 +398,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
 
       setActiveSurvey({
         survey: activeSurvey.survey,
+        glossaryEntries: activeSurvey.glossaryEntries,
         attempt: response.attempt,
         attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion:
@@ -439,6 +443,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
             });
       setActiveSurvey({
         survey: activeSurvey.survey,
+        glossaryEntries: activeSurvey.glossaryEntries,
         attempt: response.attempt,
         attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion: null,
@@ -805,7 +810,14 @@ function SurveyRunner({
   selectedAnswerOptionIdsByQuestionId: DraftAnswerMap<number[]>;
   otherTextByQuestionId: DraftAnswerMap<string>;
 }) {
-  const { survey, attempt, currentPage, currentQuestion, currentPageQuestionIds } = activeSurvey;
+  const {
+    survey,
+    glossaryEntries,
+    attempt,
+    currentPage,
+    currentQuestion,
+    currentPageQuestionIds
+  } = activeSurvey;
   // Each question (and the completion panel) cascades in as it appears.
   // Two refs because the runner renders either a <form> or a <div> panel.
   const revealRef = useReveal<HTMLDivElement>([currentPage?.id ?? null, attempt.status]);
@@ -969,10 +981,9 @@ function SurveyRunner({
           onSubmit={(event) => onSubmit(question, event)}
         >
           <fieldset>
-            <legend className="visually-hidden">{question.questionText}</legend>
-            <h4 aria-hidden="true" className="question-prompt">
-              {question.questionText}
-            </h4>
+            <legend className="question-prompt">
+              <InlineGlossaryText entries={glossaryEntries} text={question.questionText} />
+            </legend>
             {question.helpText ? <p className="muted">{question.helpText}</p> : null}
             {renderQuestionControl({
               answerInteger: answerIntegerByQuestionId[question.id] ?? "",

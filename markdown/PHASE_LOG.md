@@ -6,6 +6,187 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 41 — Participant Inline Glossary Rendering
+
+Date:
+2026-06-27
+
+Status:
+Implemented; Claude review complete; manual browser testing passed
+
+Prompt:
+`prompts/prompt_41.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_41_inline_glossary_rendering.txt`
+- Claude review: `notes/claude_review_phase_41_inline_glossary_rendering.txt`
+
+## Goals
+
+- Render enabled Admin-approved global glossary terms inline in participant
+  question prompts.
+- Include participant-safe glossary entries in authenticated and anonymous
+  runner payloads without exposing Admin source metadata.
+- Keep glossary definitions informational only, with no survey logic,
+  response, reporting, hidden-tag, or CSV coupling.
+
+## Built
+
+- Added a shared deterministic plain-text glossary matcher with
+  longest-match-first overlap resolution, case-insensitive matching, repeated
+  match support, and word-boundary checks.
+- Added an API glossary service for the participant-safe projection and reused
+  it from the existing Admin-gated `/api/admin/glossary/participant-safe`
+  endpoint.
+- Added enabled glossary entries to authenticated start/resume payloads and
+  anonymous start payloads used by the survey runner.
+- Added an inline glossary React renderer with hover, focus, click/tap, Escape,
+  and mobile-friendly popover behavior.
+- Styled glossary terms with a dotted underline and subtle hover/focus
+  highlight so participants can identify definitions without hunting.
+- Added a small bottom margin under question prompts so glossary underlines do
+  not crowd the first answer choice.
+- Rendered glossary terms in participant question prompts and Admin survey
+  preview question prompts.
+- Added focused shared matcher tests and API tests for authenticated and
+  anonymous participant-safe payload isolation.
+- Updated release notes and follow-up backlog.
+
+## Important Decisions
+
+### Attempt-Scoped Participant Exposure
+
+Decision:
+Participant UI receives glossary entries through authorized attempt payloads
+instead of calling the Admin-only glossary endpoint.
+
+Reason:
+The Phase 39 participant-safe Admin endpoint remains Admin-gated by design;
+attempt-scoped exposure keeps public/participant access tied to the existing
+survey authorization paths.
+
+### Prompt-Only Rendering
+
+Decision:
+Glossary rendering applies to question prompt text in the runner and preview,
+not page descriptions, help text, or answer option labels.
+
+Reason:
+The prompt scoped this phase to plain participant-facing question text unless a
+shared renderer clearly demanded more. Broader surfaces remain a documented
+follow-up for client confirmation.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: adds `glossaryEntries` to runner-facing
+  `StartSurveyResponse` and `MySurveyResponse` payloads.
+- Auth or authorization impact: no new participant route; existing Admin route
+  remains Admin-only.
+- Data privacy or visibility impact: participant payload exposes only
+  `{ id, canonicalTerm, definition, matchStrings }`.
+- Frontend UX impact: question prompts can include inline definition triggers.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run test -w packages/shared -- glossaryText
+npm run build -w packages/shared
+npx tsc --noEmit -p apps/web/tsconfig.json
+npx tsc --noEmit -p apps/api/tsconfig.json
+npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+npm run test -w apps/api -- attemptLifecycle anonymousSurvey glossary
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+npm run build -w packages/shared
+npm run test -w packages/shared -- glossaryText
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+npm run lint -w apps/web
+git diff --check
+npm run build -w apps/web
+```
+
+Results:
+
+- Passed: all commands above.
+- `npm run build` emitted the existing Vite large chunk warning.
+- API tests required approved local PostgreSQL access because the suite resets
+  and migrates the test schema.
+
+Manual tests:
+
+- Passed per developer manual testing on 2026-06-27.
+- After the manual pass, glossary terms were updated to use the standard dotted
+  underline affordance with subtle hover/focus highlighting for better
+  discoverability.
+- A Claude re-review found that the post-manual click/tap toggle change broke
+  first-tap mobile opening because focus opened the popover before click
+  toggled it shut. The interaction was fixed with a focus-open click guard.
+  Targeted mobile recheck passed per developer testing.
+- After the targeted pass, question prompt bottom spacing was increased
+  slightly to reduce crowding before answer choices.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_41_inline_glossary_rendering.txt`
+
+Status:
+
+- Completed; approved with minor changes.
+
+Accepted fixes:
+
+- Removed the glossary trigger `aria-label` so the visible matched term remains
+  the trigger name and does not distort the fieldset legend's question name.
+- Added `aria-description="Definition available"` and retained
+  `aria-describedby` for the open tooltip.
+- Memoized glossary text segmentation in the React renderer.
+- Changed inline glossary wrappers to allow multi-word matches to wrap.
+- Made click/tap toggle glossary popovers while preserving focus and Escape
+  dismissal.
+- Fixed the mobile first-tap regression introduced by the click/tap toggle by
+  ignoring the click immediately following a focus-open.
+- Restored the existing question-prompt letter spacing.
+- Documented the plain-text matcher's locale-expanding Unicode case-folding
+  limitation for future i18n work.
+
+Deferred findings:
+
+- Confirm actual fieldset and glossary trigger announcements with NVDA or
+  VoiceOver during the manual browser pass.
+
+## Follow-Up Tasks
+
+- Confirm whether glossary rendering should expand to page descriptions,
+  question help text, or answer option labels.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 40 — Dictionary-Assisted Glossary Definitions
 
 Date:

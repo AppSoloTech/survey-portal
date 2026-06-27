@@ -1,5 +1,6 @@
 import type {
   AuthUser,
+  ParticipantGlossaryEntry,
   Survey,
   SurveyAttempt,
   SurveyPage,
@@ -308,6 +309,45 @@ export async function createTagDefinition(
   return response.body.tag as { id: number; tagKey: string; tagValue: string };
 }
 
+export async function createGlossaryEntry(
+  app: Express,
+  admin: TestSession,
+  input: {
+    aliases?: string[];
+    canonicalTerm: string;
+    definition?: string;
+    isEnabled?: boolean;
+  }
+): Promise<{
+  aliases: { isCanonical: boolean; matchText: string }[];
+  canonicalTerm: string;
+  definition: string;
+  id: number;
+  isEnabled: boolean;
+}> {
+  const response = await request(app)
+    .post("/api/admin/glossary")
+    .set("Cookie", admin.cookie)
+    .send({
+      aliases: input.aliases ?? [],
+      canonicalTerm: input.canonicalTerm,
+      definition: input.definition ?? `${input.canonicalTerm} definition`,
+      isEnabled: input.isEnabled ?? true
+    });
+
+  if (response.status !== 201) {
+    throw new Error(`Glossary create failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body.entry as {
+    aliases: { isCanonical: boolean; matchText: string }[];
+    canonicalTerm: string;
+    definition: string;
+    id: number;
+    isEnabled: boolean;
+  };
+}
+
 export function findQuestion(survey: Survey, questionText: string): SurveyQuestion {
   const question = survey.questions.find((item) => item.questionText === questionText);
 
@@ -489,6 +529,7 @@ export async function startAttempt(
   return response.body as {
     attempt: SurveyAttempt;
     survey: Survey;
+    glossaryEntries: ParticipantGlossaryEntry[];
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
     currentPageQuestionIds: number[];

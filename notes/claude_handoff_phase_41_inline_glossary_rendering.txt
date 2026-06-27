@@ -1,0 +1,107 @@
+Phase 41 - Participant Inline Glossary Rendering
+
+Prompt:
+prompts/prompt_41.txt
+
+Branch:
+phase-41-inline-glossary-rendering
+
+Implementation summary:
+- Added shared glossary text matching in packages/shared/src/index.ts:
+  buildGlossaryTextSegments handles no matches, repeated matches,
+  case-insensitive matching with original casing preserved, aliases/canonical
+  terms, longest-match-first overlaps, and word-boundary checks.
+- Added focused matcher tests in packages/shared/test/glossaryText.test.ts.
+- Added apps/api/src/services/glossary.ts to centralize the participant-safe
+  glossary projection.
+- Reused that projection from the existing Admin-gated
+  /api/admin/glossary/participant-safe route.
+- Added glossaryEntries to authenticated runner start/resume payloads and
+  anonymous runner start payloads. The payload contains only id,
+  canonicalTerm, definition, and matchStrings.
+- Added InlineGlossaryText for participant/admin-preview prompt rendering with
+  hover, focus, click/tap, Escape, aria-expanded, aria-describedby, and tooltip
+  role behavior.
+- Styled glossary terms with a dotted underline plus subtle hover/focus
+  highlighting so defined terms are discoverable before interaction.
+- Rendered glossary matches in participant question prompts and Admin preview
+  question prompts only.
+- Added API tests for authenticated and anonymous runner payload isolation,
+  including disabled-entry exclusion and absence of definitionSource,
+  sourceProvider, sourceReference, and sourceLookupAt.
+- Updated release notes, phase log, and follow-up backlog.
+
+Key implementation decisions:
+- Participant exposure is attempt-scoped: the participant UI does not call the
+  Admin-only glossary route. Existing authenticated/anonymous authorization
+  checks happen before glossary entries are included in runner payloads.
+- Glossary rendering is prompt-only for Phase 41. Page descriptions, question
+  help text, and answer option labels remain a follow-up pending client
+  confirmation.
+- The matcher is plain-text only. It does not parse HTML, does not treat match
+  strings as regular expressions, and does not render nested/overlapping
+  glossary spans.
+- The visible question prompt is now the fieldset legend in the participant
+  runner so glossary buttons are not placed inside aria-hidden content.
+
+Files most worth reviewing:
+- packages/shared/src/index.ts
+- packages/shared/test/glossaryText.test.ts
+- apps/api/src/services/glossary.ts
+- apps/api/src/routes/adminGlossaryRoutes.ts
+- apps/api/src/services/surveyAttempts.ts
+- apps/api/test/attemptLifecycle.test.ts
+- apps/api/test/anonymousSurvey.test.ts
+- apps/web/src/components/InlineGlossaryText.tsx
+- apps/web/src/pages/SurveyAttemptPage.tsx
+- apps/web/src/pages/admin/SurveyPreviewPage.tsx
+- apps/web/src/components/admin/SurveyBuilderComponents.tsx
+- apps/web/src/styles.css
+- markdown/PHASE_LOG.md
+- markdown/FOLLOW_UPS.md
+- markdown/releases/unreleased.md
+
+Review focus requested:
+- Matching correctness and edge cases: aliases, casing, repeated terms,
+  longest-match-first overlaps, and boundaries.
+- Accessibility and mobile behavior for glossary triggers/popovers.
+- Participant-safe glossary payload isolation and absence of Admin source
+  metadata.
+- Confirmation that survey logic, reporting, CSV, hidden tags, and response
+  storage remain uncoupled.
+- Admin preview consistency with the participant runner.
+
+Validation run:
+- npm run test -w packages/shared -- glossaryText
+- npm run build -w packages/shared
+- npx tsc --noEmit -p apps/web/tsconfig.json
+- npx tsc --noEmit -p apps/api/tsconfig.json
+- npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+- npm run test -w apps/api -- attemptLifecycle anonymousSurvey glossary
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- git diff --check
+
+Validation notes:
+- All commands above passed.
+- npm run build emitted the existing Vite large chunk warning.
+- API tests required approved local PostgreSQL access because the test harness
+  drops/recreates and migrates the public schema.
+
+Commit readiness:
+- Claude review completed in
+  notes/claude_review_phase_41_inline_glossary_rendering.txt. Minor findings
+  were addressed in the implementation after review.
+- Manual browser pass passed per developer testing on 2026-06-27.
+- A final visual affordance tweak changed glossary terms to a dotted underline
+  with subtle hover/focus highlighting after the manual pass.
+- Claude re-review found the post-manual click/tap toggle introduced a mobile
+  first-tap regression. The interaction was fixed with a focus-open click
+  guard; targeted mobile recheck passed per developer testing.
+- Question prompt bottom spacing was increased slightly after the targeted pass
+  so glossary underlines do not crowd the first answer choice.
+
+Claude review output target:
+notes/claude_review_phase_41_inline_glossary_rendering.txt

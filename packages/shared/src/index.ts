@@ -365,6 +365,193 @@ export interface ParticipantGlossaryEntriesResponse {
   entries: ParticipantGlossaryEntry[];
 }
 
+export interface GlossaryTextMatch {
+  kind: "glossary";
+  text: string;
+  entryId: number;
+  canonicalTerm: string;
+  definition: string;
+  matchText: string;
+}
+
+export interface PlainTextMatch {
+  kind: "text";
+  text: string;
+}
+
+export type GlossaryTextSegment = GlossaryTextMatch | PlainTextMatch;
+
+interface GlossaryMatchCandidate {
+  entryId: number;
+  canonicalTerm: string;
+  definition: string;
+  matchText: string;
+  normalizedMatchText: string;
+}
+
+interface AcceptedGlossaryMatch extends GlossaryMatchCandidate {
+  start: number;
+  end: number;
+}
+
+export function buildGlossaryTextSegments(
+  text: string,
+  entries: ParticipantGlossaryEntry[]
+): GlossaryTextSegment[] {
+  if (!text || entries.length === 0) {
+    return text ? [{ kind: "text", text }] : [];
+  }
+
+  const normalizedText = normalizeGlossaryMatchText(text);
+  const candidates = buildGlossaryMatchCandidates(entries);
+
+  if (candidates.length === 0) {
+    return [{ kind: "text", text }];
+  }
+
+  const acceptedMatches: AcceptedGlossaryMatch[] = [];
+
+  for (const candidate of candidates) {
+    let searchFromIndex = 0;
+
+    while (searchFromIndex < normalizedText.length) {
+      const start = normalizedText.indexOf(candidate.normalizedMatchText, searchFromIndex);
+
+      if (start === -1) {
+        break;
+      }
+
+      const end = start + candidate.normalizedMatchText.length;
+
+      if (
+        hasGlossaryMatchBoundary(normalizedText, start, end, candidate.normalizedMatchText) &&
+        !overlapsAcceptedGlossaryMatch(acceptedMatches, start, end)
+      ) {
+        acceptedMatches.push({ ...candidate, start, end });
+      }
+
+      searchFromIndex = start + 1;
+    }
+  }
+
+  if (acceptedMatches.length === 0) {
+    return [{ kind: "text", text }];
+  }
+
+  acceptedMatches.sort((left, right) => left.start - right.start || right.end - left.end);
+
+  const segments: GlossaryTextSegment[] = [];
+  let cursor = 0;
+
+  for (const match of acceptedMatches) {
+    if (match.start > cursor) {
+      segments.push({ kind: "text", text: text.slice(cursor, match.start) });
+    }
+
+    segments.push({
+      kind: "glossary",
+      text: text.slice(match.start, match.end),
+      entryId: match.entryId,
+      canonicalTerm: match.canonicalTerm,
+      definition: match.definition,
+      matchText: match.matchText
+    });
+    cursor = match.end;
+  }
+
+  if (cursor < text.length) {
+    segments.push({ kind: "text", text: text.slice(cursor) });
+  }
+
+  return segments;
+}
+
+function buildGlossaryMatchCandidates(
+  entries: ParticipantGlossaryEntry[]
+): GlossaryMatchCandidate[] {
+  const candidatesByKey = new Map<string, GlossaryMatchCandidate>();
+
+  for (const entry of entries) {
+    for (const rawMatchText of entry.matchStrings) {
+      const matchText = rawMatchText.trim();
+
+      if (!matchText) {
+        continue;
+      }
+
+      const normalizedMatchText = normalizeGlossaryMatchText(matchText);
+      const key = `${normalizedMatchText}:${entry.id}`;
+
+      if (candidatesByKey.has(key)) {
+        continue;
+      }
+
+      candidatesByKey.set(key, {
+        entryId: entry.id,
+        canonicalTerm: entry.canonicalTerm,
+        definition: entry.definition,
+        matchText,
+        normalizedMatchText
+      });
+    }
+  }
+
+  return [...candidatesByKey.values()].sort(
+    (left, right) =>
+      right.normalizedMatchText.length - left.normalizedMatchText.length ||
+      left.normalizedMatchText.localeCompare(right.normalizedMatchText) ||
+      left.entryId - right.entryId
+  );
+}
+
+function normalizeGlossaryMatchText(value: string): string {
+  // Phase 41 glossary entries are plain text; this keeps matching simple.
+  // Locale-expanding case folds are a documented edge case for future i18n work.
+  return value.toLowerCase();
+}
+
+function hasGlossaryMatchBoundary(
+  text: string,
+  start: number,
+  end: number,
+  matchText: string
+): boolean {
+  const firstMatchCharacter = matchText[0];
+  const lastMatchCharacter = matchText.at(-1);
+
+  if (
+    firstMatchCharacter &&
+    isGlossaryWordCharacter(firstMatchCharacter) &&
+    start > 0 &&
+    isGlossaryWordCharacter(text[start - 1])
+  ) {
+    return false;
+  }
+
+  if (
+    lastMatchCharacter &&
+    isGlossaryWordCharacter(lastMatchCharacter) &&
+    end < text.length &&
+    isGlossaryWordCharacter(text[end])
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isGlossaryWordCharacter(character: string): boolean {
+  return /^[\p{L}\p{N}_]$/u.test(character);
+}
+
+function overlapsAcceptedGlossaryMatch(
+  acceptedMatches: AcceptedGlossaryMatch[],
+  start: number,
+  end: number
+): boolean {
+  return acceptedMatches.some((match) => start < match.end && end > match.start);
+}
+
 export interface AdminUserSummary {
   id: number;
   firstName: string;
@@ -643,6 +830,7 @@ export interface MySurveysResponse {
 export interface MySurveyResponse {
   attempt: SurveyAttempt;
   survey: Survey;
+  glossaryEntries: ParticipantGlossaryEntry[];
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -651,6 +839,7 @@ export interface MySurveyResponse {
 export interface StartSurveyResponse {
   attempt: SurveyAttempt;
   survey: Survey;
+  glossaryEntries: ParticipantGlossaryEntry[];
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];

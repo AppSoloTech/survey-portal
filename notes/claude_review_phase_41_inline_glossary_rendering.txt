@@ -1,0 +1,176 @@
+Phase 41 - Participant Inline Glossary Rendering - Claude Review
+
+Reviewer: Claude Code
+Verdict: Approve with minor changes. No blocking correctness bugs found.
+        One accessibility item (F1) is worth addressing or at least
+        confirming under a screen reader during the manual pass.
+
+================================================================
+Summary
+================================================================
+
+The implementation matches the prompt scope well:
+
+- Participant-safe glossary payload is correctly isolated. Entries are
+  enabled-only and contain only id, canonicalTerm, definition, and
+  matchStrings. Admin source metadata (definitionSource, sourceProvider,
+  sourceReference, sourceLookupAt) is never projected. This is enforced at
+  the query level in apps/api/src/services/glossary.ts (it selects only the
+  three columns), not just by post-filtering, which is the right way to do
+  it. Both authenticated and anonymous attempt paths reuse the same helper,
+  and tests assert isolation on both.
+- The matcher (buildGlossaryTextSegments) is correct for the cases that
+  matter: longest-match-first overlap resolution, case-insensitive matching
+  with original casing preserved, repeated matches, aliases vs canonical,
+  word-boundary handling, and punctuation-defined edges (C++). I traced the
+  documented edge cases by hand and they hold.
+- Participant UI does not call the Admin-gated route. Glossary travels on the
+  attempt payload after the existing authorization checks. Admin preview is
+  the only consumer of the Admin route, which is correct since that page is
+  already Admin-authenticated.
+- Client state correctly preserves glossaryEntries across every
+  setActiveSurvey transition (answer, previous, resume, contact-email,
+  registration) via spread or explicit carry-over, so no refetch is needed
+  and glossary does not blink out mid-attempt.
+- No coupling to answers, navigation, reporting, CSV, hidden tags, or
+  response storage. The answer response does not carry glossary (correct -
+  it is reused from existing client state).
+- Tests, docs (PHASE_LOG, FOLLOW_UPS, release notes), and the descriptions/
+  help-text/option-label deferral are all recorded.
+
+================================================================
+Findings
+================================================================
+
+F1 (Accessibility - should address or verify). Interactive buttons now live
+   inside the fieldset <legend> in the runner
+   (apps/web/src/pages/SurveyAttemptPage.tsx ~L981). Moving the visible
+   prompt into the legend (instead of the old visually-hidden legend +
+   aria-hidden h4) is the right instinct - putting focusable buttons inside
+   aria-hidden content was the worse option. But two consequences:
+     a) Each glossary trigger has aria-label="Definition for <term>". In the
+        accessible-name computation for the fieldset, that aria-label
+        overrides the button's visible text, so the group's accessible name
+        likely becomes e.g. "Describe the Definition for risk." instead of
+        "Describe the risk." That distorts how the question is announced as
+        a group.
+     b) Interactive controls nested in a <legend> have historically
+        inconsistent screen-reader support.
+   Recommendation: drop the aria-label so the trigger's accessible name is
+   its visible term text, and convey the "has a definition" affordance via
+   aria-description (or a visually-hidden suffix) rather than overriding the
+   name. Please confirm the announced group name with a real screen reader
+   (NVDA/VoiceOver) in the manual pass - this is the one item I would not
+   close on inspection alone.
+
+F2 (Layout - minor). .inline-glossary uses display: inline-block, so a
+   multi-word match phrase (e.g. "Personal protective equipment") becomes a
+   single non-wrapping box and cannot break across lines. On narrow
+   viewports (375px) a long phrase can force horizontal overflow or an
+   awkward break of the surrounding prompt. The mobile popover is
+   position: fixed (bottom sheet), so the wrapper does not need to be a
+   positioning context on mobile - it is only needed for the desktop
+   absolutely-positioned popover. Suggest allowing the term to wrap (or
+   verifying a long multi-word term at 375px during the manual pass).
+   Related: on desktop the popover is left:0 anchored to the term, so a term
+   near the right margin can push the popover toward the viewport edge;
+   worth a quick check, though the answer-max width on the prompt mostly
+   contains this.
+
+F3 (Performance - minor). InlineGlossaryText calls buildGlossaryTextSegments
+   on every render, and the runner re-renders on each keystroke/selection.
+   The prompt explicitly flagged performance with many glossary entries: the
+   matcher is O(candidates x textLength) per call, so a large glossary makes
+   each keystroke pay that cost. Recommend useMemo on the segments keyed by
+   (text, entries). The algorithm itself is fine; this is just avoiding
+   repeated recomputation.
+
+F4 (Correctness - low-risk edge). Index alignment between normalizedText and
+   the original text assumes toLowerCase() is length-preserving (segments are
+   sliced from the original string using indices found in the lowercased
+   string). A few Unicode characters change length when lowercased (e.g.
+   Turkish 'I' U+0130). If such a character precedes a match, the slice
+   offsets would drift. Extremely unlikely in EHS survey prompts, but worth a
+   one-line note as a known limitation of the plain-text matcher.
+
+F5 (Interaction - minor). The trigger's onClick always sets isOpen=true (not
+   a toggle), so on touch a second tap on the same trigger does not dismiss;
+   dismissal relies on tapping elsewhere (blur). It works, but a toggle would
+   feel more natural on mobile. Also onMouseLeave closes the popover even when
+   the trigger is keyboard-focused, which can momentarily hide a definition a
+   keyboard user has open if the mouse happens to pass over. Both minor.
+
+F6 (Style - confirm intent). .question-form .question-prompt letter-spacing
+   changed from -0.015em to 0 (styles.css ~L1712). This affects the typography
+   of every question prompt in the runner, not just glossary terms. If it was
+   changed only to align glossary-trigger text with surrounding text, consider
+   scoping it; otherwise confirm the global prompt restyle is intentional.
+
+================================================================
+Review focus checklist
+================================================================
+
+- Matching correctness / edge cases ......... PASS (aliases, casing, repeats,
+    longest-match-first, boundaries, punctuation edges all verified)
+- Accessibility & mobile ..................... PASS with F1/F2/F5 to address/verify
+- Participant-safe payload isolation ......... PASS (query-level projection + tests)
+- No survey logic / reporting / CSV coupling . PASS
+- Admin preview consistency .................. PASS (same renderer; admin route correct)
+- Performance with many entries .............. ACCEPTABLE; F3 recommended
+
+================================================================
+Suggested follow-through before commit
+================================================================
+
+1. Address or screen-reader-verify F1 (the strongest item).
+2. Quick manual checks for F2 (long multi-word term at 375px) and F6 (confirm
+   the prompt letter-spacing change is intended).
+3. F3/F4/F5 can be folded in now or logged as small follow-ups - none block.
+
+The phase is in good shape. With F1 resolved/confirmed, this is ready for the
+manual browser pass and commit.
+
+================================================================
+Addendum - re-review of Codex follow-up changes (2026-06-27)
+================================================================
+
+Codex applied the review fixes. Verified in code:
+- F1 aria-label removed; aria-description="Definition available" added; the
+  trigger's accessible name is now its visible term text. Good. (Note: ARIA
+  aria-description has limited/inconsistent screen-reader support vs a
+  visually-hidden element referenced by aria-describedby; worth confirming it
+  is actually announced during the NVDA/VoiceOver pass.)
+- F2 wrapping: .inline-glossary is now display: inline, so multi-word terms
+  wrap. Good. (Minor: on desktop a term that wraps across two lines has a
+  fragmented inline box, so the absolutely-positioned popover anchor can be
+  slightly off; acceptable, mobile uses a fixed bottom sheet.)
+- F3 useMemo added. Good.
+- F4 Unicode case-fold limitation documented in the matcher. Good.
+- F6 question-prompt letter-spacing restored to -0.015em. Good.
+- Affordance: dotted underline + subtle hover/focus/aria-expanded highlight.
+  Reads well and is discoverable without being noisy.
+
+NEW BLOCKING ISSUE (introduced by the F5 click-toggle change):
+
+B1 (Mobile tap no longer opens the popover). GlossaryTerm now has
+   onClick = setIsOpen(current => !current) AND onFocus = setIsOpen(true).
+   On touch, a tap fires focus BEFORE click. focus sets isOpen=true, then the
+   click toggles it back to false - net result: the popover opens and
+   immediately closes, so a tap appears to do nothing. (mouseenter also
+   synthesized on tap reinforces the same end state.) This fails the phase
+   acceptance criterion "Mobile users can open and dismiss definitions."
+   Desktop hover and keyboard focus still work; only touch tap-to-open is
+   broken.
+
+   Note: the PHASE_LOG records the manual mobile pass as passed, but the log
+   itself says the trigger interaction was changed AFTER that manual pass, so
+   this regression was never re-tested on a device.
+
+   Suggested fix: don't let onClick blindly toggle when the open was just
+   caused by focus. e.g. track an openedByFocusRef set in onFocus and consumed
+   (no-op) by the click that immediately follows it; subsequent clicks toggle
+   normally. Then re-verify tap-to-open and tap-again / tap-outside to dismiss
+   at 375px.
+
+Recommendation: fix B1 and re-run the mobile tap pass before commit. All other
+items from the original review are satisfactorily addressed.

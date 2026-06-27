@@ -1,7 +1,6 @@
 import type {
   AdminGlossaryAlias,
-  AdminGlossaryEntry,
-  ParticipantGlossaryEntry
+  AdminGlossaryEntry
 } from "@survey-portal/shared";
 import express from "express";
 import type { Pool, PoolClient } from "pg";
@@ -10,6 +9,7 @@ import pg from "pg";
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { lookupDictionaryTerm } from "../services/dictionary.js";
+import { fetchParticipantGlossaryEntries } from "../services/glossary.js";
 import {
   readTextField,
   readPositiveIntegerParam,
@@ -170,15 +170,6 @@ function isGlossaryMatchUniqueViolation(error: unknown): boolean {
   );
 }
 
-function toParticipantGlossaryEntry(entry: AdminGlossaryEntry): ParticipantGlossaryEntry {
-  return {
-    id: entry.id,
-    canonicalTerm: entry.canonicalTerm,
-    definition: entry.definition,
-    matchStrings: entry.aliases.map((alias) => alias.matchText)
-  };
-}
-
 export const adminGlossaryRouter = express.Router();
 
 adminGlossaryRouter.use(requireAuth, requireRole("admin"));
@@ -193,8 +184,7 @@ adminGlossaryRouter.get("/", async (req, res, next) => {
 
 adminGlossaryRouter.get("/participant-safe", async (req, res, next) => {
   try {
-    const entries = await fetchGlossaryEntries(pool, { enabledOnly: true });
-    res.json({ entries: entries.map(toParticipantGlossaryEntry) });
+    res.json({ entries: await fetchParticipantGlossaryEntries() });
   } catch (error) {
     next(error);
   }

@@ -11,6 +11,7 @@ import {
   completeAttempt,
   createCategory,
   createDraftSurvey,
+  createGlossaryEntry,
   deleteSurvey,
   extractAuthCookie,
   findQuestion,
@@ -370,6 +371,41 @@ describe("anonymous survey links", () => {
 
     expect(attempts.status).toBe(200);
     expect(attempts.body.attempts[0].participant.email).toBe("followup@example.com");
+  });
+
+  it("includes enabled participant-safe glossary entries in anonymous runner payloads", async () => {
+    const admin = await registerAdmin(app);
+    const enabled = await createGlossaryEntry(app, admin, {
+      aliases: ["JSA"],
+      canonicalTerm: "Job safety analysis",
+      definition: "A documented safety review before work begins."
+    });
+    await createGlossaryEntry(app, admin, {
+      canonicalTerm: "Disabled anonymous glossary",
+      isEnabled: false
+    });
+    let survey = await createDraftSurvey(app, admin, "Anonymous glossary payload");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Did you review the JSA?"
+    });
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+    const link = await createAnonymousLink(admin.cookie, survey.id);
+
+    const started = await request(app).post(`/api/anonymous-surveys/${link.token}/start`).send({});
+
+    expect(started.status).toBe(201);
+    expect(started.body.glossaryEntries).toEqual([
+      {
+        id: enabled.id,
+        canonicalTerm: "Job safety analysis",
+        definition: "A documented safety review before work begins.",
+        matchStrings: ["Job safety analysis", "JSA"]
+      }
+    ]);
+    expect(started.body.glossaryEntries[0]).not.toHaveProperty("definitionSource");
+    expect(started.body.glossaryEntries[0]).not.toHaveProperty("sourceProvider");
+    expect(started.body.glossaryEntries[0]).not.toHaveProperty("sourceReference");
+    expect(started.body.glossaryEntries[0]).not.toHaveProperty("sourceLookupAt");
   });
 
   it("does not convert anonymous attempts for invalid registration or ownership inputs", async () => {

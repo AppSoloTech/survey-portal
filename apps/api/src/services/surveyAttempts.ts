@@ -4,6 +4,7 @@ import {
   type AnswerSurveyResponse,
   type MySurveyResponse,
   type MySurveysResponse,
+  type ParticipantGlossaryEntry,
   type StartSurveyResponse,
   type Survey,
   type SurveyAttempt,
@@ -25,6 +26,7 @@ import {
   type SurveyResponseAnswerRecord
 } from "./surveyRecords.js";
 import { fetchSurveyStructures } from "./surveyStructure.js";
+import { fetchParticipantGlossaryEntries } from "./glossary.js";
 import type {
   AnswerRequestValue,
   NormalizedAnswerValue,
@@ -238,6 +240,7 @@ export async function buildStartSurveyResponse(
   return {
     attempt: detail.attempt,
     survey: detail.survey,
+    glossaryEntries: detail.glossaryEntries,
     currentQuestion: detail.currentQuestion,
     currentPage: detail.currentPage,
     currentPageQuestionIds: detail.currentPageQuestionIds
@@ -259,6 +262,7 @@ export async function buildStartAnonymousSurveyResponse(input: {
   return {
     attempt: detail.attempt,
     survey: detail.survey,
+    glossaryEntries: detail.glossaryEntries,
     currentQuestion: detail.currentQuestion,
     currentPage: detail.currentPage,
     currentPageQuestionIds: detail.currentPageQuestionIds,
@@ -320,6 +324,7 @@ export async function buildMySurveyResponse(
   return {
     attempt,
     survey,
+    glossaryEntries: await fetchParticipantGlossaryEntries(),
     ...determineProgressiveAttemptState(survey, attempt)
   };
 }
@@ -330,6 +335,7 @@ export async function buildAttemptDetail(
 ): Promise<{
   attempt: SurveyAttempt;
   survey: Survey;
+  glossaryEntries: ParticipantGlossaryEntry[];
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -350,6 +356,7 @@ export async function buildAnonymousAttemptDetail(
 ): Promise<{
   attempt: SurveyAttempt;
   survey: Survey;
+  glossaryEntries: ParticipantGlossaryEntry[];
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -377,6 +384,7 @@ export async function buildAnonymousAttemptDetail(
   return {
     attempt,
     survey,
+    glossaryEntries: await fetchParticipantGlossaryEntries(),
     ...determineProgressiveAttemptState(survey, attempt)
   };
 }

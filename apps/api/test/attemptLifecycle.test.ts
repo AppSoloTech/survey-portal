@@ -7,6 +7,7 @@ import {
   addRule,
   completeAttempt,
   createDraftSurvey,
+  createGlossaryEntry,
   createPublishedJumpSurvey,
   createPublishedSkipSurvey,
   findQuestion,
@@ -29,6 +30,41 @@ describe("attempt start", () => {
 
     expect(started.attempt.status).toBe("in_progress");
     expect(started.currentQuestion?.id).toBe(routeQuestion.id);
+  });
+
+  it("includes enabled participant-safe glossary entries in authenticated runner payloads", async () => {
+    const admin = await registerAdmin(app);
+    const user = await registerUser(app);
+    const enabled = await createGlossaryEntry(app, admin, {
+      aliases: ["PPE"],
+      canonicalTerm: "Personal protective equipment",
+      definition: "Equipment worn to reduce exposure."
+    });
+    await createGlossaryEntry(app, admin, {
+      canonicalTerm: "Disabled glossary",
+      isEnabled: false
+    });
+    const { survey } = await createPublishedJumpSurvey(app, admin);
+
+    const started = await startAttempt(app, user, survey.id);
+
+    expect(started.glossaryEntries).toEqual([
+      {
+        id: enabled.id,
+        canonicalTerm: "Personal protective equipment",
+        definition: "Equipment worn to reduce exposure.",
+        matchStrings: ["Personal protective equipment", "PPE"]
+      }
+    ]);
+    expect(JSON.stringify(started.glossaryEntries)).not.toContain("definitionSource");
+    expect(JSON.stringify(started.glossaryEntries)).not.toContain("sourceProvider");
+
+    const resume = await request(app)
+      .get(`/api/my-surveys/${started.attempt.id}`)
+      .set("Cookie", user.cookie);
+
+    expect(resume.status).toBe(200);
+    expect(resume.body.glossaryEntries).toEqual(started.glossaryEntries);
   });
 
   it("returns the existing active attempt on repeated starts", async () => {
