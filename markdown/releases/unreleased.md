@@ -4,6 +4,11 @@ Release title: User-Facing Accessibility Improvements
 
 Summary: Improves participant survey-taking, app navigation, and dialog accessibility for public and registered-user workflows.
 
+## Added
+
+- Added a repeatable public and registered-user accessibility test plan covering keyboard, screen reader, mobile touch, contrast, and future browser automation expectations.
+- Added durable accessibility primitive usage guidance for route context, modal dialogs, form fields, statuses, toasts, pagination, survey runner controls, glossary terms, repeated actions, disabled actions, and theme contrast.
+
 ## Fixed
 
 - Survey scale questions now use native radio-style choices so unanswered required scales are not exposed as the minimum value.

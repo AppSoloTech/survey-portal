@@ -6,6 +6,205 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 46 — Public/User Accessibility Verification, Contrast, And Documentation
+
+Date:
+2026-06-27
+
+Status:
+Implemented; Claude review complete; human browser and assistive-technology
+verification pending
+
+Prompt:
+`prompts/prompt_46.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_46_accessibility_verification.txt`
+- Claude review: `notes/claude_review_phase_46_accessibility_verification.txt`
+
+## Goals
+
+- Add a repeatable public and registered-user accessibility verification plan.
+- Document contrast checks for light and dark themes.
+- Record accessibility primitive usage rules for future public/user work.
+- Keep Phase 45 manual verification visible until a human browser/AT pass is
+  completed.
+- Avoid Admin-only remediation and avoid new browser-test dependencies without
+  human approval.
+
+## Built
+
+- Added `markdown/ACCESSIBILITY_TEST_PLAN.md` with keyboard-only, screen reader,
+  mobile touch, contrast, route/workflow, defect-recording, and release-gate
+  checks.
+- Added `markdown/ACCESSIBILITY_PRIMITIVES.md` with usage rules for route
+  context, modals, statuses, form fields, toasts, pagination, survey runner
+  controls, inline glossary, repeated actions, disabled actions, and theme
+  contrast.
+- Updated `markdown/REVIEW_CHECKLIST.md` with compact accessibility review
+  gates for future public/user phases.
+- Updated `markdown/FLOW.md` so the new durable accessibility docs are part of
+  the workflow document map.
+- Updated `markdown/FOLLOW_UPS.md` to carry the Phase 45/46 manual verification
+  pass with a clear reason and to record optional future Playwright/axe
+  automation behind human dependency approval.
+- Updated `markdown/releases/unreleased.md` with admin-readable draft release
+  notes for the new accessibility documentation.
+
+## Important Decisions
+
+### Documentation First
+
+Decision:
+Do not add Playwright, axe, jsdom, React Testing Library, or a new
+`test:accessibility` command in Phase 46.
+
+Reason:
+The current repo has Vitest source/unit tests only, and `prompt_46` requires
+human approval for new accessibility test dependencies.
+
+Tradeoff:
+Automated browser accessibility checks remain a documented future option rather
+than a runnable command in this phase.
+
+### Manual Verification Carried Forward
+
+Decision:
+Carry the Phase 45 manual browser and assistive-technology verification forward
+instead of marking it complete.
+
+Reason:
+The checks require real browser, responsive, screen reader, and mobile touch
+access. Codex cannot honestly complete that pass from the local command-line
+environment.
+
+Tradeoff:
+The plan is now repeatable and explicit, but production acceptance still needs a
+human-run manual verification pass.
+
+### Versioning And Patch Notes
+
+Decision:
+Update `markdown/releases/unreleased.md` and leave the root app version at
+`0.1.5`.
+
+Reason:
+The project release workflow keeps implementation-session notes in the draft
+release file. Root version bumps and versioned `vX.Y.Z.md` files are handled by
+release-preparation commands.
+
+Tradeoff:
+The admin app does not publish this draft until release preparation promotes it.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: none; hidden-tag privacy remains called
+  out in the accessibility primitive guide.
+- Frontend UX impact: no runtime behavior change; future public/user
+  accessibility validation is now documented.
+- Environment or deployment impact: none; no dependencies, scripts, or runtime
+  configuration were added.
+
+## Validation
+
+Commands run:
+
+```bash
+git checkout -b phase-46-accessibility-verification
+git commit --allow-empty -m "checkpoint before phase 46"
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run release:check
+git diff --check
+npm run release:check # post-review docs polish
+git diff --check # post-review docs polish
+```
+
+Results:
+
+- Passed: `npm run typecheck`, `npm run lint`, `npm run build`, approved
+  local-PostgreSQL `npm test`, `npm run release:check`, and `git diff --check`.
+- `npm run build` emitted the existing Vite large chunk warning.
+- `npm test` passed shared, web, API integration, and release-note tests.
+
+Manual tests:
+
+- Not run by Codex. The human browser, keyboard-only, screen reader, mobile
+  touch, responsive, and contrast pass is documented in
+  `markdown/ACCESSIBILITY_TEST_PLAN.md` and tracked in `markdown/FOLLOW_UPS.md`.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_46_accessibility_verification.txt`
+- Claude review status before commit: Completed; accepted docs polish applied
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_46_accessibility_verification.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None
+
+Suggested improvements:
+
+- Claude suggested avoiding a duplicated Phase 45 pending-work list in
+  `markdown/ACCESSIBILITY_TEST_PLAN.md`, tightening "Phases 42-46" wording to
+  "Phases 42-45", adding component file paths to the primitives guide, and
+  cross-linking the two new accessibility docs.
+
+Accepted fixes:
+
+- Updated the test plan to point to `markdown/FOLLOW_UPS.md` as the live
+  manual-verification tracker.
+- Tightened the test-plan introduction to refer to Phases 42-45 remediation.
+- Added cross-references between the test plan and primitives guide.
+- Added relevant component/source file paths to the primitives guide.
+
+Deferred findings:
+
+- Human browser/assistive-technology verification remains pending.
+- Optional Playwright/axe automation remains deferred until human approval for
+  new dev dependencies.
+
+## Follow-Up Tasks
+
+- Complete the Phase 45/46 public-user manual accessibility pass documented in
+  `markdown/ACCESSIBILITY_TEST_PLAN.md`.
+- If approved later, add a small Playwright plus axe smoke suite and
+  `npm run test:accessibility` for representative public/user routes in both
+  themes.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no security, environment, or
+  regression surface because this phase is documentation-only
+- Review findings addressed or deferred: Yes
+- Manual testing complete: No; human browser/assistive-technology pass remains
+  tracked as a follow-up
+- Ready to commit: Yes
+
+---
+
 ## Phase 45 — User Dashboard And Public Directory Accessibility Polish
 
 Date:

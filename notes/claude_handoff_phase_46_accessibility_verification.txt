@@ -1,0 +1,172 @@
+Claude Review Handoff - Phase 46
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_46_accessibility_verification.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review this phase for:
+
+- whether the test plan covers audit findings and remediated public/user components
+- whether the documentation is repeatable without pretending automation replaces manual AT testing
+- whether no new dependencies is the right call absent human approval
+- whether review checklist changes are concise and durable
+- whether manual testing gaps are honestly documented
+- whether Admin-only checks stayed out of scope except for incidental smoke compatibility
+- whether release-note and phase-log workflow expectations were followed
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_46.txt`
+- `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+- `prompts/accessibility_remediation_prompt_plan.txt`
+- `prompts/prompt_42.txt`
+- `prompts/prompt_43.txt`
+- `prompts/prompt_44.txt`
+- `prompts/prompt_45.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/RELEASE_NOTES.md`
+- `notes/claude_handoff_phase_45_user_facing_accessibility.txt`
+- `notes/claude_review_phase_45_user_facing_accessibility.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Added `markdown/ACCESSIBILITY_TEST_PLAN.md` with repeatable public/user
+  keyboard, screen reader, mobile touch, contrast, route/workflow,
+  defect-recording, and release-gate checks.
+- Added `markdown/ACCESSIBILITY_PRIMITIVES.md` with usage rules for the
+  public/user accessibility primitives from Phases 42-45.
+- Added compact accessibility gates to `markdown/REVIEW_CHECKLIST.md`.
+- Added the new accessibility docs to the `markdown/FLOW.md` workflow map.
+- Updated `markdown/FOLLOW_UPS.md` to carry the Phase 45/46 human manual
+  verification pass and optional future Playwright/axe automation.
+- Updated `markdown/releases/unreleased.md` with draft patch notes.
+- Updated `markdown/PHASE_LOG.md` with Phase 46 scope, decisions, validation,
+  and pending manual/Claude review status.
+
+Non-goals honored:
+
+- No Admin grouped select, Results chart/table, users mobile table, Admin
+  disclosure, or Admin drag-and-drop remediation.
+- No product behavior, API, database, auth, hidden-tag, reporting, CSV, or
+  survey-flow changes.
+- No Playwright, axe, jsdom, React Testing Library, or other new dependency was
+  added without human approval.
+- No heavy end-to-end testing platform was introduced.
+- No root version bump or versioned release note was created during phase work;
+  the draft release file was updated per the release workflow.
+
+Known tradeoffs:
+
+- The test plan is manual-first because this repository does not currently have
+  a browser accessibility test harness and the prompt requires human approval
+  for new dev dependencies.
+- Phase 45 manual browser/assistive-technology checks are not marked complete;
+  they are carried forward with the reason documented.
+- Contrast expectations are documented as a workflow, not as measured pass/fail
+  results from this Codex run.
+
+Deferred work:
+
+- Human browser/assistive-technology verification across the public/user route
+  matrix remains pending in `markdown/FOLLOW_UPS.md`.
+- Optional future `npm run test:accessibility` remains pending until the human
+  developer approves Playwright/axe dependencies.
+- Claude review is pending and must be written to
+  `notes/claude_review_phase_46_accessibility_verification.txt`.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+This phase started from checkpoint commit:
+
+```bash
+git diff 2a94c7f..HEAD
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`, `npm run lint`, `npm run build`, approved
+  local-PostgreSQL `npm test`, `npm run release:check`, and `git diff --check`.
+- `npm test` passed shared, web, API integration, and release-note tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+
+Manual testing:
+
+- Not run by Codex.
+- The human browser, keyboard-only, screen reader, mobile touch, responsive, and
+  contrast pass is documented in `markdown/ACCESSIBILITY_TEST_PLAN.md` and
+  tracked in `markdown/FOLLOW_UPS.md`.
+
+## Specific Questions
+
+- Does `markdown/ACCESSIBILITY_TEST_PLAN.md` cover the public/user audit
+  findings and Phase 42-45 remediated components without drifting into Admin
+  remediation?
+- Are the accepted limitations of automated testing and the deferred
+  Playwright/axe path clear enough?
+- Is `markdown/ACCESSIBILITY_PRIMITIVES.md` concise and practical for future
+  public/user implementation work?
+- Are the new accessibility review checklist gates durable without making every
+  phase over-heavy?
+- Is the Phase 45 manual verification follow-up carried forward honestly and
+  with enough detail?
+- Did the release-note workflow and root app versioning paradigm remain
+  correct?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_46_accessibility_verification.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

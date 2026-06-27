@@ -1,0 +1,126 @@
+Claude Code Review - Phase 46: Accessibility Verification
+
+Reviewer: Claude Code
+Scope reviewed: working-tree diff for Phase 46 only (documentation-only phase)
+Files changed:
+  - markdown/ACCESSIBILITY_TEST_PLAN.md (new)
+  - markdown/ACCESSIBILITY_PRIMITIVES.md (new)
+  - markdown/REVIEW_CHECKLIST.md (added Accessibility section)
+  - markdown/FLOW.md (added two docs to workflow map)
+  - markdown/FOLLOW_UPS.md (carried Phase 45/46 manual pass + optional automation)
+  - markdown/releases/unreleased.md (Added section)
+  - markdown/PHASE_LOG.md (Phase 46 entry)
+
+Verification performed during review:
+  - Confirmed every primitive named in the docs maps to real code
+    (AccessibleModal, AlertMessage, FormField, ToastProvider, PaginationRow,
+    InlineGlossaryText, visually-hidden utility).
+  - Confirmed the contrast-workflow tokens (--bg, --surface, --surface-2,
+    --text-muted, --text-faint, --text-label, --danger) all exist in
+    apps/web/src/styles.css (defined for both light and dark themes).
+  - Cross-checked the docs against the prior Phase 44/45 review findings.
+
+
+1. CRITICAL ISSUES
+
+None. This is a documentation-only phase: no source, API, auth, data-exchange,
+or build behavior is touched, so there is no security, environment, or
+regression surface. Typecheck/lint/build/test were re-run by the implementer and
+are unaffected by markdown.
+
+
+2. SUGGESTED IMPROVEMENTS
+
+(a) [Low] Duplicated pending-work list creates two sources of truth.
+    The "Phase 45 Pending Verification Disposition" section of
+    ACCESSIBILITY_TEST_PLAN.md restates the same pending manual items that
+    FOLLOW_UPS.md now tracks. If one is updated and the other is not, they will
+    drift. Recommend the test plan point to FOLLOW_UPS.md as the live tracker
+    (process/disposition in the plan, the checklist of outstanding items in
+    FOLLOW_UPS only), rather than maintaining the item list in both places.
+
+(b) [Low] "Phases 42-46" wording in the test plan intro.
+    ACCESSIBILITY_TEST_PLAN.md says it covers "remediation work from Phases
+    42-46," but Phase 46 is the verification/documentation phase itself and did
+    no component remediation. Minor wording; "Phases 42-45" is more precise.
+
+(c) [Nice-to-have] Add file paths to the primitives guide.
+    ACCESSIBILITY_PRIMITIVES.md names each primitive but not its path. Adding
+    e.g. apps/web/src/components/AccessibleModal.tsx next to each section would
+    make the guide faster to act on for future implementers. Optional.
+
+(d) [Nice-to-have] Consider linking the two new docs to each other.
+    The test plan and the primitives guide are complementary; a one-line
+    cross-reference in each ("see ACCESSIBILITY_PRIMITIVES.md for usage rules" /
+    "see ACCESSIBILITY_TEST_PLAN.md for verification") would help discovery.
+    FLOW.md already lists both, so this is minor.
+
+
+3. ACCEPTABLE TRADEOFFS
+
+(a) Manual-first plan with no new automation dependencies. Correct call. The
+    prompt requires human approval for new dev dependencies, and the repo has
+    only Vitest source/unit tests. The "Tooling Position" section is explicit
+    that automated checks do not replace manual keyboard/AT testing and scopes
+    the future Playwright+axe path behind approval. This is the honest and
+    correct stance, not an under-delivery.
+
+(b) Contrast documented as a workflow, not as measured pass/fail. Reasonable for
+    a phase run without a real browser; the acceptance targets (WCAG 2.2 AA,
+    not-by-color-alone, visible focus in both themes) are concrete enough to
+    execute against later.
+
+(c) Source-level testing convention unchanged. The plan correctly records that
+    Vitest source checks do not render DOM or simulate AT, and positions the
+    manual plan as the authoritative regression workflow until automation is
+    approved.
+
+
+4. QUESTIONS OR ASSUMPTIONS
+
+(a) Assumption: the no-root-version-bump + draft-unreleased-note workflow is
+    intended; the diff only updates markdown/releases/unreleased.md (Added
+    section) and does not cut a versioned release, which matches the stated
+    paradigm.
+(b) The primitives guide states "Success toasts belong in the polite live
+    region. Error toasts belong in the assertive live region." I verified this
+    now matches the current ToastProvider, which renders two persistent
+    containers (role="status"/polite and role="alert"/assertive) and routes
+    toasts into them - this resolves the Phase 44 review concern about
+    announcing transient per-toast roles. No action needed; noting that the doc
+    and code are in agreement.
+(c) The disabled-action guidance ("reference helper text with aria-describedby
+    when the control remains focusable; otherwise visible helper text") directly
+    encodes the Phase 44 finding that aria-describedby on a native disabled
+    button is inert. Good continuity; assuming that is the intended resolution.
+
+
+5. PRODUCT UX ALIGNMENT NOTES
+
+- The docs accurately reflect the shipped Phase 42-45 behavior and fold in prior
+  review findings: the test plan and primitives guide both warn against the
+  loading-style .status.muted "breathe" treatment for terminal empty states
+  (the Phase 45 finding), and the disabled-action rule encodes the Phase 44
+  finding. This is strong review-to-doc continuity.
+- Scope discipline is good: Admin grouped selects, Results chart/table, users
+  mobile table, Admin disclosures, and Admin drag-and-drop are explicitly out of
+  scope in both new docs and in FOLLOW_UPS, with shared-primitive smoke checks
+  the only allowed Admin touchpoint.
+- The REVIEW_CHECKLIST accessibility gates are principle-based and compact
+  (route/title/focus, forms, modals, repeated-action names, live-region/empty
+  states, survey-runner semantics, light/dark theme, recorded gaps). They are
+  durable (not phase-specific) and short enough not to make every phase
+  over-heavy.
+- Manual gaps are documented honestly: FOLLOW_UPS carries the Phase 45/46
+  browser/AT pass forward with an explicit reason ("requires real browser and
+  assistive-technology access"), and the release gate requires manual checks to
+  be completed or explicitly deferred with a dated reason.
+
+
+6. COMMIT READINESS
+
+Ready to commit. No critical issues, no security or behavior surface, validation
+passes, and the documentation is accurate against the current code and tokens.
+The suggestions in section 2 (de-duplicate the pending list against FOLLOW_UPS,
+tighten the "42-46" wording, optional file-path/cross-links) are low-priority
+polish that can be folded in now or in a later docs pass; none block commit.

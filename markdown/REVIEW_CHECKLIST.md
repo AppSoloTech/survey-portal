@@ -86,6 +86,25 @@ Use this checklist before committing a phase and when preparing Claude review ha
 - Forms provide useful validation feedback without relying on frontend validation for security.
 - User-facing copy avoids leaking internal tags or implementation terms.
 
+## Accessibility
+
+- Public and registered-user route changes preserve title, focus, skip-link,
+  and main-content behavior.
+- New public/user forms use the established label, required/optional,
+  helper/error, `aria-invalid`, and `aria-describedby` conventions.
+- New public/user modal dialogs use `AccessibleModal` or match its focus trap,
+  Escape, return-focus, title, and description behavior.
+- Repeated card or row actions include item context in their accessible names.
+- Loading, empty, error, success, pagination, and toast feedback use the
+  established live-region patterns without implying loading for terminal states.
+- Survey runner changes preserve semantic progress, native answer controls,
+  question-control associations, and hidden-tag privacy.
+- Public/user changes that affect color, focus, disabled states, status pills,
+  cards, toasts, modals, or progress indicators are checked in light and dark
+  themes.
+- Manual keyboard, screen reader, mobile touch, and contrast gaps are recorded
+  in `markdown/FOLLOW_UPS.md` or the phase log when they cannot be completed.
+
 ## Validation
 
 - Typecheck was run or documented as unavailable.

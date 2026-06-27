@@ -17,6 +17,8 @@ The goal is to keep implementation phases small, reviewable, secure, and aligned
 | `markdown/FLOW.md` | Phase workflow and AI-assisted development process |
 | `markdown/CLIENT_REVIEW_INTAKE.md` | Client feedback intake and phase prompt drafting workflow |
 | `markdown/REVIEW_CHECKLIST.md` | Quality gate for implementation and review |
+| `markdown/ACCESSIBILITY_TEST_PLAN.md` | Repeatable public/user accessibility verification workflow |
+| `markdown/ACCESSIBILITY_PRIMITIVES.md` | Public/user accessibility primitive usage rules |
 | `markdown/PHASE_TEMPLATE.md` | Reusable phase log entry template |
 | `markdown/PHASE_LOG.md` | Durable project memory and phase decisions |
 | `markdown/FOLLOW_UPS.md` | Active deferred work and loose ends to revisit before future phases |
