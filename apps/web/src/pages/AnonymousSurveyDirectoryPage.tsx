@@ -2,6 +2,7 @@ import type { AnonymousSurveyDirectoryItem } from "@survey-portal/shared";
 import { useEffect, useState } from "react";
 
 import { fetchAnonymousSurveyDirectory } from "../api/surveys.js";
+import { AlertMessage } from "../components/AlertMessage.js";
 import { useReveal } from "../motion/motion.js";
 
 export function AnonymousSurveyDirectoryPage() {
@@ -51,8 +52,8 @@ export function AnonymousSurveyDirectoryPage() {
         <p>Open surveys that can be completed without signing in.</p>
       </div>
 
-      {error ? <p className="status error">{error}</p> : null}
-      {isLoading ? <p className="status muted">Loading surveys...</p> : null}
+      {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
+      {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
 
       {!isLoading && !error && surveys.length === 0 ? (
         <div className="builder-empty-state" data-reveal>

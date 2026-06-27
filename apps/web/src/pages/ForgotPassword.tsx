@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { requestPasswordReset } from "../api/auth.js";
+import { AlertMessage } from "../components/AlertMessage.js";
+import { FormField } from "../components/FormField.js";
 import { useReveal } from "../motion/motion.js";
 
 export function ForgotPassword() {
@@ -11,6 +13,7 @@ export function ForgotPassword() {
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComplete = Boolean(message);
+  const formErrorId = "forgot-password-form-error";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,7 +45,7 @@ export function ForgotPassword() {
         </div>
         {isComplete ? (
           <div className="auth-form reset-complete-panel">
-            <p className="status success">{message}</p>
+            <AlertMessage variant="success">{message}</AlertMessage>
             <p className="form-note">You can close this page or return to login.</p>
             <Link className="button-link form-button" to="/login">
               Back to login
@@ -50,18 +53,31 @@ export function ForgotPassword() {
           </div>
         ) : (
           <form className="auth-form" onSubmit={handleSubmit}>
-            <label data-reveal>
-              Email
-              <input
-                autoComplete="email"
-                name="email"
-                onChange={(event) => setEmail(event.target.value)}
-                required
-                type="email"
-                value={email}
-              />
-            </label>
-            {error ? <p className="status error">{error}</p> : null}
+            <FormField
+              describedByIds={error ? [formErrorId] : []}
+              id="forgot-password-email"
+              isInvalid={Boolean(error)}
+              isRequired
+              label="Email"
+              reveal
+            >
+              {(fieldProps) => (
+                <input
+                  {...fieldProps}
+                  autoComplete="email"
+                  name="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  type="email"
+                  value={email}
+                />
+              )}
+            </FormField>
+            {error ? (
+              <AlertMessage id={formErrorId} variant="error">
+                {error}
+              </AlertMessage>
+            ) : null}
             <button
               className="button-link form-button"
               data-reveal

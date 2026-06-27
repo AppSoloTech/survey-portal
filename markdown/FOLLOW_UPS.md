@@ -132,6 +132,13 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 44: Manual accessibility/browser pass completed 2026-06-27.
+  Developer verified invalid login, register missing/invalid fields,
+  forgot/reset password success and error states, reset success modal focus
+  behavior after status-copy changes, account settings invalid phone and
+  successful save, toast/status behavior, dashboard/category pagination
+  announcement, keyboard-only and mobile checks at 375/768/1280px, and Admin
+  smoke compatibility for shared toasts.
 - Phase 43: Manual accessibility/browser pass completed 2026-06-27.
   Developer verified the public/user app shell and modal accessibility changes:
   keyboard route navigation across scoped public and registered-user routes,

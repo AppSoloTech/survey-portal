@@ -2,6 +2,7 @@ import type { SurveyAttemptSummary } from "@survey-portal/shared";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { AlertMessage } from "../components/AlertMessage.js";
 import { PaginationRow } from "../components/PaginationRow.js";
 import { SurveySummaryCard } from "../components/SurveySummaryCard.js";
 import { useMySurveys } from "../hooks/useMySurveys.js";
@@ -51,10 +52,10 @@ export function UserDashboard() {
         <p>Browse available surveys, resume saved progress, and review completed attempts.</p>
       </div>
 
-      {error ? <p className="status error">{error}</p> : null}
-      {isLoading ? <p className="status muted">Loading surveys...</p> : null}
+      {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
+      {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
       {!isLoading && summaries.length === 0 ? (
-        <p className="status muted">No published surveys are available.</p>
+        <AlertMessage variant="info">No published surveys are available.</AlertMessage>
       ) : null}
 
       <ResumeNudge summaries={summaries} />
@@ -77,7 +78,7 @@ export function UserDashboard() {
       ) : null}
 
       {!isLoading && summaries.length > 0 && cards.length === 0 ? (
-        <p className="status muted">No surveys match "{query.trim()}".</p>
+        <AlertMessage variant="info">No surveys match "{query.trim()}".</AlertMessage>
       ) : null}
 
       <div className="survey-grid">

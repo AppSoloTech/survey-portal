@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext.js";
+import { AlertMessage } from "../components/AlertMessage.js";
+import { FormField } from "../components/FormField.js";
 import { useReveal } from "../motion/motion.js";
 
 export function Login() {
@@ -15,6 +17,7 @@ export function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const from = readRedirectPath(location.state) ?? "/dashboard";
   const passwordResetComplete = readPasswordResetComplete(location.state);
+  const formErrorId = "login-form-error";
 
   if (isAuthenticated) {
     return <Navigate replace to={from} />;
@@ -45,36 +48,58 @@ export function Login() {
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
           {passwordResetComplete ? (
-            <p className="status success" data-reveal>
+            <AlertMessage variant="success">
               Password reset complete. Sign in with your new password.
-            </p>
+            </AlertMessage>
           ) : null}
-          <label data-reveal>
-            Email
-            <input
-              autoComplete="email"
-              name="email"
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              type="email"
-              value={email}
-            />
-          </label>
-          <label data-reveal>
-            Password
-            <input
-              autoComplete="current-password"
-              name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-          </label>
+          <FormField
+            describedByIds={error ? [formErrorId] : []}
+            id="login-email"
+            isInvalid={Boolean(error)}
+            isRequired
+            label="Email"
+            reveal
+          >
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                autoComplete="email"
+                name="email"
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                type="email"
+                value={email}
+              />
+            )}
+          </FormField>
+          <FormField
+            describedByIds={error ? [formErrorId] : []}
+            id="login-password"
+            isInvalid={Boolean(error)}
+            isRequired
+            label="Password"
+            reveal
+          >
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                autoComplete="current-password"
+                name="password"
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                type="password"
+                value={password}
+              />
+            )}
+          </FormField>
           <p className="form-note align-right" data-reveal>
             <Link to="/forgot-password">Forgot password?</Link>
           </p>
-          {error ? <p className="status error">{error}</p> : null}
+          {error ? (
+            <AlertMessage id={formErrorId} variant="error">
+              {error}
+            </AlertMessage>
+          ) : null}
           <button
             className="button-link form-button"
             data-reveal

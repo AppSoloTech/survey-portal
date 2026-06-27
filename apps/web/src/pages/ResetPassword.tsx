@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { completePasswordReset } from "../api/auth.js";
 import { AccessibleModal } from "../components/AccessibleModal.js";
+import { AlertMessage } from "../components/AlertMessage.js";
+import { FormField } from "../components/FormField.js";
 import { useReveal } from "../motion/motion.js";
 
 export function ResetPassword() {
@@ -14,6 +16,8 @@ export function ResetPassword() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComplete = Boolean(successMessage);
+  const formErrorId = "reset-password-form-error";
+  const disabledReasonId = "reset-password-disabled-reason";
 
   useEffect(() => {
     if (!isComplete) {
@@ -66,7 +70,7 @@ export function ResetPassword() {
         </div>
         {isComplete ? (
           <div className="auth-form reset-complete-panel">
-            <p className="status success">{successMessage}</p>
+            <AlertMessage variant="success">{successMessage}</AlertMessage>
             <p className="form-note">Redirecting to login...</p>
             <Link
               className="button-link form-button"
@@ -78,23 +82,49 @@ export function ResetPassword() {
           </div>
         ) : (
           <form className="auth-form" onSubmit={handleSubmit}>
-            <label data-reveal>
-              New password
-              <input
-                autoComplete="new-password"
-                minLength={8}
-                name="newPassword"
-                onChange={(event) => setNewPassword(event.target.value)}
-                required
-                type="password"
-                value={newPassword}
-              />
-            </label>
-            {error ? <p className="status error">{error}</p> : null}
+            <FormField
+              describedByIds={error ? [formErrorId] : []}
+              helperText="Use at least 8 characters."
+              id="reset-password-new-password"
+              isInvalid={Boolean(error)}
+              isRequired
+              label="New password"
+              reveal
+            >
+              {(fieldProps) => (
+                <input
+                  {...fieldProps}
+                  autoComplete="new-password"
+                  minLength={8}
+                  name="newPassword"
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  required
+                  type="password"
+                  value={newPassword}
+                />
+              )}
+            </FormField>
+            {error ? (
+              <AlertMessage id={formErrorId} variant="error">
+                {error}
+              </AlertMessage>
+            ) : null}
+            {!token ? (
+              <p className="form-note" id={disabledReasonId}>
+                This reset link is invalid or expired. Request a new password reset link.
+              </p>
+            ) : null}
             <button
+              aria-describedby={!token ? disabledReasonId : undefined}
+              aria-disabled={!token ? true : undefined}
               className="button-link form-button"
               data-reveal
-              disabled={isSubmitting || !token}
+              disabled={isSubmitting}
+              onClick={(event) => {
+                if (!token) {
+                  event.preventDefault();
+                }
+              }}
               type="submit"
             >
               {isSubmitting ? "Resetting..." : "Reset password"}

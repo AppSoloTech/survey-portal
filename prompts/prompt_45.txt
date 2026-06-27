@@ -8,8 +8,9 @@ and form feedback phases have landed.
 
 This phase intentionally ignores Admin-only findings. It focuses on user
 dashboard, category survey lists, public anonymous survey directory, survey
-summary cards, user-facing repeated action names, pagination polish, visible
-status copy, and account disabled-state explanations.
+summary cards, user-facing repeated action names, any remaining visible status
+copy gaps, remaining user-facing disabled-state explanations, and inline
+glossary ARIA polish.
 
 Source feedback or planning note:
 
@@ -59,12 +60,17 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
+* Phase 44 closeout artifacts:
+  * `notes/claude_handoff_phase_44_form_feedback_accessibility.txt`
+  * `notes/claude_review_phase_44_form_feedback_accessibility.txt`
 * Current user-facing files:
   * `apps/web/src/pages/UserDashboard.tsx`
   * `apps/web/src/pages/CategorySurveysPage.tsx`
   * `apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx`
   * `apps/web/src/pages/Home.tsx`
   * `apps/web/src/pages/AccountSettings.tsx`
+  * `apps/web/src/components/AlertMessage.tsx`
+  * `apps/web/src/components/FormField.tsx`
   * `apps/web/src/components/SurveySummaryCard.tsx`
   * `apps/web/src/components/PaginationRow.tsx`
   * `apps/web/src/components/InlineGlossaryText.tsx`
@@ -80,13 +86,26 @@ User-facing surfaces need remaining polish after the critical phases:
 1. Repeated action buttons such as "Start survey", "Resume survey", "View
    completed", and anonymous "Start survey" need contextual accessible names
    where surrounding card context is only visual.
-2. Dashboard/category pagination status changes should be announced politely.
-3. Loading, empty, error, and success states in public/user routes should use
-   consistent status semantics after Phase 44 primitives exist.
-4. Important disabled user actions, such as password reset cooldown or disabled
-   survey/contact actions, should explain why they are unavailable.
-5. Inline glossary behavior should preserve the existing focus/hover/Escape
+2. Important disabled user actions that remain after Phase 44, such as
+   disabled survey/contact actions, should explain why they are unavailable.
+3. Inline glossary behavior should preserve the existing focus/hover/Escape
    interaction while avoiding unsupported or unreliable ARIA where practical.
+
+Phase 44 baseline now in place:
+
+* `AlertMessage` owns scoped public/user status semantics for error, success,
+  and info messages.
+* Auth and account forms already use `FormField` for required/optional markers,
+  helper/error associations, `aria-invalid`, and `aria-describedby`.
+* Dashboard/category/public directory loading, empty, and error states already
+  use the shared status primitive where Phase 44 touched them.
+* Shared `PaginationRow` already renders the visible page status as a polite,
+  atomic `role="status"` live region.
+* Shared `ToastProvider` already uses persistent polite/assertive live-region
+  containers with dedicated dismiss buttons.
+* Account settings password reset cooldown and invalid reset-link explanations
+  were addressed in Phase 44 and passed manual testing. Do not redo that work
+  unless a direct regression is discovered.
 
 ---
 
@@ -112,12 +131,14 @@ Implement:
   * resume nudge
   * anonymous public directory survey cards
   * homepage anonymous survey entry point if needed
-* Ensure shared pagination status is a polite live region and works cleanly on
-  dashboard/category pages.
-* Review public/user loading, empty, success, and error states after Phase 44
-  and apply shared status primitives where they remain inconsistent.
+* Regression-check shared pagination status on dashboard/category pages; only
+  change `PaginationRow` if Phase 44's polite live region proves insufficient
+  in the specific Phase 45 surfaces.
+* Review public/user loading, empty, success, and error states after Phase 44;
+  only apply `AlertMessage` where scoped route states remain inconsistent.
 * Add or improve user-facing disabled-state explanations where users need to
-  understand why an action cannot be taken.
+  understand why an action cannot be taken and Phase 44 did not already address
+  the control.
 * Tighten inline glossary accessibility only for participant-facing question
   prompt usage:
   * preserve existing focus, hover, click/tap, and Escape behavior
@@ -139,6 +160,11 @@ Do not implement:
 * Survey runner core answer-control work already owned by Phase 42.
 * App shell/modal route work already owned by Phase 43.
 * Auth/account form-field foundation already owned by Phase 44.
+* Reworking `AlertMessage`, `FormField`, `ToastProvider`, or `PaginationRow`
+  unless a Phase 45 regression check finds a specific remaining user-facing
+  issue.
+* Account settings password reset cooldown explanation already owned and
+  manually verified in Phase 44.
 * API, database, hidden-tag, reporting, or CSV behavior changes.
 * Broad visual redesign.
 
@@ -164,10 +190,12 @@ The phase is ready for review when:
 
 * Repeated user-facing survey actions are understandable in screen reader
   button/link lists.
-* Dashboard and category pagination updates are announced politely.
-* Public/user loading, empty, error, and success states are semantically
+* Dashboard and category pagination continue to announce politely through the
+  shared Phase 44 `PaginationRow` behavior.
+* Public/user loading, empty, error, and success states remain semantically
   consistent with Phase 44 primitives.
-* Disabled user-facing actions that matter include discoverable reasons.
+* Disabled user-facing actions that remain in Phase 45 scope include
+  discoverable reasons.
 * Participant inline glossary trigger behavior remains available by keyboard,
   pointer, touch, and Escape.
 * Admin-only audit findings remain out of implementation scope.
@@ -191,7 +219,7 @@ git diff --check
 Add or update focused tests where practical for:
 
 * survey card action accessible names
-* pagination live status
+* pagination live status only if `PaginationRow` changes
 * glossary trigger ARIA behavior if component tests exist nearby
 * disabled-state copy where rendered from deterministic state
 
@@ -202,7 +230,8 @@ Manual checks:
 * Keyboard-only anonymous survey directory start action.
 * Screen reader spot check of button/link lists on dashboard and anonymous
   directory.
-* Account settings password reset cooldown disabled-state explanation.
+* Account settings password reset cooldown regression check only; the
+  explanation itself was implemented and manually verified in Phase 44.
 * Inline glossary trigger focus, open, dismiss, and continue-survey behavior.
 * Mobile pass at 375/768/1280px for dashboard, category list, anonymous
   directory, and account settings.
@@ -222,8 +251,9 @@ notes/claude_handoff_phase_45_user_facing_accessibility.txt
 Ask Claude Code to review:
 
 * contextual accessible names for repeated user actions
-* pagination/status live-region behavior
-* disabled-state explanations on user-facing controls
+* pagination/status live-region regressions, if any Phase 45 changes touched
+  those surfaces
+* disabled-state explanations on remaining user-facing controls
 * participant glossary ARIA changes
 * no Admin-specific remediation drift
 * no response, hidden-tag, reporting, CSV, auth, or survey-flow regression

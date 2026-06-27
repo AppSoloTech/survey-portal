@@ -8,6 +8,8 @@ import {
   updateCurrentUserProfile
 } from "../api/auth.js";
 import { useAuth } from "../auth/AuthContext.js";
+import { AlertMessage } from "../components/AlertMessage.js";
+import { FormField } from "../components/FormField.js";
 import { useReveal } from "../motion/motion.js";
 
 const emptyProfileForm = {
@@ -28,11 +30,13 @@ export function AccountSettings() {
   const [surveyStats, setSurveyStats] =
     useState<CurrentUserProfileResponse["surveyStats"] | null>(null);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
+  const [contactNumberError, setContactNumberError] = useState<string | null>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const isCoolingDown = cooldownSeconds > 0;
+  const resetCooldownDescriptionId = "password-reset-cooldown-description";
 
   useEffect(() => {
     let isActive = true;
@@ -85,6 +89,10 @@ export function AccountSettings() {
   }, [isCoolingDown, cooldownSeconds]);
 
   async function handleRequestReset() {
+    if (isCoolingDown || isSubmitting) {
+      return;
+    }
+
     setError(null);
     setMessage(null);
     setIsSubmitting(true);
@@ -104,9 +112,10 @@ export function AccountSettings() {
     event.preventDefault();
     setError(null);
     setMessage(null);
+    setContactNumberError(null);
 
     if (profileForm.contactNumber && !isPossiblePhoneNumber(profileForm.contactNumber)) {
-      setError("Phone number must be a valid phone number");
+      setContactNumberError("Phone number must be a valid phone number");
       return;
     }
 
@@ -163,7 +172,9 @@ export function AccountSettings() {
 
         <section className="profile-panel">
           <h3>Survey stats</h3>
-          {isProfileLoading ? <p className="status muted">Loading profile...</p> : null}
+          {isProfileLoading ? (
+            <AlertMessage variant="info">Loading profile...</AlertMessage>
+          ) : null}
           {surveyStats ? (
             <div className="settings-stats-grid">
               <StatTile label="Available" value={surveyStats.available} />
@@ -183,80 +194,99 @@ export function AccountSettings() {
             <h3>Profile details</h3>
             <p>Update your name and optional contact details.</p>
           </div>
-          <label>
-            <span>First name</span>
-            <input
-              maxLength={120}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, firstName: event.target.value }))
-              }
-              required
-              type="text"
-              value={profileForm.firstName}
-            />
-          </label>
-          <label>
-            <span>Last name</span>
-            <input
-              maxLength={120}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, lastName: event.target.value }))
-              }
-              required
-              type="text"
-              value={profileForm.lastName}
-            />
-          </label>
-          <label>
-            <span>Street address</span>
-            <input
-              maxLength={160}
-              onChange={(event) =>
-                setProfileForm((current) => ({
-                  ...current,
-                  addressStreet: event.target.value
-                }))
-              }
-              type="text"
-              value={profileForm.addressStreet}
-            />
-          </label>
-          <label>
-            <span>City</span>
-            <input
-              maxLength={80}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, addressCity: event.target.value }))
-              }
-              type="text"
-              value={profileForm.addressCity}
-            />
-          </label>
-          <label>
-            <span>State</span>
-            <input
-              maxLength={80}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, addressState: event.target.value }))
-              }
-              type="text"
-              value={profileForm.addressState}
-            />
-          </label>
-          <label>
-            <span>Phone number</span>
-            <PhoneInput
-              className="profile-phone-input"
-              defaultCountry="US"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(value) =>
-                setProfileForm((current) => ({ ...current, contactNumber: value ?? "" }))
-              }
-              placeholder="Enter phone number"
-              value={profileForm.contactNumber}
-            />
-          </label>
+          <FormField id="profile-first-name" isRequired label="First name">
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                maxLength={120}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, firstName: event.target.value }))
+                }
+                required
+                type="text"
+                value={profileForm.firstName}
+              />
+            )}
+          </FormField>
+          <FormField id="profile-last-name" isRequired label="Last name">
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                maxLength={120}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, lastName: event.target.value }))
+                }
+                required
+                type="text"
+                value={profileForm.lastName}
+              />
+            )}
+          </FormField>
+          <FormField id="profile-address-street" isOptional label="Street address">
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                maxLength={160}
+                onChange={(event) =>
+                  setProfileForm((current) => ({
+                    ...current,
+                    addressStreet: event.target.value
+                  }))
+                }
+                type="text"
+                value={profileForm.addressStreet}
+              />
+            )}
+          </FormField>
+          <FormField id="profile-address-city" isOptional label="City">
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                maxLength={80}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, addressCity: event.target.value }))
+                }
+                type="text"
+                value={profileForm.addressCity}
+              />
+            )}
+          </FormField>
+          <FormField id="profile-address-state" isOptional label="State">
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                maxLength={80}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, addressState: event.target.value }))
+                }
+                type="text"
+                value={profileForm.addressState}
+              />
+            )}
+          </FormField>
+          <FormField
+            error={contactNumberError}
+            helperText="Use an international format if outside the US."
+            id="profile-phone-number"
+            isOptional
+            label="Phone number"
+          >
+            {(fieldProps) => (
+              <PhoneInput
+                {...fieldProps}
+                className="profile-phone-input"
+                defaultCountry="US"
+                international
+                countryCallingCodeEditable={false}
+                onChange={(value) => {
+                  setContactNumberError(null);
+                  setProfileForm((current) => ({ ...current, contactNumber: value ?? "" }));
+                }}
+                placeholder="Enter phone number"
+                value={profileForm.contactNumber}
+              />
+            )}
+          </FormField>
           <button
             className="button-link compact-button primary-button"
             disabled={isProfileSaving || isProfileLoading}
@@ -276,19 +306,27 @@ export function AccountSettings() {
               <p>A reset link will be sent to your account email.</p>
             </div>
             <button
+              aria-describedby={isCoolingDown ? resetCooldownDescriptionId : undefined}
+              aria-disabled={isCoolingDown ? true : undefined}
               className="button-link compact-button primary-button"
-              disabled={isSubmitting || isCoolingDown}
+              disabled={isSubmitting}
               onClick={handleRequestReset}
               type="button"
             >
               {getResetButtonLabel({ isSubmitting, cooldownSeconds })}
             </button>
+            {isCoolingDown ? (
+              <p className="form-note align-right" id={resetCooldownDescriptionId}>
+                A reset email was just requested. You can request another in {cooldownSeconds}{" "}
+                seconds.
+              </p>
+            ) : null}
           </div>
         </section>
       </div>
 
-      {message ? <p className="status success">{message}</p> : null}
-      {error ? <p className="status error">{error}</p> : null}
+      {message ? <AlertMessage variant="success">{message}</AlertMessage> : null}
+      {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
     </section>
   );
 }

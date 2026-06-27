@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchApiHealth, type ApiHealthResponse } from "../api/health.js";
+import { AlertMessage } from "./AlertMessage.js";
 
 type HealthState =
   | { status: "loading" }
@@ -34,11 +35,11 @@ export function HealthCheck() {
   }, []);
 
   if (health.status === "loading") {
-    return <p className="status muted">Checking API health...</p>;
+    return <AlertMessage variant="info">Checking API health...</AlertMessage>;
   }
 
   if (health.status === "error") {
-    return <p className="status error">{health.message}</p>;
+    return <AlertMessage variant="error">{health.message}</AlertMessage>;
   }
 
   return (

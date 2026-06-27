@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext.js";
+import { AlertMessage } from "../components/AlertMessage.js";
+import { FormField } from "../components/FormField.js";
 import { useReveal } from "../motion/motion.js";
 
 export function Register() {
@@ -14,6 +16,7 @@ export function Register() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const formErrorId = "register-form-error";
 
   if (isAuthenticated) {
     return <Navigate replace to="/dashboard" />;
@@ -43,52 +46,93 @@ export function Register() {
           <p>Join the portal in under a minute.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
-          <label data-reveal>
-            First name
-            <input
-              autoComplete="given-name"
-              name="firstName"
-              onChange={(event) => setFirstName(event.target.value)}
-              required
-              type="text"
-              value={firstName}
-            />
-          </label>
-          <label data-reveal>
-            Last name
-            <input
-              autoComplete="family-name"
-              name="lastName"
-              onChange={(event) => setLastName(event.target.value)}
-              required
-              type="text"
-              value={lastName}
-            />
-          </label>
-          <label data-reveal>
-            Email
-            <input
-              autoComplete="email"
-              name="email"
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              type="email"
-              value={email}
-            />
-          </label>
-          <label data-reveal>
-            Password
-            <input
-              autoComplete="new-password"
-              minLength={8}
-              name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-          </label>
-          {error ? <p className="status error">{error}</p> : null}
+          <FormField
+            describedByIds={error ? [formErrorId] : []}
+            id="register-first-name"
+            isInvalid={Boolean(error)}
+            isRequired
+            label="First name"
+            reveal
+          >
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                autoComplete="given-name"
+                name="firstName"
+                onChange={(event) => setFirstName(event.target.value)}
+                required
+                type="text"
+                value={firstName}
+              />
+            )}
+          </FormField>
+          <FormField
+            describedByIds={error ? [formErrorId] : []}
+            id="register-last-name"
+            isInvalid={Boolean(error)}
+            isRequired
+            label="Last name"
+            reveal
+          >
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                autoComplete="family-name"
+                name="lastName"
+                onChange={(event) => setLastName(event.target.value)}
+                required
+                type="text"
+                value={lastName}
+              />
+            )}
+          </FormField>
+          <FormField
+            describedByIds={error ? [formErrorId] : []}
+            id="register-email"
+            isInvalid={Boolean(error)}
+            isRequired
+            label="Email"
+            reveal
+          >
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                autoComplete="email"
+                name="email"
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                type="email"
+                value={email}
+              />
+            )}
+          </FormField>
+          <FormField
+            describedByIds={error ? [formErrorId] : []}
+            helperText="Use at least 8 characters."
+            id="register-password"
+            isInvalid={Boolean(error)}
+            isRequired
+            label="Password"
+            reveal
+          >
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                autoComplete="new-password"
+                minLength={8}
+                name="password"
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                type="password"
+                value={password}
+              />
+            )}
+          </FormField>
+          {error ? (
+            <AlertMessage id={formErrorId} variant="error">
+              {error}
+            </AlertMessage>
+          ) : null}
           <button
             className="button-link form-button"
             data-reveal

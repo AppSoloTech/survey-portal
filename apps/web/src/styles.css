@@ -583,7 +583,7 @@ nav {
   z-index: -1;
 }
 
-.button-link:hover:not(:disabled)::after {
+.button-link:hover:not(:disabled):not([aria-disabled="true"])::after {
   animation: button-sheen 750ms var(--ease-out);
 }
 
@@ -599,12 +599,12 @@ nav {
   }
 }
 
-.button-link:hover:not(:disabled) {
+.button-link:hover:not(:disabled):not([aria-disabled="true"]) {
   box-shadow: 0 4px 16px var(--glow);
   transform: translateY(-1px);
 }
 
-.button-link:active:not(:disabled) {
+.button-link:active:not(:disabled):not([aria-disabled="true"]) {
   box-shadow: none;
   filter: brightness(0.94);
   transform: translateY(0) scale(0.98);
@@ -635,7 +635,8 @@ nav {
   display: none;
 }
 
-.button-link:disabled {
+.button-link:disabled,
+.button-link[aria-disabled="true"] {
   background: var(--surface-disabled);
   border-color: var(--border-soft);
   color: var(--text-disabled);
@@ -1064,6 +1065,34 @@ main:focus {
   gap: 0.5rem;
 }
 
+.form-field-label {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.field-requirement {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.field-helper,
+.field-error {
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.field-helper {
+  color: var(--text-faint);
+}
+
+.field-error {
+  color: var(--danger);
+}
+
 .auth-form input {
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
@@ -1084,6 +1113,12 @@ main:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 4px var(--focus-ring);
   outline: none;
+}
+
+.auth-form input[aria-invalid="true"],
+.profile-form input[aria-invalid="true"],
+.contact-email-modal input[aria-invalid="true"] {
+  border-color: var(--danger-border-strong);
 }
 
 .form-button {
@@ -5161,17 +5196,43 @@ main:focus {
   z-index: 60;
 }
 
+.toast-live-region {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
+}
+
 .toast {
+  align-items: center;
   animation: toast-in 420ms var(--ease-spring);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-2);
-  cursor: pointer;
+  display: flex;
+  gap: 0.75rem;
   font-size: 0.875rem;
   font-weight: 650;
+  justify-content: space-between;
   max-width: 22rem;
   padding: 0.75rem 1rem;
   text-align: left;
+}
+
+.toast-dismiss {
+  align-items: center;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 750;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.25rem 0.6rem;
 }
 
 .toast-success {

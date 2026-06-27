@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
+import { AlertMessage } from "../components/AlertMessage.js";
 import { useAuth } from "./AuthContext.js";
 
 export function ProtectedRoute() {
@@ -7,7 +8,7 @@ export function ProtectedRoute() {
   const location = useLocation();
 
   if (isLoading) {
-    return <p className="status muted">Checking session...</p>;
+    return <AlertMessage variant="info">Checking session...</AlertMessage>;
   }
 
   if (!isAuthenticated) {

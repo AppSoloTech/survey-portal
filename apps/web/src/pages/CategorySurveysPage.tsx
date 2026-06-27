@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { AlertMessage } from "../components/AlertMessage.js";
 import { PaginationRow } from "../components/PaginationRow.js";
 import { SurveySummaryCard } from "../components/SurveySummaryCard.js";
 import { useMySurveys } from "../hooks/useMySurveys.js";
@@ -48,8 +49,8 @@ export function CategorySurveysPage() {
         ) : null}
       </div>
 
-      {error ? <p className="status error">{error}</p> : null}
-      {isLoading ? <p className="status muted">Loading surveys...</p> : null}
+      {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
+      {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
       {!isLoading && categorySummaries.length === 0 ? (
         <div className="builder-empty-state">
           <strong>No surveys in this group</strong>

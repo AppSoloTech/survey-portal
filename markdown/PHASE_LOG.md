@@ -6,6 +6,211 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 44 — Form Feedback And Required Field Accessibility
+
+Date:
+2026-06-27
+
+Status:
+Implemented; Claude review complete; manual browser and assistive-technology
+testing passed
+
+Prompt:
+`prompts/prompt_44.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_44_form_feedback_accessibility.txt`
+- Claude review: `notes/claude_review_phase_44_form_feedback_accessibility.txt`
+
+## Goals
+
+- Add small shared form feedback primitives for scoped public and
+  registered-user forms.
+- Make auth and account form errors/statuses more consistently announced and
+  associated with controls.
+- Add visible/programmatic required and optional conventions in high-value
+  scoped forms.
+- Improve shared toast and pagination live-region semantics without migrating
+  Admin forms.
+
+## Built
+
+- Added `AlertMessage` for error/success/info statuses with appropriate
+  `role="alert"` or `role="status"` behavior.
+- Added `FormField` for stable ids, visible required/optional markers, helper
+  text, field error text, `aria-describedby`, and `aria-invalid`.
+- Applied the form pattern to Login, Register, Forgot password, Reset password,
+  and Account settings profile fields.
+- Kept backend validation and API calls unchanged. Existing server/form errors
+  remain one visible alert while scoped controls can reference that alert and be
+  marked invalid.
+- Added field-specific phone-number feedback in Account settings and
+  discoverable disabled explanations for invalid reset links and reset-email
+  cooldown.
+- Converted scoped public/user loading, empty, success, and error states to the
+  shared status primitive where practical.
+- Updated shared pagination status to a polite, atomic live region.
+- Updated shared toasts so notifications are not rendered as whole clickable
+  buttons; success and error toasts now render into persistent polite/assertive
+  live-region containers, each toast has a visible dismiss control, and
+  auto-dismiss timing is longer.
+- Restored auth-form staggered reveal behavior on migrated `FormField` labels.
+- Added focused source-level web tests for form/status primitives, toast
+  semantics, pagination live status, and account phone/cooldown feedback.
+- Updated draft release notes and follow-up backlog.
+
+## Important Decisions
+
+### Public/User Scope
+
+Decision:
+Apply the field migration only to public and registered-user forms named in the
+prompt.
+
+Reason:
+Admin form migration is explicitly deferred. Shared toast changes affect Admin
+pages incidentally because `ToastProvider` is app-wide, so those pages should
+receive smoke compatibility review only.
+
+### Form-Level Server Errors
+
+Decision:
+Keep existing backend/server errors as one form-level alert, and connect
+relevant controls to that alert with `aria-describedby` plus `aria-invalid`
+instead of duplicating the same message under every field.
+
+Reason:
+The current API error shapes are form-level. Duplicating the same server error
+as field-specific text would add noise and imply precision the backend did not
+provide.
+
+### Release Notes And Versioning
+
+Decision:
+Update `markdown/releases/unreleased.md` and leave the root app version at
+`0.1.5` during implementation.
+
+Reason:
+The project release workflow uses `unreleased.md` as the production-bound draft
+during implementation. Version bumps and versioned release files are handled by
+release preparation commands.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: none; hidden tags and survey responses are
+  untouched.
+- Frontend UX impact: scoped forms now expose clearer field requirements,
+  helper/error associations, live statuses, pagination announcements, and toast
+  dismiss controls.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+# initial focused checks
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run test -w apps/web -- FormFeedback.test.ts App.test.ts components/AccessibleModal.test.ts
+
+# full matrix
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm test # rerun with approved local PostgreSQL access after sandbox EPERM
+git diff --check
+
+# post-review full matrix rerun
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm test # rerun with approved local PostgreSQL access after sandbox EPERM
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above except the sandboxed `npm test` attempts.
+- The sandboxed `npm test` attempts passed shared and web tests, then the
+  API suite could not connect to local PostgreSQL due to sandbox `EPERM` on
+  `127.0.0.1:5432`.
+- The approved reruns of `npm test` passed shared, web, API, and release-note
+  tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+- The full command matrix was rerun after Claude review fixes and passed, with
+  the same sandboxed-then-approved PostgreSQL test pattern.
+
+Manual tests:
+
+- Passed per developer manual testing on 2026-06-27.
+- Developer verified invalid login, register missing/invalid fields,
+  forgot/reset password success and error states, reset success modal focus
+  behavior after status-copy changes, account settings invalid phone and
+  successful save, toast/status behavior, dashboard/category pagination
+  announcement, keyboard-only and mobile checks at 375/768/1280px, and Admin
+  smoke compatibility for shared toasts.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_44_form_feedback_accessibility.txt`
+- Claude review status before commit: Completed; findings addressed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_44_form_feedback_accessibility.txt`
+
+Status:
+
+- Completed; approved after Codex addressed the toast live-region reliability
+  finding.
+
+Critical issues:
+
+- None.
+
+Accepted fixes:
+
+- Changed success/error toasts to render inside persistent polite/assertive live
+  regions instead of relying on transient `role="status"` children.
+- Replaced inert `aria-describedby` usage on important native-disabled reset
+  controls with focusable `aria-disabled` states and guarded handlers.
+- Added a `reveal` prop to `FormField` and restored auth-form `data-reveal`
+  behavior.
+
+Deferred findings:
+
+- Render-level DOM tests remain deferred until the project adopts a frontend DOM
+  test harness.
+
+## Follow-Up Tasks
+
+- None for Phase 44 closeout.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no security or scope blockers
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 43 — Public/User App Shell, Route, And Modal Accessibility
 
 Date:

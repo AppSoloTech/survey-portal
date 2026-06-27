@@ -1,0 +1,143 @@
+Phase 44 - Form Feedback And Required Field Accessibility
+
+Implementation summary:
+
+- Added `apps/web/src/components/AlertMessage.tsx`, a small status primitive
+  that renders blocking errors as `role="alert"`/assertive live regions and
+  success/info messages as `role="status"`/polite live regions while preserving
+  the existing `.status` visual classes.
+- Added `apps/web/src/components/FormField.tsx`, a small field wrapper that
+  provides stable ids, visible required/optional markers, helper text, error
+  text, `aria-describedby`, and `aria-invalid`.
+- Applied the form pattern to public/registered-user forms:
+  - Login
+  - Register
+  - Forgot password
+  - Reset password
+  - Account settings profile form
+- Kept backend/API validation behavior unchanged. Existing server/form errors
+  remain one visible alert, while relevant controls now reference the alert and
+  can be marked invalid.
+- Added field-specific phone validation feedback in Account settings, tied to
+  the phone input through the shared field wrapper.
+- Added discoverable disabled-state explanations for:
+  - invalid/expired reset-password links
+  - account password-reset cooldown
+- Converted scoped public/user statuses to `AlertMessage` where practical:
+  - home API health check
+  - protected user-route session loading
+  - dashboard loading/empty/error/search-empty states
+  - category survey loading/error states
+  - anonymous directory loading/error states
+  - account loading/success/error states
+  - auth success/error states
+- Updated shared `PaginationRow` so the visible page status is a polite,
+  atomic `role="status"` live region.
+- Updated `ToastProvider` so toasts are not generic clickable buttons:
+  success toasts render inside a persistent polite status live region, error
+  toasts render inside a persistent assertive alert live region, each toast has
+  a dedicated visible dismiss button, and auto-dismiss timing is longer.
+- Restored staggered reveal behavior for migrated auth fields through a
+  `FormField` `reveal` prop.
+- Added focused source-level tests in
+  `apps/web/src/components/FormFeedback.test.ts`.
+- Updated draft release notes and Phase 44 project memory/follow-ups.
+
+Files changed:
+
+- apps/web/src/auth/ProtectedRoute.tsx
+- apps/web/src/components/AlertMessage.tsx
+- apps/web/src/components/FormField.tsx
+- apps/web/src/components/FormFeedback.test.ts
+- apps/web/src/components/HealthCheck.tsx
+- apps/web/src/components/PaginationRow.tsx
+- apps/web/src/components/ToastProvider.tsx
+- apps/web/src/pages/Login.tsx
+- apps/web/src/pages/Register.tsx
+- apps/web/src/pages/ForgotPassword.tsx
+- apps/web/src/pages/ResetPassword.tsx
+- apps/web/src/pages/AccountSettings.tsx
+- apps/web/src/pages/UserDashboard.tsx
+- apps/web/src/pages/CategorySurveysPage.tsx
+- apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx
+- apps/web/src/styles.css
+- markdown/releases/unreleased.md
+- markdown/FOLLOW_UPS.md
+- markdown/PHASE_LOG.md
+- notes/claude_handoff_phase_44_form_feedback_accessibility.txt
+
+Review focus requested:
+
+- Confirm form errors are associated with controls through `aria-describedby`
+  and that invalid states are set appropriately without noisy duplicate text.
+- Confirm the required/optional label markers are visible and programmatic
+  enough for the scoped forms.
+- Confirm `AlertMessage` roles are appropriate for blocking errors vs
+  success/info statuses.
+- Confirm toast notifications are better semantically and still usable in Admin
+  pages that already call the shared `ToastProvider`.
+- Confirm disabled explanations are discoverable for reset-password link and
+  account reset cooldown states.
+- Confirm shared pagination live status is useful and not overly chatty.
+- Confirm Phase 43 route, skip-link, account disclosure, and modal behavior was
+  not changed.
+- Confirm Admin form migration stayed out of scope except incidental
+  compatibility with shared toasts.
+
+Validation run by Codex:
+
+Initial focused checks:
+
+- npm run typecheck -w apps/web
+- npm run lint -w apps/web
+- npm run test -w apps/web -- FormFeedback.test.ts App.test.ts components/AccessibleModal.test.ts
+
+Full matrix:
+
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- npm test (rerun with approved local PostgreSQL access after sandbox EPERM)
+- git diff --check
+
+Post-review full matrix rerun:
+
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- npm test (rerun with approved local PostgreSQL access after sandbox EPERM)
+- git diff --check
+
+Results:
+
+- Passed: all commands above except the sandboxed `npm test` attempts.
+- The sandboxed `npm test` attempts passed shared and web tests, then the API
+  suite could not connect to local PostgreSQL due to sandbox `EPERM` on
+  `127.0.0.1:5432`.
+- The approved reruns of `npm test` passed shared, web, API, and release-note
+  tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+- The full command matrix was rerun after Claude review fixes and passed, with
+  the same sandboxed-then-approved PostgreSQL test pattern.
+
+Post-review updates:
+
+- Claude review was completed in
+  `notes/claude_review_phase_44_form_feedback_accessibility.txt`.
+- Codex addressed the toast live-region reliability finding, inert disabled
+  button description issue, and auth-field reveal regression noted by review.
+
+Manual checks still pending unless completed by the developer:
+
+- Login invalid credentials.
+- Register missing/invalid fields.
+- Forgot/reset password success and error states.
+- Password reset success modal still traps/restores focus and exposes the
+  updated status copy.
+- Account settings invalid phone and successful save.
+- Toast/status behavior where present.
+- Dashboard/category pagination announcement.
+- Keyboard-only and mobile checks at 375/768/1280px.
+- Admin smoke check for shared toast compatibility only.

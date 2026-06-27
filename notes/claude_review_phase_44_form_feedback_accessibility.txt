@@ -1,0 +1,89 @@
+Phase 44 - Form Feedback & Required-Field Accessibility
+Claude code review findings
+
+Verdict:
+Approve after addressing the toast live-region reliability finding. No blockers
+remain after Codex follow-up fixes.
+
+Summary:
+The phase is solid and well scoped. The new `AlertMessage` and `FormField`
+primitives are clean, the render-prop pattern keeps control ownership local
+while centralizing id/description/invalid wiring, and Admin form migration was
+avoided except for incidental shared toast compatibility.
+
+Review-focus answers:
+
+- Error/control association and duplicate noise: Correct. Shared form errors
+  use one `AlertMessage` referenced by controls; the account phone error uses
+  the field-local `FormField` error path.
+- Required/optional markers: Visible and programmatic through the label; the
+  required marker is mildly redundant with native `required` but acceptable.
+- AlertMessage roles: Correct. Error maps to alert/assertive; success/info maps
+  to status/polite.
+- Pagination: Correct. The shared status is concise, polite, and atomic.
+- Phase 43 and Admin scope: Confirmed. Route/modal/skip-link behavior was not
+  changed, and Admin forms were not migrated.
+
+Findings:
+
+1. Medium - Toast live-region reliability
+
+Initial issue:
+Success toasts were rendered as newly inserted `role="status"` elements inside
+a container without persistent live-region semantics. Some assistive
+technologies may not announce polite status nodes that appear with their text
+already populated.
+
+Resolution:
+Codex updated `ToastProvider` to keep persistent live-region containers: one
+polite `role="status"` region for success toasts and one assertive
+`role="alert"` region for error toasts. Toast rows remain normal content with a
+dedicated dismiss button.
+
+2. Low - Disabled button descriptions were inert
+
+Initial issue:
+`aria-describedby` was attached to natively disabled reset controls. Native
+disabled buttons are not focusable, so the description association would not be
+announced from the control.
+
+Resolution:
+Codex changed the invalid reset-link and account reset-cooldown controls to use
+focusable `aria-disabled` states where the explanation matters, kept native
+`disabled` for submitting states, and guarded the handlers.
+
+3. Low - Migrated auth fields lost staggered reveal animation
+
+Initial issue:
+The old auth labels had `data-reveal`; migrated `FormField` labels did not,
+causing inputs to appear before the staggered button/note animation.
+
+Resolution:
+Codex added a `reveal` prop to `FormField` and enabled it for migrated auth
+fields.
+
+4. Nit - Required marker text is part of the accessible name
+
+Status:
+Accepted as intentional for now. It provides visible and programmatic
+requirement context. Optional markers also remain in the label, which is useful
+because native HTML has no `optional` equivalent.
+
+Validation after review fixes:
+
+```bash
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run test -w apps/web -- FormFeedback.test.ts
+```
+
+Result:
+Passed.
+
+Residual risk:
+
+- Existing source-text tests verify the intended wiring but do not exercise
+  rendered DOM behavior. This matches the current project convention until a
+  DOM test harness is adopted.
+- Manual browser/assistive-technology checks remain pending and are tracked in
+  `markdown/FOLLOW_UPS.md`.

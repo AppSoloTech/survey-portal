@@ -21,7 +21,7 @@ export function PaginationRow({
       >
         Previous
       </button>
-      <span className="pagination-status">
+      <span aria-atomic="true" aria-live="polite" className="pagination-status" role="status">
         Page {page} of {pageCount}
       </span>
       <button

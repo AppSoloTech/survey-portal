@@ -8,7 +8,8 @@ import {
   type ReactNode
 } from "react";
 
-const toastDurationMs = 4000;
+const toastDurationMs = 8000;
+const errorToastDurationMs = 12000;
 
 type ToastVariant = "success" | "error";
 
@@ -48,7 +49,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = nextIdRef.current;
       nextIdRef.current += 1;
       setToasts((current) => [...current, { id, message, variant }]);
-      window.setTimeout(() => dismiss(id), toastDurationMs);
+      window.setTimeout(
+        () => dismiss(id),
+        variant === "error" ? errorToastDurationMs : toastDurationMs
+      );
     },
     [dismiss]
   );
@@ -64,18 +68,44 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div aria-live="polite" className="toast-stack">
-        {toasts.map((toast) => (
-          <button
-            className={`toast toast-${toast.variant}`}
-            key={toast.id}
-            onClick={() => dismiss(toast.id)}
-            type="button"
-          >
-            {toast.message}
-          </button>
-        ))}
+      <div className="toast-stack">
+        <div aria-atomic="false" aria-live="polite" className="toast-live-region" role="status">
+          {toasts
+            .filter((toast) => toast.variant === "success")
+            .map((toast) => (
+              <ToastItem dismiss={dismiss} key={toast.id} toast={toast} />
+            ))}
+        </div>
+        <div aria-atomic="false" aria-live="assertive" className="toast-live-region" role="alert">
+          {toasts
+            .filter((toast) => toast.variant === "error")
+            .map((toast) => (
+              <ToastItem dismiss={dismiss} key={toast.id} toast={toast} />
+            ))}
+        </div>
       </div>
     </ToastContext.Provider>
+  );
+}
+
+function ToastItem({
+  dismiss,
+  toast
+}: {
+  dismiss: (id: number) => void;
+  toast: Toast;
+}) {
+  return (
+    <div className={`toast toast-${toast.variant}`}>
+      <span>{toast.message}</span>
+      <button
+        aria-label={`Dismiss notification: ${toast.message}`}
+        className="toast-dismiss"
+        onClick={() => dismiss(toast.id)}
+        type="button"
+      >
+        Dismiss
+      </button>
+    </div>
   );
 }
