@@ -26,6 +26,8 @@ Default arrangement:
 
 Branch:
 
+Start after Phase 45 is committed and available on `main`.
+
 ```bash
 git checkout main
 git checkout -b phase-46-accessibility-verification
@@ -56,6 +58,9 @@ Read before implementation:
 * `markdown/FOLLOW_UPS.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
+* Phase 45 closeout artifacts:
+  * `notes/claude_handoff_phase_45_user_facing_accessibility.txt`
+  * `notes/claude_review_phase_45_user_facing_accessibility.txt`
 * Existing test scripts, Vite config, and any frontend test setup.
 
 ---
@@ -73,6 +78,20 @@ verification for the public and registered-user application:
 4. Mobile screen reader/touch checks.
 5. Repeatable axe/Playwright-style checks if practical.
 6. Documentation for accessibility primitives and future regression checks.
+
+Phase 45 baseline now in place:
+
+* Repeated dashboard, category, resume, homepage, and anonymous-directory
+  survey actions include visually hidden contextual names.
+* Category empty-state copy has polite live-region semantics without the
+  animated loading/status treatment.
+* Participant inline glossary triggers use stable `aria-describedby` links to
+  mounted tooltip definitions instead of unsupported `aria-description`.
+* Claude review for Phase 45 found no blockers after the category empty-state
+  animation fix.
+* Phase 45 manual browser/assistive-technology verification remains tracked in
+  `markdown/FOLLOW_UPS.md` and should be completed or explicitly documented in
+  this verification phase.
 
 ---
 
@@ -98,6 +117,16 @@ Implement:
   * modal, route, auth, account, dashboard, public directory, and survey runner
     forms
   * accepted limitations of automated testing
+* Complete or explicitly document the pending Phase 45 manual verification
+  items for:
+  * dashboard survey-card action names
+  * category group drill-in and pagination
+  * anonymous directory start links
+  * screen reader button/link list spot checks
+  * inline glossary focus, open, dismiss/Escape behavior
+  * account settings password reset cooldown regression
+  * dashboard, category list, anonymous directory, and account settings at
+    375/768/1280px
 * Add a concise accessibility primitive guide if new primitives from Phases
   42-45 need usage rules.
 * Add automated accessibility checks if practical with the existing stack.
@@ -167,6 +196,8 @@ The phase is ready for review when:
 * Any automated checks added are reliable, documented, and included in an
   appropriate npm script.
 * Manual browser/AT gaps are explicitly recorded.
+* The Phase 45 manual verification follow-up is either completed and moved to
+  completed follow-ups, or carried forward with a clear reason.
 * Deferred defects discovered during validation are added to
   `markdown/FOLLOW_UPS.md`.
 
