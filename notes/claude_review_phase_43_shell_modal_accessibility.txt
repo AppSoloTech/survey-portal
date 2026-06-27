@@ -1,0 +1,79 @@
+Phase 43 - Public/User App Shell, Route, and Modal Accessibility
+Claude code review findings
+
+Verdict: Approve. No blockers. Behavior-preserving, scope-respecting, and the
+AccessibleModal primitive is well-built. Items below are nits and follow-ups.
+
+Verification performed by reviewer:
+- npm run typecheck -w apps/web  -> pass
+- npm run test -w apps/web -- App.test.ts components/AccessibleModal.test.ts -> 5 pass
+- Manual diff read of App.tsx, AccessibleModal.tsx, ResetPassword.tsx,
+  SurveyAttemptPage.tsx, Register.tsx, styles.css.
+
+Review-focus items - all confirmed:
+- Route titles / focus-to-main / live region: RouteAccessibilityManager maps
+  scoped routes via getRouteTitle, sets document.title, and on real navigation
+  (guarded by hasMountedRef so initial load does not steal focus) focuses the
+  stable #main-content and announces "Navigated to <title>" in a polite region.
+  Focusing the stable <main> (not lazy inner content) is the correct choice.
+- Skip link: fixed, translated off-screen, slides in on :focus, targets
+  #main-content which has tabIndex=-1. Correct.
+- Heading hierarchy: header brand demoted from <h1> to <span class="brand-title">;
+  each scoped page now carries a single page-level <h1>. Confirmed no remaining
+  header <h1> and no duplicate <h1> per page.
+- AccessibleModal: portal to body, captures returnFocus, inerts + aria-hidden on
+  sibling body children, body scroll lock, rAF initial focus
+  ([data-autofocus] -> first focusable -> dialog), Tab wrap containment, Escape
+  (guarded by closeOnEscape), and full restore on unmount (focus, inert,
+  aria-hidden, overflow, portal removal). Solid.
+- Modal behavior preserved: AnonymousContactEmailModal keeps its form onSubmit /
+  Skip; onClose=onSkip (handleSkipContactEmail only clears error + closes, no
+  destructive side effect, so Escape-to-skip is safe). PasswordResetSuccessModal
+  keeps Continue; onClose=onContinue.
+- Account menu: converted from role=menu/menuitem (invalid without full menu
+  keyboard model) to a disclosure - aria-expanded/aria-controls, labelled panel,
+  outside pointerdown close, Escape close + return focus to trigger. Listeners
+  bound only while open; no open-then-immediately-close race. Good.
+- Scope: no answer-control / API / DB / auth / reporting / hidden-tag / CSV
+  change. Admin untouched (PageGroupedQuestionSelect aria-haspopup="listbox" is a
+  pre-existing combobox, not in scope).
+
+Findings:
+
+1. (Design nit) AccessibleModal hardcodes the base class "contact-email-modal".
+   A reusable primitive should not bake in one feature's class; every future
+   modal inherits contact-email-modal styling whether it wants it or not. Suggest
+   a neutral base (e.g. "accessible-modal") with callers passing their own class.
+
+2. (Minor) Route live region does not re-announce when two consecutive routes
+   share a title (e.g. two /dashboard/category/:id pages both "Survey group") and
+   never resets to "". Same text content = no SR re-announcement. Consider a
+   reset-then-set or a nonce if per-navigation announcement matters there.
+
+3. (Minor, out of scope) Unmapped routes (admin) return null from getRouteTitle,
+   so document.title goes stale (keeps the previous page's title) and admin SPA
+   navigations get no focus-to-main or announcement. Acceptable for Phase 43
+   since admin remediation is a separate phase; noting for that phase.
+
+4. (Minor) Survey runner heading order is now h1 (visually hidden) -> h3
+   (page title), skipping h2. WCAG best-practice nit, not a failure; pre-existing
+   h3 structure. Optionally bump the runner page title to h2.
+
+5. (Minor) Programmatic focus lands on <main> with `main:focus { outline:none }`,
+   so the landing is invisible. Standard for a focus-shift target; fine, but a
+   visible focus on the page <h1> is the more discoverable alternative.
+
+6. (Test coverage) App.test.ts and AccessibleModal.test.ts assert source strings
+   (readFileSync + toContain), consistent with this repo's convention but they do
+   not exercise the modal's runtime behavior. The trickiest logic in this phase -
+   Tab containment, inert save/restore, and return-focus - is reusable infra and
+   would pass these tests even if it regressed. Recommend at least one jsdom
+   render test covering Escape -> onClose and unmount -> return focus.
+
+7. (Noise, no action) Register.tsx shows ~100 changed lines but it is h2->h1 plus
+   a whitespace re-indent of the form body and a button reformat; no behavior
+   change.
+
+Manual checks still owed (already logged in FOLLOW_UPS.md): keyboard-only,
+responsive, and screen reader passes - in particular SR verification of the
+route announcement, modal focus trap/return, and the skip link.

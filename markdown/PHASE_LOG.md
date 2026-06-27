@@ -6,6 +6,211 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 43 — Public/User App Shell, Route, And Modal Accessibility
+
+Date:
+2026-06-27
+
+Status:
+Implemented; Claude review complete; manual browser and screen reader testing passed
+
+Prompt:
+`prompts/prompt_43.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_43_shell_modal_accessibility.txt`
+- Claude review: `notes/claude_review_phase_43_shell_modal_accessibility.txt`
+
+## Goals
+
+- Add public and registered-user route title, focus, and announcement behavior.
+- Add skip-to-main navigation and remove repeated header-brand `h1` usage.
+- Replace unsupported account menu ARIA menu semantics with disclosure
+  navigation behavior.
+- Add reusable modal focus management and apply it to public/user dialogs.
+
+## Built
+
+- Added a route accessibility manager in the app shell that maps scoped routes
+  to document titles, focuses the stable `main-content` target after route
+  changes, and announces navigation through a polite live region.
+- Added a skip link before repeated header navigation and made `<main>` a
+  stable focus target.
+- Changed public/user header brand text from repeated `h1` elements to styled
+  brand text, then normalized scoped page headings to `h1` where low-risk.
+- Added `AccessibleModal`, a small portal-based dialog primitive with initial
+  focus, Tab containment, Escape close, return focus, labelled title,
+  optional description, body scroll lock, and background `inert`/`aria-hidden`
+  handling.
+- Applied the modal primitive to the anonymous follow-up email modal and the
+  password reset success modal.
+- Converted the account menu to a disclosure panel with normal links/buttons,
+  `aria-expanded`/`aria-controls`, Escape close, outside-click close, and focus
+  return to the trigger on Escape.
+- Added focused source-level web tests for route title mapping, skip/main
+  wiring, account disclosure semantics, and modal behavior.
+- Updated draft release notes and follow-up backlog.
+
+## Important Decisions
+
+### Public/User Scope
+
+Decision:
+Keep route title mappings and heading normalization scoped to public and
+registered-user routes.
+
+Reason:
+The prompt explicitly defers Admin-only remediation. Admin routes are only
+affected by shared shell primitives where unavoidable.
+
+### Release Notes And Versioning
+
+Decision:
+Update `markdown/releases/unreleased.md` and leave the root app version at
+`0.1.5` during implementation.
+
+Reason:
+The project release workflow uses `unreleased.md` as the production-bound draft
+during implementation. Version bumps and versioned release files are handled by
+release preparation commands.
+
+### Claude Review Annotation
+
+Decision:
+Do not create or fill a Claude review output file before Claude review occurs.
+Annotate the missing documented feedback as pending in this phase log and the
+Codex handoff.
+
+Reason:
+The user noted that Claude Code review has not resulted in documented handoffs
+as feedback. The implementation should preserve that truth rather than imply a
+review was completed.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Auth or authorization impact: none.
+- Data privacy or visibility impact: none; hidden tags and participant survey
+  response data are untouched.
+- Frontend UX impact: route changes now update title/focus/announcement;
+  public/user dialogs trap focus; account navigation menu semantics changed to
+  disclosure semantics without visual redesign.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck -w apps/web
+npm run test -w apps/web -- App.test.ts components/AccessibleModal.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm test # rerun with approved local PostgreSQL access after sandbox EPERM
+git diff --check
+npm run typecheck -w apps/web
+npm run lint -w apps/web
+npm run test -w apps/web -- App.test.ts components/AccessibleModal.test.ts
+git diff --check
+```
+
+Results:
+
+- Passed: all commands above except the first sandboxed `npm test` attempt.
+- The first sandboxed `npm test` attempt passed shared and web tests, then the
+  API suite could not connect to local PostgreSQL due to sandbox `EPERM` on
+  `127.0.0.1:5432`.
+- The approved rerun of `npm test` passed shared, web, API, and release-note
+  tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+- The final modal cleanup was followed by the affected web typecheck, lint,
+  focused tests, and `git diff --check`; all passed.
+
+Manual tests:
+
+- Passed per developer manual testing on 2026-06-27.
+- Developer verified keyboard-only route navigation across scoped public and
+  registered-user routes, skip-link focus and main-content landing, account
+  disclosure Escape/outside-click behavior with focus return, password reset
+  and anonymous follow-up modal focus trap/Escape/return-focus behavior,
+  browser title updates, responsive header/menu behavior at 375/768/1280px,
+  and Admin smoke navigation for shared-shell regression.
+- Developer completed screen reader/assistive-technology spot checks for route
+  announcements, main-content focus, account disclosure semantics, and modal
+  descriptions/focus behavior.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_43_shell_modal_accessibility.txt`
+- Claude review status before commit: Completed; approved with no blockers.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_43_shell_modal_accessibility.txt`
+
+Status:
+
+- Completed; approved with no blockers.
+
+Critical issues:
+
+- None.
+
+Suggested improvements:
+
+- Consider renaming the modal base CSS class from the feature-specific
+  `contact-email-modal` to a neutral reusable modal class in a future cleanup.
+- Consider resetting or nonce-ing the route live region so consecutive
+  different routes with the same generic title, such as category pages, can
+  re-announce more reliably.
+- Consider render-level/jsdom coverage for the reusable modal primitive if the
+  project expands frontend DOM testing beyond current source-tripwire tests.
+
+Accepted fixes:
+
+- None required; review found no blockers.
+
+Deferred findings:
+
+- Admin-only heading hierarchy and Admin accessibility findings remain deferred
+  to the Admin accessibility backlog.
+- Unmapped Admin routes intentionally keep out-of-scope title/focus/announcement
+  behavior for this phase.
+- The survey runner heading order now has a visually hidden `h1` followed by
+  existing runner `h3` headings; Claude marked this a non-blocking best-practice
+  nit.
+- Programmatic route focus lands on `<main>` without a visible outline; Claude
+  marked this acceptable for a focus-shift target.
+
+## Follow-Up Tasks
+
+- Keep Claude's non-blocking modal CSS naming, route live-region repeated-title,
+  and jsdom modal test recommendations visible for future accessibility polish
+  or frontend test-harness phases.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blockers or behavior/security
+  drift
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 42 — Survey Runner Critical Accessibility
 
 Date:

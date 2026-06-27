@@ -33,7 +33,7 @@ export function ForgotPassword() {
       <div className="auth-card" data-reveal>
         <div className="page-header auth-card-header">
           <p className="eyebrow">Account access</p>
-          <h2>{isComplete ? "Check your email" : "Reset your password"}</h2>
+          <h1>{isComplete ? "Check your email" : "Reset your password"}</h1>
           <p>
             {isComplete
               ? "If that account exists, a reset link is on its way."

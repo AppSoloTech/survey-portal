@@ -89,6 +89,16 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Run the Phase 20 manual browser pass: admin reviews the bifurcated Administrators/Standard users sections in `/admin/users`, opens user detail and returns to the list, reviews contact profile/stat tiles, initiates a password reset without seeing token data, confirms standard-user 403 behavior from admin detail/reset endpoints, and checks the admin user list/detail/reset UI at 375/768/1280px.
 - Replace `THREE.Clock` in `apps/web/src/components/AmbientBackdrop.tsx` with the supported Three.js timing API or a local `performance.now()` timer. Manual Phase 25 browser testing surfaced the console warning: `THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.`
 - Phase 41 glossary scope follow-up: confirm whether inline glossary rendering should expand beyond question prompts to survey/page descriptions, question help text, or answer option labels. Phase 41 intentionally applies only to participant-facing question prompt text and Admin preview question prompt text.
+- Public/user heading cleanup follow-up: Phase 43 normalized the shared header
+  brand and the scoped public/registered-user route headings. Admin-only
+  heading hierarchy and any broader heading audit remain deferred with the
+  Admin accessibility findings.
+- Phase 43 Claude review nits: consider renaming the reusable modal base CSS
+  class from feature-specific `contact-email-modal` to a neutral modal class;
+  consider resetting or nonce-ing the route live region so consecutive routes
+  with the same generic title re-announce; consider jsdom/render-level tests for
+  modal Escape, focus containment, inert restore, and return-focus behavior if
+  the frontend test harness expands beyond current source-tripwire tests.
 - Phase 40 production enablement: before enabling the Merriam-Webster provider
   for client use, confirm whether the Admin-only suggestion UI needs an
   approved Merriam-Webster logo asset in addition to source attribution text.
@@ -122,6 +132,18 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 43: Manual accessibility/browser pass completed 2026-06-27.
+  Developer verified the public/user app shell and modal accessibility changes:
+  keyboard route navigation across scoped public and registered-user routes,
+  skip-link focus and main-content landing, account disclosure Escape and
+  outside-click close behavior with focus return, password reset and anonymous
+  follow-up modal focus trap/Escape/return-focus behavior, browser title
+  updates, responsive header/menu behavior at 375/768/1280px, and Admin smoke
+  navigation for shared-shell regression.
+- Phase 43: Screen reader/assistive-technology spot checks completed
+  2026-06-27 as part of the developer manual pass; route announcements,
+  main-content focus, account disclosure semantics, and modal descriptions/focus
+  behavior passed.
 - Phase 42: Manual accessibility/browser pass completed 2026-06-27.
   Developer verified the participant runner after the scale radio conversion:
   required unanswered scale validation, selected scale radio value,

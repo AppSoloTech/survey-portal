@@ -39,59 +39,64 @@ export function Register() {
       <div className="auth-card" data-reveal>
         <div className="page-header auth-card-header">
           <p className="eyebrow">User access</p>
-          <h2>Create your account</h2>
+          <h1>Create your account</h1>
           <p>Join the portal in under a minute.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
-        <label data-reveal>
-          First name
-          <input
-            autoComplete="given-name"
-            name="firstName"
-            onChange={(event) => setFirstName(event.target.value)}
-            required
-            type="text"
-            value={firstName}
-          />
-        </label>
-        <label data-reveal>
-          Last name
-          <input
-            autoComplete="family-name"
-            name="lastName"
-            onChange={(event) => setLastName(event.target.value)}
-            required
-            type="text"
-            value={lastName}
-          />
-        </label>
-        <label data-reveal>
-          Email
-          <input
-            autoComplete="email"
-            name="email"
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            type="email"
-            value={email}
-          />
-        </label>
-        <label data-reveal>
-          Password
-          <input
-            autoComplete="new-password"
-            minLength={8}
-            name="password"
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            type="password"
-            value={password}
-          />
-        </label>
-        {error ? <p className="status error">{error}</p> : null}
-        <button className="button-link form-button" data-reveal disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Creating account..." : "Register"}
-        </button>
+          <label data-reveal>
+            First name
+            <input
+              autoComplete="given-name"
+              name="firstName"
+              onChange={(event) => setFirstName(event.target.value)}
+              required
+              type="text"
+              value={firstName}
+            />
+          </label>
+          <label data-reveal>
+            Last name
+            <input
+              autoComplete="family-name"
+              name="lastName"
+              onChange={(event) => setLastName(event.target.value)}
+              required
+              type="text"
+              value={lastName}
+            />
+          </label>
+          <label data-reveal>
+            Email
+            <input
+              autoComplete="email"
+              name="email"
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </label>
+          <label data-reveal>
+            Password
+            <input
+              autoComplete="new-password"
+              minLength={8}
+              name="password"
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+          </label>
+          {error ? <p className="status error">{error}</p> : null}
+          <button
+            className="button-link form-button"
+            data-reveal
+            disabled={isSubmitting}
+            type="submit"
+          >
+            {isSubmitting ? "Creating account..." : "Register"}
+          </button>
           <p className="form-note" data-reveal>
             Already have an account? <Link to="/login">Login</Link>
           </p>

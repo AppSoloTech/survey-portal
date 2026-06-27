@@ -47,7 +47,7 @@ export function AnonymousSurveyDirectoryPage() {
     <section className="page anonymous-directory-page" ref={revealRef}>
       <div className="page-header anonymous-directory-header" data-reveal>
         <p className="eyebrow">Anonymous surveys</p>
-        <h2>Public survey directory</h2>
+        <h1>Public survey directory</h1>
         <p>Open surveys that can be completed without signing in.</p>
       </div>
 

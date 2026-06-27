@@ -12,9 +12,9 @@ export function Home() {
     <section className="page home-page" ref={revealRef}>
       <div className="page-header home-header" data-reveal>
         <p className="eyebrow">Survey Portal</p>
-        <h2>
+        <h1>
           Surveys that feel <span className="hero-accent">considered</span>, not collected.
-        </h2>
+        </h1>
         <p>
           Access assigned surveys, save progress as you go, and manage published survey
           content from the admin workspace when your account allows it.

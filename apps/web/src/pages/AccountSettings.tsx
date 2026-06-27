@@ -136,7 +136,7 @@ export function AccountSettings() {
     <section className="page settings-page" ref={revealRef}>
       <div className="page-header" data-reveal>
         <p className="eyebrow">Account</p>
-        <h2>Settings</h2>
+        <h1>Settings</h1>
         <p>Review your account details and request a password reset email.</p>
       </div>
 

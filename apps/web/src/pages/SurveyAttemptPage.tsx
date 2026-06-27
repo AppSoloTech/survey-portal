@@ -40,6 +40,7 @@ import {
 } from "../api/surveys.js";
 import { useAuth } from "../auth/AuthContext.js";
 import { AnimatedNumber } from "../components/AnimatedNumber.js";
+import { AccessibleModal } from "../components/AccessibleModal.js";
 import { InlineGlossaryText } from "../components/InlineGlossaryText.js";
 import { prefersReducedMotion, useReveal } from "../motion/motion.js";
 
@@ -702,6 +703,10 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
           {activeSurvey?.survey.title ?? "Survey"}
         </span>
       </nav>
+      <h1 className="visually-hidden">
+        {activeSurvey?.survey.title ??
+          (mode === "anonymous" ? "Anonymous survey attempt" : "Survey attempt")}
+      </h1>
 
       {error && errorQuestionId === null ? (
         <p className="status error" role="alert">
@@ -1238,15 +1243,12 @@ function AnonymousContactEmailModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation">
-      <form
-        aria-describedby="anonymous-contact-email-description"
-        aria-labelledby="anonymous-contact-email-title"
-        aria-modal="true"
-        className="contact-email-modal"
-        onSubmit={onSubmit}
-        role="dialog"
-      >
+    <AccessibleModal
+      descriptionId="anonymous-contact-email-description"
+      labelledBy="anonymous-contact-email-title"
+      onClose={onSkip}
+    >
+      <form className="contact-email-modal-form" onSubmit={onSubmit}>
         <div className="contact-email-modal-heading">
           <p className="eyebrow">Optional</p>
           <h3 id="anonymous-contact-email-title">Share an email for follow-up?</h3>
@@ -1265,6 +1267,7 @@ function AnonymousContactEmailModal({
             aria-invalid={error ? "true" : undefined}
             aria-labelledby="anonymous-contact-email-label"
             autoComplete="email"
+            data-autofocus
             inputMode="email"
             onChange={(event) => onChange(event.target.value)}
             placeholder="name@example.com"
@@ -1295,7 +1298,7 @@ function AnonymousContactEmailModal({
           </button>
         </div>
       </form>
-    </div>
+    </AccessibleModal>
   );
 }
 

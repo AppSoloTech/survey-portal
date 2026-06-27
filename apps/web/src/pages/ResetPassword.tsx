@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { completePasswordReset } from "../api/auth.js";
+import { AccessibleModal } from "../components/AccessibleModal.js";
 import { useReveal } from "../motion/motion.js";
 
 export function ResetPassword() {
@@ -56,7 +57,7 @@ export function ResetPassword() {
       <div className="auth-card" data-reveal>
         <div className="page-header auth-card-header">
           <p className="eyebrow">Account access</p>
-          <h2>{isComplete ? "Password reset complete" : "Choose a new password"}</h2>
+          <h1>{isComplete ? "Password reset complete" : "Choose a new password"}</h1>
           <p>
             {isComplete
               ? "You can now sign in with your new password."
@@ -124,26 +125,31 @@ function PasswordResetSuccessModal({
   onContinue: () => void;
 }) {
   return (
-    <div className="modal-backdrop" role="presentation">
-      <div
-        aria-labelledby="password-reset-success-title"
-        aria-modal="true"
-        className="contact-email-modal reset-success-modal"
-        role="dialog"
-      >
-        <div className="contact-email-modal-heading">
-          <p className="eyebrow">All set</p>
-          <h3 id="password-reset-success-title">Your password was reset</h3>
-        </div>
+    <AccessibleModal
+      className="reset-success-modal"
+      descriptionId="password-reset-success-description"
+      labelledBy="password-reset-success-title"
+      onClose={onContinue}
+    >
+      <div className="contact-email-modal-heading">
+        <p className="eyebrow">All set</p>
+        <h3 id="password-reset-success-title">Your password was reset</h3>
+      </div>
+      <div id="password-reset-success-description">
         <p className="muted">{message}</p>
         <p className="muted">We will take you back to login in a moment.</p>
-        <div className="contact-email-modal-actions">
-          <button className="button-link primary-button" onClick={onContinue} type="button">
-            Continue to login
-          </button>
-        </div>
       </div>
-    </div>
+      <div className="contact-email-modal-actions">
+        <button
+          className="button-link primary-button"
+          data-autofocus
+          onClick={onContinue}
+          type="button"
+        >
+          Continue to login
+        </button>
+      </div>
+    </AccessibleModal>
   );
 }
 

@@ -39,7 +39,7 @@ export function CategorySurveysPage() {
 
       <div className="page-header">
         <p className="eyebrow">Survey group</p>
-        <h2>{categoryName ?? "Survey group"}</h2>
+        <h1>{categoryName ?? "Survey group"}</h1>
         {categorySummaries.length > 0 ? (
           <p>
             {categorySummaries.length}{" "}

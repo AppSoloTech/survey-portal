@@ -40,7 +40,7 @@ export function Login() {
       <div className="auth-card" data-reveal>
         <div className="page-header auth-card-header">
           <p className="eyebrow">User access</p>
-          <h2>Welcome back</h2>
+          <h1>Welcome back</h1>
           <p>Access your survey workspace.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>

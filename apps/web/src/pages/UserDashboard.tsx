@@ -47,7 +47,7 @@ export function UserDashboard() {
     <section className="page dashboard-page" ref={revealRef}>
       <div className="page-header" data-reveal>
         <p className="eyebrow">User portal</p>
-        <h2>Survey Dashboard</h2>
+        <h1>Survey Dashboard</h1>
         <p>Browse available surveys, resume saved progress, and review completed attempts.</p>
       </div>
 

@@ -1,0 +1,104 @@
+Phase 43 - Public/User App Shell, Route, And Modal Accessibility
+
+Implementation summary:
+
+- Added route accessibility management in `apps/web/src/App.tsx` for public and
+  registered-user routes. Scoped routes now map to document titles, route
+  changes focus `#main-content`, and a polite live region announces navigation.
+- Added a skip-to-main link before repeated header navigation and gave `<main>`
+  a stable `id="main-content"` plus `tabIndex={-1}`.
+- Replaced repeated header-brand `h1` elements with styled brand text.
+- Normalized scoped public/user page headings to a single page-level `h1` where
+  low-risk, including auth pages, dashboard, settings, category list,
+  anonymous directory, not-found, and a visually hidden survey-attempt heading.
+- Added `apps/web/src/components/AccessibleModal.tsx`, a small portal-based
+  dialog primitive with initial focus, Tab containment, Escape close, return
+  focus, labelled title, optional description, body scroll lock, and background
+  `inert`/`aria-hidden` handling.
+- Applied `AccessibleModal` to:
+  - anonymous follow-up email modal in `SurveyAttemptPage.tsx`
+  - password reset success modal in `ResetPassword.tsx`
+- Converted the account menu from unsupported ARIA menu roles to a disclosure
+  panel with normal links/buttons, `aria-expanded`, `aria-controls`, outside
+  click close, Escape close, and trigger focus return on Escape.
+- Added focused source-level tests:
+  - `apps/web/src/App.test.ts`
+  - `apps/web/src/components/AccessibleModal.test.ts`
+- Updated draft release notes, phase log, and follow-up backlog.
+
+Files changed:
+
+- apps/web/src/App.tsx
+- apps/web/src/App.test.ts
+- apps/web/src/components/AccessibleModal.tsx
+- apps/web/src/components/AccessibleModal.test.ts
+- apps/web/src/pages/Home.tsx
+- apps/web/src/pages/Login.tsx
+- apps/web/src/pages/Register.tsx
+- apps/web/src/pages/ForgotPassword.tsx
+- apps/web/src/pages/ResetPassword.tsx
+- apps/web/src/pages/AccountSettings.tsx
+- apps/web/src/pages/UserDashboard.tsx
+- apps/web/src/pages/CategorySurveysPage.tsx
+- apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx
+- apps/web/src/pages/SurveyAttemptPage.tsx
+- apps/web/src/pages/NotFound.tsx
+- apps/web/src/styles.css
+- markdown/releases/unreleased.md
+- markdown/FOLLOW_UPS.md
+- markdown/PHASE_LOG.md
+- notes/claude_handoff_phase_43_shell_modal_accessibility.txt
+
+Review focus requested:
+
+- Confirm route title, focus-to-main, and live-region announcement behavior on
+  public and registered-user routes.
+- Confirm skip link appears on focus and lands on `#main-content`.
+- Confirm scoped heading hierarchy improved and the repeated header brand is no
+  longer an `h1`.
+- Review `AccessibleModal` focus handling, Tab containment, Escape behavior,
+  return focus, labelled title/description wiring, and background inert
+  handling.
+- Confirm anonymous follow-up email and password reset success modals still
+  preserve their existing submit/skip/continue behavior.
+- Confirm the account panel is now a disclosure navigation pattern, not an ARIA
+  menu, and closes predictably with Escape and outside click.
+- Confirm Admin-only accessibility remediation did not creep into scope beyond
+  incidental shared shell effects.
+- Confirm no survey answer-control, API, database, auth, reporting, hidden tag,
+  or CSV behavior changed.
+
+Validation run by Codex:
+
+- npm run typecheck -w apps/web
+- npm run test -w apps/web -- App.test.ts components/AccessibleModal.test.ts
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- npm test (rerun with approved local PostgreSQL access after sandbox EPERM)
+- git diff --check
+- npm run typecheck -w apps/web
+- npm run lint -w apps/web
+- npm run test -w apps/web -- App.test.ts components/AccessibleModal.test.ts
+- git diff --check
+
+Results:
+
+- Passed: all commands above except the first sandboxed `npm test` attempt.
+- The first sandboxed `npm test` attempt passed shared and web tests, then the
+  API suite hit sandbox-blocked PostgreSQL access (`EPERM 127.0.0.1:5432`).
+- The approved rerun of `npm test` passed shared, web, API, and release-note
+  tests.
+- `npm run build` emitted the existing Vite large chunk warning.
+- The final modal cleanup was followed by the affected web typecheck, lint,
+  focused tests, and `git diff --check`; all passed.
+
+Post-handoff updates:
+
+- Claude Code review was completed in
+  `notes/claude_review_phase_43_shell_modal_accessibility.txt` with approval
+  and no blockers.
+- Manual keyboard-only, responsive, and screen reader checks passed per
+  developer manual testing on 2026-06-27. The phase log and follow-up backlog
+  were updated to reflect commit readiness.

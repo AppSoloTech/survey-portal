@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -61,10 +61,14 @@ function AppShell() {
     return (
       <>
         <BackdropGate />
+        <RouteAccessibilityManager />
         <div className="app-shell">
+          <a className="skip-link" href="#main-content">
+            Skip to main content
+          </a>
           <PublicHeader />
 
-          <main>
+          <main id="main-content" tabIndex={-1}>
             <RouteTransition>
               <Routes>
                 <Route element={<AnonymousSurveyDirectoryPage />} path="/anonymous-surveys" />
@@ -81,10 +85,14 @@ function AppShell() {
   return (
     <AuthProvider>
       <BackdropGate />
+      <RouteAccessibilityManager />
       <div className="app-shell">
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <Header />
 
-        <main>
+        <main id="main-content" tabIndex={-1}>
           <RouteTransition>
             <Routes>
               <Route element={<Home />} path="/" />
@@ -122,6 +130,65 @@ function AppShell() {
         </main>
       </div>
     </AuthProvider>
+  );
+}
+
+const appTitle = "Survey Portal";
+
+const routeTitles = [
+  { pattern: /^\/$/, title: "Home" },
+  { pattern: /^\/login$/, title: "Login" },
+  { pattern: /^\/register$/, title: "Register" },
+  { pattern: /^\/forgot-password$/, title: "Forgot password" },
+  { pattern: /^\/reset-password$/, title: "Reset password" },
+  { pattern: /^\/dashboard$/, title: "Dashboard" },
+  { pattern: /^\/settings$/, title: "Account settings" },
+  { pattern: /^\/dashboard\/category\/[^/]+$/, title: "Survey group" },
+  { pattern: /^\/surveys\/[^/]+\/attempt$/, title: "Survey attempt" },
+  { pattern: /^\/anonymous-surveys$/, title: "Anonymous surveys" },
+  { pattern: /^\/anonymous-surveys\/[^/]+$/, title: "Anonymous survey attempt" }
+];
+
+export function getRouteTitle(pathname: string): string | null {
+  return routeTitles.find((route) => route.pattern.test(pathname))?.title ?? null;
+}
+
+function RouteAccessibilityManager() {
+  const location = useLocation();
+  const [announcement, setAnnouncement] = useState("");
+  const hasMountedRef = useRef(false);
+
+  useEffect(() => {
+    const routeTitle = getRouteTitle(location.pathname);
+
+    if (!routeTitle) {
+      hasMountedRef.current = true;
+      return undefined;
+    }
+
+    document.title = `${routeTitle} | ${appTitle}`;
+
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const main = document.getElementById("main-content");
+
+      main?.focus({ preventScroll: true });
+      setAnnouncement(routeTitle);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [location.pathname]);
+
+  return (
+    <div aria-atomic="true" aria-live="polite" className="visually-hidden" role="status">
+      {announcement ? `Navigated to ${announcement}` : ""}
+    </div>
   );
 }
 
@@ -171,7 +238,7 @@ function PublicHeader() {
     <header className={isScrolled ? "app-header scrolled" : "app-header"}>
       <Link className="brand-link" to="/anonymous-surveys">
         <p className="eyebrow">Survey Portal</p>
-        <h1>Anonymous surveys</h1>
+        <span className="brand-title">Anonymous surveys</span>
       </Link>
       <div className="header-actions">
         <ThemeToggle />
@@ -190,6 +257,8 @@ function Header() {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // The glass header earns its border/shadow only after the page moves.
   useEffect(() => {
@@ -204,6 +273,36 @@ function Header() {
       window.removeEventListener("scroll", onScroll);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) {
+      return undefined;
+    }
+
+    function onDocumentPointerDown(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !accountMenuRef.current?.contains(event.target)
+      ) {
+        setIsAccountMenuOpen(false);
+      }
+    }
+
+    function onDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsAccountMenuOpen(false);
+        accountButtonRef.current?.focus();
+      }
+    }
+
+    document.addEventListener("pointerdown", onDocumentPointerDown);
+    document.addEventListener("keydown", onDocumentKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", onDocumentPointerDown);
+      document.removeEventListener("keydown", onDocumentKeyDown);
+    };
+  }, [isAccountMenuOpen]);
 
   const links = isAuthenticated
     ? [
@@ -232,7 +331,7 @@ function Header() {
     <header className={isScrolled ? "app-header scrolled" : "app-header"}>
       <Link className="brand-link" onClick={closeMenu} to="/">
         <p className="eyebrow">Survey Portal</p>
-        <h1>Survey workspace</h1>
+        <span className="brand-title">Survey workspace</span>
       </Link>
       <div className="header-actions">
         <ThemeToggle />
@@ -264,17 +363,26 @@ function Header() {
           </NavLink>
         ))}
         {isAuthenticated && user ? (
-          <div className={isAccountMenuOpen ? "account-menu open" : "account-menu"}>
+          <div
+            className={isAccountMenuOpen ? "account-menu open" : "account-menu"}
+            ref={accountMenuRef}
+          >
             <button
+              aria-controls="account-disclosure-panel"
               aria-expanded={isAccountMenuOpen}
-              aria-haspopup="menu"
               className={isAccountActive ? "nav-link nav-button active" : "nav-link nav-button"}
+              id="account-disclosure-button"
               onClick={() => setIsAccountMenuOpen((open) => !open)}
+              ref={accountButtonRef}
               type="button"
             >
               Account
             </button>
-            <div className="account-menu-panel" role="menu">
+            <div
+              aria-labelledby="account-disclosure-button"
+              className="account-menu-panel"
+              id="account-disclosure-panel"
+            >
               <div className="nav-identity" aria-label="Signed in account">
                 <span className="nav-identity-name">
                   {user.firstName} {user.lastName}
@@ -288,7 +396,6 @@ function Header() {
                   isActive ? "account-menu-item active" : "account-menu-item"
                 }
                 onClick={closeMenu}
-                role="menuitem"
                 to="/settings"
               >
                 Settings
@@ -296,7 +403,6 @@ function Header() {
               <button
                 className="account-menu-item account-menu-button"
                 onClick={handleLogout}
-                role="menuitem"
                 type="button"
               >
                 Logout

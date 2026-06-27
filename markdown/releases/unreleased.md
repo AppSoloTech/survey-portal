@@ -1,8 +1,8 @@
 # Unreleased
 
-Release title: Survey Runner Accessibility
+Release title: User-Facing Accessibility Improvements
 
-Summary: Improves participant survey-taking accessibility for progress, answer controls, and validation feedback.
+Summary: Improves participant survey-taking, app navigation, and dialog accessibility for public and registered-user workflows.
 
 ## Fixed
 
@@ -10,3 +10,7 @@ Summary: Improves participant survey-taking accessibility for progress, answer c
 - Participant survey progress now includes programmatic progress and visible current-path context.
 - Survey runner answer controls now have stronger prompt, help text, and error associations for assistive technology.
 - Runner validation, save, submit, and anonymous follow-up email errors are announced more reliably.
+- Public and registered-user routes now update browser titles, announce navigation, and move focus to the main content after route changes.
+- Keyboard users can skip repeated header navigation with a skip-to-main link.
+- The account menu now uses disclosure navigation semantics with Escape and outside-click close behavior.
+- Password reset and anonymous follow-up email dialogs now use shared modal focus management with focus trapping, Escape handling, return focus, and background inert behavior.

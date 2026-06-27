@@ -5,7 +5,7 @@ export function NotFound() {
     <section className="page">
       <div className="page-header">
         <p className="eyebrow">404</p>
-        <h2>Page not found</h2>
+        <h1>Page not found</h1>
         <p>The requested route does not exist.</p>
       </div>
       <Link className="button-link" to="/">
