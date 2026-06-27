@@ -1,0 +1,241 @@
+# Phase 46 - Public/User Accessibility Verification, Contrast, And Documentation
+
+## Purpose
+
+Add repeatable public and registered-user accessibility verification and
+documentation after the primary user-facing remediation phases have landed.
+
+This phase should make accessibility checks easier to repeat before production
+without turning the project into a heavy testing platform.
+
+Source feedback or planning note:
+
+```txt
+docs/ACCESSIBILITY_AUDIT_REPORT.md
+Low finding 21 and the final manual-browser-testing requirements, scoped to
+public and registered-user routes.
+Phase 4 of the audit remediation plan: polish, testing, and documentation.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-46-accessibility-verification
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_46_accessibility_verification.txt`
+* Claude review: `notes/claude_review_phase_46_accessibility_verification.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+* `prompts/accessibility_remediation_prompt_plan.txt`
+* `prompts/prompt_42.txt`
+* `prompts/prompt_43.txt`
+* `prompts/prompt_44.txt`
+* `prompts/prompt_45.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Existing test scripts, Vite config, and any frontend test setup.
+
+---
+
+# Received Feedback
+
+The audit identified areas that require browser and assistive-technology
+verification for the public and registered-user application:
+
+1. Contrast across light/dark themes and component states.
+2. Keyboard-only flows across public, anonymous participant, and registered
+   participant routes.
+3. Screen reader checks for route changes, survey questions, modals, form
+   errors, dashboard cards, and public directory cards.
+4. Mobile screen reader/touch checks.
+5. Repeatable axe/Playwright-style checks if practical.
+6. Documentation for accessibility primitives and future regression checks.
+
+---
+
+# Intake Classification
+
+* validation and documentation phase
+* optional test harness improvement
+* no product behavior change expected except tiny fixes found during validation
+* possible dev dependency addition if approved
+
+---
+
+# Scope
+
+Implement:
+
+* Create a durable accessibility test/checklist document, for example
+  `markdown/ACCESSIBILITY_TEST_PLAN.md`, covering:
+  * keyboard-only workflows
+  * screen reader workflows
+  * mobile screen reader/touch checks
+  * contrast checks in light and dark theme
+  * modal, route, auth, account, dashboard, public directory, and survey runner
+    forms
+  * accepted limitations of automated testing
+* Add a concise accessibility primitive guide if new primitives from Phases
+  42-45 need usage rules.
+* Add automated accessibility checks if practical with the existing stack.
+  Prefer a small Playwright plus axe-style smoke suite only if it can run
+  reliably in this repo and the human developer approves any new dependency.
+* If adding automated browser checks, cover representative routes and states:
+  * public home/login/register
+  * dashboard
+  * category survey list
+  * account settings
+  * survey attempt with multiple question types
+  * anonymous survey route
+  * anonymous survey directory
+  * light and dark themes
+* Add or document contrast verification for:
+  * normal text
+  * muted text
+  * buttons
+  * focus rings
+  * disabled controls
+  * status pills
+  * toasts/alerts
+  * survey cards, progress indicators, glossary triggers, and modal surfaces
+* Update `markdown/REVIEW_CHECKLIST.md` with compact accessibility review
+  gates if the team wants them to remain durable.
+* Keep any discovered defects either fixed if tiny and in scope, or added to
+  `markdown/FOLLOW_UPS.md` with clear phase placement.
+
+## Non-Goals
+
+Do not implement:
+
+* Large UI remediation already owned by Phases 42-45.
+* Admin-only accessibility remediation, including Admin builder, Admin results,
+  Admin users, Admin custom selects, and Admin drag-and-drop.
+* New user-visible accessibility features beyond tiny fixes found while
+  validating.
+* A heavy end-to-end testing platform unless explicitly approved.
+* Live external service dependency in tests.
+* Real client data fixtures.
+
+## Assumptions
+
+* Automated accessibility tools cannot replace manual assistive-technology
+  testing.
+* Some checks may remain manual if browser automation is not available in the
+  project environment.
+* Documentation is an acceptable deliverable for checks that cannot be
+  automated safely.
+
+## Open Questions
+
+* Is the human developer willing to add Playwright and an axe integration as
+  dev dependencies? If not, create the manual test plan and add lightweight
+  non-browser tests only.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The project has a clear repeatable accessibility test plan.
+* Existing review workflow includes public/user accessibility checks for future
+  phases.
+* Contrast testing expectations are documented for both themes.
+* Any automated checks added are reliable, documented, and included in an
+  appropriate npm script.
+* Manual browser/AT gaps are explicitly recorded.
+* Deferred defects discovered during validation are added to
+  `markdown/FOLLOW_UPS.md`.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+If adding a new automated accessibility command, also run it and document:
+
+```bash
+npm run test:accessibility
+```
+
+Manual checks to complete or document as pending:
+
+* Keyboard-only pass across home, login, register, forgot/reset password,
+  dashboard, category survey list, account settings, survey attempt, anonymous
+  directory, and anonymous survey attempt.
+* NVDA with Firefox or Chrome for survey runner, dashboard, and public
+  directory.
+* VoiceOver with Safari for route changes, modals, forms, dashboard cards, and
+  glossary terms.
+* Mobile screen reader/touch for participant survey taking, dashboard, account
+  settings, and anonymous directory.
+* Contrast spot checks in light and dark themes.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_46_accessibility_verification.txt
+```
+
+Ask Claude Code to review:
+
+* whether the test plan covers audit findings and remediated components
+* whether automated checks are reliable and not overbuilt
+* whether new dependencies, if any, are justified
+* whether review checklist changes are concise and durable
+* whether manual testing gaps are honestly documented
+* whether Admin-only checks stayed out of scope except for incidental smoke
+  compatibility
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_46_accessibility_verification.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/releases/unreleased.md`
+* `markdown/PHASE_LOG.md`

@@ -6,6 +6,183 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 42 — Survey Runner Critical Accessibility
+
+Date:
+2026-06-27
+
+Status:
+Implemented; Claude review complete; manual browser and screen reader testing passed
+
+Prompt:
+`prompts/prompt_42.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_42_survey_runner_accessibility.txt`
+- Claude review: `notes/claude_review_phase_42_survey_runner_accessibility.txt`
+
+## Goals
+
+- Fix the participant scale question unset state so unanswered required scales
+  are not exposed as the minimum value.
+- Add semantic programmatic progress for the current survey path.
+- Strengthen answer-control prompt/help/error associations in the survey
+  runner without changing response shape, skip logic, hidden tags, reporting,
+  or CSV behavior.
+- Announce runner validation and save/submit errors more reliably.
+
+## Built
+
+- Replaced the participant scale range input with styled native radio options.
+- Preserved scale save behavior through the existing selected answer option id
+  state and answer payload.
+- Removed dead range slider CSS after Claude review and renamed the remaining
+  selected-value scale classes from `scale-slider-*` to `scale-answer-*`.
+- Added question-scoped error tracking so invalid integer, required scale, and
+  failed answer-save messages render next to the affected question with
+  `role="alert"` and `aria-invalid`.
+- Added stable ids for question prompts, help text, helper text, controls, and
+  error messages.
+- Connected text, integer, scale, normal selection, and Other controls to their
+  prompt and relevant help/error/helper text.
+- Added question-specific labels to integer stepper increase/decrease buttons.
+- Replaced the aria-hidden progress track with a native `progress` element,
+  visible current path context, and screen-reader value text.
+- Added alert/status semantics for runner loading/load failures, anonymous
+  account registration errors, anonymous follow-up email errors, and follow-up
+  email saved status.
+- Added focused web source tests for the runner accessibility changes.
+- Updated draft release notes and follow-up backlog.
+
+## Important Decisions
+
+### Native Radio Scale
+
+Decision:
+Use native radio options for participant scale questions instead of preserving
+the range slider.
+
+Reason:
+The range control exposed the minimum value before an answer was selected.
+Native radios have an honest unset state while preserving the existing selected
+answer option id contract.
+
+### Phase Boundary
+
+Decision:
+Do not add modal focus trapping, route focus management, or a global form-field
+primitive in this phase.
+
+Reason:
+Those are explicitly assigned to Phases 43 and 44. Phase 42 only improves
+runner-level modal/email labels, descriptions, invalid state, and error
+announcement where they already exist. Focus trapping, Escape close, return
+focus, and background inert behavior remain Phase 43.
+
+### Release Notes And Versioning
+
+Decision:
+Update `markdown/releases/unreleased.md` during implementation and leave the
+root app version at `0.1.5`.
+
+Reason:
+The release workflow treats `unreleased.md` as the working draft during
+production-bound implementation. The version bump and versioned release file
+belong to `npm run release:prepare` / release prep.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Response shape impact: none.
+- Conditional logic/skip behavior impact: none expected.
+- Hidden tag, reporting, and CSV impact: none expected.
+- Auth/anonymous attempt behavior impact: no API or authorization changes.
+- Frontend UX impact: scale questions render as radio-style choices instead of
+  a range slider; progress now includes visible path context.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+npm run lint -w apps/web
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+npx tsc --noEmit -p apps/web/tsconfig.json
+npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+npm run lint -w apps/web
+```
+
+Results:
+
+- Passed: all commands above. The last three commands were rerun after the
+  Claude cleanup changes.
+- `npm run build` emitted the existing Vite large chunk warning.
+- `npm test` passed shared, web, API, and release-note tests. API tests used
+  approved local PostgreSQL access.
+
+Manual tests:
+
+- Passed per developer manual testing on 2026-06-27.
+- Developer verified the participant runner after the scale radio conversion:
+  required unanswered scale validation, selected scale radio value,
+  text/integer/selection/Other prompt and helper/error announcements, semantic
+  progress, failed save/submit alerts, anonymous follow-up email modal error
+  announcement, keyboard-only controls, responsive layouts at 375/768/1280px,
+  conditional page/skip logic, and inline glossary prompts.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_42_survey_runner_accessibility.txt`
+
+Status:
+
+- Completed; approved with cleanup.
+
+Accepted fixes:
+
+- Deleted orphaned range slider CSS left behind by the radio-scale conversion.
+- Renamed the reused scale selected-value classes to `scale-answer-*`.
+- Removed a misleading no-op `transition: width` declaration from the native
+  progress value styling.
+
+Deferred findings:
+
+- Keep in mind that future navigation changes should preserve the current
+  invariant that question-scoped errors are cleared before the question leaves
+  the visible page.
+- Rendered DOM/accessibility-tree tests remain deferred; current tests follow
+  the existing source-tripwire convention.
+
+## Follow-Up Tasks
+
+- None for Phase 42.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no blocking issues
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
 ## Phase 41 — Participant Inline Glossary Rendering
 
 Date:

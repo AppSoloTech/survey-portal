@@ -17,7 +17,6 @@ import {
   useCallback,
   useRef,
   useState,
-  type CSSProperties,
   type Dispatch,
   type FormEvent,
   type SetStateAction
@@ -109,6 +108,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
     useState(false);
   const [hasDeclinedAnonymousRegistration, setHasDeclinedAnonymousRegistration] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorQuestionId, setErrorQuestionId] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const recordedResumeAttemptIdsRef = useRef<Set<number>>(new Set());
   const recordedPageEntryKeysRef = useRef<Set<string>>(new Set());
@@ -275,6 +275,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       setContactEmailMessage(null);
       setContactEmailError(null);
       setIsContactEmailModalOpen(false);
+      setErrorQuestionId(null);
       setAnonymousRegistrationDraft({
         firstName: "",
         lastName: "",
@@ -344,6 +345,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       !Number.isInteger(integerValue)
     ) {
       setError("Enter a whole number");
+      setErrorQuestionId(question.id);
       return;
     }
 
@@ -353,10 +355,12 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       selectedAnswerOptionIds.length === 0
     ) {
       setError("Choose a value on the scale");
+      setErrorQuestionId(question.id);
       return;
     }
 
     setError(null);
+    setErrorQuestionId(null);
     setIsSubmitting(true);
 
     try {
@@ -416,6 +420,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not save answer");
+      setErrorQuestionId(question.id);
     } finally {
       setIsSubmitting(false);
     }
@@ -427,6 +432,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
     }
 
     setError(null);
+    setErrorQuestionId(null);
     setIsSubmitting(true);
 
     try {
@@ -459,6 +465,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       }
     } catch (completeError) {
       setError(completeError instanceof Error ? completeError.message : "Could not submit survey");
+      setErrorQuestionId(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -599,6 +606,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
           getQuestionsForPage(activeSurvey.survey, previousPage.id).map((question) => question.id)
       });
       setError(null);
+      setErrorQuestionId(null);
     }
   }
 
@@ -619,9 +627,19 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       currentPageQuestionIds: state.currentPageQuestionIds
     });
     setError(null);
+    setErrorQuestionId(null);
+  }
+
+  function clearQuestionError(questionId: number) {
+    if (errorQuestionId === questionId) {
+      setError(null);
+      setErrorQuestionId(null);
+    }
   }
 
   function handleSelection(question: SurveyQuestion, optionId: number, checked: boolean) {
+    clearQuestionError(question.id);
+
     if (question.questionType === "single_select" || question.questionType === "scale") {
       setSelectedAnswerOptionIdsByQuestionId((current) => ({
         ...current,
@@ -646,14 +664,17 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   }
 
   function handleTextChange(questionId: number, value: string) {
+    clearQuestionError(questionId);
     setDraftAnswer(setAnswerTextByQuestionId, questionId, value);
   }
 
   function handleIntegerChange(questionId: number, value: string) {
+    clearQuestionError(questionId);
     setDraftAnswer(setAnswerIntegerByQuestionId, questionId, value);
   }
 
   function handleOtherSelection(question: SurveyQuestion, checked: boolean) {
+    clearQuestionError(question.id);
     setDraftAnswer(setIsOtherSelectedByQuestionId, question.id, checked);
 
     if (checked && question.questionType === "single_select") {
@@ -662,6 +683,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   }
 
   function handleOtherTextChange(questionId: number, value: string) {
+    clearQuestionError(questionId);
     setDraftAnswer(setOtherTextByQuestionId, questionId, value);
   }
 
@@ -681,11 +703,19 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         </span>
       </nav>
 
-      {error ? <p className="status error">{error}</p> : null}
-      {isLoading ? <p className="status muted">Opening survey...</p> : null}
+      {error && errorQuestionId === null ? (
+        <p className="status error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {isLoading ? (
+        <p aria-live="polite" className="status muted" role="status">
+          Opening survey...
+        </p>
+      ) : null}
 
       {!isLoading && loadError ? (
-        <div className="builder-empty-state">
+        <div className="builder-empty-state" role="alert">
           <strong>{loadError}</strong>
           <span>The survey may be unavailable or already completed.</span>
           <div className="inline-actions">
@@ -708,6 +738,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
             answerIntegerByQuestionId={answerIntegerByQuestionId}
             answerTextByQuestionId={answerTextByQuestionId}
             contactEmailMessage={contactEmailMessage}
+            error={error}
+            errorQuestionId={errorQuestionId}
             hasDeclinedAnonymousRegistration={hasDeclinedAnonymousRegistration}
             isAnonymous={mode === "anonymous"}
             isAnonymousRegistrationSubmitting={isAnonymousRegistrationSubmitting}
@@ -760,6 +792,8 @@ function SurveyRunner({
   answerIntegerByQuestionId,
   answerTextByQuestionId,
   contactEmailMessage,
+  error,
+  errorQuestionId,
   hasDeclinedAnonymousRegistration,
   isAnonymous,
   isAnonymousRegistrationSubmitting,
@@ -788,6 +822,8 @@ function SurveyRunner({
   answerIntegerByQuestionId: DraftAnswerMap<string>;
   answerTextByQuestionId: DraftAnswerMap<string>;
   contactEmailMessage: string | null;
+  error: string | null;
+  errorQuestionId: number | null;
   hasDeclinedAnonymousRegistration: boolean;
   isAnonymous: boolean;
   isAnonymousRegistrationSubmitting: boolean;
@@ -881,7 +917,7 @@ function SurveyRunner({
                 onSubmit={onSubmitAnonymousRegistration}
               />
             ) : contactEmailMessage || attempt.anonymousContactEmail ? (
-              <p className="status muted">
+              <p aria-live="polite" className="status muted" role="status">
                 {contactEmailMessage ?? `Follow-up email saved as ${attempt.anonymousContactEmail}`}
               </p>
             ) : (
@@ -931,11 +967,21 @@ function SurveyRunner({
     responses: attempt.responses,
     survey
   });
-  const progressPercent = Math.round(
-    ((remainingEstimate.totalEstimateSeconds - remainingEstimate.remainingSeconds) /
-      remainingEstimate.totalEstimateSeconds) *
-      100
-  );
+  const progressPercent =
+    remainingEstimate.totalEstimateSeconds > 0
+      ? Math.round(
+          ((remainingEstimate.totalEstimateSeconds - remainingEstimate.remainingSeconds) /
+            remainingEstimate.totalEstimateSeconds) *
+            100
+        )
+      : 0;
+  const progressValue = Math.max(0, Math.min(100, progressPercent));
+  const totalPathPages = Math.max(path.length, 1);
+  const currentPathPageNumber =
+    currentIndex >= 0 ? Math.min(currentIndex + 1, totalPathPages) : totalPathPages;
+  const progressContextId = `survey-progress-context-${attempt.id}`;
+  const progressTimeId = `survey-progress-time-${attempt.id}`;
+  const progressValueText = `Page ${currentPathPageNumber} of ${totalPathPages} on your current survey path, ${progressValue}% complete. ${remainingEstimate.copy}`;
   const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
   const pageQuestions = currentPageQuestionIds
     .map((questionId) => questionsById.get(questionId))
@@ -953,64 +999,89 @@ function SurveyRunner({
         <div>
           <p className="eyebrow">{survey.title}</p>
           <h3>{currentPage.title}</h3>
-          <p aria-live="polite" className="remaining-time-label">
+          <p className="progress-context" id={progressContextId}>
+            Page {currentPathPageNumber} of {totalPathPages} on your current survey path
+          </p>
+          <p aria-live="polite" className="remaining-time-label" id={progressTimeId}>
             {remainingEstimate.copy}
           </p>
         </div>
-        <div
-          aria-hidden="true"
-          className="progress-track"
+        <progress
+          aria-describedby={`${progressContextId} ${progressTimeId}`}
+          aria-label="Survey progress"
+          aria-valuetext={progressValueText}
+          className="survey-progress-meter"
+          max={100}
+          value={progressValue}
         >
-          <span
-            className="progress-fill"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
+          {progressValue}%
+        </progress>
       </div>
 
       {currentPage.description ? <p className="muted">{currentPage.description}</p> : null}
 
       {pageQuestions.map((question) => {
         const isActiveQuestion = question.id === activeQuestionId;
+        const questionIds = getQuestionAccessibilityIds(question.id);
+        const questionError = errorQuestionId === question.id ? error : null;
+        const questionDescription = joinIds(
+          question.helpText ? questionIds.helpId : null,
+          questionError ? questionIds.errorId : null
+        );
 
         return (
-        <form
-          className={isActiveQuestion ? "question-step active" : "question-step answered"}
-          id={`question-form-${question.id}`}
-          key={question.id}
-          onSubmit={(event) => onSubmit(question, event)}
-        >
-          <fieldset>
-            <legend className="question-prompt">
-              <InlineGlossaryText entries={glossaryEntries} text={question.questionText} />
-            </legend>
-            {question.helpText ? <p className="muted">{question.helpText}</p> : null}
-            {renderQuestionControl({
-              answerInteger: answerIntegerByQuestionId[question.id] ?? "",
-              answerText: answerTextByQuestionId[question.id] ?? "",
-              currentQuestion: question,
-              onIntegerChange,
-              onOtherSelectionChange,
-              onOtherTextChange,
-              onSelectionChange,
-              onTextChange,
-              selectedAnswerOptionIds: selectedAnswerOptionIdsByQuestionId[question.id] ?? [],
-              isOtherSelected: isOtherSelectedByQuestionId[question.id] ?? false,
-              otherText: otherTextByQuestionId[question.id] ?? ""
-            })}
-            {!isActiveQuestion ? (
-              <div className="question-step-actions">
-                <button
-                  className="button-link secondary-button compact-button"
-                  disabled={isSubmitting}
-                  type="submit"
-                >
-                  {isSubmitting ? "Saving..." : "Update answer"}
-                </button>
-              </div>
-            ) : null}
-          </fieldset>
-        </form>
+          <form
+            className={isActiveQuestion ? "question-step active" : "question-step answered"}
+            id={`question-form-${question.id}`}
+            key={question.id}
+            onSubmit={(event) => onSubmit(question, event)}
+          >
+            <fieldset
+              aria-describedby={questionDescription}
+              aria-labelledby={questionIds.promptId}
+            >
+              <legend className="question-prompt" id={questionIds.promptId}>
+                <InlineGlossaryText entries={glossaryEntries} text={question.questionText} />
+              </legend>
+              {question.helpText ? (
+                <p className="muted" id={questionIds.helpId}>
+                  {question.helpText}
+                </p>
+              ) : null}
+              {renderQuestionControl({
+                accessibilityIds: questionIds,
+                answerInteger: answerIntegerByQuestionId[question.id] ?? "",
+                answerText: answerTextByQuestionId[question.id] ?? "",
+                currentQuestion: question,
+                describedBy: questionDescription,
+                hasError: Boolean(questionError),
+                onIntegerChange,
+                onOtherSelectionChange,
+                onOtherTextChange,
+                onSelectionChange,
+                onTextChange,
+                selectedAnswerOptionIds: selectedAnswerOptionIdsByQuestionId[question.id] ?? [],
+                isOtherSelected: isOtherSelectedByQuestionId[question.id] ?? false,
+                otherText: otherTextByQuestionId[question.id] ?? ""
+              })}
+              {questionError ? (
+                <p className="status error question-error" id={questionIds.errorId} role="alert">
+                  {questionError}
+                </p>
+              ) : null}
+              {!isActiveQuestion ? (
+                <div className="question-step-actions">
+                  <button
+                    className="button-link secondary-button compact-button"
+                    disabled={isSubmitting}
+                    type="submit"
+                  >
+                    {isSubmitting ? "Saving..." : "Update answer"}
+                  </button>
+                </div>
+              ) : null}
+            </fieldset>
+          </form>
         );
       })}
 
@@ -1123,7 +1194,11 @@ function AnonymousRegistrationPanel({
           />
         </label>
       </div>
-      {error ? <p className="status error">{error}</p> : null}
+      {error ? (
+        <p className="status error" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div className="anonymous-registration-actions">
         <button
           className="button-link ghost-button"
@@ -1165,6 +1240,7 @@ function AnonymousContactEmailModal({
   return (
     <div className="modal-backdrop" role="presentation">
       <form
+        aria-describedby="anonymous-contact-email-description"
         aria-labelledby="anonymous-contact-email-title"
         aria-modal="true"
         className="contact-email-modal"
@@ -1175,13 +1251,19 @@ function AnonymousContactEmailModal({
           <p className="eyebrow">Optional</p>
           <h3 id="anonymous-contact-email-title">Share an email for follow-up?</h3>
         </div>
-        <p className="muted">
+        <p className="muted" id="anonymous-contact-email-description">
           Enter an email if you would like the survey owner to contact you about this survey.
           This address is optional and will be visible to the survey owner.
         </p>
         <label>
-          <span>Email</span>
+          <span id="anonymous-contact-email-label">Email</span>
           <input
+            aria-describedby={joinIds(
+              "anonymous-contact-email-description",
+              error ? "anonymous-contact-email-error" : null
+            )}
+            aria-invalid={error ? "true" : undefined}
+            aria-labelledby="anonymous-contact-email-label"
             autoComplete="email"
             inputMode="email"
             onChange={(event) => onChange(event.target.value)}
@@ -1190,7 +1272,11 @@ function AnonymousContactEmailModal({
             value={email}
           />
         </label>
-        {error ? <p className="status error">{error}</p> : null}
+        {error ? (
+          <p className="status error" id="anonymous-contact-email-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <div className="contact-email-modal-actions">
           <button
             className="button-link ghost-button"
@@ -1214,9 +1300,12 @@ function AnonymousContactEmailModal({
 }
 
 function renderQuestionControl({
+  accessibilityIds,
   answerInteger,
   answerText,
   currentQuestion,
+  describedBy,
+  hasError,
   isOtherSelected,
   onIntegerChange,
   onOtherSelectionChange,
@@ -1226,9 +1315,12 @@ function renderQuestionControl({
   otherText,
   selectedAnswerOptionIds
 }: {
+  accessibilityIds: QuestionAccessibilityIds;
   answerInteger: string;
   answerText: string;
   currentQuestion: SurveyQuestion;
+  describedBy: string | undefined;
+  hasError: boolean;
   isOtherSelected: boolean;
   onIntegerChange: (questionId: number, value: string) => void;
   onOtherSelectionChange: (question: SurveyQuestion, checked: boolean) => void;
@@ -1241,6 +1333,10 @@ function renderQuestionControl({
   if (currentQuestion.questionType === "text") {
     return (
       <textarea
+        aria-describedby={describedBy}
+        aria-invalid={hasError ? "true" : undefined}
+        aria-labelledby={accessibilityIds.promptId}
+        id={accessibilityIds.controlId}
         key={currentQuestion.id}
         onChange={(event) => onTextChange(currentQuestion.id, event.target.value)}
         required={currentQuestion.isRequired}
@@ -1252,6 +1348,9 @@ function renderQuestionControl({
   if (currentQuestion.questionType === "integer") {
     return (
       <IntegerStepperControl
+        accessibilityIds={accessibilityIds}
+        describedBy={describedBy}
+        hasError={hasError}
         key={currentQuestion.id}
         onChange={(value) => onIntegerChange(currentQuestion.id, value)}
         question={currentQuestion}
@@ -1262,7 +1361,10 @@ function renderQuestionControl({
 
   if (currentQuestion.questionType === "scale") {
     return (
-      <ScaleSliderControl
+      <ScaleRadioControl
+        accessibilityIds={accessibilityIds}
+        describedBy={describedBy}
+        hasError={hasError}
         key={currentQuestion.id}
         onSelect={(optionId) => onSelectionChange(currentQuestion, optionId, true)}
         question={currentQuestion}
@@ -1273,27 +1375,37 @@ function renderQuestionControl({
 
   return (
     <div className="option-list">
-      {currentQuestion.answerOptions.map((option) => (
-        <label className="option-row" data-reveal key={option.id}>
-          <input
-            checked={selectedAnswerOptionIds.includes(option.id)}
-            name={`question-${currentQuestion.id}`}
-            onChange={(event) =>
-              onSelectionChange(currentQuestion, option.id, event.target.checked)
-            }
-            required={
-              currentQuestion.questionType === "single_select" &&
-              currentQuestion.isRequired &&
-              selectedAnswerOptionIds.length === 0
-            }
-            type={currentQuestion.questionType === "single_select" ? "radio" : "checkbox"}
-          />
-          <span>{option.optionText}</span>
-        </label>
-      ))}
+      {currentQuestion.answerOptions.map((option) => {
+        const optionLabelId = `${accessibilityIds.controlId}-option-${option.id}-label`;
+
+        return (
+          <label className="option-row" data-reveal key={option.id}>
+            <input
+              aria-describedby={describedBy}
+              aria-invalid={hasError ? "true" : undefined}
+              aria-labelledby={`${accessibilityIds.promptId} ${optionLabelId}`}
+              checked={selectedAnswerOptionIds.includes(option.id)}
+              name={`question-${currentQuestion.id}`}
+              onChange={(event) =>
+                onSelectionChange(currentQuestion, option.id, event.target.checked)
+              }
+              required={
+                currentQuestion.questionType === "single_select" &&
+                currentQuestion.isRequired &&
+                selectedAnswerOptionIds.length === 0
+              }
+              type={currentQuestion.questionType === "single_select" ? "radio" : "checkbox"}
+            />
+            <span id={optionLabelId}>{option.optionText}</span>
+          </label>
+        );
+      })}
       {currentQuestion.allowOther ? (
         <label className="option-row option-row-other" data-reveal>
           <input
+            aria-describedby={describedBy}
+            aria-invalid={hasError ? "true" : undefined}
+            aria-labelledby={`${accessibilityIds.promptId} ${accessibilityIds.otherOptionLabelId}`}
             checked={isOtherSelected}
             name={`question-${currentQuestion.id}`}
             onChange={(event) =>
@@ -1307,9 +1419,11 @@ function renderQuestionControl({
             }
             type={currentQuestion.questionType === "single_select" ? "radio" : "checkbox"}
           />
-          <span>Other</span>
+          <span id={accessibilityIds.otherOptionLabelId}>Other</span>
           <input
-            aria-label="Other answer"
+            aria-describedby={describedBy}
+            aria-invalid={hasError ? "true" : undefined}
+            aria-labelledby={`${accessibilityIds.promptId} ${accessibilityIds.otherTextLabelId}`}
             disabled={!isOtherSelected}
             onChange={(event) => onOtherTextChange(currentQuestion.id, event.target.value)}
             placeholder="Enter your answer"
@@ -1317,6 +1431,9 @@ function renderQuestionControl({
             type="text"
             value={otherText}
           />
+          <span className="visually-hidden" id={accessibilityIds.otherTextLabelId}>
+            Other answer text
+          </span>
         </label>
       ) : null}
     </div>
@@ -1324,10 +1441,16 @@ function renderQuestionControl({
 }
 
 function IntegerStepperControl({
+  accessibilityIds,
+  describedBy,
+  hasError,
   onChange,
   question,
   value
 }: {
+  accessibilityIds: QuestionAccessibilityIds;
+  describedBy: string | undefined;
+  hasError: boolean;
   onChange: (value: string) => void;
   question: SurveyQuestion;
   value: string;
@@ -1358,7 +1481,7 @@ function IntegerStepperControl({
     <div className="integer-answer-control">
       <div className="integer-stepper">
         <button
-          aria-label="Decrease value"
+          aria-label={`Decrease answer for ${question.questionText}`}
           className="integer-stepper-button"
           onClick={() => step(-1)}
           type="button"
@@ -1366,6 +1489,10 @@ function IntegerStepperControl({
           &minus;
         </button>
         <input
+          aria-describedby={joinIds(describedBy, accessibilityIds.helperId)}
+          aria-invalid={hasError ? "true" : undefined}
+          aria-labelledby={accessibilityIds.promptId}
+          id={accessibilityIds.controlId}
           inputMode="numeric"
           onChange={(event) => onChange(event.target.value)}
           placeholder="0"
@@ -1376,7 +1503,7 @@ function IntegerStepperControl({
           value={value}
         />
         <button
-          aria-label="Increase value"
+          aria-label={`Increase answer for ${question.questionText}`}
           className="integer-stepper-button"
           onClick={() => step(1)}
           type="button"
@@ -1384,16 +1511,24 @@ function IntegerStepperControl({
           +
         </button>
       </div>
-      <p className="input-helper-text">Whole numbers only. Use the buttons or type a number.</p>
+      <p className="input-helper-text" id={accessibilityIds.helperId}>
+        Whole numbers only. Use the buttons or type a number.
+      </p>
     </div>
   );
 }
 
-function ScaleSliderControl({
+function ScaleRadioControl({
+  accessibilityIds,
+  describedBy,
+  hasError,
   onSelect,
   question,
   selectedAnswerOptionIds
 }: {
+  accessibilityIds: QuestionAccessibilityIds;
+  describedBy: string | undefined;
+  hasError: boolean;
   onSelect: (optionId: number) => void;
   question: SurveyQuestion;
   selectedAnswerOptionIds: number[];
@@ -1409,66 +1544,75 @@ function ScaleSliderControl({
   const selectedOption = sortedOptions.find((option) =>
     selectedAnswerOptionIds.includes(option.id)
   );
-  const selectedValue = selectedOption ? Number(selectedOption.optionText) : null;
-  const sliderValue = selectedValue ?? min;
-
-  function selectValue(value: number) {
-    const option = sortedOptions.find((item) => item.optionText === String(value));
-
-    if (option) {
-      onSelect(option.id);
-    }
-  }
-
-  // Drives the track's gradient fill up to the thumb position.
-  const fillPercent = max > min ? ((sliderValue - min) / (max - min)) * 100 : 0;
-  const tickCount = max - min + 1;
+  const selectedValue = selectedOption?.optionText ?? null;
+  const helperText =
+    selectedValue === null
+      ? `Choose one value from ${min} to ${max}`
+      : `Selected value: ${selectedValue}`;
 
   return (
-    <div className="scale-slider-control">
-      <div className="scale-slider-header">
+    <div className="scale-answer-field">
+      <div className="scale-answer-header">
         <span
-          className={selectedValue === null ? "scale-slider-value empty" : "scale-slider-value"}
+          className={selectedValue === null ? "scale-answer-value empty" : "scale-answer-value"}
           key={selectedValue ?? "none"}
         >
-          {selectedValue ?? "–"}
+          {selectedValue ?? "-"}
         </span>
-        <span className="input-helper-text">
-          {selectedValue === null
-            ? "Drag or tap the slider to choose a value"
-            : "Selected value"}
+        <span className="input-helper-text" id={accessibilityIds.helperId}>
+          {helperText}
         </span>
       </div>
-      <input
-        aria-label={`Scale from ${min} to ${max}`}
-        className={selectedValue === null ? "scale-slider unset" : "scale-slider"}
-        max={max}
-        min={min}
-        onChange={(event) => selectValue(Number(event.target.value))}
-        onClick={(event) => selectValue(Number(event.currentTarget.value))}
-        step={1}
-        style={{ "--fill": `${fillPercent}%` } as CSSProperties}
-        type="range"
-        value={sliderValue}
-      />
-      {tickCount >= 3 && tickCount <= 21 ? (
-        <div aria-hidden="true" className="scale-slider-ticks">
-          {Array.from({ length: tickCount }, (_, index) => (
-            <span
-              className={
-                selectedValue !== null && min + index <= selectedValue ? "tick filled" : "tick"
-              }
-              key={index}
-            />
-          ))}
-        </div>
-      ) : null}
-      <div className="scale-slider-labels" aria-hidden="true">
-        <span>{min}</span>
-        <span>{max}</span>
+      <div className="scale-answer-control">
+        {sortedOptions.map((option) => {
+          const optionLabelId = `${accessibilityIds.controlId}-scale-${option.id}-label`;
+
+          return (
+            <label className="scale-answer-option" key={option.id}>
+              <input
+                aria-describedby={joinIds(describedBy, accessibilityIds.helperId)}
+                aria-invalid={hasError ? "true" : undefined}
+                aria-labelledby={`${accessibilityIds.promptId} ${optionLabelId}`}
+                aria-required={question.isRequired ? "true" : undefined}
+                checked={selectedAnswerOptionIds.includes(option.id)}
+                name={`question-${question.id}`}
+                onChange={() => onSelect(option.id)}
+                type="radio"
+              />
+              <span id={optionLabelId}>{option.optionText}</span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+interface QuestionAccessibilityIds {
+  controlId: string;
+  errorId: string;
+  helpId: string;
+  helperId: string;
+  otherOptionLabelId: string;
+  otherTextLabelId: string;
+  promptId: string;
+}
+
+function getQuestionAccessibilityIds(questionId: number): QuestionAccessibilityIds {
+  return {
+    controlId: `question-${questionId}-control`,
+    errorId: `question-${questionId}-error`,
+    helpId: `question-${questionId}-help`,
+    helperId: `question-${questionId}-input-helper`,
+    otherOptionLabelId: `question-${questionId}-other-option-label`,
+    otherTextLabelId: `question-${questionId}-other-text-label`,
+    promptId: `question-${questionId}-prompt`
+  };
+}
+
+function joinIds(...ids: Array<string | null | undefined>): string | undefined {
+  const joined = ids.filter((id): id is string => Boolean(id)).join(" ");
+  return joined || undefined;
 }
 
 function hydrateDrafts<T>(

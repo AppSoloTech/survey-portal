@@ -1,0 +1,247 @@
+# Phase 42 - Survey Runner Critical Accessibility
+
+## Purpose
+
+Fix the highest-risk participant-facing accessibility findings from
+`docs/ACCESSIBILITY_AUDIT_REPORT.md`, starting with the scale slider false
+value issue.
+
+This phase focuses on the survey-taking experience only. It should not redesign
+the app shell, auth pages, admin builder, reporting, or global form system.
+
+Source feedback or planning note:
+
+```txt
+docs/ACCESSIBILITY_AUDIT_REPORT.md
+High findings 3, 4, 5, and 6, limited to the participant survey runner.
+
+Claude verification note from the audit review:
+The scale slider unset state is the most concrete issue because the range input
+reports the minimum value when no answer has been selected.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+Start implementation from `main` after the accessibility prompt plan is accepted.
+
+```bash
+git checkout main
+git checkout -b phase-42-survey-runner-accessibility
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_42_survey_runner_accessibility.txt`
+* Claude review: `notes/claude_review_phase_42_survey_runner_accessibility.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+* `prompts/accessibility_remediation_prompt_plan.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current survey runner implementation:
+  * `apps/web/src/pages/SurveyAttemptPage.tsx`
+  * `apps/web/src/pages/SurveyAttemptPage.test.ts`
+  * `apps/web/src/styles.css`
+  * `packages/shared/src/index.ts`
+  * shared page/path helpers used by the runner
+
+---
+
+# Received Feedback
+
+The survey runner has participant-facing accessibility defects:
+
+1. The scale slider exposes the minimum value when no value is selected.
+2. Survey progress is visually rendered but not programmatically exposed.
+3. Text, integer, scale, and Other controls need stronger accessible labels,
+   descriptions, and error associations.
+4. Runner-level errors are not consistently announced or tied to fields.
+
+---
+
+# Intake Classification
+
+* participant-facing accessibility bug
+* survey response correctness risk
+* form labelling and validation issue
+* no database/schema change expected
+* no API contract change expected unless implementation inspection proves a
+  narrow client-only solution is impossible
+
+Call out before implementation if a proposed fix would change:
+
+* stored response shape
+* skip logic behavior
+* completion gating
+* hidden-tag visibility
+* reporting or CSV output
+* authenticated vs anonymous runner authorization
+
+---
+
+# Scope
+
+Implement:
+
+* Fix the scale question unset state so an unanswered scale question is not
+  exposed to assistive tech as the minimum value.
+* Prefer a native radio-group presentation for discrete scale values if it can
+  preserve the existing data contract and visual quality.
+* If a range input remains, expose an honest unset state with `aria-valuetext`
+  and visible text while preserving keyboard operation and validation.
+* Add semantic progress for the current survey path, including percent and
+  current page/path context.
+* Ensure progress copy remains useful without relying on animation or color.
+* Add stable ids for question prompts, help text, controls, and error messages.
+* Connect text, integer, scale, selection, and Other controls to their prompt
+  and helper/error text with `aria-labelledby` and/or `aria-describedby`.
+* Make integer stepper buttons include question-specific context, not only
+  "Decrease value" or "Increase value".
+* Add runner-level error live-region behavior for failed saves, failed submit,
+  required scale validation, invalid integer validation, and modal/email errors
+  only where those errors occur in the runner.
+* Preserve native radio/checkbox-in-label behavior for normal selection
+  questions.
+* Preserve inline glossary rendering in question prompts.
+* Preserve anonymous and authenticated attempt behavior.
+
+## Non-Goals
+
+Do not implement:
+
+* Route focus management, skip link, app heading hierarchy, or document title
+  changes. Those belong to Phase 43.
+* A global `FormField` migration across the app. That belongs to Phase 44.
+* Admin builder/reporting changes. Those belong to Phase 45.
+* Database migrations.
+* API changes unless a client-only fix is impossible.
+* Survey response, hidden-tag, reporting, CSV, or skip-logic behavior changes.
+* A broad visual redesign of the runner.
+* New survey question types.
+
+## Assumptions
+
+* Scale values are discrete answer options already represented in the survey
+  payload.
+* The runner can distinguish "not selected" from a selected scale answer using
+  the existing selected answer option id state.
+* Fieldset/legend can remain the main question grouping primitive, with added
+  ids/description links for reliability.
+
+## Open Questions
+
+* If replacing the range slider with radio-style scale buttons changes the
+  visual experience materially, pause and ask whether to prefer native
+  semantics or preserve the slider with better ARIA.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Required unanswered scale questions no longer report the minimum value as the
+  current answer.
+* A user can operate scale questions by keyboard and screen reader without
+  ambiguity.
+* Survey progress has a semantic programmatic equivalent, not only an
+  `aria-hidden` visual bar.
+* Every runner answer control is programmatically associated with its question
+  prompt and relevant help/error text.
+* Runner validation and save/submit errors are announced.
+* Registered and anonymous survey attempts still save, resume, navigate, and
+  complete correctly.
+* Survey reporting, CSV exports, hidden tags, and conditional logic remain
+  unchanged.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update focused tests where practical for:
+
+* Scale question initially has no selected answer.
+* Selecting a scale value saves the intended answer option.
+* Required unanswered scale question produces an accessible validation error.
+* Text/integer/selection/Other controls preserve existing save behavior.
+* Progress text or semantic progress state renders for current pages.
+* Anonymous and authenticated runner paths still pass existing tests.
+
+Manual checks:
+
+* Keyboard-only: answer text, integer, single-select, multi-select, scale, and
+  Other questions.
+* Keyboard-only: trigger validation errors and confirm focus/message behavior.
+* Screen reader spot check: question prompt, help text, control purpose,
+  selected state, error text, and progress.
+* Mobile responsive check at 375/768/1280px.
+* Regression check: conditional page/skip logic, Previous, Resume, Submit,
+  anonymous contact email, and inline glossary terms.
+
+If full screen reader testing is unavailable, document the gap in the handoff
+and `markdown/PHASE_LOG.md`.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_42_survey_runner_accessibility.txt
+```
+
+Ask Claude Code to review:
+
+* scale unset-state correctness
+* accessible name/description behavior for every answer type
+* progress semantics
+* error/live-region behavior
+* no response, skip-logic, hidden-tag, reporting, or CSV regression
+* no accidental broad form-system rewrite
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_42_survey_runner_accessibility.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable accessibility fixes.
+* `markdown/FOLLOW_UPS.md` for any deferred manual screen reader checks.
+* `markdown/PHASE_LOG.md` with validation, manual tests, handoff path, Claude
+  review status, and commit readiness.

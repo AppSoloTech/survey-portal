@@ -1,0 +1,78 @@
+Phase 42 - Survey Runner Critical Accessibility
+
+Implementation summary:
+
+- Replaced the participant scale range input with styled native radio options.
+  The selected answer still flows through the existing selected answer option id
+  state and save payload.
+- Removed the now-dead range slider CSS after Claude review and renamed the
+  remaining selected-value scale classes to `scale-answer-*`.
+- Added question-scoped runner error state so required scale validation,
+  invalid integer validation, and save failures can render next to the affected
+  question with role="alert" and aria-invalid.
+- Added stable ids for question prompt, help text, helper text, controls, and
+  error messages.
+- Connected text, integer, scale, normal selection, and Other controls to the
+  prompt plus relevant help/error/helper text.
+- Updated integer stepper button names to include the question text.
+- Replaced the aria-hidden visual-only progress track with a native progress
+  element, visible current-path page context, and aria-valuetext.
+- Added live/status or alert semantics for runner loading/load errors, anonymous
+  account registration error, anonymous follow-up email error, and follow-up
+  email saved status.
+- Added focused web source tests for semantic progress, no range input for
+  scale, scale option-id save path, scale-required alert wiring, and question
+  control associations.
+- Updated draft release notes and recorded manual screen reader/browser gaps in
+  markdown/FOLLOW_UPS.md.
+
+Files changed:
+
+- apps/web/src/pages/SurveyAttemptPage.tsx
+- apps/web/src/pages/SurveyAttemptPage.test.ts
+- apps/web/src/styles.css
+- markdown/releases/unreleased.md
+- markdown/FOLLOW_UPS.md
+- markdown/PHASE_LOG.md
+- notes/claude_handoff_phase_42_survey_runner_accessibility.txt
+
+Review focus requested:
+
+- Confirm unanswered scale questions are no longer exposed as a minimum value.
+- Confirm selected scale radio options still save the intended answer option id
+  and do not alter response shape, skip logic, hidden tags, reporting, or CSV.
+- Review accessible name/description behavior for text, integer, scale,
+  selection, and Other controls.
+- Review progress semantics and current-path copy.
+- Review runner error/live-region behavior for failed saves, failed submit,
+  required scale validation, invalid integer validation, anonymous registration,
+  and anonymous contact email.
+- Confirm this did not drift into Phase 43 modal focus-management or Phase 44
+  global form-field work.
+- Note: the anonymous contact email modal changes in this phase are limited to
+  labels, descriptions, invalid state, and error announcement. Focus trapping,
+  Escape handling, return focus, and background inert behavior remain Phase 43.
+
+Validation run by Codex:
+
+- npx tsc --noEmit -p apps/web/tsconfig.json
+- npm run test -w apps/web -- src/pages/SurveyAttemptPage.test.ts
+- npm run lint -w apps/web
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- git diff --check
+
+Results:
+
+- Passed: all commands above.
+- npm run build emitted the existing Vite large chunk warning.
+- npm test passed shared, web, API, and release-note tests. API tests used
+  approved local PostgreSQL access.
+
+Known gaps:
+
+- Manual screen reader testing is not completed in this terminal session.
+- Manual keyboard-only and responsive browser checks are recorded in
+  markdown/FOLLOW_UPS.md for developer verification.

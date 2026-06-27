@@ -1,0 +1,247 @@
+# Phase 43 - Public/User App Shell, Route, And Modal Accessibility
+
+## Purpose
+
+Fix app-level navigation and modal accessibility findings from
+`docs/ACCESSIBILITY_AUDIT_REPORT.md`.
+
+This phase establishes accessible route context, skip-to-main behavior, modal
+focus management, and account-menu disclosure semantics for public and
+registered-user surfaces. It should avoid participant answer-control changes,
+which belong to Phase 42, and avoid Admin-only remediation.
+
+Source feedback or planning note:
+
+```txt
+docs/ACCESSIBILITY_AUDIT_REPORT.md
+High findings 1, 2, and 8.
+Low findings 18 and 19 where they naturally fit the app shell work.
+
+User-scope adjustment:
+Target public and registered-user routes. Admin-only route, builder, reporting,
+and user-management accessibility findings are intentionally deferred except
+for incidental effects of shared shell primitives.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-43-shell-modal-accessibility
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_43_shell_modal_accessibility.txt`
+* Claude review: `notes/claude_review_phase_43_shell_modal_accessibility.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+* `prompts/accessibility_remediation_prompt_plan.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current app shell and modal surfaces:
+  * `apps/web/src/App.tsx`
+  * `apps/web/src/pages/SurveyAttemptPage.tsx`
+  * `apps/web/src/pages/ResetPassword.tsx`
+  * `apps/web/src/components/ThemeToggle.tsx`
+  * `apps/web/src/styles.css`
+  * `apps/web/src/motion/RouteTransition.tsx`
+
+---
+
+# Received Feedback
+
+The app shell and modal patterns need accessibility remediation:
+
+1. SPA route changes do not set focus, update document title, or announce the
+   new page.
+2. There is no skip link to main content.
+3. Header brand uses `h1` repeatedly while page content generally starts at
+   `h2`.
+4. Existing modal dialogs do not manage focus, Escape, return focus, or inert
+   background behavior.
+5. The account menu uses menu ARIA roles without menu keyboard behavior.
+
+---
+
+# Intake Classification
+
+* app-shell accessibility foundation
+* keyboard navigation issue
+* screen reader context issue
+* modal/dialog behavior issue
+* no database/API change expected
+
+---
+
+# Scope
+
+Implement:
+
+* Add a skip link before repeated header navigation.
+* Give `<main>` a stable target id and make it safely focusable for route
+  changes.
+* Add route title updates for public and registered-user routes:
+  * Home
+  * Login
+  * Register
+  * Forgot password
+  * Reset password
+  * Dashboard
+  * Account settings
+  * Category survey list
+  * Authenticated survey attempt
+  * Anonymous survey directory
+  * Anonymous survey attempt
+* Add route focus management so navigation moves focus to the main content or
+  page heading without trapping users.
+* Add a polite route-announcer live region if needed for reliable SPA context.
+* Normalize the public/user header brand so it is not the page-level `h1`.
+* Convert public/user route page headings to a single meaningful page-level
+  heading where the change is low-risk and local.
+* Create a reusable accessible modal/dialog primitive or local shared component
+  consistent with this codebase.
+* Apply the modal primitive to:
+  * anonymous follow-up email modal in the survey runner
+  * password reset success modal
+* The modal primitive must handle initial focus, focus containment, Escape
+  close where safe, return focus, labelled title, optional description, and
+  background inert/aria-hidden behavior where practical.
+* Convert the account menu from ARIA menu roles to a disclosure navigation
+  pattern unless a complete menu implementation is explicitly simpler.
+* Add outside-click and Escape close to the account disclosure if absent.
+
+## Non-Goals
+
+Do not implement:
+
+* Survey answer-control fixes. Those belong to Phase 42.
+* Global form-field/error migration. That belongs to Phase 44.
+* Admin grouped select/reporting/table/drag fixes. These are deferred from the
+  user-facing accessibility plan.
+* Visual redesign of the header or public/user pages.
+* Admin workspace heading, table, reporting, or builder fixes.
+* New routing libraries.
+* New modal package unless a small dependency is clearly justified and approved
+  by the human developer.
+
+## Assumptions
+
+* The route title map can be simple and deterministic.
+* Dynamic titles for specific surveys/users may use a safe generic fallback
+  unless the needed data is already present in the component.
+* Native links/buttons should remain native.
+
+## Open Questions
+
+* Should page heading normalization cover every page in one pass, or only the
+  shell and pages touched by the route manager? If unclear, keep changes narrow
+  and document remaining heading cleanup.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Keyboard users can skip repeated navigation and land on main content.
+* Route changes update `document.title`.
+* Route changes move focus to a meaningful target or announce context without
+  disrupting form interactions.
+* Each page has a clearer heading hierarchy than before, and the repeated
+  header brand is not the app-wide `h1`.
+* Dialogs trap focus, restore focus on close, expose title/description, and
+  close predictably.
+* Account menu no longer declares unsupported `menu`/`menuitem` semantics.
+* Existing public and registered-user login/logout/navigation/modal flows still
+  work.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update focused tests where practical for:
+
+* route title mapping
+* skip-link/main target behavior if test harness supports DOM focus
+* modal Escape/focus/restore behavior if component tests exist nearby
+* account menu disclosure open/close semantics
+
+Manual checks:
+
+* Keyboard-only route navigation across Home, Login, Register, Forgot password,
+  Reset password, Dashboard, Account settings, Category survey list, Survey
+  Attempt, and anonymous survey routes.
+* Skip link appears on focus and lands on main content.
+* Account menu opens, closes by Escape and outside click, and returns focus.
+* Anonymous follow-up email modal and reset success modal trap and restore focus.
+* Browser title updates on route changes.
+* Mobile header/menu behavior remains usable at 375/768/1280px.
+* Admin routes are smoke-checked only to confirm shared shell changes did not
+  break navigation; do not remediate Admin-only issues in this phase.
+
+If screen reader testing is unavailable, document the gap in the handoff and
+phase log.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_43_shell_modal_accessibility.txt
+```
+
+Ask Claude Code to review:
+
+* route focus/title/announcement behavior
+* skip link and heading hierarchy changes
+* modal focus management and background handling
+* account menu disclosure semantics
+* no unrelated route, auth, survey, or Admin smoke-regression behavior changes
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_43_shell_modal_accessibility.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md`
+* `markdown/FOLLOW_UPS.md` for deferred heading cleanup or manual AT checks
+* `markdown/PHASE_LOG.md`

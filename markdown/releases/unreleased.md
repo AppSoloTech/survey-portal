@@ -1,9 +1,12 @@
 # Unreleased
 
-Release title: Next Release
+Release title: Survey Runner Accessibility
 
-Summary: Replace this with a short summary before running `npm run release:prepare`.
+Summary: Improves participant survey-taking accessibility for progress, answer controls, and validation feedback.
 
-## Changed
+## Fixed
 
-- Add release-note bullets here during implementation.
+- Survey scale questions now use native radio-style choices so unanswered required scales are not exposed as the minimum value.
+- Participant survey progress now includes programmatic progress and visible current-path context.
+- Survey runner answer controls now have stronger prompt, help text, and error associations for assistive technology.
+- Runner validation, save, submit, and anonymous follow-up email errors are announced more reliably.

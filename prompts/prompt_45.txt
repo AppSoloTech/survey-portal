@@ -1,0 +1,245 @@
+# Phase 45 - User Dashboard And Public Directory Accessibility Polish
+
+## Purpose
+
+Remediate remaining public and registered-user accessibility findings from
+`docs/ACCESSIBILITY_AUDIT_REPORT.md` after the survey runner, app shell/modal,
+and form feedback phases have landed.
+
+This phase intentionally ignores Admin-only findings. It focuses on user
+dashboard, category survey lists, public anonymous survey directory, survey
+summary cards, user-facing repeated action names, pagination polish, visible
+status copy, and account disabled-state explanations.
+
+Source feedback or planning note:
+
+```txt
+docs/ACCESSIBILITY_AUDIT_REPORT.md
+User-scoped portions of Medium findings 9, 14, and Low findings 20 and 22.
+
+Admin-only findings from the audit are intentionally deferred/ignored for this
+plan unless the human developer explicitly brings them back into scope.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-45-user-facing-accessibility-polish
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_45_user_facing_accessibility.txt`
+* Claude review: `notes/claude_review_phase_45_user_facing_accessibility.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+* `prompts/accessibility_remediation_prompt_plan.txt`
+* `prompts/prompt_42.txt`
+* `prompts/prompt_43.txt`
+* `prompts/prompt_44.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current user-facing files:
+  * `apps/web/src/pages/UserDashboard.tsx`
+  * `apps/web/src/pages/CategorySurveysPage.tsx`
+  * `apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx`
+  * `apps/web/src/pages/Home.tsx`
+  * `apps/web/src/pages/AccountSettings.tsx`
+  * `apps/web/src/components/SurveySummaryCard.tsx`
+  * `apps/web/src/components/PaginationRow.tsx`
+  * `apps/web/src/components/InlineGlossaryText.tsx`
+  * `apps/web/src/components/ToastProvider.tsx`
+  * `apps/web/src/styles.css`
+
+---
+
+# Received Feedback
+
+User-facing surfaces need remaining polish after the critical phases:
+
+1. Repeated action buttons such as "Start survey", "Resume survey", "View
+   completed", and anonymous "Start survey" need contextual accessible names
+   where surrounding card context is only visual.
+2. Dashboard/category pagination status changes should be announced politely.
+3. Loading, empty, error, and success states in public/user routes should use
+   consistent status semantics after Phase 44 primitives exist.
+4. Important disabled user actions, such as password reset cooldown or disabled
+   survey/contact actions, should explain why they are unavailable.
+5. Inline glossary behavior should preserve the existing focus/hover/Escape
+   interaction while avoiding unsupported or unreliable ARIA where practical.
+
+---
+
+# Intake Classification
+
+* public and registered-user UX accessibility polish
+* keyboard/screen reader clarity
+* no database/schema change expected
+* no API contract change expected
+* no Admin implementation scope
+
+---
+
+# Scope
+
+Implement:
+
+* Add item-specific accessible names or visually hidden context to repeated
+  user-facing survey action controls:
+  * dashboard survey cards
+  * category survey cards
+  * category group cards
+  * resume nudge
+  * anonymous public directory survey cards
+  * homepage anonymous survey entry point if needed
+* Ensure shared pagination status is a polite live region and works cleanly on
+  dashboard/category pages.
+* Review public/user loading, empty, success, and error states after Phase 44
+  and apply shared status primitives where they remain inconsistent.
+* Add or improve user-facing disabled-state explanations where users need to
+  understand why an action cannot be taken.
+* Tighten inline glossary accessibility only for participant-facing question
+  prompt usage:
+  * preserve existing focus, hover, click/tap, and Escape behavior
+  * prefer robust `aria-describedby` behavior over unsupported
+    `aria-description`
+  * ensure changes do not alter survey answers, glossary matching, hidden tags,
+    reporting, or CSV exports
+* Keep visual changes small and consistent with the existing design.
+
+## Non-Goals
+
+Do not implement:
+
+* Admin custom grouped question select fixes.
+* Admin Results table/chart alternatives.
+* Admin users mobile table fixes.
+* Admin disclosure or drag-and-drop fixes.
+* Admin repeated action names or disabled-state explanations.
+* Survey runner core answer-control work already owned by Phase 42.
+* App shell/modal route work already owned by Phase 43.
+* Auth/account form-field foundation already owned by Phase 44.
+* API, database, hidden-tag, reporting, or CSV behavior changes.
+* Broad visual redesign.
+
+## Assumptions
+
+* Contextual accessible names can be added with `aria-label` or visually hidden
+  text without changing visible labels.
+* Inline glossary fixes should be narrow because Phase 41 already implemented
+  focus, hover, click/tap, and Escape behavior.
+* Dashboard/category/public directory changes can be implemented entirely in
+  React and CSS.
+
+## Open Questions
+
+* If `aria-label` would hide useful visible button text from some assistive
+  tech behavior, prefer visually hidden contextual text inside the control.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Repeated user-facing survey actions are understandable in screen reader
+  button/link lists.
+* Dashboard and category pagination updates are announced politely.
+* Public/user loading, empty, error, and success states are semantically
+  consistent with Phase 44 primitives.
+* Disabled user-facing actions that matter include discoverable reasons.
+* Participant inline glossary trigger behavior remains available by keyboard,
+  pointer, touch, and Escape.
+* Admin-only audit findings remain out of implementation scope.
+* Existing public, authenticated, anonymous, and registered-user survey flows
+  still work.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update focused tests where practical for:
+
+* survey card action accessible names
+* pagination live status
+* glossary trigger ARIA behavior if component tests exist nearby
+* disabled-state copy where rendered from deterministic state
+
+Manual checks:
+
+* Keyboard-only dashboard survey card actions.
+* Keyboard-only category group drill-in and category survey list pagination.
+* Keyboard-only anonymous survey directory start action.
+* Screen reader spot check of button/link lists on dashboard and anonymous
+  directory.
+* Account settings password reset cooldown disabled-state explanation.
+* Inline glossary trigger focus, open, dismiss, and continue-survey behavior.
+* Mobile pass at 375/768/1280px for dashboard, category list, anonymous
+  directory, and account settings.
+* Admin pages are not part of this phase except smoke-checking that shared
+  components still render if touched.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_45_user_facing_accessibility.txt
+```
+
+Ask Claude Code to review:
+
+* contextual accessible names for repeated user actions
+* pagination/status live-region behavior
+* disabled-state explanations on user-facing controls
+* participant glossary ARIA changes
+* no Admin-specific remediation drift
+* no response, hidden-tag, reporting, CSV, auth, or survey-flow regression
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_45_user_facing_accessibility.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md`
+* `markdown/FOLLOW_UPS.md` for any deferred user-facing AT checks
+* `markdown/PHASE_LOG.md`

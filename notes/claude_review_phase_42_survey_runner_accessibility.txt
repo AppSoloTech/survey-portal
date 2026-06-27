@@ -1,0 +1,61 @@
+Code Review - Phase 42 Survey Runner Accessibility
+
+Verdict:
+Solid, ships-as-is. The implementation does what the handoff claims, the save
+path is genuinely untouched, and the accessibility wiring is correct. A few
+cleanup items, no blockers.
+
+Review-focus items confirmed:
+
+- Unanswered scale no longer exposes a minimum. `ScaleRadioControl` renders
+  radios with no default selection; min/max survive only as helper-text copy.
+  The old slider's `sliderValue = selectedValue ?? min` foot-gun is gone.
+- Save shape unchanged. The answer input payload is unchanged: scale still
+  flows through `selectedAnswerOptionIds`, and
+  `onChange={() => onSelect(option.id)}` routes to the existing
+  `onSelectionChange(question, optionId, true)`. No touch to skip logic, hidden
+  tags, reporting, or CSV.
+- Control name/description associations are coherent:
+  `getQuestionAccessibilityIds` centralizes the id scheme, `joinIds` correctly
+  collapses empty ids to `undefined`, and fieldset/legend grouping is
+  preserved.
+- Progress semantics are sound: native `progress` with `aria-valuetext`,
+  `aria-describedby` to real context/time nodes, value clamped 0-100, and a
+  guard against `totalEstimateSeconds === 0`.
+- Error/live regions are correctly scoped: question-scoped vs. top-level is
+  mutually exclusive, so there is no double-announce; submit/complete failures
+  correctly surface at top level.
+
+Findings:
+
+1. Dead CSS: replacing the slider orphaned the old range slider styles. Clean
+   up `.scale-slider`, `.scale-slider-control`, `.scale-slider-ticks`,
+   `.scale-slider-labels`, `.tick`, and the range pseudo-elements. Rename the
+   two reused survivor classes to `scale-answer-*`.
+2. Cosmetic no-op: `transition: width` on `::-webkit-progress-value` is
+   misleading because native progress value changes are not driven by CSS
+   width.
+3. Low-risk latent coupling: if `errorQuestionId` is set and that question is
+   not visible, the error would not render. Current navigation clears both
+   error fields, so this is defended today; keep in mind for future navigation
+   changes.
+4. Scope note: the contact-email modal ARIA changes are labeling, not focus
+   management, so they fit Phase 42, but the same modal is earmarked for Phase
+   43 focus work.
+5. Tests assert source strings. This matches the existing local convention, but
+   these tests are source tripwires rather than rendered DOM accessibility
+   coverage. Manual screen reader and keyboard gaps are appropriately logged.
+
+Nits:
+
+- Some ARIA is redundant but harmless: wrapped labels plus explicit
+  `aria-labelledby`, and `role="status"` plus `aria-live="polite"`.
+- Scale required handling uses `aria-required` plus the JS guard instead of
+  native required; this is acceptable and consistent with the previous slider
+  behavior.
+
+Codex follow-up:
+
+- Addressed findings 1 and 2 by deleting the dead range slider CSS, renaming
+  the reused selected-value classes to `scale-answer-*`, and removing the
+  no-op progress width transition.

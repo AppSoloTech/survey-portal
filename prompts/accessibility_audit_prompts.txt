@@ -1,0 +1,92 @@
+Accessibility Audit Report Prompt
+You are auditing this survey portal for accessibility.
+
+Goal
+Perform a comprehensive accessibility review of the application and generate a findings report only.
+
+Do not make code changes yet.
+
+Scope
+Review the full survey portal, including:
+
+Login/logout flows
+Customer dashboard
+Employee dashboard
+Admin dashboard
+Survey builder
+Survey assignment/listing flows
+Survey-taking experience
+Conditional logic/skip logic UI
+Reports/export pages
+Forms, tables, modals, buttons, dropdowns, navigation, and error states
+Audit Areas
+Evaluate the app against WCAG 2.2 AA principles where applicable.
+
+Focus especially on:
+
+Semantic HTML usage
+Keyboard navigation
+Focus states and focus order
+Screen reader accessibility
+ARIA usage and misuse
+Form labels and validation messages
+Button/link clarity
+Color contrast
+Error messaging
+Required field indication
+Modal/dialog accessibility
+Table accessibility
+Navigation landmarks
+Page titles/headings hierarchy
+Responsive/mobile accessibility
+Touch target size
+Loading states
+Disabled states
+Survey question readability
+Progress indicators
+Skip logic clarity for admins
+Accessible charts/visual reporting, if present
+Instructions
+Inspect the frontend codebase carefully.
+Identify accessibility issues without changing code.
+For each issue, include:
+Severity: Critical, High, Medium, or Low
+Location/file/component
+What the issue is
+Why it matters
+Recommended fix
+Suggested implementation approach
+Separate findings into:
+Must fix before production
+Should fix soon
+Nice-to-have improvements
+Call out any areas that appear accessible and should be preserved.
+Look for repeated patterns that can be solved globally through shared components.
+Identify any missing reusable accessibility primitives, such as:
+accessible Button
+accessible Input
+accessible Modal
+accessible Select
+accessible FormField
+accessible Alert/ErrorMessage
+Do not refactor or modify files.
+Do not install new packages unless only recommending them in the report.
+Deliverable
+Create a markdown report at:
+
+docs/ACCESSIBILITY_AUDIT_REPORT.md
+The report should be structured, specific, and actionable enough that a developer can implement fixes in follow-up phases.
+
+At the end, include a recommended phased remediation plan:
+
+Phase 1: Critical production blockers
+Phase 2: Shared component/accessibility foundation
+Phase 3: Page-specific improvements
+Phase 4: polish/testing/documentation
+Verification
+After generating the report, summarize:
+
+Files/components reviewed
+Number of findings by severity
+Top 5 highest-impact fixes
+Any areas where manual browser testing is still required

@@ -1,0 +1,75 @@
+# Accessibility Remediation Prompt Plan
+
+Purpose:
+Convert `docs/ACCESSIBILITY_AUDIT_REPORT.md` into small implementation phases.
+These prompts are planning artifacts only. Do not implement them until the
+human developer explicitly starts a phase.
+
+Audience target:
+This remediation plan intentionally targets only public and registered
+participant-facing surfaces. Admin-only audit findings are deferred/ignored for
+now except where a shared primitive change naturally affects both user and
+admin routes. Do not spend implementation scope on Admin builder, Admin
+reporting, Admin users, Admin custom selects, or Admin drag-and-drop unless the
+human developer explicitly reintroduces those surfaces.
+
+Source:
+`docs/ACCESSIBILITY_AUDIT_REPORT.md`
+
+Workflow fit:
+The project is phase-prompt driven. Each implementation phase should follow
+`markdown/FLOW.md`, close with a Codex handoff in `notes/`, receive Claude
+review output in `notes/`, and record durable completion details in
+`markdown/PHASE_LOG.md`.
+
+Recommended sequence:
+
+1. `prompts/prompt_42.txt`
+   Phase 42 - Survey Runner Critical Accessibility
+   Fixes the highest participant-facing risk first: the scale slider unset
+   state, survey progress semantics, question-control labelling, and
+   runner-level error announcement.
+
+2. `prompts/prompt_43.txt`
+   Phase 43 - App Shell, Route, And Modal Accessibility
+   Adds route title/focus/announcement behavior, skip link/main target,
+   accessible modal foundation, and account-menu disclosure cleanup.
+
+3. `prompts/prompt_44.txt`
+   Phase 44 - Form Feedback And Required Field Accessibility
+   Introduces shared field/error/status patterns and applies them to auth,
+   account, public, and registered-user forms without broad redesign.
+
+4. `prompts/prompt_45.txt`
+   Phase 45 - User Dashboard And Public Directory Accessibility Polish
+   Fixes user-facing dashboard, category, public anonymous directory,
+   pagination, repeated action names, and user/account disabled-state issues.
+
+5. `prompts/prompt_46.txt`
+   Phase 46 - Accessibility Verification, Contrast, And Documentation
+   Adds repeatable public/user accessibility validation, manual test
+   documentation, contrast checks, and project guidance for future
+   accessibility-safe work.
+
+Rationale:
+
+- Phase 42 is first because the scale slider can expose an unanswered required
+  question as though the minimum value is selected.
+- Phase 43 and 44 establish shared primitives before broad page-by-page fixes.
+- Phase 45 stays user-facing so participant remediation does not get mixed with
+  Admin builder/reporting improvements.
+- Phase 46 validates the public and registered-user work with browser and
+  assistive-technology oriented checks after the main UI changes exist.
+
+Explicitly deferred from this user-facing plan:
+
+- High finding 7: Admin custom grouped question select.
+- Medium finding 11: Admin Results visualizations/table alternatives.
+- Medium finding 12: Admin users mobile table.
+- Medium finding 13: Admin builder/logic disclosure conventions.
+- Medium finding 15: Admin organize drag-and-drop instructions.
+- Admin portions of Medium finding 14 and Low finding 22.
+
+Do not combine these phases unless the human developer explicitly asks. If a
+phase feels too large during implementation, split it before coding and update
+the prompt plan.

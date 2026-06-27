@@ -1,0 +1,252 @@
+# Phase 44 - Form Feedback And Required Field Accessibility
+
+## Purpose
+
+Create and apply reusable form feedback patterns so errors, statuses, helper
+text, and required fields are consistently available to assistive technology.
+
+This phase addresses cross-app feedback and form-field findings from
+`docs/ACCESSIBILITY_AUDIT_REPORT.md` after the survey runner and app shell
+critical fixes have their own phases.
+
+This user-scoped version applies the pattern to public and registered-user
+forms only. Admin-only form migration is intentionally deferred.
+
+Source feedback or planning note:
+
+```txt
+docs/ACCESSIBILITY_AUDIT_REPORT.md
+High finding 3, outside the runner-specific Phase 42 work.
+Medium findings 9, 10, and 14.
+Low finding 20 where pagination status fits the shared feedback pattern.
+
+User-scope adjustment:
+Apply these findings to auth, account settings, dashboard/category pagination,
+public anonymous survey directory, and registered/anonymous survey-adjacent
+feedback. Do not migrate Admin forms in this phase.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Branch:
+
+```bash
+git checkout main
+git checkout -b phase-44-form-feedback-accessibility
+```
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_44_form_feedback_accessibility.txt`
+* Claude review: `notes/claude_review_phase_44_form_feedback_accessibility.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `docs/ACCESSIBILITY_AUDIT_REPORT.md`
+* `prompts/accessibility_remediation_prompt_plan.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current form and feedback components/pages:
+  * `apps/web/src/pages/Login.tsx`
+  * `apps/web/src/pages/Register.tsx`
+  * `apps/web/src/pages/ForgotPassword.tsx`
+  * `apps/web/src/pages/ResetPassword.tsx`
+  * `apps/web/src/pages/AccountSettings.tsx`
+  * `apps/web/src/pages/UserDashboard.tsx`
+  * `apps/web/src/pages/CategorySurveysPage.tsx`
+  * `apps/web/src/pages/AnonymousSurveyDirectoryPage.tsx`
+  * `apps/web/src/components/ToastProvider.tsx`
+  * `apps/web/src/components/PaginationRow.tsx`
+  * `apps/web/src/styles.css`
+
+---
+
+# Received Feedback
+
+Forms and feedback patterns need consistent accessibility:
+
+1. Errors and status messages are not always announced.
+2. Inputs are not consistently marked with `aria-invalid` or linked to helper
+   and error text.
+3. Required fields rely mostly on native `required`, without a consistent
+   visible or programmatic convention.
+4. Toasts auto-dismiss and are rendered as buttons without a dedicated dismiss
+   affordance.
+5. Disabled buttons often lack discoverable explanations.
+6. Pagination status changes are visible but not announced.
+
+---
+
+# Intake Classification
+
+* shared frontend accessibility foundation
+* form validation and feedback issue
+* no database/schema change expected
+* no API contract change expected
+* possible component extraction
+
+---
+
+# Scope
+
+Implement:
+
+* A small shared `Alert` or status primitive for error/success/info messages
+  using appropriate `role="alert"` or `role="status"` behavior.
+* A reusable `FormField` pattern or helpers that provide:
+  * stable ids
+  * visible label
+  * required/optional convention
+  * helper text slot
+  * error text slot
+  * `aria-invalid`
+  * `aria-describedby`
+* Apply the pattern first to high-value auth/account forms:
+  * Login
+  * Register
+  * Forgot password
+  * Reset password
+  * Account settings profile form
+* Apply the error/status primitive to public and registered-user loading,
+  empty, success, and error states where they appear in the scoped routes.
+* Improve `ToastProvider` semantics:
+  * distinguish status vs alert behavior
+  * avoid making the whole toast a generic button if a visible dismiss control
+    is clearer
+  * ensure messages are available long enough to be perceived
+* Add polite live status to shared pagination where page changes update visible
+  user-facing content.
+* Add explanatory text for important disabled actions where users need to know
+  why an action is unavailable, such as password reset cooldown or disabled
+  survey/contact actions.
+* Preserve existing form submission behavior, API calls, validation rules, and
+  visual style.
+
+## Non-Goals
+
+Do not implement:
+
+* Survey runner answer-control work already owned by Phase 42.
+* Modal focus management already owned by Phase 43.
+* Admin grouped select/reporting/table/drag fixes. These are deferred from the
+  user-facing accessibility plan.
+* Admin form migration.
+* Backend validation changes unless an existing frontend message needs to
+  display an existing server error better.
+* A full design-system rewrite.
+* New form library dependencies unless explicitly approved.
+
+## Assumptions
+
+* Wrapped labels can remain where they are already working.
+* The main gap is error/status association and required/help conventions, not a
+  need to relabel every input from scratch.
+* Existing server errors should be displayed more accessibly without changing
+  their response shape.
+
+## Open Questions
+
+* None. Admin forms are intentionally out of scope unless the human developer
+  reintroduces them.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Auth and account forms announce blocking errors and expose field-specific
+  errors through `aria-invalid` and `aria-describedby`.
+* Required fields have a consistent visible/programmatic convention.
+* Toast/status behavior is not dependent on a disappearing unlabeled button.
+* Pagination status updates are announced politely.
+* Important disabled actions have discoverable explanations where practical.
+* User-facing dashboard/category/public directory statuses are announced where
+  content updates.
+* Existing validation, submission, and API behavior is unchanged.
+* New primitives are small, local, and consistent with current React patterns.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update focused tests where practical for:
+
+* auth form error rendering and `aria-invalid`/`aria-describedby`
+* required field indicators
+* toast/status rendering semantics
+* pagination live status
+
+Manual checks:
+
+* Login invalid credentials.
+* Register missing/invalid fields.
+* Forgot/reset password success and error states.
+* Account settings invalid phone and successful save.
+* User-facing toast/status behavior where present.
+* Pagination Next/Previous announcement on dashboard and category survey lists.
+* Keyboard-only and mobile checks at 375/768/1280px.
+* Admin pages are smoke-checked only if a shared primitive touches them; do not
+  remediate Admin-specific form issues.
+
+---
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_44_form_feedback_accessibility.txt
+```
+
+Ask Claude Code to review:
+
+* whether form errors are actually associated with controls
+* whether live-region roles are appropriate and not noisy
+* whether required/optional copy is consistent
+* whether toast changes improve accessibility without disrupting workflow
+* whether disabled explanations are discoverable
+* whether the component extraction is appropriately small
+* whether Admin form work stayed out of scope except incidental shared
+  primitive compatibility
+
+Claude Code must write review output to:
+
+```txt
+notes/claude_review_phase_44_form_feedback_accessibility.txt
+```
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md`
+* `markdown/FOLLOW_UPS.md` only if a user-facing follow-up is discovered
+* `markdown/PHASE_LOG.md`

@@ -122,6 +122,13 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 42: Manual accessibility/browser pass completed 2026-06-27.
+  Developer verified the participant runner after the scale radio conversion:
+  required unanswered scale validation, selected scale radio value,
+  text/integer/selection/Other prompt and helper/error announcements, semantic
+  progress, failed save/submit alerts, anonymous follow-up email modal error
+  announcement, keyboard-only controls, responsive layouts at 375/768/1280px,
+  conditional page/skip logic, and inline glossary prompts.
 - Security hardening pass: Manual browser pass completed 2026-06-25.
   Developer verified login/register/logout CSRF flow, password reset
   completion and stale-session rejection, admin role-change stale-session
