@@ -5,10 +5,11 @@
 Render Admin-approved global glossary definitions inline in participant-facing
 survey question text.
 
-This phase should build on Phase 39, the global glossary Admin foundation.
-Phase 40 dictionary assist is helpful but not required if definitions already
-exist manually. This phase should make glossary terms discoverable to survey
-takers without changing survey logic or response data.
+This phase should build on Phase 39, the global glossary Admin foundation, and
+the completed Phase 40 dictionary assist. Dictionary-suggested definitions are
+still only saved Admin-approved glossary definitions by this point; this phase
+must not depend on live dictionary access. It should make glossary terms
+discoverable to survey takers without changing survey logic or response data.
 
 Source feedback or planning note:
 
@@ -35,8 +36,8 @@ Default arrangement:
 
 Branch:
 
-Start implementation from `main` after Phase 39 is merged. Phase 40 can be
-merged first, but this phase must not depend on live dictionary access.
+Start implementation from `main` after Phase 39 and Phase 40 are merged. This
+phase must not depend on live dictionary access.
 
 ```bash
 git checkout main
@@ -56,8 +57,7 @@ Read before implementation:
 
 * `prompts/prompt_39.txt`
 * The handoff and review artifacts from Phase 39.
-* `prompts/prompt_40.txt` and the Phase 40 handoff/review artifacts if
-  dictionary assist has been completed.
+* `prompts/prompt_40.txt` and the Phase 40 handoff/review artifacts.
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -68,6 +68,9 @@ Read before implementation:
 * `markdown/REVIEW_CHECKLIST.md`
 * Current participant runner, public/anonymous survey APIs, Admin preview,
   question rendering components, and shared question/page types.
+* Current glossary APIs/types, especially the fact that
+  `/api/admin/glossary/participant-safe` is Admin-gated by design and is not a
+  participant route.
 
 ---
 
@@ -104,6 +107,9 @@ Implement:
 
 * Participant-safe glossary payload containing enabled glossary match strings
   and definitions, with no Admin-only metadata.
+* Participant-safe glossary data on both authenticated and anonymous survey
+  attempt payloads used by the runner. Do not have participant UI call the
+  Admin-only glossary routes.
 * A deterministic text-matching helper for plain text question prompts.
 * Inline rendering that wraps matched glossary terms with an accessible
   definition trigger/popover.
@@ -141,6 +147,10 @@ Do not implement:
 * Glossary definitions are plain text.
 * Participant rendering can be computed client-side from a participant-safe
   glossary payload.
+* The existing Admin-gated `/api/admin/glossary/participant-safe` route can
+  guide payload shape, but Phase 41 should either add an attempt-scoped/public
+  participant-safe route or include glossary data in the existing authenticated
+  and anonymous attempt responses after their normal authorization checks.
 * If two glossary entries have the same match string, validation from Phase 39
   should prevent ambiguity before this phase.
 
@@ -193,13 +203,17 @@ Add focused tests for:
 * Longest-match-first overlap resolution.
 * Boundary behavior for partial words.
 * Disabled glossary entries excluded.
-* Participant payload excluding Admin-only fields.
+* Authenticated and anonymous participant payloads include enabled glossary
+  entries and exclude Admin-only fields, including `definitionSource`,
+  `sourceProvider`, `sourceReference`, and `sourceLookupAt`.
 * Popover accessibility states if component tests exist nearby.
 
 Manual checks:
 
 * Admin creates glossary entries, publishes/uses a survey question containing
   matching text, and participant sees inline glossary affordances.
+* Registered and anonymous survey attempts both receive/render glossary
+  affordances without using Admin-only glossary endpoints.
 * Hover/focus/click/tap open and close definitions.
 * Keyboard-only pass: Tab to term, open/read/dismiss, continue survey.
 * Repeated terms and overlapping terms render cleanly.
