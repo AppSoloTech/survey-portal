@@ -7,6 +7,9 @@ This planning note has been promoted into the normal phase prompt flow:
 - `prompts/prompt_49.txt` — performance report table and Admin read API
 - `prompts/prompt_50.txt` — CLI load-test harness and result persistence
 - `prompts/prompt_51.txt` — read-only Admin performance report viewer
+- `prompts/performance_capacity_assessment_prompt_plan.txt` — follow-on
+  capacity suite planning after production ramp testing showed the single-run
+  summary is not enough to identify which Azure service degrades first
 
 Use those numbered prompts for implementation. Keep this file as historical
 planning context.

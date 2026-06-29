@@ -26,6 +26,9 @@ Review this file before starting each implementation phase. When a follow-up is 
   summaries, and keep any runner/orchestration work out of the app process.
   Phase 51 keeps artifact browsing/downloads and time-series charts deferred
   until admins need more than persisted summary/detail reports.
+  Capacity assessment follow-on prompts are drafted in
+  `prompts/performance_capacity_assessment_prompt_plan.txt` and
+  `prompts/prompt_52.txt` through `prompts/prompt_55.txt`.
 
 ---
 
