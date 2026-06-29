@@ -89,6 +89,13 @@ Create the next prompt in:
 prompts/prompt_X.txt
 ```
 
+Current prompt numbering note:
+
+```txt
+prompts/prompt_54.txt and prompts/prompt_55.txt are paused capacity-assessment follow-ups.
+Start the next new feature prompt at prompts/prompt_56.txt.
+```
+
 Start from:
 
 ```txt
@@ -135,4 +142,3 @@ A phase prompt is ready when:
 - expected tests and manual checks are named
 - the review assistant can understand what changed without reading chat history
 - `markdown/FOLLOW_UPS.md` has a home for accepted deferrals
-

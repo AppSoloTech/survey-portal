@@ -37,7 +37,9 @@ Review this file before starting each implementation phase. When a follow-up is 
   anonymous-token prefix.
   Capacity assessment follow-on prompts are drafted in
   `prompts/performance_capacity_assessment_prompt_plan.txt` and
-  `prompts/prompt_53.txt` through `prompts/prompt_55.txt`.
+  `prompts/prompt_53.txt` through `prompts/prompt_55.txt`. Prompts 54 and 55
+  are paused as of 2026-06-29; start the next new feature prompt at
+  `prompts/prompt_56.txt`.
 
 ---
 

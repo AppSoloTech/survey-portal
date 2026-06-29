@@ -6,6 +6,28 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Prompt Queue Pause — Capacity Assessment Phases 54/55
+
+Date:
+2026-06-29
+
+Status:
+Recorded
+
+Decision:
+Pause `prompts/prompt_54.txt` and `prompts/prompt_55.txt` while unrelated
+feature work resumes.
+
+Reason:
+Azure Monitor sampling and the Admin capacity suite viewer are still valuable
+capacity-assessment follow-ups, but they are no longer the next active work.
+
+Consequence:
+Keep prompts 54 and 55 as drafted with paused title annotations. Draft the next
+new feature prompt as `prompts/prompt_56.txt`.
+
+---
+
 ## Phase 53 — Capacity Suite CLI And Stage Sampling
 
 Date:

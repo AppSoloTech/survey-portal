@@ -1,4 +1,10 @@
-# Phase 54 — Optional Azure Monitor Metric Sampling
+# Phase 54 — PAUSED — Optional Azure Monitor Metric Sampling
+
+Status note:
+
+Paused as of 2026-06-29. Keep this prompt as drafted for a future capacity
+assessment follow-up. New feature prompts should continue from
+`prompts/prompt_56.txt`.
 
 ## Purpose
 

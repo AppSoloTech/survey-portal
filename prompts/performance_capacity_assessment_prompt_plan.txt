@@ -57,12 +57,12 @@ Recommended sequence:
    harness data.
 
 3. `prompts/prompt_54.txt`
-   Phase 54 - Optional Azure Monitor Metric Sampling
+   Phase 54 - PAUSED - Optional Azure Monitor Metric Sampling
    Adds optional Azure Monitor collection from the operator machine for App
    Service and PostgreSQL metrics, without creating Azure runner resources.
 
 4. `prompts/prompt_55.txt`
-   Phase 55 - Admin Capacity Suite Viewer
+   Phase 55 - PAUSED - Admin Capacity Suite Viewer
    Adds an Admin suite-level report view showing child runs, first degradation
    point, bottleneck confidence, sampled signals, and next-action guidance.
    Phase 55 may follow Phase 53 if Azure Monitor work is not ready yet; in
@@ -80,6 +80,13 @@ Rationale:
 * Phase 55 waits until suite data shape and classifications are proven by the
   CLI. It should not be blocked on Azure Monitor if the suite API already
   exposes clear unavailable/caveat fields.
+
+Pause note:
+
+* Phases 54 and 55 are paused as of 2026-06-29 while unrelated feature work
+  resumes. Keep `prompts/prompt_54.txt` and `prompts/prompt_55.txt` available
+  for future capacity-assessment work. Start the next new feature prompt at
+  `prompts/prompt_56.txt`.
 
 Explicit non-goals for all phases:
 
