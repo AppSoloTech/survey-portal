@@ -1,0 +1,103 @@
+# Performance Capacity Assessment Prompt Plan
+
+Purpose:
+Turn the Phase 49-51 performance-reporting foundation into an automated
+capacity-assessment workflow that can answer: which service degrades first,
+at what load range, and what upgrade or optimization should be considered.
+
+This plan is a planning artifact only. Do not implement these prompts until the
+human developer explicitly starts a phase.
+
+Source:
+
+* Production mixed ramp test `prod-ramp-mixed-20260629`
+* Observed report:
+  * 50 max VUs
+  * 11.55% HTTP error rate
+  * p95 near 60 seconds
+  * peak throughput only 6.24 requests/sec
+  * visible max DB active connections 4
+* Azure observations at the same window:
+  * DB CPU peaked around 22.7%
+  * App Service CPU Time spiked around 43.61 seconds
+
+Problem:
+
+The current single-run report is useful for proving that a load shape failed,
+but it is too blunt to prove which service failed first. It lacks time-bucketed
+samples, stage-level pass/fail signals, endpoint-level failure grouping, and
+Azure resource metrics captured from the same test window.
+
+Desired outcome:
+
+Add an operator-run capacity suite that:
+
+* Runs several complementary profiles, such as smoke, read-heavy, write-heavy,
+  mixed, and optional direct-DB.
+* Uses bracketed ramp plans to find the first failing load range instead of
+  jumping straight to a large maximum VU count.
+* Persists child runs and time-bucketed samples.
+* Optionally samples Azure App Service and Azure PostgreSQL metrics through the
+  operator machine.
+* Produces one suite-level aggregate report with an explainable bottleneck
+  recommendation and confidence/caveat labels.
+* Keeps the Admin app as a viewer only. No browser run controls.
+* Keeps load generation outside the App Service process.
+
+Recommended sequence:
+
+1. `prompts/prompt_52.txt`
+   Phase 52 - Performance Suite Data Model And Admin API
+   Adds durable suite/sample storage, shared types, and read-only Admin APIs.
+
+2. `prompts/prompt_53.txt`
+   Phase 53 - Capacity Suite CLI And Stage Sampling
+   Adds `npm run loadtest:suite`, profile orchestration, bracketed ramp plans,
+   time-bucketed k6/SQL samples, and aggregate classification from local
+   harness data.
+
+3. `prompts/prompt_54.txt`
+   Phase 54 - Optional Azure Monitor Metric Sampling
+   Adds optional Azure Monitor collection from the operator machine for App
+   Service and PostgreSQL metrics, without creating Azure runner resources.
+
+4. `prompts/prompt_55.txt`
+   Phase 55 - Admin Capacity Suite Viewer
+   Adds an Admin suite-level report view showing child runs, first degradation
+   point, bottleneck confidence, sampled signals, and next-action guidance.
+   Phase 55 may follow Phase 53 if Azure Monitor work is not ready yet; in
+   that case, the UI must render Azure metrics as unavailable and consume Phase
+   54 fields later when present.
+
+Rationale:
+
+* Phase 52 comes first because suite/sample persistence is the shared contract
+  for CLI, API, and Admin UI.
+* Phase 53 then makes the CLI produce richer local evidence, even without Azure
+  RBAC or Azure CLI configured.
+* Phase 54 keeps Azure Monitor integration optional and isolated, so the suite
+  remains useful in local/dev or limited-permission hosted windows.
+* Phase 55 waits until suite data shape and classifications are proven by the
+  CLI. It should not be blocked on Azure Monitor if the suite API already
+  exposes clear unavailable/caveat fields.
+
+Explicit non-goals for all phases:
+
+* Do not add browser controls to start, stop, schedule, retry, or delete tests.
+* Do not run k6, direct DB load, or Azure metric collection from the production
+  App Service process.
+* Do not create Azure Load Testing, Container Apps, Container Instances,
+  queues, functions, or storage resources.
+* Do not store huge raw k6 event streams in PostgreSQL.
+* Do not treat unavailable Azure/SQL metrics as zero.
+* Do not recommend an automatic tier change without caveats and confidence.
+
+Operational guardrails:
+
+* Hosted runs must require explicit `--yes` or interactive confirmation.
+* Hosted suite runs should require a maximum VU/stage plan and print a warning
+  that real users may see slowness.
+* The suite runner should support early stop when error rate or p95 exceeds a
+  safety threshold.
+* Every suite closeout should print the teardown command for namespaced seed
+  data.

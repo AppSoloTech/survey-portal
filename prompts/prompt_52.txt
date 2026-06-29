@@ -1,0 +1,210 @@
+# Phase 52 — Performance Suite Data Model And Admin API
+
+## Purpose
+
+Add the durable data model, shared types, and read-only Admin API foundation for
+capacity-assessment suites and time-bucketed performance samples.
+
+This phase does not build the suite runner, Azure Monitor sampler, or Admin UI.
+
+Source planning note:
+
+```txt
+prompts/performance_capacity_assessment_prompt_plan.txt
+```
+
+Depends on:
+
+```txt
+prompts/prompt_49.txt
+prompts/prompt_50.txt
+prompts/prompt_51.txt
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_52.txt`
+* Claude review: `notes/claude_review_phase_52.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/performance_capacity_assessment_prompt_plan.txt`
+* `prompts/deferred_cli_performance_testing_admin_reports.txt`
+* `prompts/prompt_49.txt`
+* `prompts/prompt_50.txt`
+* `prompts/prompt_51.txt`
+* `loadtest/README.md`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `apps/api/src/routes/adminPerformanceRunsRoutes.ts`
+* `packages/shared/src/index.ts`
+* `database/migrations/0037_performance_test_runs.sql`
+
+---
+
+# Received Feedback
+
+1. Single performance runs do not determine which Azure service fails first.
+2. Capacity testing needs a suite-level report that aggregates varied test
+   compositions.
+3. The system needs time-bucketed and stage-level evidence to identify the
+   first degradation point.
+
+# Intake Classification
+
+* database schema and migration
+* Admin-only reporting API
+* shared type additions
+* no participant-facing behavior change
+* no browser execution controls
+
+# Scope
+
+Implement:
+
+* Add migration `0038_performance_test_suites.sql` or next available number.
+* Add `performance_test_suites` with fields for:
+  * suite key
+  * target base URL
+  * status: `running`, `completed`, `failed`, `aborted`
+  * started/finished/duration
+  * planned profiles/stages JSONB
+  * first failing profile/stage/VU fields
+  * bottleneck
+  * bottleneck confidence
+  * recommendation
+  * config JSONB
+  * summary JSONB
+  * report markdown
+  * timestamps
+* Relate child runs to suites with an additive nullable
+  `performance_test_runs.suite_id` foreign key:
+  * references `performance_test_suites(id)`
+  * defaults to null so one-off Phase 49-51 runs remain valid
+  * uses `on delete set null` or the repo's safest equivalent because no
+    delete API is being added
+  * indexes `(suite_id, started_at desc, id desc)`
+  * preserves the existing unique `run_key` contract
+* Add `performance_test_samples` for time-bucketed sample rows:
+  * suite id
+  * run id, nullable for suite-level samples
+  * source: `k6`, `sql`, `azure_app_service`, `azure_postgres`, or `suite`
+  * profile/scenario
+  * stage label and target/current VUs where available
+  * sampled_at / elapsed seconds
+  * metrics JSONB
+  * optional unavailable reason/caveat fields when a source was requested but
+    data could not be collected
+* Add indexes for suite/run/sample reads.
+* Add shared types for:
+  * `PerformanceTestSuiteStatus`
+  * suite summary/detail/list responses
+  * child-run relationship summary
+  * sample summary shapes where useful
+* Add Admin-only read endpoints:
+  * `GET /api/admin/performance-suites`
+  * `GET /api/admin/performance-suites/:id`
+* Define bounded sample API behavior:
+  * suite list responses do not include sample rows
+  * suite detail includes child runs and a bounded sample window
+  * default sample limit is conservative, for example 200 rows
+  * maximum sample limit is capped, for example 1,000 rows
+  * samples are ordered by `elapsed_seconds`, then `sampled_at`, then `id`
+  * optional filters may include `source`, `runId`, and `profile`
+* Keep endpoints read-only.
+* Ensure persisted `config`, `summary`, sample `metrics`, and markdown never
+  store secrets or reusable credentials. Do not persist DB URLs, passwords,
+  cookies, bearer tokens, CSRF tokens, anonymous attempt access tokens, Azure
+  auth material, or raw connection strings.
+* Add API tests for auth, pagination, detail, sample inclusion/limits, and
+  non-admin rejection.
+
+## Non-Goals
+
+Do not implement:
+
+* `loadtest:suite`
+* Azure Monitor sampling
+* suite classification logic
+* Admin UI changes
+* browser run controls
+* deletion or repair APIs
+
+## Assumptions
+
+* Existing `performance_test_runs` remains valid for one-off reports.
+* JSONB is acceptable for evolving sample metric payloads.
+* Time-series storage is bounded both by the suite runner in later phases and
+  by the Phase 52 read API limits.
+
+## Open Questions
+
+* None. Choose conservative names and additive migrations.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Migrations apply locally and in test.
+* Admin suite list/detail endpoints exist and require admin auth.
+* Shared response types compile.
+* Existing performance run APIs continue to work.
+* Samples can be stored and read without treating missing values as zero.
+* Suite detail sample reads are bounded, ordered, and filterable enough for the
+  Admin viewer.
+* Admin responses do not expose persisted operational secrets.
+* No browser controls or load execution paths are added.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* migration registration
+* Admin API auth/role gates
+* suite list pagination
+* suite detail with child runs and bounded samples
+* missing optional JSONB fields
+* secret-like fields are omitted/redacted from suite config, summary, samples,
+  and markdown fixtures
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `markdown/releases/unreleased.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_52.txt`

@@ -1,0 +1,201 @@
+# Phase 55 — Admin Capacity Suite Viewer
+
+## Purpose
+
+Add an Admin read-only suite report view that turns capacity-assessment suite
+results into an operational decision surface: first failing load range, likely
+service bottleneck, confidence, caveats, and recommended next action.
+
+This phase keeps the Admin app as a viewer only.
+
+Source planning note:
+
+```txt
+prompts/performance_capacity_assessment_prompt_plan.txt
+```
+
+Depends on:
+
+```txt
+prompts/prompt_52.txt
+prompts/prompt_53.txt
+```
+
+Optional enhancement dependency:
+
+```txt
+prompts/prompt_54.txt
+```
+
+Phase 55 may be implemented after Phase 53. If Phase 54 is not complete yet,
+render Azure Monitor fields as unavailable and keep the UI/data helpers ready to
+consume Phase 54 fields when they appear.
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_55.txt`
+* Claude review: `notes/claude_review_phase_55.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/performance_capacity_assessment_prompt_plan.txt`
+* `prompts/prompt_51.txt`
+* `prompts/prompt_52.txt`
+* `prompts/prompt_53.txt`
+* `prompts/prompt_54.txt` if Azure Monitor sampling has already landed
+* `apps/web/src/pages/admin/AdminPerformancePage.tsx`
+* `apps/web/src/api/admin.ts`
+* `apps/web/src/styles.css`
+* `packages/shared/src/index.ts`
+* `markdown/ACCESSIBILITY_PRIMITIVES.md`
+* `markdown/REVIEW_CHECKLIST.md`
+
+---
+
+# Received Feedback
+
+1. Admins need one aggregate report from a suite of tests.
+2. The report should explain which service appears to fail first.
+3. The report should help decide whether to upgrade App Service, PostgreSQL, or
+   investigate endpoint/query behavior.
+
+# Intake Classification
+
+* Admin reporting UI
+* API client change
+* no database schema change if Phase 52 is complete
+* no participant-facing behavior change
+* no browser execution controls
+
+# Scope
+
+Implement:
+
+* Add API client helpers for Phase 52 suite endpoints.
+* Extend `/admin/performance` or add a sub-view/tab for capacity suites.
+* Show recent suites with:
+  * suite key
+  * status
+  * target
+  * started time
+  * duration
+  * profiles included
+  * first failing profile/stage/VU
+  * bottleneck
+  * confidence
+* Show suite detail with:
+  * recommendation summary
+  * first degradation point
+  * child run table
+  * pass/fail by profile
+  * sampled signal highlights
+  * Azure metric availability and caveats
+  * SQL metric availability and caveats
+  * sample limit/window labels when the API returns bounded samples
+  * stored suite markdown rendered safely as text/preformatted content
+* When samples exist, render simple dense tables or compact sparklines only if
+  they fit existing UI patterns. Avoid broad charting dependencies.
+* Explain unavailable metrics as unavailable, not zero.
+* Treat Phase 54 Azure fields as optional:
+  * before Phase 54, show Azure Monitor as unavailable/not collected
+  * after Phase 54, show returned availability, time window, granularity, and
+    caveats when present
+* Link from suite child runs to the existing run detail where practical.
+* Add focused tests for formatting, status/confidence labels, unavailable
+  metric handling, and source-level guards against browser run controls.
+* Add minimal component/render tests for:
+  * empty suite state
+  * selecting a suite and rendering detail
+  * child-run link rendering when a child run id is present
+  * unavailable Azure/SQL metric rendering
+* Ensure UI rendering does not expose secret-like values if malformed historical
+  config/summary/sample payloads contain them.
+
+## Non-Goals
+
+Do not implement:
+
+* Run/stop/schedule/retry/delete buttons.
+* Browser k6 execution.
+* Azure metric reads from the browser.
+* Azure resource scaling controls.
+* Download/browse local artifacts.
+* Heavy charting libraries unless explicitly approved.
+
+## Assumptions
+
+* Admins want an operational dashboard, not a marketing page.
+* The suite report should favor clear caveats over false precision.
+* Existing one-off run viewer remains useful and should not be removed.
+
+## Open Questions
+
+* None. Choose the smallest UI that makes suite evidence readable.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can inspect recent capacity suites.
+* A suite detail shows child runs and the aggregate recommendation.
+* First failing profile/stage/VU is visible when present.
+* Bottleneck confidence and caveats are visible.
+* Missing Azure/SQL metrics are not shown as zero.
+* Bounded sample windows/limits are understandable when sample rows are shown.
+* No UI control can run, stop, schedule, retry, delete, or scale resources.
+* The view is usable at 375/768/1280px.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* suite API helper URL construction
+* suite status and confidence formatting
+* first-degradation formatting
+* unavailable metric/caveat rendering helpers
+* empty-state and detail render behavior
+* child-run link rendering
+* secret-like field redaction/omission in malformed fixture payloads
+* source-level absence of run/stop/schedule/scale controls
+
+Manual checks:
+
+* Admin opens `/admin/performance` with no suites.
+* Admin opens a suite detail with child runs and samples.
+* Standard user remains blocked by Admin route guard.
+* Responsive pass at 375/768/1280px.
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `markdown/releases/unreleased.md`
+* `markdown/ADMIN_DEMO_GUIDE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_55.txt`

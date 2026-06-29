@@ -1,0 +1,203 @@
+# Phase 54 — Optional Azure Monitor Metric Sampling
+
+## Purpose
+
+Add optional Azure Monitor metric sampling to the operator-run capacity suite so
+suite reports can compare App Service and Azure PostgreSQL signals during the
+same test window.
+
+This phase does not create Azure runner resources and does not manage Azure
+tiers. It only reads metrics when the operator environment has Azure CLI or SDK
+access.
+
+Source planning note:
+
+```txt
+prompts/performance_capacity_assessment_prompt_plan.txt
+```
+
+Depends on:
+
+```txt
+prompts/prompt_53.txt
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_54.txt`
+* Claude review: `notes/claude_review_phase_54.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/performance_capacity_assessment_prompt_plan.txt`
+* `prompts/prompt_53.txt`
+* `loadtest/README.md`
+* `loadtest/lib/env.mjs`
+* `loadtest/suite.mjs`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/REVIEW_CHECKLIST.md`
+
+---
+
+# Received Feedback
+
+1. Operators need to know whether App Service or PostgreSQL fails first.
+2. Production evidence should include Azure resource metrics from the same
+   window as the test.
+3. Missing Azure metrics must not block the suite.
+
+# Intake Classification
+
+* optional operational integration
+* Azure metric read access
+* CLI-only feature
+* no Azure resource creation
+* no browser execution controls
+
+# Scope
+
+Implement:
+
+* Add optional `.env.loadtest` settings:
+  * `LOADTEST_AZURE_METRICS_ENABLED`
+  * `LOADTEST_AZURE_SUBSCRIPTION_ID`
+  * `LOADTEST_AZURE_RESOURCE_GROUP`
+  * `LOADTEST_AZURE_APP_SERVICE_NAME`
+  * `LOADTEST_AZURE_POSTGRES_SERVER_NAME`
+  * optional resource IDs for advanced/manual overrides
+* Add Azure metrics sampler helpers that prefer explicit resource IDs when
+  supplied and otherwise build resource IDs from env settings.
+* Use Azure CLI or a minimal SDK approach consistent with repo dependencies.
+  Avoid adding dependencies unless clearly justified.
+* Define metric query windows from the suite/child-run timestamps:
+  * use child-run `started_at`/`finished_at` for child-run Azure samples
+  * use suite `started_at`/`finished_at` for suite-level rollups
+  * request a conservative interval/granularity that matches the run duration
+    and Azure Monitor availability
+  * record the requested time window and returned granularity in sample metrics
+  * tolerate Azure Monitor ingestion lag by marking delayed/missing metrics as
+    unavailable with a reason instead of zero
+* Collect App Service metrics where available:
+  * CPU Time
+  * Memory working set
+  * Requests
+  * Average response time
+  * HTTP 5xx
+  * App restarts
+  * queue length if available for the plan/metric namespace
+* Collect Azure PostgreSQL metrics where available:
+  * CPU percent
+  * memory percent
+  * IO percent
+  * active connections
+  * storage percent
+  * network in/out
+* Persist Azure samples into `performance_test_samples`.
+* Persist unavailable Azure sources as explicit caveats in suite summary and,
+  when useful for the UI, as bounded sample rows with `source`, time window,
+  and unavailable reason.
+* Merge Azure signals into the suite aggregate classifier:
+  * App Service likely first when app metrics spike before DB metrics and HTTP
+    tail latency/errors rise.
+  * DB likely first when DB CPU/IO/connection pressure spikes before app
+    metrics and direct-DB/read-heavy evidence supports it.
+  * Unknown/low confidence when Azure metrics are unavailable or conflict.
+* Label Azure metrics as unavailable with reasons when CLI/RBAC/config is
+  missing.
+* Apply command timeouts and safe process handling so missing or slow `az`
+  commands cannot hang the suite indefinitely.
+* Redact/omit Azure credentials and subscription-sensitive auth material from
+  persisted config, summary, samples, markdown, and local artifacts.
+* Add tests around parsing, command construction, unavailable states, and
+  classifier input merging.
+
+## Non-Goals
+
+Do not implement:
+
+* Azure Load Testing resources.
+* Azure Container Apps/Instances.
+* Azure tier changes.
+* App Service scale operations.
+* Browser controls for running tests or Azure reads.
+* A hard dependency on Azure CLI for non-Azure/local suite runs.
+
+## Assumptions
+
+* Azure metric names may vary by resource/provider version; code should degrade
+  gracefully and record unavailable metrics by name.
+* Operators are responsible for `az login`/RBAC before a hosted suite.
+* Azure Monitor may return sparse points or delayed data for short runs; the
+  classifier should lower confidence rather than overfit missing windows.
+
+## Open Questions
+
+* None. Use optional config and conservative failure modes.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Suite runs still work without Azure config.
+* When Azure config is present, sampled metrics are persisted or clearly marked
+  unavailable with a reason.
+* Azure sample rows or caveats include the requested time window and returned
+  granularity when available.
+* Aggregate recommendations can cite Azure App Service and PostgreSQL signals.
+* No Azure resources are created or modified.
+* No browser execution controls are added.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* Azure env parsing
+* resource ID construction
+* unavailable metric handling
+* metric normalization
+* command timeout/error handling
+* redaction of Azure/auth-sensitive values from persisted artifacts
+* classifier behavior with Azure app-first, DB-first, and conflicting signals
+
+Manual checks:
+
+* Run `loadtest:suite` locally without Azure config and confirm it degrades
+  cleanly.
+* If credentials are available, run a hosted small suite and verify Azure sample
+  rows are stored.
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `.env.loadtest.example`
+* `loadtest/README.md`
+* `markdown/releases/unreleased.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_54.txt`

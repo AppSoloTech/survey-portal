@@ -1,0 +1,216 @@
+# Phase 53 — Capacity Suite CLI And Stage Sampling
+
+## Purpose
+
+Add an operator-run capacity-assessment suite that orchestrates multiple
+load-test profiles, captures stage/time-bucketed local evidence, and persists
+one aggregate suite report.
+
+This phase uses k6 and PostgreSQL metrics only. Azure Monitor integration is a
+later optional phase.
+
+Source planning note:
+
+```txt
+prompts/performance_capacity_assessment_prompt_plan.txt
+```
+
+Depends on:
+
+```txt
+prompts/prompt_52.txt
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_53.txt`
+* Claude review: `notes/claude_review_phase_53.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/performance_capacity_assessment_prompt_plan.txt`
+* `prompts/deferred_cli_performance_testing_admin_reports.txt`
+* `prompts/prompt_50.txt`
+* `prompts/prompt_52.txt`
+* `loadtest/README.md`
+* `loadtest/seed.mjs`
+* `loadtest/teardown.mjs`
+* `loadtest/run.mjs`
+* `loadtest/db-load.mjs`
+* `loadtest/lib/reporting.mjs`
+* `loadtest/lib/metrics.mjs`
+* `loadtest/k6/scenarios.js`
+* `packages/shared/src/index.ts`
+* `markdown/FLOW.md`
+* `markdown/REVIEW_CHECKLIST.md`
+
+---
+
+# Received Feedback
+
+1. Operators need a suite of varied tests, not one isolated run.
+2. The suite should bracket the breaking range.
+3. The report should identify the first degradation point and likely service
+   using local HTTP/SQL evidence.
+
+# Intake Classification
+
+* CLI tooling
+* operational reporting
+* persistence into Phase 52 tables
+* no browser execution controls
+* no Azure resource creation
+
+# Scope
+
+Implement:
+
+* Add `npm run loadtest:suite`.
+* Add `loadtest/suite.mjs` and supporting helpers.
+* Support suite plans from `.env.loadtest` and CLI:
+  * suite key
+  * profiles to run
+  * maximum VUs
+  * ramp stages
+  * early-stop thresholds
+  * app DB pool max and instance count
+* Provide conservative built-in suite presets:
+  * `small`: smoke plus mixed/read/write up to 10 VUs
+  * `standard`: mixed/read/write bracket around 25 VUs
+  * `capacity`: configurable upper bound, explicit operator opt-in
+  * optional `direct-db` child profile when explicitly requested, persisted as
+    suite evidence without replacing HTTP profiles
+* Run child profiles with unique run keys under one suite key.
+* Persist suite `running` at start and terminal status at finish.
+* Persist child run relationships.
+* On `SIGINT`/`SIGTERM`, best-effort mark the suite and active child run as
+  `aborted`, write a caveated summary, and print the teardown command.
+* Capture time-bucketed samples during each child run:
+  * elapsed seconds
+  * current/target VUs where available
+  * request rate
+  * latency percentiles for the bucket where practical
+  * error rate and HTTP status counts where practical
+  * SQL connection and transaction sample summaries
+* Use an explicit sampling strategy:
+  * Prefer stage-sized child runs when exact per-stage k6 percentiles are not
+    available without raw event streams.
+  * If k6 streaming/JSON output is used, aggregate it locally and persist only
+    bounded window summaries, not raw events.
+  * If a metric is approximate or unavailable, store a caveat in the sample or
+    suite summary instead of implying precision.
+* Tag k6 requests by endpoint/group so failures can be summarized by path
+  family without storing raw event streams.
+* Keep the existing anonymous write-heavy contract intact:
+  * fresh anonymous attempt per iteration
+  * no single shared registered user for repeated completions
+  * operator documentation for temporarily raising
+    `ANONYMOUS_SURVEY_RATE_LIMIT_MAX` during approved write-heavy windows and
+    resetting it afterward
+* Implement an aggregate classifier that compares child runs and samples:
+  * first failing profile
+  * first failing stage/VU range
+  * likely bottleneck: app service, app pool, database, endpoint/query, unknown
+  * confidence: high, medium, low
+  * caveats for missing metric visibility
+* Generate suite markdown and JSON artifacts under `loadtest/reports/`.
+* Persist suite summary and markdown into Phase 52 tables.
+* Redact/omit secrets before writing suite artifacts or database rows. Do not
+  store DB URLs, passwords, cookies, bearer tokens, CSRF tokens, anonymous
+  attempt access tokens, Azure auth material, or raw connection strings.
+* Print the teardown command and child run keys at closeout.
+* Add pure Node tests for planning, aggregation, classification, and guardrails.
+
+## Non-Goals
+
+Do not implement:
+
+* Azure Monitor sampling.
+* Admin UI suite viewer.
+* Browser run controls.
+* New Azure resources.
+* Huge raw k6 stream persistence.
+* Automatic tier changes or Azure management actions.
+
+## Assumptions
+
+* Phase 52 persistence APIs/helpers exist.
+* Bucketed k6 detail may require a local summary/trend adapter rather than raw
+  event persistence.
+* If exact per-bucket p95 is not feasible without raw streams, persist the best
+  available window metrics and clearly label the limitation.
+* Direct-DB child runs are optional but valuable when HTTP and SQL signals
+  conflict.
+
+## Open Questions
+
+* None. Prefer conservative evidence and caveats over overconfident labels.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* `npm run loadtest:suite -- --help` or documented usage exists.
+* Hosted suite runs still require confirmation/`--yes`.
+* Suite execution creates one suite row and linked child run rows.
+* Interrupted suite execution marks terminal `aborted` state where possible.
+* Aggregate report identifies first degradation range when samples show it.
+* Missing SQL visibility is labeled as a caveat.
+* Anonymous write-heavy suite profiles still complete fresh anonymous attempts
+  and document the rate-limit prerequisite.
+* Existing `loadtest:run` and `loadtest:db` still work.
+* No browser execution controls are added.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* suite plan parsing and preset expansion
+* unique child run key generation
+* early-stop behavior
+* interrupted-run/abort persistence behavior
+* aggregate bottleneck classification
+* report markdown generation
+* redaction of secret-like values from persisted suite artifacts
+* persistence helper SQL shape where practical
+
+Manual checks:
+
+* Run a local `--persistence-smoke` suite against the local app DB.
+* Confirm suite and child runs are visible through the Phase 52 API.
+
+---
+
+# Documentation And Closeout
+
+Update:
+
+* `loadtest/README.md`
+* `.env.loadtest.example`
+* `markdown/releases/unreleased.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `notes/claude_handoff_phase_53.txt`
