@@ -1,0 +1,231 @@
+# Claude Final Review Handoff — Phase 50
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the committed Phase 50 implementation, including the post-review fixes
+  and live k6 smoke fix.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer
+  explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full final review to:
+
+```txt
+notes/claude_review_phase_50_final.txt
+```
+
+Do not overwrite the earlier review at `notes/claude_review_phase_50.txt`.
+
+## Review Target
+
+Review this committed implementation:
+
+```bash
+git show --stat --name-only 41c8329
+git show 41c8329
+git diff d49a5e1..41c8329
+```
+
+Current branch:
+
+```txt
+phase-50-cli-performance-harness
+```
+
+Phase 50 commit:
+
+```txt
+41c8329 Implement phase 50 CLI performance harness
+```
+
+Phase 49 base commit:
+
+```txt
+d49a5e1 Implement phase 49 performance report API foundation
+```
+
+## Review Goal
+
+Please perform a final commit-readiness review for Phase 50, focusing on:
+
+- production safety and target guards
+- secret handling and `.env.loadtest` behavior
+- teardown safety and cleanup scope
+- write-heavy anonymous k6 scenario validity after live-smoke fixes
+- result persistence semantics, especially `updated_at = now()`
+- SQL metric sampling behavior and permission degradation
+- k6 ramping/profile behavior
+- whether the harness accidentally introduces Azure orchestration scope
+- whether generated reports/manifests/local env files stay ignored
+- whether the final documentation accurately describes hosted migration and
+  operator requirements
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_50.txt`
+- `prompts/prompt_49.txt`
+- `prompts/deferred_cli_performance_testing_admin_reports.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/FOLLOW_UPS.md`
+- `loadtest/README.md`
+- `.env.loadtest.example`
+- `notes/claude_review_phase_50.txt`
+
+## Phase Scope
+
+Implemented:
+
+- Top-level `loadtest/` operator harness.
+- `.env.loadtest.example` with placeholders only.
+- Root npm scripts:
+  - `loadtest:seed`
+  - `loadtest:run`
+  - `loadtest:db`
+  - `loadtest:teardown`
+  - `loadtest:doctor`
+  - `test:loadtest`
+- Explicit `.env.loadtest` parsing and host safety guards:
+  - localhost targets require `--dev`
+  - hosted writes require confirmation or `--yes`
+  - hosted DB uses TLS config with `rejectUnauthorized: true`
+- Seed script for fake namespaced Admin/user/survey/question/attempt/link data.
+- Teardown script with dry-run default and marker/manifest-scoped deletion.
+- k6 scenarios for smoke, read-heavy, write-heavy anonymous, and mixed profiles.
+- Ramping VU stages for non-smoke profiles.
+- Result persistence to Phase 49 `performance_test_runs`.
+- SQL sampling from PostgreSQL stats views.
+- Direct DB optional load check.
+- Markdown/JSON report generation.
+- `loadtest:doctor` readiness check for env parsing and k6 availability.
+- Docs, release notes, follow-ups, phase log, original review, and handoff.
+
+Non-goals:
+
+- No Admin UI pages.
+- No browser controls to run, stop, or schedule tests.
+- No App-Service-hosted load generation.
+- No Azure Container Apps, Container Instances, Azure Load Testing, queues,
+  functions, Blob Storage, or new cloud dependencies.
+- No required Azure metric sampling.
+- No huge raw k6 event streams in PostgreSQL.
+- No production app runtime behavior changes.
+
+## Post-Review Fixes Already Applied
+
+The earlier review in `notes/claude_review_phase_50.txt` found one critical
+write-heavy k6 bug and several improvements. Addressed:
+
+- Captured `survey` once from anonymous start and reused it across page-answer
+  responses.
+- Added ramping VU support for non-smoke profiles.
+- Added a real `http_5xx` counter and threshold.
+- Replaced deprecated k6 `--summary-export` usage with `handleSummary`.
+- Added app DB pool max and app instance count classifier settings.
+- Tightened teardown cleanup for custom Admin emails.
+- Added best-effort `aborted` persistence on `SIGINT`/`SIGTERM`.
+- Added `loadtest:doctor`.
+- After live k6 smoke, fixed page-submit payloads to answer every required
+  question on the submitted page with UI-compatible `isOtherSelected` and
+  `otherText` fields.
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm run loadtest:doctor -- --dev
+node --check loadtest/k6/scenarios.js
+npm run test:loadtest
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Live local k6 smoke:
+
+```bash
+env LOCAL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/survey_portal_test DATABASE_URL=postgresql://postgres:postgres@localhost:5432/survey_portal_test npm run dev:api
+npm run loadtest:seed -- --dev --run-key phase50-k6-smoke-pass
+npm run loadtest:run -- --dev --run-key phase50-k6-smoke-pass --profile write-heavy --ramping-stages '[{"duration":"5s","target":1},{"duration":"5s","target":0}]'
+npm run loadtest:teardown -- --dev --run-key phase50-k6-smoke-pass --yes
+```
+
+Results:
+
+- Passed: `npm run loadtest:doctor -- --dev`
+  - k6 version: `k6 v2.0.0 (commit/8c3be52cc1, go1.26.3, linux/amd64)`
+- Passed: `node --check loadtest/k6/scenarios.js`
+- Passed: `npm run test:loadtest`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with local PostgreSQL access: `npm test`
+  - shared: 62 tests
+  - web: 81 tests
+  - API: 283 tests across 29 API files
+  - release-note tests: 9 tests
+  - loadtest helper tests: 10 tests
+- Passed: `git diff --check`
+- Passed with local PostgreSQL and HTTP access: live write-heavy k6 smoke.
+  - k6 completed 10 anonymous write iterations.
+  - Each iteration completed anonymous start, three page-answer calls, and
+    complete.
+  - The performance run persisted with status `completed`.
+  - Teardown removed the seeded load-test data and manifest.
+
+## Local Artifact Notes
+
+Expected ignored local files may exist:
+
+```txt
+.env.loadtest
+loadtest/reports/
+```
+
+These must not be committed. Verify with:
+
+```bash
+git status --ignored --short .env.loadtest loadtest/reports loadtest/.manifest.*
+```
+
+## Specific Questions
+
+1. Is Phase 50 still narrowly scoped to CLI/operator performance testing?
+2. Are target guards strong enough to prevent accidental localhost/hosted
+   confusion?
+3. Is `.env.loadtest` isolated from app `.env` and shell environment surprises?
+4. Is teardown constrained enough to avoid deleting non-load-test data?
+5. Does the final k6 write-heavy flow correctly complete anonymous attempts?
+6. Are ramping profiles appropriate and safe by default?
+7. Are `performance_test_runs` rows persisted and completed with correct status,
+   summary fields, recommendations, and `updated_at` changes?
+8. Does SQL sampling degrade safely when stats visibility is limited?
+9. Are k6/report artifacts kept out of git?
+10. Did this introduce any Azure runner/orchestration scope by accident?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_50_final.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

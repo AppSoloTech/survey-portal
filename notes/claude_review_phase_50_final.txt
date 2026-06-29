@@ -1,0 +1,129 @@
+Claude Final Review — Phase 50: CLI Performance Test Harness (commit 41c8329)
+
+Branch: phase-50-cli-performance-harness
+Base: d49a5e1 (Phase 49)
+Scope reviewed: the committed harness plus the post-review fixes and the live-k6 fix.
+
+This is a re-review against notes/claude_review_phase_50.txt. Every item from that review
+was independently verified as addressed in code (and, for the critical one, by a live run).
+
+Verification performed for this review:
+- scenarios.js: survey captured once (line 83) and questions filtered by
+  question.pageId === pageId (line 89). Confirmed SurveyQuestion.pageId exists in
+  packages/shared/src/index.ts. The earlier TypeError-on-page-2 path is gone.
+- Handoff records a live k6 v2.0.0 write-heavy smoke: 10 iterations, each completing
+  start + three page-answer calls + complete, run persisted status=completed, teardown
+  clean. This empirically closes the prior Critical issue.
+- http_5xx is now a real Counter incremented on status>=500 (scenarios.js:14,184-188) with
+  a threshold (line 21) and is read by normalizeK6Summary.
+- handleSummary replaces --summary-export (scenarios.js:43-51; run.mjs:84-92 passes
+  LOADTEST_K6_SUMMARY_PATH). normalizeK6Summary reads both flat and .values shapes, so it
+  is compatible with handleSummary output.
+- classifyBottleneck is now instance-aware: expectedPoolCeiling = appDbPoolMax *
+  appInstanceCount, 90% threshold, and it leads with maxTotalConnections (reliable row
+  count) before maxActiveConnections; the recommendation explicitly tells the operator to
+  confirm pg_stat_activity visibility, instance count, and pool settings
+  (reporting.mjs:28,44-54). env.mjs parses LOADTEST_APP_DB_POOL_MAX /
+  LOADTEST_APP_INSTANCE_COUNT (env.mjs:146-155).
+- Teardown now matches users by explicit email list built from manifest.admin.email and
+  each participant email (teardown.mjs:58-61,105-135), so a custom LOADTEST_ADMIN_EMAIL is
+  cleaned up; still double-guarded by id + email and run in a transaction.
+- SIGINT/SIGTERM handlers persist a best-effort 'aborted' row then exit 130/143
+  (run.mjs:180-232), closing the orphaned-'running' gap.
+- Ramping is the default for non-smoke profiles via defaultRampingStages()
+  (10->25->50->0 over 6m); the default profile is still 'smoke' at 1 VU, so a bare run is
+  gentle. Safe by default.
+- loadtest:doctor checks env presence, config parse, and k6 availability.
+- .gitignore ignores .env.loadtest (with .example whitelisted), loadtest/.manifest.*.json,
+  and loadtest/reports/. git ls-files confirms no env/report/manifest artifacts are tracked.
+- FK cascade chain (re-confirmed in the prior review) makes teardown complete; persistence
+  sets updated_at = now().
+
+============================================================
+1. CRITICAL ISSUES
+============================================================
+None. The prior Critical write-flow bug is fixed and validated by a live k6 run.
+
+============================================================
+2. SUGGESTED IMPROVEMENTS
+============================================================
+(a) classifyBottleneck still has a hardcoded `maxActive >= 20` DB-pressure threshold
+    (reporting.mjs:57) that is not scaled by expectedPoolCeiling like the app_pool branch
+    is. On a multi-instance app or a larger pool this constant is arbitrary. Low priority;
+    consider expressing it relative to the ceiling or making it configurable.
+
+(b) Active-connection visibility on Azure (residual from prior 2b). The fix correctly leads
+    with maxTotalConnections and surfaces a visibility caveat in the recommendation, which
+    is the right mitigation. The residual remains that maxActiveConnections (the `state`
+    filter) silently undercounts other-role backends unless the load-test role holds
+    pg_monitor / pg_read_all_stats. Recommend the README state plainly: "grant pg_monitor to
+    the load-test role for accurate active-connection classification, or rely on total
+    connections." (If the README already says this, treat as satisfied.)
+
+(c) SIGINT abort is best-effort and can race the normal completion path / an in-flight
+    pool query (run.mjs handler vs finishAndPersist vs k6 child receiving the same signal
+    via the process group). It is guarded by a `handled` flag and try/catch, so the worst
+    case is a duplicate or skipped abort write, not corruption. Acceptable as-is; noting for
+    completeness.
+
+(d) The default ramp peaks at 50 VUs. That is a sensible, safe default, but it may be below
+    the knee for a production SKU, so operators hunting the true upgrade threshold will need
+    to raise targets. Worth one line in the README pointing at --ramping-stages for pushing
+    past 50.
+
+============================================================
+3. ACCEPTABLE TRADEOFFS
+============================================================
+- Azure Monitor sampling remains deferred; summaries record azure.available=false with a
+  reason. Consistent with the no-new-Azure decision; SQL stats are the in-scope substitute.
+- Admin password is stored in the gitignored manifest and passed to k6 via env. Acceptable
+  for fake load-test credentials; the README should caution against reusing a real password.
+- db-load query is intentionally simpler than the real reporting service — adequate for
+  distinguishing broad DB pressure from app-pool pressure.
+- Ramping is opt-in-by-profile (non-smoke) with a conservative default curve; smoke stays
+  constant-vus at 1.
+
+============================================================
+4. QUESTIONS / ASSUMPTIONS
+============================================================
+- Assumes operators set LOADTEST_APP_INSTANCE_COUNT to the real njsda-wa instance count and
+  LOADTEST_APP_DB_POOL_MAX to the app's pool max (default 10) for the app_pool classifier to
+  be meaningful; otherwise the ceiling defaults to 10x1.
+- Assumes migration 0037 is applied to the hosted DB first; enforced at runtime by the
+  Phase-49 assertions in lib/pg.mjs.
+- Confirmed: no in-app load generation and no Azure orchestration scope introduced.
+
+============================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+============================================================
+- Production-safety posture remains strong and is the standout quality of this phase:
+  localhost requires --dev; --dev requires BOTH targets local; hosted DB forces
+  ssl rejectUnauthorized:true; writes require TTY confirmation or --yes; teardown defaults
+  to dry-run, is double-guarded (id + marker/email), transactional, and cascade-complete;
+  a bare run is a 1-VU smoke.
+- loadtest:doctor is a nice operator-onboarding affordance.
+- Recommendation copy is conservative and points the operator at the right confirmations
+  rather than asserting a verdict — appropriate for a capacity-signal tool.
+
+============================================================
+6. COMMIT READINESS
+============================================================
+Ready to commit / merge. All prior-review items are addressed, the critical write path is
+live-validated, validation (typecheck/lint/build/full test suite + loadtest helper tests)
+passes, and no ignored artifacts are tracked. The remaining items in section 2 are
+polish/documentation, not blockers.
+
+Answers to the handoff's specific questions:
+1. Narrowly scoped to CLI/operator testing: yes.
+2. Target guards strong enough: yes — bidirectional localhost/hosted guard.
+3. .env.loadtest isolated from app .env/shell: yes — parsed explicitly from the file.
+4. Teardown constrained to load-test data: yes — id + marker/email, transactional, cascade.
+5. Write-heavy completes anonymous attempts: yes — fixed and live-validated (10 iterations).
+6. Ramping profiles appropriate/safe by default: yes — smoke default is 1 VU; non-smoke ramp
+   peaks at 50 and is overridable.
+7. Persistence/status/summary/updated_at correct: yes — running -> completed/failed/aborted,
+   updated_at = now() on finish.
+8. SQL sampling degrades safely: yes (try/catch -> available:false); partial-visibility
+   undercount mitigated by leading with total connections (see 2b).
+9. k6/report artifacts kept out of git: yes — verified via .gitignore and git ls-files.
+10. Azure runner/orchestration introduced: no.
