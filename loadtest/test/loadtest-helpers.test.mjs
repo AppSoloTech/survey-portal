@@ -137,6 +137,51 @@ test("classifyBottleneck respects configured app instance pool ceiling", () => {
   assert.equal(result.bottleneck, "unknown");
 });
 
+test("classifyBottleneck scales DB pressure threshold with configured pool ceiling", () => {
+  const belowScaledThreshold = classifyBottleneck({
+    httpSummary: { p95Ms: 1500, errorRate: 0.03 },
+    sqlSummary: {
+      available: true,
+      maxActiveConnections: 20,
+      maxTotalConnections: 20,
+      transactionRollbackDelta: 0
+    },
+    appDbPoolMax: 10,
+    appInstanceCount: 3
+  });
+  const aboveScaledThreshold = classifyBottleneck({
+    httpSummary: { p95Ms: 1500, errorRate: 0.03 },
+    sqlSummary: {
+      available: true,
+      maxActiveConnections: 60,
+      maxTotalConnections: 60,
+      transactionRollbackDelta: 0
+    },
+    appDbPoolMax: 10,
+    appInstanceCount: 3
+  });
+
+  assert.equal(belowScaledThreshold.bottleneck, "unknown");
+  assert.equal(aboveScaledThreshold.bottleneck, "database");
+});
+
+test("classifyBottleneck reports database pressure on transaction rollbacks", () => {
+  const result = classifyBottleneck({
+    httpSummary: { p95Ms: 1500, errorRate: 0.03 },
+    sqlSummary: {
+      available: true,
+      maxActiveConnections: 1,
+      maxTotalConnections: 2,
+      transactionRollbackDelta: 1
+    },
+    appDbPoolMax: 10,
+    appInstanceCount: 3
+  });
+
+  assert.equal(result.bottleneck, "database");
+  assert.match(result.recommendation, /rollbacks increased/);
+});
+
 test("buildMarkdownReport renders concise operator output", () => {
   const markdown = buildMarkdownReport({
     runKey: "unit-run",

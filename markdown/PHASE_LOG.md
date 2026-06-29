@@ -297,6 +297,9 @@ Findings and disposition:
 - Addressed live k6 smoke failure: write-heavy page submissions now answer all
   questions on the current page, not only `currentPageQuestionIds`, and include
   the UI-compatible `isOtherSelected` and `otherText` fields.
+- Post-final-review polish: scaled the database-pressure active-connection
+  threshold from the configured app pool ceiling instead of using a fixed
+  connection count, with focused helper coverage.
 
 ## Follow-Up Tasks
 

@@ -118,6 +118,8 @@ test window. Otherwise `pg_stat_activity.state` can be hidden for sessions owned
 by other roles, undercounting active app connections. Set
 `LOADTEST_APP_DB_POOL_MAX` and `LOADTEST_APP_INSTANCE_COUNT` so app-pool
 classification matches the deployed App Service scale-out shape.
+The database-pressure connection threshold scales from that same configured
+pool ceiling instead of using a fixed connection count.
 
 ## Artifacts And Persistence
 

@@ -42,23 +42,36 @@ export function classifyBottleneck({ httpSummary, sqlSummary, appDbPoolMax = 10,
     const maxTotal = sqlSummary.maxTotalConnections ?? 0;
     const rollbacks = sqlSummary.transactionRollbackDelta ?? 0;
     const expectedPoolCeiling = appDbPoolMax * appInstanceCount;
+    const appPoolPressureThreshold = Math.max(1, Math.floor(expectedPoolCeiling * 0.9));
+    const databaseConnectionPressureThreshold = Math.max(
+      appPoolPressureThreshold + 1,
+      Math.floor(expectedPoolCeiling * 2)
+    );
     const connectionPressure =
-      maxTotal >= Math.max(1, Math.floor(expectedPoolCeiling * 0.9)) ||
-      maxActive >= Math.max(1, Math.floor(expectedPoolCeiling * 0.9));
+      maxTotal >= appPoolPressureThreshold ||
+      maxActive >= appPoolPressureThreshold;
 
-    if (connectionPressure && rollbacks === 0) {
+    if (rollbacks > 0) {
+      return {
+        bottleneck: "database",
+        recommendation:
+          "PostgreSQL transaction rollbacks increased during the run. Review query errors, lock contention, constraints, and database capacity before increasing HTTP concurrency."
+      };
+    }
+
+    if (maxActive >= databaseConnectionPressureThreshold) {
+      return {
+        bottleneck: "database",
+        recommendation:
+          `PostgreSQL active connections crossed the DB-pressure threshold for the configured app pool ceiling (${expectedPoolCeiling}). Review query plans, indexes, connection sources, and database capacity before increasing HTTP concurrency.`
+      };
+    }
+
+    if (connectionPressure) {
       return {
         bottleneck: "app_pool",
         recommendation:
           `HTTP latency/errors rose while visible DB connections approached the configured app pool ceiling (${expectedPoolCeiling}). Confirm pg_stat_activity visibility, app instance count, and pool settings before scaling the database.`
-      };
-    }
-
-    if (rollbacks > 0 || maxActive >= 20) {
-      return {
-        bottleneck: "database",
-        recommendation:
-          "PostgreSQL signals show DB pressure. Review query plans, indexes, and database capacity before increasing HTTP concurrency."
       };
     }
   }
