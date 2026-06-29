@@ -3,6 +3,7 @@ import {
   valueTagMatchesResponse,
   type AdminAttemptAnswer,
   type AdminAttemptDetailResponse,
+  type AdminAttemptReviewTag,
   type AdminAttemptSummary,
   type ReportParticipant,
   type Survey,
@@ -43,6 +44,21 @@ interface ParticipantRecord {
   last_name: string | null;
   email: string | null;
 }
+
+interface ResponseAnswerTagRecord {
+  id: number;
+  answer_id: number;
+  tag_definition_id: number;
+  tag_key: string;
+  tag_value: string;
+  assigned_by: number | null;
+  created_at: Date;
+}
+
+type ReviewTagMutationResult =
+  | { ok: true; reviewTags: AdminAttemptReviewTag[] }
+  | { ok: false; status: 404; error: string }
+  | { ok: false; status: 400; error: string };
 
 function buildAnonymousParticipant(contactEmail: string | null): ReportParticipant {
   return {
@@ -381,13 +397,16 @@ export async function fetchAdminAttemptDetail(
   const participant = attempt.userId
     ? (await fetchParticipant(attempt.userId)) ?? buildAnonymousParticipant(null)
     : buildAnonymousParticipant(attempt.anonymousContactEmail);
+  const reviewTagsByAnswerId = await fetchReviewTagsByAnswerIds(
+    attempt.responses.map((response) => response.id)
+  );
 
   return {
     surveyId: survey.id,
     surveyTitle: survey.title,
     participant,
     attempt,
-    answers: buildAdminAttemptAnswers(survey, attempt)
+    answers: buildAdminAttemptAnswers(survey, attempt, reviewTagsByAnswerId)
   };
 }
 
@@ -407,6 +426,9 @@ export async function buildSurveyCsvExport(
   }
 
   const attempts = await fetchAttemptsWithResponsesForSurvey(surveyId, undefined, range);
+  const reviewTagsByAnswerId = await fetchReviewTagsByAnswerIds(
+    attempts.flatMap((attempt) => attempt.responses.map((response) => response.id))
+  );
   const participantIds = [
     ...new Set(
       attempts
@@ -435,6 +457,7 @@ export async function buildSurveyCsvExport(
     "selected_options",
     "other_text",
     "hidden_tags",
+    "review_tags",
     "on_final_path"
   ];
   const rows: CsvFieldValue[][] = [];
@@ -443,7 +466,7 @@ export async function buildSurveyCsvExport(
     const participant = attempt.userId
       ? participantsById.get(attempt.userId)
       : buildAnonymousParticipant(attempt.anonymousContactEmail);
-    const answers = buildAdminAttemptAnswers(survey, attempt);
+    const answers = buildAdminAttemptAnswers(survey, attempt, reviewTagsByAnswerId);
 
     for (const answer of answers) {
       if (answer.state === "not_reached") {
@@ -475,6 +498,7 @@ export async function buildSurveyCsvExport(
           ...answer.otherTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`),
           ...answer.valueTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`)
         ].join("; "),
+        answer.reviewTags.map((tag) => `${tag.tagKey}=${tag.tagValue}`).join("; "),
         answer.onFinalPath
       ]);
     }
@@ -508,7 +532,8 @@ export function collectFinalPathQuestionIds(
 
 export function buildAdminAttemptAnswers(
   survey: Survey,
-  attempt: SurveyAttempt
+  attempt: SurveyAttempt,
+  reviewTagsByAnswerId: Map<number, AdminAttemptReviewTag[]> = new Map()
 ): AdminAttemptAnswer[] {
   const responsesByQuestionId = new Map(
     attempt.responses.map((response) => [response.questionId, response])
@@ -532,6 +557,7 @@ export function buildAdminAttemptAnswers(
     });
 
     return {
+      responseAnswerId: response?.id ?? null,
       questionId: question.id,
       displayOrder: question.displayOrder,
       questionText: question.questionText,
@@ -552,9 +578,162 @@ export function buildAdminAttemptAnswers(
       valueTags: (question.valueTags ?? [])
         .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
         .map((valueTag) => ({ tagKey: valueTag.tagKey, tagValue: valueTag.tagValue })),
+      reviewTags: response ? (reviewTagsByAnswerId.get(response.id) ?? []) : [],
       onFinalPath: finalPathQuestionIds.has(question.id)
     };
   });
+}
+
+export async function addResponseAnswerReviewTag(input: {
+  answerId: number;
+  assignedByUserId: number;
+  attemptId: number;
+  surveyId: number;
+  tagDefinitionId: number;
+}): Promise<ReviewTagMutationResult> {
+  const validation = await validateReviewTagMutationTarget(input);
+
+  if (!validation.ok) {
+    return validation;
+  }
+
+  await pool.query(
+    `insert into response_answer_tags (answer_id, tag_definition_id, assigned_by)
+     values ($1, $2, $3)
+     on conflict (answer_id, tag_definition_id) do nothing`,
+    [input.answerId, input.tagDefinitionId, input.assignedByUserId]
+  );
+
+  return { ok: true, reviewTags: await fetchReviewTagsForAnswer(input.answerId) };
+}
+
+export async function removeResponseAnswerReviewTag(input: {
+  answerId: number;
+  attemptId: number;
+  surveyId: number;
+  tagDefinitionId: number;
+}): Promise<ReviewTagMutationResult> {
+  const validation = await validateReviewTagMutationTarget(input);
+
+  if (!validation.ok) {
+    return validation;
+  }
+
+  await pool.query(
+    `delete from response_answer_tags
+     where answer_id = $1
+       and tag_definition_id = $2`,
+    [input.answerId, input.tagDefinitionId]
+  );
+
+  return { ok: true, reviewTags: await fetchReviewTagsForAnswer(input.answerId) };
+}
+
+async function validateReviewTagMutationTarget(input: {
+  answerId: number;
+  attemptId: number;
+  surveyId: number;
+  tagDefinitionId: number;
+}): Promise<
+  | { ok: true }
+  | { ok: false; status: 404; error: string }
+  | { ok: false; status: 400; error: string }
+> {
+  const answerResult = await pool.query<{
+    answer_text: string | null;
+    question_type: string;
+  }>(
+    `select
+       survey_response_answers.answer_text,
+       survey_questions.question_type
+     from survey_response_answers
+     join survey_attempts
+       on survey_attempts.id = survey_response_answers.survey_attempt_id
+      and survey_attempts.id = $2
+      and survey_attempts.survey_id = $1
+     join survey_questions
+       on survey_questions.id = survey_response_answers.question_id
+      and survey_questions.survey_id = survey_attempts.survey_id
+     where survey_response_answers.id = $3`,
+    [input.surveyId, input.attemptId, input.answerId]
+  );
+  const answer = answerResult.rows[0];
+
+  if (!answer) {
+    return { ok: false, status: 404, error: "Survey answer not found" };
+  }
+
+  if (answer.question_type !== "text" || !answer.answer_text?.trim()) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Review tags can only be applied to answered text responses"
+    };
+  }
+
+  const tagResult = await pool.query<{ exists: boolean }>(
+    `select exists (
+       select 1
+       from tag_definitions
+       where id = $1
+     ) as exists`,
+    [input.tagDefinitionId]
+  );
+
+  if (!tagResult.rows[0]?.exists) {
+    return { ok: false, status: 404, error: "Tag definition not found" };
+  }
+
+  return { ok: true };
+}
+
+async function fetchReviewTagsForAnswer(answerId: number): Promise<AdminAttemptReviewTag[]> {
+  return (await fetchReviewTagsByAnswerIds([answerId])).get(answerId) ?? [];
+}
+
+async function fetchReviewTagsByAnswerIds(
+  answerIds: number[]
+): Promise<Map<number, AdminAttemptReviewTag[]>> {
+  if (answerIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await pool.query<ResponseAnswerTagRecord>(
+    `select
+       response_answer_tags.id,
+       response_answer_tags.answer_id,
+       response_answer_tags.tag_definition_id,
+       tag_definitions.tag_key,
+       tag_definitions.tag_value,
+       response_answer_tags.assigned_by,
+       response_answer_tags.created_at
+     from response_answer_tags
+     join tag_definitions
+       on tag_definitions.id = response_answer_tags.tag_definition_id
+     where response_answer_tags.answer_id = any($1::int[])
+     order by response_answer_tags.answer_id, tag_definitions.tag_key, tag_definitions.tag_value, response_answer_tags.id`,
+    [answerIds]
+  );
+  const tagsByAnswerId = new Map<number, AdminAttemptReviewTag[]>();
+
+  for (const row of result.rows) {
+    const tags = tagsByAnswerId.get(row.answer_id) ?? [];
+    tags.push(mapResponseAnswerTagRecord(row));
+    tagsByAnswerId.set(row.answer_id, tags);
+  }
+
+  return tagsByAnswerId;
+}
+
+function mapResponseAnswerTagRecord(record: ResponseAnswerTagRecord): AdminAttemptReviewTag {
+  return {
+    id: record.id,
+    tagDefinitionId: record.tag_definition_id,
+    tagKey: record.tag_key,
+    tagValue: record.tag_value,
+    assignedByUserId: record.assigned_by,
+    createdAt: record.created_at.toISOString()
+  };
 }
 
 function responseHasContent(response: SurveyResponseAnswer): boolean {

@@ -6,6 +6,287 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 48 — Admin Results Open-Answer Review Tagging UI
+
+Date:
+2026-06-29
+
+Status:
+Implemented; Claude review complete; manual browser verification passed
+
+Prompt:
+`prompts/prompt_48.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_48.txt`
+- Claude review: `notes/claude_review_phase_48.txt`
+
+## Goals
+
+- Let Admins add and remove catalog review tags from individual text answers in
+  Results.
+- Keep automatic hidden/value/Other tags read-only.
+- Keep participant-facing behavior unchanged.
+
+## Built
+
+- Added Results-page catalog loading, frontend add/remove API helpers, editable
+  review-tag chips, a compact catalog picker, and local attempt-detail updates.
+- Added per-mutation pending state, grouped catalog picker options, and catalog
+  refresh after mutation errors.
+- Added focused review-tag styles using existing Results/tag patterns.
+- Updated release notes and follow-ups for the V1 boundary.
+
+## Important Decisions
+
+### Text-Only Editor
+
+Decision:
+Render review-tag controls only for answered `text` responses with a saved
+response row.
+
+Reason:
+The client asked for open-answer review; integer and option answers already have
+structured tagging paths.
+
+Tradeoff:
+Other text and integer manual review tags remain deferred until the client asks.
+
+## Architecture Notes
+
+- Database/schema impact: none beyond Phase 47.
+- API contract impact: consumes Phase 47 review-tag endpoints.
+- Auth or authorization impact: Admin UI only; server remains authoritative.
+- Data privacy or visibility impact: no participant payload changes.
+- Frontend UX impact: Admin Results attempt detail now includes review-tag
+  editing for text answers.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck, lint, build, full test suite, and diff check.
+- `npm test` passed after escalation for local PostgreSQL access. The sandboxed
+  run failed at API global setup with `EPERM 127.0.0.1:5432`.
+- `npm run build` emitted the existing Vite large chunk warning.
+
+Manual tests:
+
+- Passed on 2026-06-29 per user manual browser testing.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_48.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_48.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None
+
+Suggested improvements:
+
+- Add `role="group"` to the review-tag editor wrapper.
+- Replace the single pending mutation key with per-mutation pending state.
+- Refresh the tag catalog after stale mutation errors.
+- Group review-tag picker options by tag catalog group.
+
+Accepted fixes:
+
+- Added `role="group"` to the review-tag editor wrapper.
+- Replaced the unreleased release-note placeholder summary.
+- Replaced the single pending mutation key with per-mutation pending state.
+- Refreshed the tag catalog after mutation errors.
+- Grouped review-tag picker options by tag catalog group.
+
+Deferred findings:
+
+- Duplicate add retains `201 Created` for idempotent no-op requests; acceptable
+  for V1.
+
+## Follow-Up Tasks
+
+- Confirm whether Other text, integer answers, or review-tag aggregate rollups
+  should be added later.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Yes
+- Ready to commit: Yes
+
+---
+
+## Phase 47 — Open-Answer Review Tagging Backend Foundation
+
+Date:
+2026-06-29
+
+Status:
+Implemented; Claude review complete
+
+Prompt:
+`prompts/prompt_47.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_47.txt`
+- Claude review: `notes/claude_review_phase_47.txt`
+
+## Goals
+
+- Store manual review tags for individual saved text answers.
+- Expose Admin-only add/remove endpoints and attempt-detail review tags.
+- Export review tags separately from automatic hidden tags.
+
+## Built
+
+- Added `response_answer_tags` migration with catalog/tag-definition FKs.
+- Added shared review-tag types and Admin attempt-detail fields.
+- Added Admin-only add/remove endpoints with ownership and text-only validation.
+- Added review tags to attempt detail and a separate CSV `review_tags` column.
+- Added reporting tests for auth, validation, idempotency, cascade cleanup,
+  detail payloads, and CSV export.
+
+## Important Decisions
+
+### Catalog References
+
+Decision:
+Store `tag_definition_id` references instead of denormalized tag key/value text.
+
+Reason:
+The tag catalog remains the controlled vocabulary and delete behavior is clean.
+
+Tradeoff:
+Deleting a tag definition removes historical manual review-tag links.
+
+### Separate CSV Column
+
+Decision:
+Export manual review tags in `review_tags`, not `hidden_tags`.
+
+Reason:
+Manual qualitative coding is conceptually separate from automatic hidden tags.
+
+Tradeoff:
+Consumers need to read one additional column for manual coding.
+
+## Architecture Notes
+
+- Database/schema impact: added `response_answer_tags`.
+- API contract impact: added Admin review-tag endpoints and attempt-detail fields.
+- Auth or authorization impact: Admin-only routes with server validation.
+- Data privacy or visibility impact: no participant payload changes.
+- Frontend UX impact: none in Phase 47.
+- Environment or deployment impact: migration required.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck, lint, build, full test suite, and diff check.
+- `npm test` passed after escalation for local PostgreSQL access. The sandboxed
+  run failed at API global setup with `EPERM 127.0.0.1:5432`.
+- `npm run build` emitted the existing Vite large chunk warning.
+
+Manual tests:
+
+- Not required for backend foundation.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes
+- Handoff path: `notes/claude_handoff_phase_47.txt`
+- Claude review status before commit: Completed
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_47.txt`
+
+Status:
+
+- Completed
+
+Critical issues:
+
+- None
+
+Suggested improvements:
+
+- Remove redundant standalone `response_answer_tags(answer_id)` index.
+
+Accepted fixes:
+
+- Removed the redundant `response_answer_tags_answer_id_idx`.
+
+Deferred findings:
+
+- Duplicate add retains `201 Created` for idempotent no-op requests; acceptable
+  for V1.
+
+## Follow-Up Tasks
+
+- Confirm whether Other text, integer answers, or review-tag aggregate rollups
+  should be added later.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Codex handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Backend automated coverage complete; UI manual pass
+  belongs to Phase 48
+- Ready to commit: Pending review/manual acceptance
+
+---
+
 ## Phase 46 — Public/User Accessibility Verification, Contrast, And Documentation
 
 Date:

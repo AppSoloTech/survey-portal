@@ -1009,6 +1009,15 @@ export interface AdminAttemptAnswerOption {
   hiddenTags: { tagKey: string; tagValue: string }[];
 }
 
+export interface AdminAttemptReviewTag {
+  id: number;
+  tagDefinitionId: number;
+  tagKey: string;
+  tagValue: string;
+  assignedByUserId: number | null;
+  createdAt: string;
+}
+
 // answered: a meaningful response was saved.
 // skipped_blank: a blank response row was intentionally saved for an
 //   optional question.
@@ -1016,6 +1025,7 @@ export interface AdminAttemptAnswerOption {
 export type AdminAttemptAnswerState = "answered" | "skipped_blank" | "not_reached";
 
 export interface AdminAttemptAnswer {
+  responseAnswerId: number | null;
   questionId: number;
   displayOrder: number;
   questionText: string;
@@ -1032,6 +1042,9 @@ export interface AdminAttemptAnswer {
   // Hidden value tags whose condition this answer satisfies (text/integer
   // questions). Admin-only, like selectedOptions[].hiddenTags.
   valueTags: { tagKey: string; tagValue: string }[];
+  // Manual Admin review tags applied to this specific saved response answer.
+  // Admin-only and separate from automatic hidden/value/Other tags.
+  reviewTags: AdminAttemptReviewTag[];
   // True when the question is revealed on the final path implied by the
   // attempt's saved answers. As of Phase 14, off-path answers are pruned at
   // save time, so this flag is a safety net: any answer that escaped pruning,
@@ -1045,6 +1058,10 @@ export interface AdminAttemptDetailResponse {
   participant: ReportParticipant;
   attempt: SurveyAttempt;
   answers: AdminAttemptAnswer[];
+}
+
+export interface UpdateResponseAnswerReviewTagsResponse {
+  reviewTags: AdminAttemptReviewTag[];
 }
 
 export function resolveNextQuestion(

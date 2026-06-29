@@ -1,0 +1,137 @@
+# Phase 47 — Open-Answer Review Tagging Backend Foundation
+
+## Purpose
+
+Add the backend and data foundation for manual Admin review-tagging of
+individual saved text answers. Tags must come from the existing controlled tag
+catalog and remain Admin-only.
+
+Source planning note:
+
+```txt
+Client request: "for open answer questions we need mechanism to review and tag
+individual answer with appropriate tags."
+Chat-approved scope: V1 supports dedicated text-question answers only; integer
+answers continue to use automatic value/range tags.
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_47.txt`
+* Claude review: `notes/claude_review_phase_47.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `apps/api/src/services/surveyReporting.ts`
+* `apps/api/src/routes/surveyReportingRoutes.ts`
+* `apps/api/src/routes/tags.ts`
+* `packages/shared/src/index.ts`
+* current reporting and tag catalog tests
+
+---
+
+# Received Feedback
+
+1. Admins need a mechanism to review individual open-answer responses.
+2. Admins need to apply appropriate tags to a specific answer after reading it.
+3. Tags should use the existing controlled catalog, not free-form entry.
+
+# Intake Classification
+
+* feature request
+* reporting/admin workflow
+* database schema change
+* API contract change
+* Admin-only data visibility surface
+
+This phase changes database schema, Admin API contracts, reporting detail, CSV
+export, and tests. It does not change participant-facing survey behavior.
+
+# Scope
+
+Implement:
+
+* A `response_answer_tags` table linking saved response answers to existing
+  `tag_definitions`.
+* Shared Admin attempt-detail types for `responseAnswerId` and `reviewTags`.
+* Admin-only add/remove endpoints:
+  * `POST /api/surveys/:id/attempts/:attemptId/answers/:answerId/review-tags`
+  * `DELETE /api/surveys/:id/attempts/:attemptId/answers/:answerId/review-tags/:tagDefinitionId`
+* Validation that survey, attempt, answer, and tag belong to valid records, and
+  that the answer is a nonblank `text` response.
+* Attempt detail payloads include persisted review tags.
+* CSV export includes a separate `review_tags` column.
+
+## Non-Goals
+
+Do not implement:
+
+* Frontend editing controls. That is Phase 48.
+* Integer, choice, scale, blank, skipped, or never-reached manual review tags.
+* Manual tags for system-generated Other text.
+* AI suggestions or automatic text classification.
+* Review-tag aggregate rollups.
+* Participant-facing payload changes.
+
+## Assumptions
+
+* "Open answer" means dedicated `text` questions for V1.
+* Existing automatic `question_value_tags` remain the path for integer tagging.
+* Review tags are separate from hidden tags and export in `review_tags`.
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can add and remove catalog tags on one saved text response by API.
+* Duplicate add requests are idempotent.
+* Attempt detail returns review tags for tagged text answers.
+* CSV export includes `review_tags` separately from `hidden_tags`.
+* Non-admins cannot use review-tag endpoints.
+* Invalid survey/attempt/answer/tag combinations are rejected.
+* Non-text or blank text answers cannot receive review tags.
+* Participant-facing APIs remain free of review-tag data.
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused backend tests for add/remove, auth, ownership, text-only validation,
+duplicate add, catalog-delete cascade, attempt detail, and CSV export.
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_47.txt
+```
+
+Ask Claude Code to review authorization, validation, data-model fit, CSV
+semantics, participant data isolation, and migration safety.

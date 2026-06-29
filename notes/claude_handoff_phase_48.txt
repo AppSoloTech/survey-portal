@@ -1,0 +1,55 @@
+# Codex Handoff — Phase 48 Admin Results Open-Answer Review Tagging UI
+
+## Scope Implemented
+
+- Added `prompts/prompt_48.txt`.
+- Added frontend API helpers for add/remove review tags.
+- Updated Admin Results to fetch the tag catalog once with report data.
+- Added editable review-tag chips and a catalog picker for answered text rows.
+- Kept automatic hidden/value/Other tags read-only.
+- Updated local expanded attempt detail after add/remove without collapsing the
+  current attempt.
+- Added per-mutation pending state, grouped catalog picker options, and catalog
+  refresh after mutation errors.
+- Added review-tag editor styles reusing existing Results/tag patterns.
+- Added release note and follow-up for deferred Other/integer/rollup scope.
+
+## Important Decisions
+
+- Tag controls render only for answered text responses with `responseAnswerId`.
+- The picker excludes already-applied catalog tags.
+- Mutation failures use existing toast error handling and preserve current
+  detail state.
+- Other text, integer answers, free-form tag creation, and review-tag rollups
+  remain deferred.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck, lint, build, full test suite, diff check.
+- `npm test` needed escalation because the API harness connects to local
+  PostgreSQL at `127.0.0.1:5432`; sandboxed run failed with `EPERM`.
+- Build emitted the existing Vite large chunk warning.
+
+Manual checks:
+
+- Passed on 2026-06-29 per user manual browser testing.
+
+## Review Focus
+
+- Confirm Results UI affordance is clear and consistent with current Admin
+  patterns.
+- Confirm review tags are visually distinct from read-only automatic tags.
+- Confirm accessibility of select and remove controls.
+- Confirm local state updates cannot drift from the expanded attempt detail.

@@ -1,0 +1,50 @@
+# Codex Handoff — Phase 47 Open-Answer Review Tagging Backend Foundation
+
+## Scope Implemented
+
+- Added `database/migrations/0036_response_answer_tags.sql`.
+- Added `prompts/prompt_47.txt`.
+- Added shared Admin review-tag types and `responseAnswerId`/`reviewTags` on
+  `AdminAttemptAnswer`.
+- Added Admin-only add/remove review-tag routes under survey reporting.
+- Added text-only server validation for saved nonblank `text` response answers.
+- Added review tags to Admin attempt detail.
+- Added separate `review_tags` CSV export column.
+- Added backend reporting tests for auth, ownership, text-only validation,
+  duplicate add, remove, cascade cleanup, attempt detail, and CSV.
+
+## Important Decisions
+
+- V1 supports only dedicated text-question answers.
+- Integer answers stay covered by automatic value/range tags.
+- System-generated Other text is deferred.
+- Review tags reference `tag_definitions.id` instead of copying key/value text.
+- Review tags export separately from automatic `hidden_tags`.
+- Review-tag aggregate rollups are deferred.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Passed: typecheck, lint, build, full test suite, diff check.
+- `npm test` needed escalation because the API harness connects to local
+  PostgreSQL at `127.0.0.1:5432`; sandboxed run failed with `EPERM`.
+- Build emitted the existing Vite large chunk warning.
+
+## Review Focus
+
+- Confirm `response_answer_tags` FK behavior and migration safety.
+- Confirm Admin-only authorization and participant data isolation.
+- Confirm text-only validation is strict enough.
+- Confirm idempotent add/remove semantics are acceptable.
+- Confirm CSV column placement and separation from `hidden_tags`.

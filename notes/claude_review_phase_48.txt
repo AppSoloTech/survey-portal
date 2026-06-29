@@ -1,0 +1,32 @@
+# Claude Review — Phase 48 Admin Results Open-Answer Review Tagging UI
+
+## Verdict
+
+Solid, well-scoped implementation that matches the intended design. The server
+returns authoritative `reviewTags` after mutation, so UI state cannot drift.
+No blocking findings.
+
+## Findings
+
+1. Low: `SurveyResultsPage.tsx` used `aria-label` on a roleless `<div>`, so the
+   label would be ignored by assistive technology.
+2. Low: one global pending mutation key can briefly leave a control disabled in
+   concurrent mutation cases.
+3. Low: tag catalog is cached for the Results page lifetime and can become stale
+   if edited in another tab.
+4. Low: the picker is flat rather than grouped by tag group.
+
+## Accepted Fixes
+
+- Added `role="group"` to the review-tag editor wrapper so its label is exposed.
+- Replaced the unreleased release-note placeholder summary.
+- Replaced the single pending mutation key with per-mutation pending state.
+- Refreshed the tag catalog after mutation errors to recover from stale picker
+  options.
+- Grouped the review-tag picker by existing tag catalog groups.
+
+## Deferred / Non-Blocking Notes
+
+- Duplicate add keeps the existing `201 Created` response for idempotent no-op
+  requests.
+- Manual browser pass at 375/768/1280px remains pending.

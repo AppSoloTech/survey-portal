@@ -29,6 +29,7 @@ import type {
   SurveyResponse,
   SurveyTimingResponse,
   SurveyStatus,
+  UpdateResponseAnswerReviewTagsResponse,
   UpdateAnonymousSurveyLinkDirectoryListingResponse
 } from "@survey-portal/shared";
 
@@ -961,6 +962,33 @@ export async function fetchSurveyAttemptDetail(
 ): Promise<AdminAttemptDetailResponse> {
   return apiRequest<AdminAttemptDetailResponse>(
     `/api/surveys/${surveyId}/attempts/${attemptId}`
+  );
+}
+
+export async function addAnswerReviewTag(input: {
+  answerId: number;
+  attemptId: number;
+  surveyId: number;
+  tagDefinitionId: number;
+}): Promise<UpdateResponseAnswerReviewTagsResponse> {
+  return apiRequest<UpdateResponseAnswerReviewTagsResponse>(
+    `/api/surveys/${input.surveyId}/attempts/${input.attemptId}/answers/${input.answerId}/review-tags`,
+    {
+      body: JSON.stringify({ tagDefinitionId: input.tagDefinitionId }),
+      method: "POST"
+    }
+  );
+}
+
+export async function removeAnswerReviewTag(input: {
+  answerId: number;
+  attemptId: number;
+  surveyId: number;
+  tagDefinitionId: number;
+}): Promise<UpdateResponseAnswerReviewTagsResponse> {
+  return apiRequest<UpdateResponseAnswerReviewTagsResponse>(
+    `/api/surveys/${input.surveyId}/attempts/${input.attemptId}/answers/${input.answerId}/review-tags/${input.tagDefinitionId}`,
+    { method: "DELETE" }
   );
 }
 

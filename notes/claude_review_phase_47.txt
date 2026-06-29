@@ -1,0 +1,24 @@
+# Claude Review — Phase 47 Open-Answer Review Tagging Backend Foundation
+
+## Verdict
+
+Solid, well-scoped implementation that matches the intended design. The
+security-critical parts are done right and tested: admin-only auth, ownership
+chain enforced in SQL, strict text-only and non-blank validation, idempotent add,
+and FK cascade cleanup. No blocking findings.
+
+## Findings
+
+1. Low: `database/migrations/0036_response_answer_tags.sql` included a redundant
+   standalone `(answer_id)` index because the unique constraint on
+   `(answer_id, tag_definition_id)` already covers answer-id lookups.
+
+## Accepted Fixes
+
+- Removed the redundant `response_answer_tags_answer_id_idx`.
+
+## Deferred / Non-Blocking Notes
+
+- Duplicate add returns `201 Created` even when the idempotent insert is a no-op.
+  This is acceptable for V1 because the response is authoritative and tested.
+- Review-tag aggregate rollups remain deferred by product scope.

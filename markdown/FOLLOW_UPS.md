@@ -16,6 +16,10 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Review and merge feature/templates-and-reporting (stacked on the dark-mode branch): duplicate-as-template, resume nudge, report date range + option distribution + tag rollup. Manual browser pass over the Results tab with real data before merging.
 - Cross-survey tag rollup: aggregate a hidden tag category across all surveys (internally stored as `tag_key`, e.g. compliance_result everywhere) — per-survey rollup shipped first.
 - Global glossary follow-on phases: Phase 39 implements the Admin glossary foundation, Phase 40 implements Admin-only Merriam-Webster dictionary suggestions using environment-held credentials, and Phase 41 renders enabled glossary matches inline for participant question prompts without changing survey logic, responses, reports, hidden tags, or CSV.
+- Open-answer review tagging follow-ons: confirm with the client whether manual
+  review tags should also cover system-generated Other text, integer answers,
+  or aggregate review-tag rollups. Phase 47/48 V1 intentionally supports only
+  dedicated text-question answers and exports review tags per answer.
 
 ---
 

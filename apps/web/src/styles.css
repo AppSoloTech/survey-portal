@@ -4800,6 +4800,76 @@ main:focus {
   color: var(--ink);
 }
 
+.results-review-tags {
+  align-items: start;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.results-review-tag-list {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.results-review-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.results-review-tag {
+  align-items: center;
+  background: var(--info-surface);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-pill);
+  color: var(--info-ink);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 0.35rem;
+  padding: 0.25rem 0.35rem 0.25rem 0.55rem;
+}
+
+.results-review-tag-remove {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  height: 1.35rem;
+  justify-content: center;
+  line-height: 1;
+  min-width: 1.35rem;
+  padding: 0;
+}
+
+.results-review-tag-remove:hover:not(:disabled) {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.results-review-tag-remove:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.results-review-tag-picker {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.results-review-tag-picker select {
+  max-width: min(24rem, 100%);
+}
+
 /* ------------------------------------------------------------------ */
 /*  8d. Admin users / tags / categories                                 */
 /* ------------------------------------------------------------------ */

@@ -1,0 +1,133 @@
+# Phase 48 — Admin Results Open-Answer Review Tagging UI
+
+## Purpose
+
+Add the Admin Results workflow for applying and removing manual review tags on
+individual text-question answers, using the backend foundation from Phase 47.
+
+Source planning note:
+
+```txt
+Continuation of the client request for reviewing and tagging individual open
+answers. Phase 47 provides the schema, types, API, detail payload, and CSV
+export behavior.
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_48.txt`
+* Claude review: `notes/claude_review_phase_48.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_47.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+* `apps/web/src/api/surveys.ts`
+* `apps/web/src/api/tags.ts`
+* `apps/web/src/styles.css`
+
+---
+
+# Received Feedback
+
+1. Admins need to review individual open-text answers in Results.
+2. Admins need to apply existing catalog tags to a specific text answer.
+3. Automatic hidden/value/Other tags should remain visible but read-only.
+
+# Intake Classification
+
+* Admin workflow feature
+* reporting UI change
+* no participant-facing behavior change
+* depends on Phase 47 API contracts
+
+# Scope
+
+Implement:
+
+* Fetch the existing tag catalog once on the Results page.
+* In expanded attempt detail, render editable review-tag chips only for answered
+  `text` responses that have a `responseAnswerId`.
+* Add a compact catalog picker that excludes already-applied tags.
+* Remove review tags with pill controls.
+* Call Phase 47 add/remove API helpers and update local attempt detail state.
+* Keep automatic hidden tags, value tags, and Other tags read-only.
+* Add focused styles reusing the current Results/tag chip patterns.
+
+## Non-Goals
+
+Do not implement:
+
+* Backend behavior from Phase 47 if it is not already present.
+* Integer/manual numeric tagging.
+* Other-text manual tagging.
+* Free-form tag creation inside Results.
+* Review-tag rollup charts.
+* Participant-facing UI changes.
+
+## Assumptions
+
+* Catalog management remains in `/admin/tags`.
+* Results tagging uses existing catalog tags only.
+* Failed tag mutations should preserve current detail state and show an error.
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admin can expand an attempt, add a catalog tag to a text answer, remove it,
+  refresh, and see persistence.
+* Tag controls do not appear for choice, scale, integer, skipped, blank, or
+  never-reached answers.
+* Already-applied tags are excluded from the picker.
+* Automatic tags remain read-only and visually distinct.
+* Results remains usable at 375/768/1280px.
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Manual checks:
+
+* Add and remove two catalog tags on a text answer.
+* Refresh and confirm persistence.
+* Confirm no picker appears on non-text rows.
+* Confirm existing CSV export still downloads.
+* Responsive pass at 375/768/1280px.
+
+# Claude Review Handoff
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_48.txt
+```
+
+Ask Claude Code to review the Results workflow, accessibility, error handling,
+participant isolation, and whether the UI stays consistent with current Admin
+patterns.

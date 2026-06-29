@@ -2,8 +2,10 @@
 
 Release title: Next Release
 
-Summary: Replace this with a short summary before running `npm run release:prepare`.
+Summary: Add Admin review tagging for individual open-text survey responses.
 
 ## Changed
 
-- Add release-note bullets here during implementation.
+- Added Admin review tagging for individual text-question answers in Results,
+  using the existing tag catalog and exporting manual review tags in a separate
+  CSV column.

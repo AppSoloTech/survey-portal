@@ -10,6 +10,7 @@ import {
   createDraftSurvey,
   createPublishedJumpSurvey,
   createPublishedSkipSurvey,
+  createTagDefinition,
   findQuestion,
   registerAdmin,
   registerUser,
@@ -73,6 +74,43 @@ async function seedReportingFixture(admin: TestSession) {
   };
 }
 
+async function seedReviewTagFixture(admin: TestSession) {
+  let survey = await createDraftSurvey(app, admin, "Review tag survey");
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Tell us more"
+  });
+  survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+  const question = findQuestion(survey, "Tell us more");
+  const user = await registerUser(app);
+  const started = await startAttempt(app, user, survey.id);
+  await submitAnswer(app, user, survey.id, {
+    attemptId: started.attempt.id,
+    questionId: question.id,
+    answerText: "Needs follow-up with the regional team"
+  });
+  const tag = await createTagDefinition(app, admin, "review_theme", "follow_up");
+  const detail = await request(app)
+    .get(`/api/surveys/${survey.id}/attempts/${started.attempt.id}`)
+    .set("Cookie", admin.cookie);
+  const answer = detail.body.answers.find(
+    (candidate: { questionText: string }) => candidate.questionText === question.questionText
+  );
+
+  if (!answer?.responseAnswerId) {
+    throw new Error("Review tag fixture did not create a response answer");
+  }
+
+  return {
+    answerId: answer.responseAnswerId as number,
+    attemptId: started.attempt.id as number,
+    question,
+    survey,
+    tag,
+    user
+  };
+}
+
 describe("reporting authorization", () => {
   it("requires admin role on every reporting endpoint", async () => {
     const admin = await registerAdmin(app);
@@ -83,14 +121,24 @@ describe("reporting authorization", () => {
       `/api/surveys/${survey.id}/report`,
       `/api/surveys/${survey.id}/attempts`,
       `/api/surveys/${survey.id}/attempts/1`,
+      `/api/surveys/${survey.id}/attempts/1/answers/1/review-tags`,
+      `/api/surveys/${survey.id}/attempts/1/answers/1/review-tags/1`,
       `/api/surveys/${survey.id}/export.csv`
     ];
 
     for (const path of paths) {
-      const unauthenticated = await request(app).get(path);
+      const unauthenticated = path.includes("review-tags")
+        ? path.endsWith("/1")
+          ? await request(app).delete(path)
+          : await request(app).post(path).send({ tagDefinitionId: 1 })
+        : await request(app).get(path);
       expect(unauthenticated.status).toBe(401);
 
-      const forbidden = await request(app).get(path).set("Cookie", user.cookie);
+      const forbidden = path.includes("review-tags")
+        ? path.endsWith("/1")
+          ? await request(app).delete(path).set("Cookie", user.cookie)
+          : await request(app).post(path).set("Cookie", user.cookie).send({ tagDefinitionId: 1 })
+        : await request(app).get(path).set("Cookie", user.cookie);
       expect(forbidden.status).toBe(403);
     }
   });
@@ -459,6 +507,135 @@ describe("GET /api/surveys/:id/attempts/:attemptId", () => {
   });
 });
 
+describe("response answer review tags", () => {
+  it("adds, returns, dedupes, removes, and cascades catalog review tags", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReviewTagFixture(admin);
+
+    const addResponse = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: fixture.tag.id });
+
+    expect(addResponse.status).toBe(201);
+    expect(addResponse.body.reviewTags).toHaveLength(1);
+    expect(addResponse.body.reviewTags[0]).toMatchObject({
+      tagDefinitionId: fixture.tag.id,
+      tagKey: "review_theme",
+      tagValue: "follow_up",
+      assignedByUserId: admin.user.id
+    });
+
+    const duplicate = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: fixture.tag.id });
+
+    expect(duplicate.status).toBe(201);
+    expect(duplicate.body.reviewTags).toHaveLength(1);
+
+    const detail = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}`)
+      .set("Cookie", admin.cookie);
+    const taggedAnswer = detail.body.answers.find(
+      (answer: { responseAnswerId: number | null }) => answer.responseAnswerId === fixture.answerId
+    );
+    expect(taggedAnswer.reviewTags).toMatchObject([
+      { tagDefinitionId: fixture.tag.id, tagKey: "review_theme", tagValue: "follow_up" }
+    ]);
+
+    const csv = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/export.csv`)
+      .set("Cookie", admin.cookie);
+    expect(csv.text).toContain("review_theme=follow_up");
+
+    const remove = await request(app)
+      .delete(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/${fixture.tag.id}`
+      )
+      .set("Cookie", admin.cookie);
+
+    expect(remove.status).toBe(200);
+    expect(remove.body.reviewTags).toEqual([]);
+
+    await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: fixture.tag.id });
+
+    const { pool } = await import("../src/db.js");
+    await pool.query(`delete from tag_definitions where id = $1`, [fixture.tag.id]);
+
+    const afterCascade = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}`)
+      .set("Cookie", admin.cookie);
+    const answerAfterCascade = afterCascade.body.answers.find(
+      (answer: { responseAnswerId: number | null }) => answer.responseAnswerId === fixture.answerId
+    );
+    expect(answerAfterCascade.reviewTags).toEqual([]);
+  });
+
+  it("rejects wrong ownership, unknown tags, and non-text answers", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReviewTagFixture(admin);
+    let otherSurvey = await createDraftSurvey(app, admin, "Other review survey");
+    otherSurvey = await addQuestion(app, admin, otherSurvey.id, { questionText: "Other text" });
+    const missingTagId = fixture.tag.id + 1_000_000;
+
+    const wrongSurvey = await request(app)
+      .post(
+        `/api/surveys/${otherSurvey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: fixture.tag.id });
+    expect(wrongSurvey.status).toBe(404);
+
+    const unknownTag = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: missingTagId });
+    expect(unknownTag.status).toBe(404);
+
+    let integerSurvey = await createDraftSurvey(app, admin, "Integer review survey");
+    integerSurvey = await addQuestion(app, admin, integerSurvey.id, {
+      questionText: "How many?",
+      questionType: "integer"
+    });
+    integerSurvey = await setSurveyStatus(app, admin, integerSurvey.id, "published");
+    const integerQuestion = findQuestion(integerSurvey, "How many?");
+    const integerUser = await registerUser(app);
+    const integerStarted = await startAttempt(app, integerUser, integerSurvey.id);
+    await submitAnswer(app, integerUser, integerSurvey.id, {
+      attemptId: integerStarted.attempt.id,
+      questionId: integerQuestion.id,
+      answerInteger: 7
+    });
+    const integerDetail = await request(app)
+      .get(`/api/surveys/${integerSurvey.id}/attempts/${integerStarted.attempt.id}`)
+      .set("Cookie", admin.cookie);
+    const integerAnswer = integerDetail.body.answers.find(
+      (answer: { questionText: string }) => answer.questionText === "How many?"
+    );
+
+    const nonText = await request(app)
+      .post(
+        `/api/surveys/${integerSurvey.id}/attempts/${integerStarted.attempt.id}/answers/${integerAnswer.responseAnswerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: fixture.tag.id });
+    expect(nonText.status).toBe(400);
+    expect(nonText.body.error).toBe("Review tags can only be applied to answered text responses");
+  });
+});
+
 describe("GET /api/surveys/:id/export.csv", () => {
   it("exports one row per saved response with quoting and hidden tags", async () => {
     const admin = await registerAdmin(app);
@@ -496,6 +673,7 @@ describe("GET /api/surveys/:id/export.csv", () => {
       "selected_options",
       "other_text",
       "hidden_tags",
+      "review_tags",
       "on_final_path"
     ]);
 
