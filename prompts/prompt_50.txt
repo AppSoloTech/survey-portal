@@ -1,0 +1,357 @@
+# Phase 50 — CLI Performance Test Harness And Result Persistence
+
+## Purpose
+
+Build the command-line performance testing harness that seeds load-test data,
+runs HTTP and optional direct-DB performance checks from the operator's machine,
+and persists summarized results into the Phase 49 `performance_test_runs`
+table.
+
+The Admin app remains a viewer only. This phase does not add a browser control
+for starting tests.
+
+Source planning note:
+
+```txt
+prompts/deferred_cli_performance_testing_admin_reports.txt
+```
+
+Depends on:
+
+```txt
+prompts/prompt_49.txt
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_50.txt`
+* Claude review: `notes/claude_review_phase_50.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_49.txt`
+* `prompts/deferred_cli_performance_testing_admin_reports.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `scripts/migrate-hosted.mjs`
+* `scripts/migrate-db.mjs`
+* `apps/api/src/db.ts`
+* `apps/api/src/routes/auth.ts`
+* `apps/api/src/routes/surveyReadRoutes.ts`
+* `apps/api/src/routes/surveyReportingRoutes.ts`
+* `apps/api/src/routes/surveyAttemptRoutes.ts`
+* `apps/api/src/services/surveyStructure.ts`
+* `apps/api/src/services/surveyReporting.ts`
+* `apps/api/src/services/surveyAttempts.ts`
+* `apps/api/test/helpers/factories.ts`
+* current database migrations for survey/user/attempt table shapes
+
+---
+
+# Received Feedback
+
+1. Performance tests should be run from the command line.
+2. Results should feed the new Admin report table.
+3. The process should avoid extra Azure work and avoid an in-app load runner.
+4. Write-heavy tests must respect the app's survey attempt lifecycle and must
+   not rely on one shared completed user.
+
+# Intake Classification
+
+* operational tooling
+* reporting persistence
+* production-safety workflow
+* deployment/setup documentation
+* no participant-facing behavior change
+
+This phase adds operator scripts and local report artifacts. It writes
+summaries into PostgreSQL but does not expose new participant behavior or Admin
+UI controls.
+
+# Scope
+
+Implement:
+
+* Create a top-level `loadtest/` harness.
+* Add `.env.loadtest.example` with placeholders only.
+* Add root npm scripts:
+  * `loadtest:seed`
+  * `loadtest:run`
+  * `loadtest:db`
+  * `loadtest:teardown`
+* Update `.gitignore` for:
+  * `.env.loadtest`
+  * `loadtest/.manifest.*.json`
+  * `loadtest/reports/`
+* Reuse the hosted-target safety pattern from `scripts/migrate-hosted.mjs`:
+  * explicit `.env.loadtest` parsing
+  * host guard
+  * TLS for hosted PostgreSQL
+  * confirmation before hosted writes
+  * clear target printing
+* Seed namespaced load-test data directly with SQL.
+* Teardown load-test rows by manifest and/or marker in safe dependency order.
+* Run k6 HTTP scenarios from the CLI when k6 is installed.
+* Persist a `running` row to `performance_test_runs` at run start.
+* Update the row to `completed`, `failed`, or `aborted` at finish.
+* Store concise JSON summaries and markdown reports.
+* Keep local full artifacts under `loadtest/reports/`.
+* Keep Azure metric sampling optional. If Azure CLI or permissions are missing,
+  persist the HTTP/DB summary and label Azure resource metrics as unavailable.
+* Add a non-Azure PostgreSQL metrics sampler that runs over the same load-test
+  database connection during a test. At minimum, sample:
+  * `pg_stat_activity` for active/total connection counts and application-side
+    connection pressure signals.
+  * `pg_stat_database` for transaction and block read/hit deltas.
+  * optionally `pg_stat_statements` only when the extension is installed and
+    the configured user can read it.
+* Use the SQL sampler output in the bottleneck classifier before falling back
+  to `unknown` when Azure Monitor metrics are unavailable.
+
+Recommended files:
+
+```txt
+loadtest/README.md
+loadtest/lib/env.mjs
+loadtest/lib/pg.mjs
+loadtest/seed.mjs
+loadtest/teardown.mjs
+loadtest/run.mjs
+loadtest/db-load.mjs
+loadtest/persist-results.mjs
+loadtest/k6/scenarios.js
+loadtest/k6/lib/auth.js
+.env.loadtest.example
+```
+
+## Load-Test Data Requirements
+
+Seed data should:
+
+* Use a stable marker such as `LOADTEST <run_key>`.
+* Use load-test email prefixes such as
+  `loadtest+<run_key>-<n>@example.invalid`.
+* Create enough surveys, users, pages, questions, answer options, hidden tags,
+  and completed attempts to exercise reporting endpoints.
+* Write created ids to `loadtest/.manifest.<run_key>.json`.
+* Avoid real client data.
+
+Write-heavy scenarios must avoid one shared user completing the same survey
+repeatedly. Use one of:
+
+* Preferred default: the anonymous survey flow, where each iteration calls
+  `POST /api/anonymous-surveys/:token/start` to create a fresh anonymous
+  attempt, saves answers through the anonymous answer/page-answer endpoints, and
+  completes with `POST /api/anonymous-surveys/:token/complete`.
+* Alternative for registered-user behavior only: many seeded user/survey pairs
+  large enough that the run cannot exhaust them.
+
+Do not rely on one shared registered user. Registered `POST /api/surveys/:id/start`
+returns 409 after that user has already completed the survey.
+
+Do not use anonymous `/register` as the default write-throughput mechanism.
+That endpoint converts an already-completed anonymous attempt into a registered
+user and is useful only for a separate conversion-load scenario.
+
+Anonymous write-load setup must account for rate limiting:
+
+* All `/api/anonymous-surveys/:token/*` public routes share
+  `ANONYMOUS_SURVEY_RATE_LIMIT_MAX` over
+  `ANONYMOUS_SURVEY_RATE_LIMIT_WINDOW_MS`.
+* The default is 120 requests per 15 minutes, and a single complete anonymous
+  attempt consumes multiple requests.
+* Document the temporary App Service setting increase needed for an approved
+  test window, and reset the values afterward.
+* If a conversion scenario uses anonymous `/register`, it is also governed by
+  `AUTH_REGISTER_RATE_LIMIT_MAX` over `AUTH_RATE_LIMIT_WINDOW_MS`.
+
+## Scenario Requirements
+
+HTTP scenarios:
+
+* read-heavy Admin reporting:
+  * `GET /api/surveys/:id`
+  * `GET /api/surveys/:id/report`
+  * `GET /api/surveys/:id/attempts`
+  * `GET /api/surveys/:id/attempts/:attemptId`
+  * `GET /api/surveys/:id/export.csv`
+* write-heavy survey completion:
+  * default to anonymous public survey start
+  * save page/question answers with the anonymous attempt token
+  * complete the anonymous attempt
+  * optionally include a separate anonymous-to-registered conversion scenario
+    only when registration load is explicitly desired
+* mixed read/write scenario
+
+Thresholds to summarize:
+
+* p50 latency
+* p95 latency
+* p99 latency
+* error rate
+* HTTP 5xx count
+* total requests
+* failed requests
+* peak requests per second
+* max VUs
+
+Required SQL metrics to summarize:
+
+* active DB connections during each step/window
+* total DB connections visible to the configured user during each step/window
+* transaction deltas from `pg_stat_database`
+* block read/hit deltas from `pg_stat_database`
+* whether app-facing DB connections appear pinned around the application pool
+  size while latency/error rate rises
+
+Direct DB load:
+
+* Optional but useful.
+* Run from the CLI environment only.
+* Use configurable pool size and concurrency.
+* Replicate heavy structure/reporting queries closely enough to distinguish DB
+  pressure from app-tier `pg` pool pressure.
+
+## Non-Goals
+
+Do not implement:
+
+* Admin UI pages.
+* Browser controls to run, stop, or schedule tests.
+* App-Service-hosted load generation.
+* New Azure Container Apps, Container Instances, Azure Load Testing, queues,
+  functions, or Blob Storage.
+* Required Azure metric sampling.
+* Live-network automated tests.
+* Storing huge raw k6 event streams in PostgreSQL.
+* Any change to production app runtime behavior except reading the new report
+  table created in Phase 49.
+
+## Assumptions
+
+* Operators install k6 separately.
+* Operators run the CLI during an approved testing window.
+* The CLI can connect to the hosted database using `.env.loadtest`.
+* The Phase 49 migration has already been applied to the target database before
+  result persistence is attempted. For hosted tests, run
+  `npm run db:migrate:hosted` first.
+* The Admin UI in Phase 51 will read summaries from PostgreSQL, not local files.
+* Raw local artifacts are useful for operators but are not the app's source of
+  truth.
+
+## Open Questions
+
+* Should `loadtest:run` default to a smoke scenario unless `--profile` is
+  provided? If unanswered, prefer the safer default.
+* Should Azure Monitor metrics be included in V1? If unavailable, do not block
+  result persistence.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* `.env.loadtest.example` documents all required load-test configuration with
+  placeholders only.
+* Load-test secrets and generated reports/manifests are ignored.
+* Seed creates clearly namespaced fake data and writes a manifest.
+* Teardown supports dry-run and deletes only namespaced/manifested load-test
+  data.
+* A smoke `loadtest:run` can persist a started row and complete or fail it with
+  useful summary data.
+* k6 output is summarized into `performance_test_runs`.
+* Failed runs update the row to `failed` with useful error context.
+* Write-heavy scenarios use the anonymous start/answer/complete flow by
+  default and do not collide on one shared completed registered user.
+* Operator docs explain the temporary anonymous rate-limit env increase needed
+  for meaningful anonymous write-load tests, and the reset step afterward.
+* The SQL metrics sampler records `pg_stat_activity` and `pg_stat_database`
+  data when permissions allow it, and gracefully labels unavailable SQL metrics.
+* The harness refuses unsafe hosted/local target confusion unless an explicit
+  dev mode is used.
+* No additional Azure resources are required.
+
+---
+
+# Testing Requirements
+
+Run code checks:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests where practical for pure helpers such as:
+
+* env parsing
+* host guard behavior
+* summary normalization
+* bottleneck classification
+* SQL metric sampling normalization with mocked query results
+* markdown report generation
+
+Manual/operator smoke checks to document:
+
+* Confirm target database has the Phase 49 migration before persistence.
+* Local/dev seed with explicit dev flag.
+* Local/dev teardown dry-run.
+* 1 VU / short-duration HTTP smoke against a safe target.
+* Anonymous write-flow smoke: start, answer, complete with a fresh anonymous
+  attempt token.
+* SQL sampler smoke: collect at least one `pg_stat_activity` and
+  `pg_stat_database` sample, or document the permission/availability failure.
+* Confirm a `performance_test_runs` row is created and updated.
+* Confirm local artifacts are written under `loadtest/reports/` and remain
+  ignored.
+
+Do not require live k6, live Azure CLI, or live hosted DB access in automated
+tests.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `loadtest/README.md` with operator workflow, prerequisites, safety guardrails,
+  hosted migration prerequisite, anonymous rate-limit test-window settings,
+  off-hours guidance, SQL metric sampling, and cleanup steps.
+* `.env.example` only if app runtime env vars change. Prefer keeping
+  load-test-only env in `.env.loadtest.example`.
+* `markdown/releases/unreleased.md` with an admin-readable operational note.
+* `markdown/FOLLOW_UPS.md` for deferred orchestration, Azure runner, or
+  time-series charting work.
+* `markdown/PHASE_LOG.md` with scope, safety decisions, validation, review
+  status, and commit readiness.
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_50.txt
+```
+
+Ask Claude Code to review production safety, target guards, secret handling,
+teardown safety, write-heavy scenario validity, result persistence semantics,
+and whether the harness accidentally introduces Azure orchestration scope.

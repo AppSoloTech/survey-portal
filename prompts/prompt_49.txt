@@ -1,0 +1,242 @@
+# Phase 49 — Performance Test Report Data And Admin API Foundation
+
+## Purpose
+
+Add the database, shared type, and read-only Admin API foundation for storing
+and reviewing command-line performance test summaries.
+
+This phase prepares the application to display performance-test reports later,
+but it does not build the CLI harness or the Admin UI yet.
+
+Source planning note:
+
+```txt
+prompts/deferred_cli_performance_testing_admin_reports.txt
+```
+
+Scope decision:
+
+```txt
+The performance tests are run from the command line by a developer/operator.
+The app stores and displays summarized results only. No new Azure runner
+resources are required, and the production App Service must not generate load
+against itself.
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_49.txt`
+* Claude review: `notes/claude_review_phase_49.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/deferred_cli_performance_testing_admin_reports.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `apps/api/src/app.ts`
+* `apps/api/src/routes/admin.ts`
+* `apps/api/src/middleware/auth.ts`
+* `apps/api/test/adminUsers.test.ts`
+* `apps/api/test/migrations.test.ts`
+* `packages/shared/src/index.ts`
+* current migration files under `database/migrations/`
+
+---
+
+# Received Feedback
+
+1. The original stress-test plan should be trimmed so no extra Azure resources
+   are required.
+2. Performance tests should be run from the command line.
+3. Results should be stored in the database and displayed to admins.
+4. The Admin UI should not start or schedule stress tests in this phase set.
+
+# Intake Classification
+
+* reporting or data question
+* Admin-only operational feature
+* database schema change
+* API contract change
+* production-safety boundary
+
+This phase changes database schema, shared response types, and Admin read APIs.
+It does not change participant survey behavior, hidden-tag visibility, auth
+semantics, deployment topology, or Azure resources.
+
+# Scope
+
+Implement:
+
+* Add a migration for `performance_test_runs`.
+* Add shared response types for summarized and detailed performance-test runs.
+* Add an Admin-only read API mounted under `/api/admin`, for example:
+  * `GET /api/admin/performance-runs`
+  * `GET /api/admin/performance-runs/:id`
+* Keep the API read-only. The CLI in Phase 50 will write to PostgreSQL directly
+  using the hosted-safe load-test connection.
+* Add pagination to the list endpoint, following existing Admin users list
+  patterns where practical.
+* Return newest runs first.
+* Validate positive integer route and pagination parameters.
+* Add focused API tests for Admin authorization, pagination, list shape, detail
+  shape, not-found behavior, and non-admin rejection.
+* Document that hosted environments must run `npm run db:migrate:hosted`
+  after this migration is merged and before any Phase 50 CLI run attempts to
+  persist hosted results.
+
+Recommended table shape:
+
+```sql
+performance_test_runs
+- id serial primary key
+- run_key text not null unique
+- scenario text not null
+- target_base_url text not null
+- status text not null check (status in ('running', 'completed', 'failed', 'aborted'))
+- started_at timestamptz not null
+- finished_at timestamptz
+- duration_seconds integer
+- max_vus integer
+- peak_requests_per_second numeric(12, 2)
+- p50_ms numeric(12, 2)
+- p95_ms numeric(12, 2)
+- p99_ms numeric(12, 2)
+- error_rate numeric(8, 6)
+- total_requests integer
+- failed_requests integer
+- bottleneck text
+- recommendation text
+- config jsonb not null default '{}'::jsonb
+- summary jsonb not null default '{}'::jsonb
+- report_markdown text
+- created_at timestamptz not null default now()
+- updated_at timestamptz not null default now()
+```
+
+Add useful indexes for list/detail use, such as newest-first ordering and
+`run_key` uniqueness.
+
+Keep `bottleneck` as text in this phase because classification rules may evolve.
+Keep `config` and `summary` as JSONB for non-core operational report data.
+
+## Non-Goals
+
+Do not implement:
+
+* `loadtest/` CLI scripts.
+* k6 scenarios.
+* Direct-DB load tests.
+* Azure metric sampling.
+* Admin UI pages.
+* A browser "Run test", "Stop test", or "Schedule test" control.
+* App-Service-hosted load generation.
+* Azure Container Apps, Container Instances, Azure Load Testing, queues,
+  functions, or Blob Storage.
+* A `performance_test_samples` time-series table unless implementation
+  inspection proves it is required for the first read API. Prefer deferring it.
+* Public or participant-facing APIs.
+
+## Assumptions
+
+* Performance reports are operational/admin data, not participant response data.
+* The first UI can use one summary table without time-series samples.
+* Full raw k6 output should not be stored in PostgreSQL.
+* The CLI will persist report rows directly in Phase 50.
+* Admin read access is sufficient for this phase.
+
+## Open Questions
+
+None. If implementation finds a need for write APIs or time-series sample
+storage, document the need and defer it unless the human explicitly approves
+expanding this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The migration creates a durable `performance_test_runs` table.
+* The hosted migration prerequisite for CLI persistence is documented in the
+  phase handoff, phase log, or relevant operator docs.
+* Migration tests include the new migration.
+* Shared types describe list and detail API responses.
+* Admins can list performance-test runs.
+* Admins can fetch one run by id.
+* Standard users and unauthenticated callers cannot access performance run APIs.
+* Missing run ids return 404.
+* Invalid ids and pagination parameters are handled consistently with existing
+  Admin APIs.
+* No API can start, stop, schedule, or generate load.
+* No Azure resources or new cloud dependencies are introduced.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests for:
+
+* migration application
+* Admin-only authorization
+* list pagination and newest-first ordering
+* detail shape, including JSON `config`, JSON `summary`, and markdown field
+* not-found detail
+* non-admin and unauthenticated rejection
+
+Manual checks:
+
+* With seeded/local test rows, call the list and detail endpoints as an Admin.
+* Confirm standard users cannot access either endpoint.
+
+If local PostgreSQL access requires sandbox escalation, document the command and
+result in the handoff and phase log.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/DATA_MODEL_VISION.md` if documenting operational report data helps
+  future phases.
+* `markdown/releases/unreleased.md` with an admin-readable draft note.
+* `markdown/FOLLOW_UPS.md` for deferred time-series samples or orchestration.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_49.txt
+```
+
+Ask Claude Code to review database fit, Admin-only authorization, read-only API
+scope, production-safety boundaries, JSONB usage, and whether the design avoids
+accidental Azure/resource orchestration.

@@ -1,0 +1,309 @@
+Deferred plan: CLI performance testing with admin report viewer
+
+Status:
+
+This planning note has been promoted into the normal phase prompt flow:
+
+- `prompts/prompt_49.txt` — performance report table and Admin read API
+- `prompts/prompt_50.txt` — CLI load-test harness and result persistence
+- `prompts/prompt_51.txt` — read-only Admin performance report viewer
+
+Use those numbered prompts for implementation. Keep this file as historical
+planning context.
+
+Context
+
+The survey portal is hosted on Azure App Service with PostgreSQL Flexible Server, but this feature should not require spinning up new Azure resources or building an in-app load runner. The performance test harness should be operated from the command line by a developer/operator. The application should only store and display the summarized results for admins.
+
+Primary goal
+
+Build a command-line performance testing workflow that:
+
+- Seeds clearly namespaced load-test data.
+- Runs HTTP and optional direct-DB performance tests from a developer/CI machine.
+- Samples useful runtime metrics where available, including required
+  non-Azure PostgreSQL stats from `pg_stat_activity` and `pg_stat_database`
+  when permissions allow.
+- Persists summarized results into the application database.
+- Adds an admin-only UI for reviewing past performance runs and metric-driven recommendations.
+
+Scope boundary
+
+Do not add a "Run test" button to the admin UI in this phase.
+Do not run k6, direct DB load, or any load generator from the production App Service process.
+Do not create Azure Container Apps, Container Instances, Azure Load Testing resources, queues, functions, or new Azure storage resources for this phase.
+
+The admin app is a viewer and report surface only. The CLI harness is the executor.
+
+Important current repo findings
+
+- Backend uses Node 24, Express, TypeScript, and native `pg`.
+- The shared application pool in `apps/api/src/db.ts` does not override `pg`'s default pool max, so a single app instance is effectively capped at 10 DB connections unless changed.
+- Admin API routes already exist under `/api/admin`, and admin UI routes already exist under `/admin`.
+- Heavy read paths to include in load scenarios:
+  - `GET /api/surveys/:id`
+  - `GET /api/surveys/:id/report`
+  - `GET /api/surveys/:id/attempts`
+  - `GET /api/surveys/:id/attempts/:attemptId`
+  - `GET /api/surveys/:id/export.csv`
+- Write-heavy testing must not use a single shared logged-in user for repeated
+  completions. The app enforces active/completed attempt rules per user/survey.
+  The preferred default write-load path is the anonymous survey flow:
+  anonymous start creates a fresh attempt for each iteration, then answer/page
+  answer and complete use the returned anonymous attempt token. The anonymous
+  public routes are rate-limited, so operators must temporarily raise
+  `ANONYMOUS_SURVEY_RATE_LIMIT_MAX` for the approved test window and reset it
+  afterward. Anonymous `/register` is only for an optional conversion-load
+  scenario and is also governed by auth registration limits.
+
+Desired operator workflow
+
+1. Apply the report-table migration to the target database before persisting
+   results. For hosted tests, run `npm run db:migrate:hosted` after Phase 49 is
+   deployed/merged.
+
+2. Configure `.env.loadtest` locally with:
+   - `LOADTEST_BASE_URL`
+   - hosted DB connection settings
+   - admin/load-test credentials
+   - optional Azure metric identifiers if metric sampling is used from the CLI
+
+3. Run:
+   - `npm run loadtest:seed`
+   - `npm run loadtest:run`
+   - optionally `npm run loadtest:db`
+   - `npm run loadtest:teardown`
+
+4. The harness writes:
+   - local artifacts under `loadtest/reports/`
+   - summarized report rows into PostgreSQL
+
+5. Admins open `/admin/performance` to review past runs.
+
+Database changes
+
+Add a migration for the first-pass persisted report table:
+
+`performance_test_runs`
+
+- `id serial primary key`
+- `run_key text not null unique`
+- `scenario text not null`
+- `target_base_url text not null`
+- `status text not null check (status in ('running', 'completed', 'failed', 'aborted'))`
+- `started_at timestamptz not null`
+- `finished_at timestamptz`
+- `duration_seconds integer`
+- `max_vus integer`
+- `peak_requests_per_second numeric(12, 2)`
+- `p50_ms numeric(12, 2)`
+- `p95_ms numeric(12, 2)`
+- `p99_ms numeric(12, 2)`
+- `error_rate numeric(8, 6)`
+- `total_requests integer`
+- `failed_requests integer`
+- `bottleneck text`
+- `recommendation text`
+- `config jsonb not null default '{}'::jsonb`
+- `summary jsonb not null default '{}'::jsonb`
+- `report_markdown text`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+Use a conservative `status` check constraint and leave `bottleneck` as text for now because the classification rules may evolve.
+
+Optional later table:
+
+`performance_test_samples`
+
+- Use only if the UI needs charts beyond high-level summary cards.
+- Store per-window VUs, requests/sec, p95, error rate, app CPU, DB CPU, DB connections, and IOPS.
+- Defer this table until the first report UI proves it needs time-series charting.
+
+CLI harness files
+
+Create:
+
+- `loadtest/README.md`
+- `loadtest/lib/env.mjs`
+- `loadtest/lib/pg.mjs`
+- `loadtest/seed.mjs`
+- `loadtest/teardown.mjs`
+- `loadtest/run.mjs`
+- `loadtest/db-load.mjs`
+- `loadtest/persist-results.mjs`
+- `loadtest/k6/scenarios.js`
+- `loadtest/k6/lib/auth.js`
+- `.env.loadtest.example`
+
+Modify:
+
+- `package.json`
+  - add `loadtest:seed`
+  - add `loadtest:run`
+  - add `loadtest:db`
+  - add `loadtest:teardown`
+- `.gitignore`
+  - add `.env.loadtest`
+  - add `loadtest/.manifest.*.json`
+  - add `loadtest/reports/`
+
+Harness behavior
+
+Environment and target safety:
+
+- Reuse the hosted DB safety pattern from `scripts/migrate-hosted.mjs`.
+- Parse `.env.loadtest` explicitly.
+- Refuse localhost, `127.0.0.1`, and `::1` unless an explicit dev flag is passed.
+- Print the resolved target and require confirmation for production writes.
+- Use TLS for hosted PostgreSQL.
+
+Seeding:
+
+- Insert namespaced load-test data directly with SQL.
+- Use a stable marker such as `LOADTEST <run_key>` and `loadtest+<run_key>-...`.
+- Create enough surveys, users, questions, options, tags, and completed attempts to make report and attempts queries meaningful.
+- Write created IDs to `loadtest/.manifest.<run_key>.json`.
+- For write-heavy scenarios, seed enough users or survey/user pairs so VUs do not collide on the same user completion constraints.
+
+HTTP load:
+
+- Use k6 for HTTP scenarios.
+- Login should happen in setup for Admin read-heavy scenarios.
+- The write-heavy scenario should default to anonymous public start/answer/complete
+  so each iteration gets a fresh anonymous attempt. Registered-user write
+  scenarios must distribute enough distinct user/survey pairs that the run
+  cannot exhaust them and degrade into 409 responses.
+- Scenarios:
+  - read-heavy admin reporting
+  - write-heavy survey completion
+  - mixed read/write
+- Thresholds:
+  - p95 latency
+  - p99 latency
+  - error rate
+  - HTTP 5xx count
+
+Direct DB load:
+
+- Optional but useful for distinguishing app-tier pool limits from DB limits.
+- Run from the CLI environment, not the app server.
+- Use configurable pool sizes and concurrency.
+- Replicate the heaviest report/structure queries closely enough to isolate DB capacity.
+
+Metric sampling:
+
+- Keep Azure metric sampling optional in this trimmed phase.
+- Require non-Azure PostgreSQL metric sampling through the same load-test DB
+  connection when permissions allow:
+  - `pg_stat_activity` for active/total connection pressure.
+  - `pg_stat_database` for transaction and block read/hit deltas.
+  - `pg_stat_statements` only if installed and readable.
+- If available locally, the CLI may call `az monitor metrics list` during a run.
+- If Azure CLI/RBAC is unavailable, the harness should still persist HTTP and DB test summaries.
+- The report should clearly label missing Azure resource metrics as unavailable, not zero.
+
+Result persistence:
+
+- `loadtest/run.mjs` should persist a row to `performance_test_runs`.
+- Mark the row `running` at start.
+- Update it to `completed` or `failed` at finish.
+- Store full structured summaries in `summary`.
+- Store the human-readable recommendation in `recommendation`.
+- Store a concise markdown report in `report_markdown`.
+- Avoid storing huge raw k6 event streams in PostgreSQL.
+
+Bottleneck classification
+
+Classify conservatively:
+
+- App pool likely saturated:
+  - app latency/error rate rises,
+  - DB active connections are pinned around app pool size,
+  - DB CPU/IOPS remain relatively low.
+- App tier likely saturated:
+  - app/plan CPU or memory is high,
+  - HTTP queue/5xx increases,
+  - DB metrics are not saturated.
+- DB likely saturated:
+  - DB CPU, IOPS, failed connections, or active connections are high,
+  - app CPU is not the primary pressure point.
+- Unknown:
+  - resource metrics are unavailable or signals conflict.
+
+Admin API
+
+Add an admin-only route module, for example `apps/api/src/routes/adminPerformanceRoutes.ts`, mounted under:
+
+- `GET /api/admin/performance-runs`
+- `GET /api/admin/performance-runs/:id`
+
+List endpoint:
+
+- Requires `requireAuth` and `requireRole("admin")`.
+- Supports pagination.
+- Returns newest runs first.
+- Includes summary fields only.
+
+Detail endpoint:
+
+- Requires admin auth.
+- Returns the full run, including `config`, `summary`, and `reportMarkdown`.
+
+Shared types
+
+Add response types in `packages/shared/src/index.ts`:
+
+- `PerformanceTestRunStatus`
+- `PerformanceTestRunSummary`
+- `PerformanceTestRunDetail`
+- `PerformanceTestRunsListResponse`
+- `PerformanceTestRunDetailResponse`
+
+Admin UI
+
+Add:
+
+- `apps/web/src/api/adminPerformance.ts`
+- `apps/web/src/pages/admin/AdminPerformancePage.tsx`
+- route `/admin/performance`
+- link from the existing admin tools panel
+
+The page should show:
+
+- Recent runs table.
+- Scenario, status, start time, duration, max VUs.
+- Peak requests/sec.
+- p95/p99 latency.
+- error rate.
+- bottleneck.
+- recommendation.
+- detail view or expandable panel with the markdown report.
+
+UI constraints:
+
+- This page is read-only in this phase.
+- No "Run", "Stop", or "Schedule" controls.
+- Make missing resource metrics explicit.
+- Keep it operational and dense, consistent with existing admin screens.
+
+Verification
+
+Code checks:
+
+- `npm run typecheck`
+- relevant API tests
+- relevant web tests
+
+Harness smoke checks:
+
+- Run seed against a local/dev DB with an explicit dev flag.
+- Confirm teardown dry-run targets only load-test rows.
+- Run a 1 VU / 10s HTTP smoke against a safe target.
+- Confirm `performance_test_runs` receives a completed or failed row.
+- Confirm `/api/admin/performance-runs` returns the row for an admin.
+- Confirm `/admin/performance` renders the run summary.
+
+Deferred future enhancement
+
+After the CLI/report viewer flow is proven, a future phase can add external job orchestration. That would require a separate runner such as GitHub Actions, Azure Container Apps Jobs, Azure Container Instances, or Azure Load Testing. That future phase is intentionally out of scope here.

@@ -1,0 +1,215 @@
+# Phase 51 — Admin Performance Report Viewer
+
+## Purpose
+
+Add a read-only Admin page for reviewing performance-test runs persisted by the
+CLI harness.
+
+Admins should be able to inspect recent runs, compare key metrics, and read the
+stored recommendation. They should not be able to start, stop, or schedule
+tests from the browser in this phase.
+
+Source planning note:
+
+```txt
+prompts/deferred_cli_performance_testing_admin_reports.txt
+```
+
+Depends on:
+
+```txt
+prompts/prompt_49.txt
+prompts/prompt_50.txt
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_51.txt`
+* Claude review: `notes/claude_review_phase_51.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/prompt_49.txt`
+* `prompts/prompt_50.txt`
+* `prompts/deferred_cli_performance_testing_admin_reports.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `markdown/ADMIN_DEMO_GUIDE.md`
+* `markdown/ACCESSIBILITY_PRIMITIVES.md`
+* `apps/web/src/App.tsx`
+* `apps/web/src/api/admin.ts`
+* `apps/web/src/api/client.ts`
+* `apps/web/src/pages/admin/AdminSurveysOverview.tsx`
+* `apps/web/src/pages/admin/AdminReleasesPage.tsx`
+* `apps/web/src/pages/admin/AdminUsersPage.tsx`
+* `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+* `apps/web/src/styles.css`
+* `packages/shared/src/index.ts`
+
+---
+
+# Received Feedback
+
+1. Performance-test results should be visible to admins.
+2. The feature should avoid extra Azure work.
+3. The Admin UI should be a report surface only.
+4. Results should be metric-driven and useful for understanding capacity and
+   upgrade signals.
+
+# Intake Classification
+
+* Admin reporting feature
+* frontend UI change
+* API client change
+* no database schema change if Phase 49 is complete
+* no participant-facing behavior change
+
+# Scope
+
+Implement:
+
+* Add an Admin API client for the Phase 49 endpoints.
+* Add an Admin page at `/admin/performance`.
+* Link the page from the existing Admin tools panel.
+* Show a recent runs table with:
+  * scenario
+  * status
+  * target
+  * started time
+  * duration
+  * max VUs
+  * peak requests/sec
+  * p95/p99 latency
+  * error rate
+  * bottleneck
+* Show a detail view or expandable panel for one selected run with:
+  * high-level metric cards
+  * recommendation
+  * bottleneck explanation
+  * config/summary highlights
+  * stored markdown report rendered safely as plain/preformatted text or a
+    conservative internal formatting component
+* Handle loading, empty, error, and not-found states.
+* Keep the page operational and dense, consistent with current Admin screens.
+* Add route wiring and update route-title behavior if the current app pattern
+  expects it for new admin pages.
+* Add focused frontend tests for API helpers or deterministic rendering logic
+  where practical.
+
+## Non-Goals
+
+Do not implement:
+
+* A "Run test" button.
+* Stop, schedule, retry, or delete controls.
+* Browser-driven direct DB access.
+* Browser-driven k6 execution.
+* Azure runner orchestration.
+* New Azure resources.
+* Raw k6 event browsing.
+* Time-series charts unless Phase 49 added a samples table and the human
+  explicitly approves chart scope.
+* Public or participant-facing UI.
+
+## Assumptions
+
+* Phase 49 provides read-only Admin endpoints.
+* Phase 50 persists enough summary data to make the first UI useful.
+* Missing Azure Monitor metrics should be displayed as unavailable, not zero.
+* The markdown report is internal operational text and should not use unsafe
+  HTML rendering.
+* The page should explain the "CLI generated / Admin viewed" boundary through
+  concise operational copy, without turning into a landing page.
+
+## Open Questions
+
+* Should admins need export/download links for local artifacts? If unanswered,
+  defer because artifacts live outside the app in this trimmed version.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Admins can navigate to `/admin/performance`.
+* Standard users cannot access the page.
+* The page lists recent performance runs from the API.
+* The page shows useful metric summaries and recommendations.
+* A selected run shows detail without exposing unsafe HTML.
+* Empty and error states are clear.
+* Missing optional resource metrics are labeled unavailable.
+* No UI control can start, stop, schedule, or generate a load test.
+* The page is usable at 375/768/1280px.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add focused tests where practical for:
+
+* API helper URL construction.
+* formatting helpers for duration, latency, percentages, and timestamps.
+* empty/error/loaded state rendering if the current web test patterns support
+  it without adding new dependencies.
+
+Manual checks:
+
+* Admin sees the Performance tool link.
+* Admin opens `/admin/performance` with no runs and sees the empty state.
+* Admin opens `/admin/performance` with sample rows and can inspect details.
+* Standard user is blocked by the existing Admin route.
+* Responsive pass at 375/768/1280px.
+* Light and dark theme spot check for cards, tables, status pills, and focus
+  indicators.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/ADMIN_DEMO_GUIDE.md` if the Performance page should be included in
+  the admin demo flow.
+* `markdown/releases/unreleased.md` with an admin-readable draft note.
+* `markdown/FOLLOW_UPS.md` for deferred run orchestration, artifact download,
+  time-series charts, or Azure-runner future work.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+
+Before implementation closeout, create:
+
+```txt
+notes/claude_handoff_phase_51.txt
+```
+
+Ask Claude Code to review Admin UX fit, authorization boundaries, no-runner
+scope adherence, report readability, markdown rendering safety, and responsive
+behavior.
