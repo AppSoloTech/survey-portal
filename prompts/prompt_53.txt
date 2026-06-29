@@ -41,6 +41,7 @@ Read before implementation:
 * `prompts/deferred_cli_performance_testing_admin_reports.txt`
 * `prompts/prompt_50.txt`
 * `prompts/prompt_52.txt`
+* `notes/claude_review_phase_52.txt`
 * `loadtest/README.md`
 * `loadtest/seed.mjs`
 * `loadtest/teardown.mjs`
@@ -49,6 +50,8 @@ Read before implementation:
 * `loadtest/lib/reporting.mjs`
 * `loadtest/lib/metrics.mjs`
 * `loadtest/k6/scenarios.js`
+* `apps/api/src/services/operationalRedaction.ts`
+* `apps/api/src/routes/adminPerformanceSuitesRoutes.ts`
 * `packages/shared/src/index.ts`
 * `markdown/FLOW.md`
 * `markdown/REVIEW_CHECKLIST.md`
@@ -127,6 +130,11 @@ Implement:
 * Redact/omit secrets before writing suite artifacts or database rows. Do not
   store DB URLs, passwords, cookies, bearer tokens, CSRF tokens, anonymous
   attempt access tokens, Azure auth material, or raw connection strings.
+  Treat the Phase 52 Admin API redaction helper as defense-in-depth only; the
+  CLI must omit or sanitize sensitive values at write time for suites, child
+  `performance_test_runs`, samples, markdown, JSON artifacts, and any reused
+  Phase 50 persistence helpers. Prefer explicit allowlisted persisted payloads
+  over dumping raw config/env objects.
 * Print the teardown command and child run keys at closeout.
 * Add pure Node tests for planning, aggregation, classification, and guardrails.
 
@@ -194,7 +202,10 @@ Add focused tests for:
 * interrupted-run/abort persistence behavior
 * aggregate bottleneck classification
 * report markdown generation
-* redaction of secret-like values from persisted suite artifacts
+* omission/redaction of secret-like values from persisted suite artifacts,
+  child-run payloads, sample metrics, and local markdown/JSON artifacts,
+  including `apiKey`, `api_key`, `accessToken`, bearer values, cookies,
+  DB URLs, and connection strings
 * persistence helper SQL shape where practical
 
 Manual checks:
