@@ -6,6 +6,315 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 50 — CLI Performance Test Harness And Result Persistence
+
+Date:
+2026-06-29
+
+Status:
+Implemented; Claude review complete; review fixes applied; live k6 smoke passed
+
+Prompt:
+`prompts/prompt_50.txt`
+
+Git Commit:
+This commit
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_50.txt`
+- Claude review: `notes/claude_review_phase_50.txt`
+
+## Goals
+
+- Add an operator-run command-line performance test harness.
+- Seed clearly namespaced fake load-test survey data.
+- Run k6 HTTP scenarios when k6 is installed and an optional direct-DB check
+  from the operator machine.
+- Persist summarized results into `performance_test_runs`.
+- Keep the Admin app as a viewer only, with no browser run controls and no
+  Azure runner/orchestration resources.
+
+## Built
+
+- Added `loadtest/` harness files:
+  - explicit `.env.loadtest` parsing and target safety helpers
+  - PostgreSQL pool and Phase 49 table checks
+  - SQL metric sampling from `pg_stat_activity` and `pg_stat_database`
+  - k6 summary normalization, bottleneck classification, markdown reporting,
+    and result persistence helpers
+  - seed, run, direct-DB load, teardown, and persistence export scripts
+  - k6 read-heavy, anonymous write-heavy, mixed, and smoke scenario support
+  - pure Node helper tests
+- Added `.env.loadtest.example` with placeholders only.
+- Added npm scripts:
+  - `loadtest:seed`
+  - `loadtest:run`
+  - `loadtest:db`
+  - `loadtest:teardown`
+  - `loadtest:doctor`
+  - `test:loadtest`
+- Updated `.gitignore` for `.env.loadtest.example`, ignored local
+  `.env.loadtest`, manifests, and reports.
+- Updated `loadtest/README.md`, release notes, and follow-ups.
+- After Claude review, fixed the anonymous write-heavy k6 loop to retain the
+  start response survey across page saves, added ramping VU stages for
+  non-smoke profiles, added a real `http_5xx` k6 counter, tightened teardown
+  custom Admin cleanup via manifest emails, added app pool/instance
+  classification settings, and marked interrupted runs `aborted` when possible.
+- After live k6 smoke, fixed page-submit payloads so write-heavy scenarios
+  answer every required question on the current page with the same
+  `isOtherSelected`/`otherText` shape sent by the UI.
+- Added `loadtest:doctor` to check `.env.loadtest`, target parsing, and local
+  k6 availability without bundling k6 into the app.
+
+## Important Decisions
+
+### Explicit Target Safety
+
+Decision:
+The harness reads only `.env.loadtest`, refuses localhost targets unless
+`--dev` is passed, and requires confirmation or `--yes` for hosted writes.
+
+Reason:
+Load tests are operational tooling and must not accidentally target production
+or local environments because of normal app `.env` settings.
+
+Tradeoff:
+Operators must maintain one extra env file and be explicit about dev/hosted
+intent.
+
+### Anonymous Write-Heavy Default
+
+Decision:
+k6 write-heavy scenarios use anonymous start/page-answer/complete.
+
+Reason:
+The app intentionally blocks a registered user from repeatedly completing the
+same survey. Anonymous start creates a fresh attempt for each iteration.
+
+Tradeoff:
+Meaningful hosted write-load tests require a temporary approved increase to
+`ANONYMOUS_SURVEY_RATE_LIMIT_MAX`, documented in the operator README.
+
+### Optional Azure Metrics
+
+Decision:
+Phase 50 does not call Azure Monitor. Summaries label Azure metrics as
+unavailable and rely on HTTP plus PostgreSQL stats.
+
+Reason:
+The prompt keeps Azure sampling optional and forbids new Azure runner
+resources. DB/HTTP summaries are enough for the first CLI persistence phase.
+
+Tradeoff:
+App-plan CPU/memory classification remains inconclusive until operators add
+Azure CLI/RBAC metric sampling in a future phase.
+
+## Architecture Notes
+
+- Database/schema impact: no new migrations; writes to Phase 49
+  `performance_test_runs`.
+- API contract impact: none.
+- Auth or authorization impact: k6 uses normal Admin login cookies for read
+  scenarios and anonymous attempt tokens for write scenarios.
+- Data privacy or visibility impact: seed data uses fake namespaced
+  `example.invalid` users and `LOADTEST <run_key>` markers only.
+- Frontend UX impact: none.
+- Environment or deployment impact: hosted targets must run
+  `npm run db:migrate:hosted` before result persistence. `.env.loadtest`
+  remains local/ignored.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run test:loadtest
+node --check loadtest/seed.mjs
+node --check loadtest/teardown.mjs
+node --check loadtest/run.mjs
+node --check loadtest/db-load.mjs
+node --check loadtest/persist-results.mjs
+node --check loadtest/lib/env.mjs
+node --check loadtest/lib/metrics.mjs
+node --check loadtest/lib/reporting.mjs
+node --check loadtest/k6/scenarios.js
+node --check loadtest/k6/lib/auth.js
+npm run loadtest:seed -- --dev --run-key phase50-smoke
+npm run loadtest:run -- --dev --run-key phase50-smoke --persistence-smoke
+npm run loadtest:teardown -- --dev --run-key phase50-smoke --dry-run
+npm run loadtest:teardown -- --dev --run-key phase50-smoke --yes
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+k6 version
+npm run test:loadtest
+node --check loadtest/run.mjs
+node --check loadtest/teardown.mjs
+node --check loadtest/k6/scenarios.js
+npm run loadtest:seed -- --dev --run-key phase50-smoke
+npm run loadtest:run -- --dev --run-key phase50-smoke --persistence-smoke
+npm run loadtest:teardown -- --dev --run-key phase50-smoke --dry-run
+npm run loadtest:teardown -- --dev --run-key phase50-smoke --yes
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+k6 version
+npm run loadtest:doctor -- --dev
+node --check loadtest/k6/scenarios.js
+env LOCAL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/survey_portal_test DATABASE_URL=postgresql://postgres:postgres@localhost:5432/survey_portal_test npm run dev:api
+npm run loadtest:seed -- --dev --run-key phase50-k6-smoke-pass
+npm run loadtest:run -- --dev --run-key phase50-k6-smoke-pass --profile write-heavy --ramping-stages '[{"duration":"5s","target":1},{"duration":"5s","target":0}]'
+npm run loadtest:teardown -- --dev --run-key phase50-k6-smoke-pass --yes
+```
+
+Results:
+
+- Passed: `npm run test:loadtest`
+- Passed: syntax checks for loadtest scripts, helpers, and k6 files.
+- Passed with approved local PostgreSQL access:
+  `npm run loadtest:seed -- --dev --run-key phase50-smoke`
+- Passed with approved local PostgreSQL access:
+  `npm run loadtest:run -- --dev --run-key phase50-smoke --persistence-smoke`
+- Passed with approved local PostgreSQL access:
+  `npm run loadtest:teardown -- --dev --run-key phase50-smoke --dry-run`
+- Passed with approved local PostgreSQL access:
+  `npm run loadtest:teardown -- --dev --run-key phase50-smoke --yes`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 62 tests
+  - web: 81 tests
+  - API: 283 tests across 29 API files
+  - release-note tests: 9 tests
+  - loadtest helper tests: 9 tests
+- Passed: `git diff --check`
+- Failed after Claude review: `k6 version`
+  - `k6` is not installed in this environment, so live 1-VU write smoke could
+    not be run locally.
+- Passed after Claude review fixes: `npm run test:loadtest`
+  - loadtest helper tests: 10 tests
+- Passed after Claude review fixes: syntax checks for changed run, teardown,
+  and k6 scenario files.
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm run loadtest:seed -- --dev --run-key phase50-smoke`
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm run loadtest:run -- --dev --run-key phase50-smoke --persistence-smoke`
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm run loadtest:teardown -- --dev --run-key phase50-smoke --dry-run`
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm run loadtest:teardown -- --dev --run-key phase50-smoke --yes`
+- Passed after Claude review fixes: `npm run typecheck`
+- Passed after Claude review fixes: `npm run lint`
+- Passed after Claude review fixes: `npm run build` (Vite emitted the existing
+  large chunk warning)
+- Passed after Claude review fixes with approved local PostgreSQL access:
+  `npm test`
+  - shared: 62 tests
+  - web: 81 tests
+  - API: 283 tests across 29 API files
+  - release-note tests: 9 tests
+  - loadtest helper tests: 10 tests
+- Passed after Claude review fixes: `git diff --check`
+- Failed environment check: `sudo -n true`
+  - sudo is blocked by this container/WSL session's no-new-privileges flag, so
+    Codex cannot install system packages here.
+- Initially failed until k6 was installed:
+  - `k6 version` reported `command not found`.
+  - `npm run loadtest:doctor -- --dev` reported `.env.loadtest` and target
+    parsing OK, with k6 missing from `PATH`.
+- Passed after operator installed k6:
+  - `k6 v2.0.0 (commit/8c3be52cc1, go1.26.3, linux/amd64)`
+  - `npm run loadtest:doctor -- --dev`
+- Passed after the live-smoke page-submit fix:
+  `node --check loadtest/k6/scenarios.js`
+- Passed with approved local PostgreSQL and HTTP access after starting the API
+  against `survey_portal_test`:
+  `npm run loadtest:seed -- --dev --run-key phase50-k6-smoke-pass`
+- Passed with approved local PostgreSQL and HTTP access:
+  `npm run loadtest:run -- --dev --run-key phase50-k6-smoke-pass --profile write-heavy --ramping-stages '[{"duration":"5s","target":1},{"duration":"5s","target":0}]'`
+  - k6 completed 10 anonymous write iterations.
+  - Each iteration completed start, three page-answer calls, and complete.
+  - The performance run persisted with status `completed`.
+- Passed with approved local PostgreSQL access:
+  `npm run loadtest:teardown -- --dev --run-key phase50-k6-smoke-pass --yes`
+
+Manual/operator notes:
+
+- The local smoke used the dedicated `survey_portal_test` database and did not
+  invoke k6 or generate HTTP load.
+- Teardown dry-run reported 1 survey, 4 users, and 1 performance run, then the
+  real teardown removed those rows and the ignored manifest.
+- Live k6 write-heavy smoke was run locally after k6 was installed. The API was
+  started with `LOCAL_DATABASE_URL` and `DATABASE_URL` pointed at
+  `survey_portal_test` so seed data and API reads used the same database.
+- Earlier exploratory live runs correctly exposed a local DB mismatch and then
+  the page-submit payload bug; their seeded data was removed with
+  `loadtest:teardown`.
+- Live Azure CLI and hosted DB access were not run.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_50.txt`
+
+Status:
+
+- Completed. Claude found one critical write-heavy k6 bug, several suggested
+  improvements, and no target-guard/Azure-orchestration blockers.
+
+Findings and disposition:
+
+- Addressed critical issue: write-heavy k6 now captures `survey` from the start
+  response and reuses it across page-answer responses.
+- Addressed ramping suggestion: non-smoke profiles now use `ramping-vus` stages
+  from `LOADTEST_RAMPING_STAGES`.
+- Addressed active-connection caveat: classification uses configurable
+  `LOADTEST_APP_DB_POOL_MAX` and `LOADTEST_APP_INSTANCE_COUNT`, and README
+  documents `pg_stat_activity` role visibility limitations plus
+  `pg_monitor`/`pg_read_all_stats` guidance.
+- Addressed dead 5xx metric: k6 scenarios now increment a real `http_5xx`
+  counter and threshold.
+- Addressed custom Admin teardown gap: teardown now matches manifest user IDs
+  with exact manifest emails instead of assuming the default admin email
+  pattern.
+- Addressed stale running-row risk for normal interruptions: `loadtest:run`
+  attempts to mark rows `aborted` on `SIGINT`/`SIGTERM`; README documents
+  force-kill limitations.
+- Addressed k6 summary deprecation: replaced `--summary-export` with
+  `handleSummary`.
+- Addressed live k6 smoke failure: write-heavy page submissions now answer all
+  questions on the current page, not only `currentPageQuestionIds`, and include
+  the UI-compatible `isOtherSelected` and `otherText` fields.
+
+## Follow-Up Tasks
+
+- Optional Azure Monitor sampling remains deferred until operators need it.
+- Admin read-only performance report viewer remains Phase 51.
+- Time-series sample storage remains deferred until report UI needs prove it is
+  necessary.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found target guards and
+  production-safety posture strong
+- Review findings addressed or deferred: Yes
+- Manual testing complete: Local persistence smoke and live k6 write-heavy
+  smoke complete
+- Ready to commit: Yes
+
+---
+
 ## Phase 49 — Performance Test Report Data And Admin API Foundation
 
 Date:

@@ -1,0 +1,157 @@
+Claude Review — Phase 50: CLI Performance Test Harness And Result Persistence
+
+Reviewed (untracked + modified):
+- loadtest/lib/env.mjs, loadtest/lib/pg.mjs, loadtest/lib/persistence.mjs,
+  loadtest/lib/metrics.mjs, loadtest/lib/reporting.mjs
+- loadtest/seed.mjs, loadtest/teardown.mjs, loadtest/run.mjs, loadtest/db-load.mjs,
+  loadtest/persist-results.mjs
+- loadtest/k6/scenarios.js, loadtest/k6/lib/auth.js
+- loadtest/test/loadtest-helpers.test.mjs, loadtest/README.md
+- .env.loadtest.example, package.json, .gitignore, markdown/* updates
+
+Independently verified:
+- FK cascade chain covers all seeded child data: survey_id, question_id,
+  survey_attempt_id, answer_id, answer_option_id, and survey_attempts.user_id are all
+  ON DELETE CASCADE. Teardown by deleting surveys + survey_categories + users +
+  performance_test_runs is therefore complete (no orphaned pages/questions/options/
+  attempts/answers/links).
+- finishPerformanceRun sets updated_at = now() — the Phase 49 carry-over is resolved.
+- Anonymous API contract: StartSurveyResponse carries survey.questions;
+  AnswerSurveyResponse does NOT carry survey (see Critical #1).
+- isOtherSelected is optional in validatePageAnswerBody (validation.ts:969,1006), so the
+  k6 answer payload omitting it is tolerated — not a defect.
+
+============================================================
+1. CRITICAL ISSUES
+============================================================
+(1) Write-heavy k6 flow breaks on any multi-page survey (the seeded survey has 3 pages).
+    loadtest/k6/scenarios.js:70-91 loops `while (body.currentPage)` and on every iteration
+    reads `body.survey.questions`. That field only exists on the START response
+    (StartSurveyResponse -> survey: Survey). The page-answer endpoint returns
+    AnswerSurveyResponse (packages/shared/src/index.ts:948-954), which has attempt,
+    currentQuestion, currentPage, currentPageQuestionIds, isCompleteReady — and NO survey.
+    So after the first page is saved, `body.survey` is undefined and iteration 2 throws a
+    TypeError, aborting before completion. Result: the write-heavy and mixed (write half)
+    scenarios never complete an attempt on a >1-page survey; they only ever exercise
+    /start + the first page save, then error.
+
+    This is the central deliverable of the write path, and the handoff's claim that the
+    flow "dynamically answers current pages and completes fresh anonymous attempts" was
+    never validated live (handoff: "Live k6 ... were not run").
+
+    Fix is small: capture the survey structure once from the start response and reuse it,
+    since structure does not change across pages. e.g.:
+        let body = start.json();
+        const survey = body.survey;          // capture once
+        while (body.currentPage) {
+          const questions = survey.questions.filter((q) =>
+            body.currentPageQuestionIds.includes(q.id));
+          ...
+          body = save.json();
+        }
+    Recommend fixing before the write/mixed profiles are used, and then running a real
+    1-VU smoke against a hosted/staging target to confirm a completed anonymous attempt.
+
+============================================================
+2. SUGGESTED IMPROVEMENTS
+============================================================
+(a) Scenarios use constant-vus, not ramping. buildScenarios (scenarios.js:141-149) runs a
+    fixed VU count for a fixed duration. The stated goal — find the knee / "when to
+    upgrade" — needs a single run that ramps load and watches where p95/errors cross
+    threshold. As written, the operator must hand-run many fixed-VU passes and eyeball the
+    trend, and classifyBottleneck only ever sees one load level. Recommend a ramping-vus
+    executor with stages (e.g. 10 -> 100 -> 300 -> 500) so one run locates the breaking
+    point. This is the biggest gap between the harness and the original objective.
+
+(b) Active-connection accuracy on Azure undercuts the headline classification.
+    classifyBottleneck (reporting.mjs:44) labels "app_pool" when maxActiveConnections >= 9
+    or maxTotalConnections >= 10. Two accuracy problems on hosted PostgreSQL:
+    - A non-superuser load-test role sees NULL state/query for backends owned by OTHER
+      roles in pg_stat_activity, so `count(*) filter (where state='active')` will UNDERCOUNT
+      the app's active connections unless the load-test user equals the app's DB user or
+      holds pg_monitor / pg_read_all_stats. total_connections (row count) stays accurate.
+    - The >=9/>=10 thresholds assume a single app instance with pool max 10. If the App
+      Service scales out to N instances, real DB connections approach N*10, so the
+      single-instance threshold mislabels. Recommend: document granting pg_monitor to the
+      load-test role (or reuse the app role), prefer total_connections for the pool signal,
+      and factor instance count into the threshold.
+
+(c) http_5xx is a dead metric. normalizeK6Summary (reporting.mjs:8,24) reads metrics.http_5xx,
+    but scenarios.js never defines such a Counter, so http5xxCount is always 0 even when the
+    prompt called for an HTTP 5xx threshold/summary. Either add a k6 Counter incremented on
+    res.status >= 500, or drop the field to avoid implying coverage that is not there.
+
+(d) Teardown user filter is keyed to the default email pattern, not the manifest. Both
+    collectDeleteCounts and deleteManifestedData match users with
+    `email like 'loadtest+<runKey>%@example.invalid'`. If an operator sets
+    LOADTEST_ADMIN_EMAIL to a custom address, seed uses it, but teardown's id+email guard
+    will not match the admin row — so the admin user is left behind while the manifest file
+    is deleted, making later cleanup harder. Recommend matching manifest.admin.email
+    explicitly (the manifest already records it).
+
+(e) Orphaned 'running' rows. If loadtest:run is killed (SIGINT) after createPerformanceRun
+    but before finish, the row stays status='running' forever — there is no reconciliation
+    or startup sweep. Minor; consider a note in the README or a `loadtest:reap` helper that
+    marks stale running rows 'aborted'.
+
+(f) k6 --summary-export is deprecated in newer k6 (>=0.50) in favor of handleSummary. It
+    still works today; flagging for forward compatibility.
+
+============================================================
+3. ACCEPTABLE TRADEOFFS
+============================================================
+- Azure Monitor sampling deferred; summary records azure.available=false with a reason.
+  Consistent with the no-new-Azure-scope decision and the SQL-metrics substitute.
+- --persistence-smoke fabricates a synthetic k6 summary (run.mjs:192-204) to validate the
+  persistence path without k6/HTTP. Clearly labeled and useful; acceptable.
+- db-load.mjs query is intentionally report-like but simpler than the real reporting
+  service — fine for distinguishing broad DB pressure from app-pool pressure.
+- Admin password stored in plaintext in the gitignored manifest and passed to k6 via env.
+  Acceptable for fake load-test credentials; worth a one-line README caution not to put a
+  real reusable password in LOADTEST_ADMIN_PASSWORD.
+- Seed inserts attempts directly as 'completed' rather than via the completion flow — fine
+  for generating read load; the rows are well-formed for reporting queries.
+
+============================================================
+4. QUESTIONS / ASSUMPTIONS
+============================================================
+- Assumes the load-test DB role can read pg_stat_activity/pg_stat_database for the target
+  database. The try/catch degrades safely to available=false, but see 2(b) for the subtler
+  partial-visibility case where it returns numbers that are silently low rather than absent.
+- Assumes operators apply migration 0037 to the hosted DB first; this is now enforced at
+  runtime by assertSchemaMigrationsIncludePhase49 / assertPerformanceTestRunsTable (good).
+- Confirmed no in-app load generation and no Azure orchestration were introduced.
+
+============================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+============================================================
+- Nothing participant-facing. Operator README + npm scripts are coherent.
+- Production-safety posture is strong: localhost requires --dev; --dev requires BOTH targets
+  local; hosted DB forces ssl rejectUnauthorized:true; writes require TTY confirmation or
+  --yes; teardown defaults to dry-run and is double-guarded (id + marker) inside a
+  transaction. These are the right defaults for a tool pointed at production.
+- The bottleneck recommendation text is conservative and appropriately hedged, which fits
+  the "signal, not a verdict" framing the report should have.
+
+============================================================
+6. COMMIT READINESS
+============================================================
+Not ready as-is for the write/mixed profiles. The read-heavy scenario, persistence, target
+guards, teardown, and SQL sampling are solid and could ship. Blocking item before the write
+path is usable: fix Critical #1 (capture survey once) and run a single live 1-VU write smoke
+to confirm a completed anonymous attempt. Strongly recommended next: 2(a) ramping VUs (so a
+run actually finds the knee) and 2(b) the active-connection visibility caveat (so the
+headline app_pool-vs-DB call is trustworthy on Azure). Items 2(c)-(f) are polish.
+
+Answers to the handoff's specific questions:
+1. Target guards: yes — localhost/hosted confusion is prevented in both directions.
+2. .env.loadtest isolation: yes — parsed explicitly from the file; not merged into app .env
+   or shell env.
+3. Teardown narrowness: yes for default emails; gap with a custom admin email (2d).
+4. Write-heavy fresh anonymous attempts: NO — start works, but the multi-page answer loop
+   throws on body.survey and never completes (Critical #1).
+5. updated_at = now() on finish: yes — correct.
+6. SQL sampling degrades safely when permissions are missing: yes (try/catch); but note the
+   partial-visibility undercount in 2(b), which degrades silently rather than to unavailable.
+7. --persistence-smoke as an explicit non-load mode: yes — acceptable and clearly labeled.
+8. Azure orchestration / in-app runner introduced: no.

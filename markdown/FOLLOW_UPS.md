@@ -20,6 +20,10 @@ Review this file before starting each implementation phase. When a follow-up is 
   review tags should also cover system-generated Other text, integer answers,
   or aggregate review-tag rollups. Phase 47/48 V1 intentionally supports only
   dedicated text-question answers and exports review tags per answer.
+- Performance testing follow-ons: Phase 50 labels Azure Monitor metrics as
+  unavailable and does not create Azure runner resources. Add optional Azure
+  CLI metric sampling only if operators need it after reviewing DB/HTTP
+  summaries, and keep any runner/orchestration work out of the app process.
 
 ---
 

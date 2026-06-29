@@ -78,6 +78,9 @@ web_modules/
 .env.*
 !.env.example
 !.env.prod.example
+!.env.loadtest.example
+loadtest/.manifest.*.json
+loadtest/reports/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
