@@ -9,6 +9,7 @@ export const loadtestDir = path.join(rootDir, "loadtest");
 export const reportsDir = path.join(loadtestDir, "reports");
 export const defaultEnvPath = path.join(rootDir, ".env.loadtest");
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+const standaloneBooleanValueFlags = new Set(["allow-capacity", "include-direct-db"]);
 
 export function parseEnvFileText(text) {
   const values = {};
@@ -59,9 +60,11 @@ export function parseCliArgs(argv) {
       args.help = true;
     } else if (arg.startsWith("--")) {
       const [rawName, rawInlineValue] = arg.slice(2).split("=", 2);
-      const value = rawInlineValue ?? argv[index + 1];
+      const nextValue = argv[index + 1];
+      const hasNextValue = nextValue && !nextValue.startsWith("--");
+      const value = rawInlineValue ?? (hasNextValue ? nextValue : readStandaloneFlagValue(rawName));
 
-      if (rawInlineValue === undefined) {
+      if (rawInlineValue === undefined && hasNextValue) {
         index += 1;
       }
 
@@ -308,6 +311,14 @@ function isLocalHost(host) {
 
 function toCamelCase(value) {
   return value.replace(/-([a-z])/g, (_match, character) => character.toUpperCase());
+}
+
+function readStandaloneFlagValue(rawName) {
+  if (standaloneBooleanValueFlags.has(rawName)) {
+    return true;
+  }
+
+  throw new Error(`--${rawName} requires a value.`);
 }
 
 function defaultRampingStages() {

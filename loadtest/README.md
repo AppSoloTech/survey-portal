@@ -38,6 +38,7 @@ npm run loadtest:doctor -- --dev
 ```bash
 npm run loadtest:seed -- --run-key lt-YYYYMMDD --yes
 npm run loadtest:run -- --run-key lt-YYYYMMDD --profile smoke --yes
+npm run loadtest:suite -- --run-key lt-YYYYMMDD --suite small --yes
 npm run loadtest:db -- --run-key lt-YYYYMMDD --yes
 npm run loadtest:teardown -- --run-key lt-YYYYMMDD --dry-run
 npm run loadtest:teardown -- --run-key lt-YYYYMMDD --yes
@@ -48,6 +49,7 @@ For local development targets, add `--dev`:
 ```bash
 npm run loadtest:seed -- --dev --run-key local-smoke
 npm run loadtest:run -- --dev --run-key local-smoke --persistence-smoke
+npm run loadtest:suite -- --dev --run-key local-smoke --persistence-smoke
 ```
 
 `--persistence-smoke` writes a started row, samples PostgreSQL, writes local
@@ -102,6 +104,47 @@ in App Service settings for the approved test window, then reset it afterward.
 If a future conversion scenario uses anonymous `/register`, remember it is also
 governed by `AUTH_REGISTER_RATE_LIMIT_MAX`.
 
+## Capacity Suites
+
+`loadtest:suite` runs multiple child profiles under one suite key, persists one
+`performance_test_suites` row, links each child `performance_test_runs` row, and
+stores bounded `performance_test_samples` rows for k6-shaped HTTP evidence and
+SQL summaries.
+
+```bash
+npm run loadtest:suite -- --run-key lt-YYYYMMDD --suite small --yes
+npm run loadtest:suite -- --run-key lt-YYYYMMDD --suite standard --include-direct-db --yes
+npm run loadtest:suite -- --run-key lt-YYYYMMDD --suite capacity --max-vus 75 --allow-capacity --yes
+```
+
+Presets:
+
+- `small`: smoke plus mixed/read/write stages up to 10 VUs.
+- `standard`: mixed/read/write stages bracketing roughly 25 VUs.
+- `capacity`: operator-defined upper bound, requiring `--allow-capacity` or
+  `LOADTEST_SUITE_ALLOW_CAPACITY=true`.
+
+Useful options:
+
+- `--suite-key <key>`: defaults to `<run-key>-suite`.
+- `--profiles mixed,read-heavy,write-heavy`: override preset profiles.
+- `--suite-stages '[{"label":"10vu","duration":"1m","targetVus":10}]'`
+- `--early-stop-error-rate 0.05`
+- `--early-stop-p95-ms 2000`
+- `--include-direct-db true`
+- `--persistence-smoke`
+
+The suite intentionally runs stage-sized child tests instead of storing raw k6
+event streams. This gives bracketed evidence for the first degradation range
+without implying exact per-bucket p95 values when k6 streaming output is not
+being aggregated. Each sample row carries caveats when metrics are approximate
+or unavailable.
+
+Hosted suite runs still require interactive confirmation or `--yes`. Write-heavy
+suite profiles use fresh anonymous attempts per iteration; raise
+`ANONYMOUS_SURVEY_RATE_LIMIT_MAX` only for the approved test window and reset it
+afterward.
+
 ## SQL Metrics
 
 The harness samples PostgreSQL through the load-test DB connection:
@@ -129,6 +172,14 @@ Each run writes:
 - `loadtest/reports/<run_key>.summary.json`
 - `loadtest/reports/<run_key>.report.md`
 - k6 summary JSON when k6 runs
+
+Each suite additionally writes:
+
+- `performance_test_suites` aggregate row
+- linked child `performance_test_runs` rows
+- bounded `performance_test_samples` rows
+- `loadtest/reports/<suite_key>.summary.json`
+- `loadtest/reports/<suite_key>.report.md`
 
 Full raw k6 event streams are not stored in PostgreSQL.
 

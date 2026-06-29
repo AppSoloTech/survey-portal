@@ -1,0 +1,35 @@
+# Claude Review — Phase 53 Capacity Suite CLI And Stage Sampling
+
+Date: 2026-06-29
+
+Prompt:
+`prompts/prompt_53.txt`
+
+Handoff:
+`notes/claude_handoff_phase_53.txt`
+
+Verdict:
+Approve after fixes. The implementation matches the handoff, preserves the
+non-goals, and keeps the operator-safety model intact.
+
+## Findings Addressed
+
+1. SQL sampler interval rejection handling.
+   - Fixed by wrapping suite SQL samples in a guarded collector that returns an
+     unavailable sample on unexpected errors.
+   - Fixed by clearing the interval in a `finally` around the k6 process wait.
+
+2. CLI parser value-flag sharp edge.
+   - Fixed by allowing only explicit suite boolean flags to stand alone.
+   - Value-style flags such as `--run-key` now reject missing values.
+   - Added regression tests.
+
+3. Pool creation before confirmation.
+   - Fixed by confirming hosted writes before creating the PostgreSQL pool.
+
+## Residual Follow-Up
+
+- Redaction is strong for known operational shapes, but a bare secret with no
+  adjacent key name or recognizable scheme could still evade pattern matching.
+  Track this as future load-test artifact hardening rather than a Phase 53
+  blocker.

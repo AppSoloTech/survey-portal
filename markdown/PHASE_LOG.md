@@ -6,6 +6,122 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 53 — Capacity Suite CLI And Stage Sampling
+
+Date:
+2026-06-29
+
+Status:
+Implemented; validation passed; review feedback addressed; manual persistence-smoke deferred
+
+Prompt:
+`prompts/prompt_53.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_53.txt`
+- Claude review: `notes/claude_review_phase_53.txt`
+
+## Goals
+
+- Add an operator-run `loadtest:suite` command for varied capacity profiles.
+- Persist one suite row, linked child run rows, and bounded local evidence
+  samples.
+- Identify the first degradation range and likely bottleneck from local HTTP
+  and SQL evidence.
+- Preserve hosted confirmation, anonymous write-heavy safety, and the
+  no-browser-controls boundary.
+
+## Built
+
+- Added `npm run loadtest:suite` backed by `loadtest/suite.mjs`.
+- Added small, standard, and explicit opt-in capacity suite presets with
+  configurable profiles, max VUs, stage lists, early-stop thresholds, app pool
+  max, app instance count, and optional direct-DB evidence.
+- Implemented stage-sized child runs with unique child run keys under one suite
+  key. This avoids raw k6 event-stream persistence while still bracketing the
+  first failing VU range.
+- Persisted suite `running` rows, terminal suite statuses, child
+  `performance_test_runs.suite_id` links, and bounded `performance_test_samples`
+  rows for k6-shaped HTTP and SQL summaries.
+- Added SIGINT/SIGTERM best-effort abort handling for the suite and active
+  child run, with caveated abort reports and the teardown command.
+- Added aggregate classification for first failing profile/stage/VU, likely
+  bottleneck, confidence, recommendation, and caveats for missing SQL or
+  approximate k6 bucket visibility.
+- Added CLI write-time operational redaction/secret guards for suite config,
+  child run summaries, sample metrics, markdown, and local JSON artifacts.
+- Tagged k6 HTTP requests by endpoint family/status with bounded custom
+  counters, without storing raw streams.
+- Addressed review findings by guarding async SQL sampling, clearing sampler
+  intervals in `finally`, confirming before pool creation, and rejecting
+  missing CLI values for value-style flags.
+- Updated load-test docs, `.env.loadtest.example`, release notes, follow-ups,
+  and focused Node tests.
+
+## Important Decisions
+
+### Stage-Sized Sampling
+
+Decision:
+The suite runs one child test per profile/stage and stores bounded summaries.
+
+Reason:
+Exact per-bucket k6 percentiles require event stream aggregation. This phase
+uses local k6 summary output only and should not imply precision it does not
+have.
+
+Consequence:
+Reports identify the first degraded stage range conservatively and include a
+caveat about missing in-stage percentile streams.
+
+### Write-Time Secret Omission
+
+Decision:
+The CLI allowlists persisted config fields and sanitizes/guards JSON and
+markdown before writing artifacts or database rows.
+
+Reason:
+Phase 52 API redaction is defense-in-depth; durable rows and local artifacts
+should not contain DB URLs, passwords, cookies, bearer values, CSRF values,
+anonymous attempt tokens, API keys, or connection strings.
+
+Consequence:
+Suite writes fail closed if a secret-like value survives sanitization.
+
+## Impact
+
+- Database/schema impact: consumes Phase 52 tables; no new migration.
+- API contract impact: none.
+- Frontend UX impact: none.
+- Auth/authorization impact: none.
+- Operational impact: new operator CLI suite and local report artifacts.
+
+## Validation
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+- Passed: `npm run test:loadtest`
+- Passed: `npm run loadtest:suite -- --help`
+- Passed: `git diff --check`
+- Not run: local `--persistence-smoke` suite and Phase 52 API visibility check.
+  The current `.env.loadtest` is not configured as an all-local dev target, and
+  the suite should not be run against hosted targets outside an approved manual
+  window.
+
+## Follow-Ups
+
+- Phase 54 remains responsible for optional Azure Monitor metric sampling.
+- Phase 55 remains responsible for the Admin suite viewer.
+- Browser run controls, app-process load generation, and Azure resource
+  creation remain out of scope.
+
+---
+
 ## Phase 52 — Performance Suite Data Model And Admin API
 
 Date:

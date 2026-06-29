@@ -12,6 +12,7 @@ const vus = Number(__ENV.LOADTEST_VUS || "1");
 const duration = __ENV.LOADTEST_DURATION || "30s";
 const rampingStages = parseRampingStages(__ENV.LOADTEST_RAMPING_STAGES);
 const http5xx = new Counter("http_5xx");
+const httpStatusCount = new Counter("http_status_count");
 
 export const options = {
   scenarios: buildScenarios(profile),
@@ -53,14 +54,16 @@ export function handleSummary(data) {
 function runReadHeavy(adminCookie) {
   const headers = { Cookie: adminCookie };
   const responses = http.batch([
-    ["GET", `${baseUrl}/api/surveys/${surveyId}`, null, { headers }],
-    ["GET", `${baseUrl}/api/surveys/${surveyId}/report`, null, { headers }],
-    ["GET", `${baseUrl}/api/surveys/${surveyId}/attempts`, null, { headers }],
-    ["GET", `${baseUrl}/api/surveys/${surveyId}/export.csv`, null, { headers }]
+    ["GET", `${baseUrl}/api/surveys/${surveyId}`, null, { headers, tags: { endpoint: "survey-detail" } }],
+    ["GET", `${baseUrl}/api/surveys/${surveyId}/report`, null, { headers, tags: { endpoint: "survey-report" } }],
+    ["GET", `${baseUrl}/api/surveys/${surveyId}/attempts`, null, { headers, tags: { endpoint: "survey-attempts" } }],
+    ["GET", `${baseUrl}/api/surveys/${surveyId}/export.csv`, null, { headers, tags: { endpoint: "survey-export" } }]
   ]);
+  const endpoints = ["survey-detail", "survey-report", "survey-attempts", "survey-export"];
 
-  for (const response of responses) {
-    recordResponse(response);
+  for (let index = 0; index < responses.length; index += 1) {
+    const response = responses[index];
+    recordResponse(response, endpoints[index] ?? "read");
     check(response, {
       "read endpoint returned 2xx": (res) => res.status >= 200 && res.status < 300
     });
@@ -68,8 +71,10 @@ function runReadHeavy(adminCookie) {
 }
 
 function runAnonymousWriteFlow() {
-  const start = http.post(`${baseUrl}/api/anonymous-surveys/${anonymousToken}/start`);
-  recordResponse(start);
+  const start = http.post(`${baseUrl}/api/anonymous-surveys/${anonymousToken}/start`, null, {
+    tags: { endpoint: "anonymous-start" }
+  });
+  recordResponse(start, "anonymous-start");
 
   check(start, {
     "anonymous start succeeded": (res) => res.status === 201
@@ -91,9 +96,9 @@ function runAnonymousWriteFlow() {
     const save = http.post(
       `${baseUrl}/api/anonymous-surveys/${anonymousToken}/pages/${pageId}/answer`,
       JSON.stringify({ attemptId, attemptAccessToken, answers }),
-      { headers: { "Content-Type": "application/json" } }
+      { headers: { "Content-Type": "application/json" }, tags: { endpoint: "anonymous-page-answer" } }
     );
-    recordResponse(save);
+    recordResponse(save, "anonymous-page-answer");
 
     check(save, {
       "anonymous page save succeeded": (res) => res.status === 200
@@ -109,9 +114,9 @@ function runAnonymousWriteFlow() {
   const complete = http.post(
     `${baseUrl}/api/anonymous-surveys/${anonymousToken}/complete`,
     JSON.stringify({ attemptId, attemptAccessToken }),
-    { headers: { "Content-Type": "application/json" } }
+    { headers: { "Content-Type": "application/json" }, tags: { endpoint: "anonymous-complete" } }
   );
-  recordResponse(complete);
+  recordResponse(complete, "anonymous-complete");
 
   check(complete, {
     "anonymous complete succeeded": (res) => res.status === 200
@@ -181,9 +186,11 @@ function buildScenarios(selectedProfile) {
   };
 }
 
-function recordResponse(response) {
+function recordResponse(response, endpoint) {
+  httpStatusCount.add(1, { endpoint, status: String(response.status) });
+
   if (response.status >= 500) {
-    http5xx.add(1);
+    http5xx.add(1, { endpoint });
   }
 }
 

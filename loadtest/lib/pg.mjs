@@ -20,6 +20,20 @@ export async function assertPerformanceTestRunsTable(pool) {
   }
 }
 
+export async function assertPerformanceTestSuitesTables(pool) {
+  const result = await pool.query(
+    `select
+       to_regclass('public.performance_test_suites') as suites,
+       to_regclass('public.performance_test_samples') as samples`
+  );
+
+  if (!result.rows[0]?.suites || !result.rows[0]?.samples) {
+    throw new Error(
+      "performance_test_suites/performance_test_samples tables were not found. Run npm run db:migrate:hosted for hosted targets before persisting suite results."
+    );
+  }
+}
+
 export async function assertSchemaMigrationsIncludePhase49(pool) {
   const result = await pool.query(
     `select 1
@@ -34,4 +48,3 @@ export async function assertSchemaMigrationsIncludePhase49(pool) {
     );
   }
 }
-

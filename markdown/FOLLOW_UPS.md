@@ -25,14 +25,16 @@ Review this file before starting each implementation phase. When a follow-up is 
   CLI metric sampling only if operators need it after reviewing DB/HTTP
   summaries, and keep any runner/orchestration work out of the app process.
   Phase 51 keeps artifact browsing/downloads deferred. Phase 52 adds suite and
-  sample persistence plus read-only APIs only; the capacity suite runner,
-  Azure Monitor sampling, aggregate suite classification, and Admin suite UI
-  remain deferred to later prompted phases.
-  Phase 52 review follow-ups for later phases: enforce secret omission at
-  suite/run write time in the Phase 53 runner, decide whether suite detail
-  child runs need an explicit cap if suites grow beyond the planned small
-  profile set, and add sample cursor/offset support only if the Phase 55 viewer
-  needs to page beyond the bounded sample window.
+  sample persistence plus read-only APIs only. Phase 53 adds the local capacity
+  suite runner, write-time secret omission, linked child run persistence,
+  bounded local samples, and aggregate classification. Azure Monitor sampling
+  and the Admin suite UI remain deferred to later prompted phases. Decide
+  whether suite detail child runs need an explicit cap if suites grow beyond
+  the planned small profile set, and add sample cursor/offset support only if
+  the Phase 55 viewer needs to page beyond the bounded sample window. Future
+  load-test artifact hardening: consider detecting bare JWT-like or secret-like
+  strings that have no adjacent key name, URL scheme, bearer prefix, or known
+  anonymous-token prefix.
   Capacity assessment follow-on prompts are drafted in
   `prompts/performance_capacity_assessment_prompt_plan.txt` and
   `prompts/prompt_53.txt` through `prompts/prompt_55.txt`.

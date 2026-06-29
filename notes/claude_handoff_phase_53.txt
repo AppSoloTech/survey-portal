@@ -1,0 +1,120 @@
+# Claude Handoff — Phase 53 Capacity Suite CLI And Stage Sampling
+
+Date: 2026-06-29
+
+Prompt:
+`prompts/prompt_53.txt`
+
+Status:
+Implemented; validation passed; ready for review.
+
+## Scope Implemented
+
+- Added `npm run loadtest:suite`.
+- Added `loadtest/suite.mjs` for operator-run capacity suites.
+- Added suite planning/reporting helpers in `loadtest/lib/suite-planning.mjs`.
+- Added CLI-side operational redaction/secret guardrails in
+  `loadtest/lib/redaction.mjs`.
+- Extended `loadtest/lib/persistence.mjs` with:
+  - `createPerformanceSuite`
+  - `finishPerformanceSuite`
+  - suite-linked `createPerformanceRun`
+  - `insertPerformanceSamples`
+- Added Phase 52 table readiness assertion in `loadtest/lib/pg.mjs`.
+- Added conservative presets:
+  - `small`: smoke plus mixed/read/write up to 10 VUs
+  - `standard`: mixed/read/write around 25 VUs
+  - `capacity`: configurable upper bound requiring `--allow-capacity`
+- Added optional `--include-direct-db true` child evidence.
+- Implemented unique child run keys under one suite key.
+- Persisted suite `running` state and terminal `completed`, `failed`, or
+  `aborted` state.
+- Persisted child run relationships via `performance_test_runs.suite_id`.
+- Persisted bounded k6-shaped and SQL sample rows in `performance_test_samples`.
+- Added SIGINT/SIGTERM best-effort abort handling for the suite and active
+  child run, plus caveated abort markdown and teardown command output.
+- Used stage-sized child runs instead of raw k6 event stream persistence; reports
+  explicitly caveat approximate/missing bucket precision.
+- Tagged k6 requests by endpoint family/status with custom counters.
+- Kept write-heavy anonymous flow unchanged: fresh anonymous attempt per
+  iteration, no single shared registered user.
+- Updated:
+  - `loadtest/README.md`
+  - `.env.loadtest.example`
+  - `markdown/releases/unreleased.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+
+## Explicit Non-Goals Preserved
+
+- No Azure Monitor sampling.
+- No Admin suite UI.
+- No browser run/stop/schedule controls.
+- No Azure resource creation.
+- No app-process load generation.
+- No huge raw k6 stream persistence.
+- No automatic tier/resource changes.
+
+## Files To Review Closely
+
+- `loadtest/suite.mjs`
+- `loadtest/lib/suite-planning.mjs`
+- `loadtest/lib/persistence.mjs`
+- `loadtest/lib/redaction.mjs`
+- `loadtest/k6/scenarios.js`
+- `loadtest/test/loadtest-helpers.test.mjs`
+- `loadtest/README.md`
+
+## Review Requests
+
+Please focus on:
+
+- Whether suite presets and CLI/env parsing are conservative and operator-safe.
+- Whether hosted runs still require confirmation or `--yes`.
+- Whether child run keys remain unique and clearly related to the suite key.
+- Whether stage-sized child runs are an acceptable local evidence strategy
+  without raw k6 stream persistence.
+- Whether aggregate classification is appropriately conservative and caveated.
+- Whether abort handling marks suite/active child rows best-effort without
+  overclaiming complete evidence.
+- Whether redaction/secret guardrails are strong enough at write time for local
+  artifacts and database rows.
+- Whether k6 endpoint/status tagging is useful without introducing raw stream
+  storage.
+- Whether existing `loadtest:run` and `loadtest:db` behavior remains intact.
+
+## Validation Run
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed: `npm run test:loadtest`
+- Passed: `npm run loadtest:suite -- --help`
+- Passed: `git diff --check`
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 62 tests
+  - web: 86 tests
+  - api: 292 tests
+  - release: 9 tests
+  - loadtest: 29 tests
+
+## Review Fixes Applied
+
+- Guarded the async SQL sampling interval so transient sampler failures append
+  unavailable SQL samples instead of creating unhandled rejections.
+- Cleared the SQL sampling interval in a `finally` around the k6 process wait.
+- Moved suite confirmation before pool creation so a declined hosted prompt does
+  not leave a pool open.
+- Made CLI boolean-style suite flags explicit. Value-style flags such as
+  `--run-key` now reject missing values instead of resolving to `true`.
+- Added focused regression coverage for missing value flags and explicit false
+  suite boolean overrides.
+
+Manual checks not run:
+
+- `npm run loadtest:suite -- --dev --run-key <seed-key> --persistence-smoke`
+- Confirm suite and child runs through Phase 52 Admin API.
+
+Reason: the current `.env.loadtest` is not configured as an all-local dev
+target, and this suite should not be run against hosted targets outside an
+approved manual window.

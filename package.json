@@ -25,6 +25,7 @@
     "db:reset": "node scripts/reset-local-db.mjs",
     "loadtest:seed": "node loadtest/seed.mjs",
     "loadtest:run": "node loadtest/run.mjs",
+    "loadtest:suite": "node loadtest/suite.mjs",
     "loadtest:db": "node loadtest/db-load.mjs",
     "loadtest:teardown": "node loadtest/teardown.mjs",
     "loadtest:doctor": "node loadtest/doctor.mjs",
