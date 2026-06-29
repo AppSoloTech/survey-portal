@@ -41,6 +41,7 @@ Read before implementation:
 * `prompts/prompt_49.txt`
 * `prompts/prompt_50.txt`
 * `prompts/deferred_cli_performance_testing_admin_reports.txt`
+* `loadtest/README.md`
 * `prompts/MASTER_PRODUCT_CONTEXT.txt`
 * `markdown/ARCHITECTURE_PRINCIPLES.md`
 * `markdown/DATA_MODEL_VISION.md`
@@ -53,6 +54,8 @@ Read before implementation:
 * `markdown/RELEASE_NOTES.md`
 * `markdown/ADMIN_DEMO_GUIDE.md`
 * `markdown/ACCESSIBILITY_PRIMITIVES.md`
+* `notes/claude_review_phase_50_final.txt`
+* `notes/claude_handoff_phase_50_final_review.txt`
 * `apps/web/src/App.tsx`
 * `apps/web/src/api/admin.ts`
 * `apps/web/src/api/client.ts`
@@ -104,8 +107,18 @@ Implement:
   * recommendation
   * bottleneck explanation
   * config/summary highlights
+  * status coverage for `running`, `completed`, `failed`, and `aborted`
+  * CLI configuration highlights such as profile, VUs, duration, ramping
+    stages, app DB pool max, and app instance count when present
+  * SQL/Azure metric availability labels that distinguish unavailable metrics
+    from zero values
   * stored markdown report rendered safely as plain/preformatted text or a
     conservative internal formatting component
+* Show concise operator caveats in the detail view when applicable:
+  * DB pool and app instance settings affect bottleneck classification.
+  * Active connection stats can undercount unless the load-test role has
+    `pg_monitor` / `pg_read_all_stats` or uses the app DB role.
+  * Recommendations are capacity signals, not automatic upgrade commands.
 * Handle loading, empty, error, and not-found states.
 * Keep the page operational and dense, consistent with current Admin screens.
 * Add route wiring and update route-title behavior if the current app pattern
@@ -124,6 +137,8 @@ Do not implement:
 * Azure runner orchestration.
 * New Azure resources.
 * Raw k6 event browsing.
+* Browsing, downloading, or linking local `loadtest/reports/` artifacts from
+  the Admin UI.
 * Time-series charts unless Phase 49 added a samples table and the human
   explicitly approves chart scope.
 * Public or participant-facing UI.
@@ -133,15 +148,19 @@ Do not implement:
 * Phase 49 provides read-only Admin endpoints.
 * Phase 50 persists enough summary data to make the first UI useful.
 * Missing Azure Monitor metrics should be displayed as unavailable, not zero.
+* Missing PostgreSQL/SQL metrics should be displayed as unavailable or
+  permission-limited, not zero.
 * The markdown report is internal operational text and should not use unsafe
   HTML rendering.
 * The page should explain the "CLI generated / Admin viewed" boundary through
   concise operational copy, without turning into a landing page.
+* The UI should display only database-persisted fields. Local CLI artifacts
+  under `loadtest/reports/` and ignored manifests remain outside the app.
 
 ## Open Questions
 
-* Should admins need export/download links for local artifacts? If unanswered,
-  defer because artifacts live outside the app in this trimmed version.
+* Should admins need export/download links for local artifacts? Deferred for
+  this phase because artifacts live outside the app in this trimmed version.
 
 ---
 
@@ -156,6 +175,10 @@ The phase is ready for review when:
 * A selected run shows detail without exposing unsafe HTML.
 * Empty and error states are clear.
 * Missing optional resource metrics are labeled unavailable.
+* All four persisted statuses (`running`, `completed`, `failed`, `aborted`)
+  render with clear text labels.
+* Detail content surfaces persisted configuration and summary caveats without
+  implying the browser can run or repair tests.
 * No UI control can start, stop, schedule, or generate a load test.
 * The page is usable at 375/768/1280px.
 
@@ -177,6 +200,9 @@ Add focused tests where practical for:
 
 * API helper URL construction.
 * formatting helpers for duration, latency, percentages, and timestamps.
+* formatting helpers for unavailable metrics and all four status labels.
+* summary/config extraction helpers for Azure availability, SQL availability,
+  ramping stages, DB pool max, and app instance count.
 * empty/error/loaded state rendering if the current web test patterns support
   it without adding new dependencies.
 
@@ -212,4 +238,6 @@ notes/claude_handoff_phase_51.txt
 
 Ask Claude Code to review Admin UX fit, authorization boundaries, no-runner
 scope adherence, report readability, markdown rendering safety, and responsive
-behavior.
+behavior. Also ask Claude to verify unavailable metric handling, all status
+labels, persisted-config caveats, and that the UI does not expose local CLI
+artifact paths as browser-downloadable resources.
