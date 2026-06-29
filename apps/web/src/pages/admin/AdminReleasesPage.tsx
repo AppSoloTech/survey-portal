@@ -39,10 +39,10 @@ export function AdminReleasesPage() {
     <section className="page admin-builder-page">
       <div className="page-header">
         <p className="eyebrow">Admin portal</p>
-        <h2>Software updates</h2>
+        <h2>Roadmap and software updates</h2>
         <p>
-          Review the deployed app version and production patch notes published from the
-          project release workflow.
+          Review the current app version, implementation roadmap, and production patch
+          notes published from the project release workflow.
         </p>
       </div>
 
@@ -54,10 +54,10 @@ export function AdminReleasesPage() {
           <aside className="release-version-panel">
             <p className="eyebrow">Current version</p>
             <strong>{currentVersion ? `v${currentVersion}` : "Unavailable"}</strong>
-            <span>Release notes are read from committed Markdown files.</span>
+            <span>Roadmap entries are read from committed Markdown release files.</span>
           </aside>
 
-          <div className="release-timeline" aria-label="Software release history">
+          <div className="release-timeline" aria-label="Software release roadmap">
             {releases.length === 0 ? (
               <p className="status muted">No release notes have been published yet.</p>
             ) : null}
