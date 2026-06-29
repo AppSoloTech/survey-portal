@@ -1,0 +1,75 @@
+# Claude Review — Phase 52 Performance Suite Data Model And Admin API
+
+Date: 2026-06-29
+Reviewer: Claude Code
+Prompt: prompts/prompt_52.txt
+Handoff: notes/claude_handoff_phase_52.txt
+
+Verdict: Approve with follow-ups. All acceptance criteria met; findings below are
+non-blocking.
+
+## Validation Gate (re-run by reviewer)
+
+- npm run typecheck — pass
+- npm run lint — pass
+- npm run build — pass
+- npm test — pass (shared 62, web 86, api 291, loadtest 24)
+- git diff --check — clean
+- Focused: adminPerformanceSuites.test.ts + migrations.test.ts — 12 pass; migration
+  0038 applies cleanly in order after 0037.
+
+## What I checked against the review requests
+
+- Schema is additive/conservative for Phase 53-55: yes. suite_key unique identity,
+  status check constraint, JSONB with safe defaults, free-text bottleneck/confidence
+  (no premature enum). No overfitting.
+- performance_test_runs.suite_id safe for Phase 49-51 rows: yes. Nullable, defaults
+  null, FK on delete set null, run_key unique contract untouched, added via guarded
+  idempotent DO block. Existing one-off runs remain valid.
+- Endpoints read-only and gated: yes. Only GET "/" and GET "/:id", both behind
+  requireAuth + requireRole("admin"). POST returns 404 and persists nothing (tested).
+- Sample limits/ordering/filters: default 200, cap 1000, order
+  (elapsed_seconds asc nulls last, sampled_at, id) backed by matching composite
+  indexes; optional source/runId/profile filters each have a supporting index.
+- Missing values not treated as zero: yes. unavailable_reason/caveat carried through;
+  empty metrics stay {} and are asserted distinct from zero in tests.
+- Array query-param injection handled: source/runId/profile/page/pageSize reject
+  non-string (array) inputs with 400.
+
+## Findings / Follow-ups (non-blocking)
+
+1. Read-time redaction is heuristic; the durable guarantee belongs at write time.
+   sanitizeOperationalString has known gaps the later suite runner must not rely on:
+   - camelCase secrets in free-text strings escape the key=value regex because of \b
+     word boundaries (e.g. "accessToken=x", "apiKey=x" are only caught as JSON object
+     keys, not inside string values).
+   - "api_key"/"apikey" is absent from both the string regex and isSensitiveOperationalKey;
+     recommend adding it.
+   - A secret serialized as JSON *inside* a string value (e.g. '{"password":"x"}') is
+     not matched because the quote between key and ':' blocks the key=value regex.
+   Acceptable as defense-in-depth for Phase 52. The Phase 53+ suite runner should avoid
+   persisting secrets at write time rather than leaning on this read-time scrub.
+
+2. Consistency gap: GET /api/admin/performance-runs/:id (Phase 49-51) still returns raw
+   config/summary/reportMarkdown and an unsanitized targetBaseUrl. This phase added
+   redaction to suites/samples but the sibling run-detail endpoint exposes the same
+   class of operational payload unredacted. Recommend a follow-up to extract the
+   sanitizer into a shared util and apply it to run detail too.
+
+3. Suite-detail child-runs query has no LIMIT. Fine in practice (capacity suites have a
+   small bounded profile set), but it is the one read in the detail path without a cap.
+   Consider a sane cap or an explicit documented assumption.
+
+4. Samples expose limit only — no offset/cursor — so a future viewer cannot page past
+   the 1000-row cap for a long suite. Within prompt scope ("bounded window"); flag for
+   the viewer phase.
+
+5. Minor: readSampleQuery accepts an undocumented "limit" alias (query.sampleLimit ??
+   query.limit). Harmless; either document it or drop it. The redactor also rewrites ':'
+   to '=' in matched pairs (cosmetic).
+
+## Non-Goals Confirmed Preserved
+
+No loadtest:suite runner, no Azure Monitor sampling, no suite classification, no Admin
+suite UI, no browser run/stop/schedule/retry/delete/repair controls, no app-process load
+generation. Confirmed by inspection of the diff.

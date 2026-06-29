@@ -9,6 +9,11 @@ import express from "express";
 
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  sanitizeOperationalMarkdown,
+  sanitizeOperationalRecord,
+  sanitizeOperationalString
+} from "../services/operationalRedaction.js";
 import { readPositiveIntegerParam } from "../services/validation.js";
 
 const defaultPerformanceRunsPageSize = 20;
@@ -193,7 +198,7 @@ function mapPerformanceTestRunSummary(
     id: record.id,
     runKey: record.run_key,
     scenario: record.scenario,
-    targetBaseUrl: record.target_base_url,
+    targetBaseUrl: sanitizeOperationalString(record.target_base_url),
     status: record.status,
     startedAt: record.started_at.toISOString(),
     finishedAt: record.finished_at?.toISOString() ?? null,
@@ -216,9 +221,9 @@ function mapPerformanceTestRunSummary(
 function mapPerformanceTestRunDetail(record: PerformanceTestRunRecord): PerformanceTestRunDetail {
   return {
     ...mapPerformanceTestRunSummary(record),
-    config: record.config,
-    summary: record.summary,
-    reportMarkdown: record.report_markdown
+    config: sanitizeOperationalRecord(record.config),
+    summary: sanitizeOperationalRecord(record.summary),
+    reportMarkdown: sanitizeOperationalMarkdown(record.report_markdown)
   };
 }
 

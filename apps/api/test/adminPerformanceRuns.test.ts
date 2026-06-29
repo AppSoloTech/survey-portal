@@ -106,6 +106,42 @@ describe("admin performance test runs", () => {
     });
   });
 
+  it("redacts secret-like persisted operational fields from run detail", async () => {
+    const admin = await registerAdmin(app);
+    const run = await insertPerformanceRun({
+      runKey: "redacted-run",
+      targetBaseUrl: "https://operator:secret@survey.example.test",
+      config: {
+        databaseUrl: "postgresql://app:secret@db.example.test:5432/survey",
+        apiKey: "api-secret",
+        safeFlag: true
+      },
+      summary: {
+        note: 'accessToken="abc123" api_key=raw',
+        headers: { authorization: "Bearer secret-token" }
+      },
+      reportMarkdown: "postgresql://app:secret@db.example.test:5432/survey apiKey=abc123"
+    });
+
+    const response = await request(app)
+      .get(`/api/admin/performance-runs/${run.id}`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.run.targetBaseUrl).toBe("https://[redacted]@survey.example.test");
+    expect(response.body.run.config).toEqual({
+      databaseUrl: "[redacted]",
+      apiKey: "[redacted]",
+      safeFlag: true
+    });
+    expect(response.body.run.summary).toEqual({
+      note: "accessToken=[redacted] api_key=[redacted]",
+      headers: { authorization: "[redacted]" }
+    });
+    expect(response.body.run.reportMarkdown).toContain("[redacted-postgres-url]");
+    expect(response.body.run.reportMarkdown).toContain("apiKey=[redacted]");
+  });
+
   it("returns 404 for missing runs and validates ids and pagination", async () => {
     const admin = await registerAdmin(app);
 
@@ -155,6 +191,7 @@ type InsertPerformanceRunInput = {
   runKey: string;
   scenario?: string;
   status?: "running" | "completed" | "failed" | "aborted";
+  targetBaseUrl?: string;
   startedAt?: string;
   p95Ms?: number;
   config?: Record<string, unknown>;
@@ -189,29 +226,30 @@ async function insertPerformanceRun(input: InsertPerformanceRunInput): Promise<{
      values (
        $1,
        $2,
-       'https://survey.example.test',
        $3,
        $4,
+       $5,
        '2026-06-29T13:05:00.000Z',
        300,
        25,
        42.75,
        100.50,
-       $5,
+       $6,
        450.25,
        0.012500,
        12000,
        150,
        'app_pool',
        'Increase DB pool only after confirming database headroom.',
-       $6::jsonb,
        $7::jsonb,
-       $8
+       $8::jsonb,
+       $9
      )
      returning id`,
     [
       input.runKey,
       input.scenario ?? "read-heavy",
+      input.targetBaseUrl ?? "https://survey.example.test",
       input.status ?? "completed",
       input.startedAt ?? "2026-06-29T13:00:00.000Z",
       input.p95Ms ?? 240.33,

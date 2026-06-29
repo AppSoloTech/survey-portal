@@ -624,6 +624,78 @@ export interface PerformanceTestRunDetailResponse {
   run: PerformanceTestRunDetail;
 }
 
+export type PerformanceTestSuiteStatus = "running" | "completed" | "failed" | "aborted";
+
+export type PerformanceTestSampleSource =
+  | "k6"
+  | "sql"
+  | "azure_app_service"
+  | "azure_postgres"
+  | "suite";
+
+export interface PerformanceTestSuiteSummary {
+  id: number;
+  suiteKey: string;
+  targetBaseUrl: string;
+  status: PerformanceTestSuiteStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  durationSeconds: number | null;
+  plannedProfiles: unknown[];
+  plannedStages: unknown[];
+  firstFailingProfile: string | null;
+  firstFailingStage: string | null;
+  firstFailingTargetVus: number | null;
+  firstFailingCurrentVus: number | null;
+  bottleneck: string | null;
+  bottleneckConfidence: string | null;
+  recommendation: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PerformanceTestSuiteDetail extends PerformanceTestSuiteSummary {
+  config: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  reportMarkdown: string | null;
+}
+
+export interface PerformanceTestSuiteChildRunSummary extends PerformanceTestRunSummary {
+  suiteId: number | null;
+}
+
+export interface PerformanceTestSampleSummary {
+  id: number;
+  suiteId: number;
+  runId: number | null;
+  source: PerformanceTestSampleSource;
+  profile: string | null;
+  scenario: string | null;
+  stageLabel: string | null;
+  targetVus: number | null;
+  currentVus: number | null;
+  sampledAt: string;
+  elapsedSeconds: number | null;
+  metrics: Record<string, unknown>;
+  unavailableReason: string | null;
+  caveat: string | null;
+  createdAt: string;
+}
+
+export interface PerformanceTestSuitesListResponse {
+  suites: PerformanceTestSuiteSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PerformanceTestSuiteDetailResponse {
+  suite: PerformanceTestSuiteDetail;
+  runs: PerformanceTestSuiteChildRunSummary[];
+  samples: PerformanceTestSampleSummary[];
+  sampleLimit: number;
+}
+
 export interface SoftwareReleaseNoteSection {
   heading: string;
   items: string[];

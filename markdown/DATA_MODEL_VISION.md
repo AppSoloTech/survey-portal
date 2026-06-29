@@ -24,9 +24,18 @@ latency, error-rate, and recommendation fields are relational columns; flexible
 CLI configuration and summarized metric payloads are stored as JSONB because the
 load-test harness may evolve between operational runs.
 
+`performance_test_suites` groups related capacity-assessment runs under one
+operator-started suite. It stores suite identity, target, status, planned
+profiles/stages, first failing profile/stage/VU signals, bottleneck confidence,
+recommendation, and report text. `performance_test_runs.suite_id` is nullable
+so older one-off runs remain valid. `performance_test_samples` stores bounded,
+time-bucketed evidence from k6, SQL, optional Azure sources, or suite-level
+classification. Missing source data is represented with unavailable reason and
+caveat fields, never as zero.
+
 Hosted environments must apply the table migration with
-`npm run db:migrate:hosted` before Phase 50 CLI runs attempt to persist hosted
-performance results.
+`npm run db:migrate:hosted` before CLI runs attempt to persist hosted
+performance run or suite results.
 
 ---
 

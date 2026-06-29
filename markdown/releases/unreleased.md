@@ -6,4 +6,5 @@ Summary: Replace this with a short summary before running `npm run release:prepa
 
 ## Changed
 
-- Add release-note bullets here during implementation.
+- Add the read-only Admin API and schema foundation for performance capacity
+  suites, child-run relationships, and bounded time-bucketed sample evidence.

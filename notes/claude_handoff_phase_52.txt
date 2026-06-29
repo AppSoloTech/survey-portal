@@ -1,0 +1,91 @@
+# Claude Handoff — Phase 52 Performance Suite Data Model And Admin API
+
+Date: 2026-06-29
+
+Prompt:
+`prompts/prompt_52.txt`
+
+Status:
+Implemented; focused validation passed; ready for review.
+
+## Scope Implemented
+
+- Added migration `database/migrations/0038_performance_test_suites.sql`.
+- Added `performance_test_suites` for suite identity, target, status, timing,
+  planned profiles/stages JSONB, first failing profile/stage/VU fields,
+  bottleneck, bottleneck confidence, recommendation, config, summary,
+  markdown, and timestamps.
+- Added nullable `performance_test_runs.suite_id` with a foreign key to
+  suites using `on delete set null`, plus `(suite_id, started_at desc, id desc)`
+  indexing.
+- Added `performance_test_samples` for bounded time-bucketed evidence from
+  `k6`, `sql`, `azure_app_service`, `azure_postgres`, or `suite`, with
+  profile/scenario/stage/VU fields, sampled time, elapsed seconds, JSONB
+  metrics, unavailable reason, and caveat fields.
+- Added shared response types for suite list/detail, child-run summaries, and
+  sample summaries in `packages/shared/src/index.ts`.
+- Added read-only Admin endpoints:
+  - `GET /api/admin/performance-suites`
+  - `GET /api/admin/performance-suites/:id`
+- Suite detail includes child runs and a bounded sample window.
+  - default sample limit: 200
+  - max sample limit: 1,000
+  - ordering: `elapsed_seconds nulls last`, `sampled_at`, `id`
+  - optional filters: `source`, `runId`, `profile`
+- Added response-time redaction for suite `config`, suite `summary`, sample
+  `metrics`, and suite `reportMarkdown`.
+- Updated:
+  - `markdown/releases/unreleased.md`
+  - `markdown/DATA_MODEL_VISION.md`
+  - `markdown/FOLLOW_UPS.md`
+  - `markdown/PHASE_LOG.md`
+
+## Explicit Non-Goals Preserved
+
+- No `loadtest:suite` runner.
+- No Azure Monitor sampling.
+- No suite classification logic.
+- No Admin suite UI.
+- No browser controls to start, stop, schedule, retry, delete, or repair tests.
+- No app-process load generation.
+
+## Files To Review Closely
+
+- `database/migrations/0038_performance_test_suites.sql`
+- `apps/api/src/routes/adminPerformanceSuitesRoutes.ts`
+- `apps/api/src/app.ts`
+- `packages/shared/src/index.ts`
+- `apps/api/test/adminPerformanceSuites.test.ts`
+- `apps/api/test/migrations.test.ts`
+- `apps/api/test/helpers/setup.ts`
+
+## Review Requests
+
+Please focus on:
+
+- Whether the suite/sample schema is additive and conservative enough for
+  Phase 53-55 without overfitting this phase.
+- Whether `performance_test_runs.suite_id` is safe for existing Phase 49-51
+  one-off rows.
+- Whether the Admin endpoints are truly read-only and correctly gated by
+  `requireAuth` and `requireRole("admin")`.
+- Whether sample limits, ordering, and filters are sufficient for a future
+  viewer without enabling unbounded reads.
+- Whether unavailable metric handling avoids implying missing values are zero.
+- Whether the redaction behavior is appropriate for operational JSON/markdown
+  payloads and whether any sensitive key patterns are missing.
+- Whether any migration/index names, delete behavior, or JSONB defaults should
+  be adjusted before this lands.
+
+## Validation Run
+
+- Passed: `npm run lint`
+- Passed: `npm run typecheck`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- adminPerformanceSuites.test.ts adminPerformanceRuns.test.ts migrations.test.ts`
+
+Full required validation still to run before final commit readiness:
+
+- `npm run build`
+- `npm test`
+- `git diff --check`

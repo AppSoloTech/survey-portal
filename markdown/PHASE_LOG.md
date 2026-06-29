@@ -6,6 +6,135 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 52 — Performance Suite Data Model And Admin API
+
+Date:
+2026-06-29
+
+Status:
+Implemented; validation passed; Claude review complete; non-blocking fixes applied
+
+Prompt:
+`prompts/prompt_52.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_52.txt`
+- Claude review: `notes/claude_review_phase_52.txt`
+
+## Goals
+
+- Add durable capacity-assessment suite and sample storage.
+- Relate existing one-off performance runs to suites without breaking older
+  runs.
+- Add read-only Admin APIs for suite list/detail, child runs, and bounded
+  sample windows.
+- Keep the suite runner, Azure Monitor sampler, Admin suite UI, and browser run
+  controls out of scope.
+
+## Built
+
+- Added `performance_test_suites` with suite key, target, status, timing,
+  planned profile/stage JSONB, first failing profile/stage/VU fields,
+  bottleneck confidence, recommendation, config, summary, markdown, and
+  timestamps.
+- Added nullable `performance_test_runs.suite_id` with `on delete set null` and
+  suite read indexes.
+- Added `performance_test_samples` with source checks for `k6`, `sql`,
+  `azure_app_service`, `azure_postgres`, and `suite`, plus profile/stage/VU,
+  sampled time, elapsed seconds, JSONB metrics, unavailable reason, and caveat
+  fields.
+- Added shared suite, child-run, and sample response types.
+- Added `GET /api/admin/performance-suites` and
+  `GET /api/admin/performance-suites/:id` behind existing Admin auth.
+- Added bounded sample reads with a 200 default, 1,000 cap, elapsed/sample/id
+  ordering, and optional `source`, `runId`, and `profile` filters.
+- Added response-time redaction for secret-like suite config, summary, sample
+  metrics, and report markdown values.
+- After Claude review, extracted operational redaction into a shared API helper,
+  broadened it for API-key/access-token patterns, applied it to the existing
+  performance run detail endpoint, and removed the undocumented suite sample
+  `limit` alias.
+- Added focused API and migration tests.
+- Updated release notes, data-model guidance, follow-ups, and Claude handoff.
+
+## Important Decisions
+
+### Additive Suite Relationship
+
+Decision:
+`performance_test_runs.suite_id` is nullable and uses `on delete set null`.
+
+Reason:
+Phase 49-51 one-off runs remain valid and no delete API is being added.
+
+Consequence:
+Future suite runners can group child runs without rewriting existing
+performance-run history.
+
+### Bounded Evidence API
+
+Decision:
+Suite list responses omit samples; suite detail returns a bounded sample window
+with conservative default/capped limits and optional filters.
+
+Reason:
+Time-bucketed rows are useful evidence, but the Admin API should not expose
+unbounded time-series reads.
+
+Consequence:
+The future Admin suite viewer can request focused sample windows without
+turning PostgreSQL into a raw k6 event store.
+
+### Unavailable And Secret Handling
+
+Decision:
+Sample rows can carry unavailable reasons/caveats, and the Admin suite API
+redacts secret-like JSON keys, connection strings, bearer values, and markdown
+patterns before response serialization.
+
+Reason:
+Unavailable metrics must not be mistaken for zero, and operational payloads may
+evolve as later CLI phases add more inputs.
+
+Consequence:
+The API remains useful for partial evidence while reducing the risk of echoing
+accidentally persisted credentials.
+
+## Impact
+
+- Database/schema impact: new migration `0038_performance_test_suites.sql`.
+- API contract impact: new read-only Admin suite list/detail endpoints and
+  shared response types.
+- Frontend UX impact: none.
+- Auth/authorization impact: endpoints require existing Admin auth.
+- Data privacy impact: suite/sample operational metadata is Admin-only and
+  response-redacted for secret-like content.
+
+## Validation
+
+- Passed: `npm run lint`
+- Passed: `npm run typecheck`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed: `npm test`
+- Passed: `git diff --check`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- adminPerformanceSuites.test.ts adminPerformanceRuns.test.ts migrations.test.ts`
+- Passed with approved local PostgreSQL access after review fixes:
+  `npm run test -w apps/api -- adminPerformanceSuites.test.ts adminPerformanceRuns.test.ts`
+
+## Follow-Ups
+
+- Phase 53 remains responsible for `npm run loadtest:suite`, profile
+  orchestration, stage sampling, and aggregate local classification.
+- Phase 54 remains responsible for optional Azure Monitor sampling.
+- Phase 55 remains responsible for the Admin capacity suite viewer.
+- Artifact browsing/downloads and browser run controls remain out of scope.
+
+---
+
 ## Phase 51 — Admin Performance Report Viewer
 
 Date:

@@ -45,10 +45,12 @@ describe("migration runner", () => {
         table_name: string;
         run_key_default: string | null;
         summary_default: string | null;
+        suite_id_column: string | null;
       }>(
         `select tables.table_name,
                 run_key.column_default as run_key_default,
-                summary.column_default as summary_default
+                summary.column_default as summary_default,
+                suite_id.column_name as suite_id_column
          from information_schema.tables
          join information_schema.columns run_key
            on run_key.table_schema = tables.table_schema
@@ -58,6 +60,10 @@ describe("migration runner", () => {
            on summary.table_schema = tables.table_schema
           and summary.table_name = tables.table_name
           and summary.column_name = 'summary'
+         join information_schema.columns suite_id
+           on suite_id.table_schema = tables.table_schema
+          and suite_id.table_name = tables.table_name
+          and suite_id.column_name = 'suite_id'
          where tables.table_schema = 'public'
            and tables.table_name = 'performance_test_runs'`
       );
@@ -66,7 +72,66 @@ describe("migration runner", () => {
         {
           table_name: "performance_test_runs",
           run_key_default: null,
-          summary_default: "'{}'::jsonb"
+          summary_default: "'{}'::jsonb",
+          suite_id_column: "suite_id"
+        }
+      ]);
+
+      const performanceSuiteTables = await pool.query<{
+        table_name: string;
+        suite_key_default: string | null;
+        config_default: string | null;
+      }>(
+        `select tables.table_name,
+                suite_key.column_default as suite_key_default,
+                config.column_default as config_default
+         from information_schema.tables
+         join information_schema.columns suite_key
+           on suite_key.table_schema = tables.table_schema
+          and suite_key.table_name = tables.table_name
+          and suite_key.column_name = 'suite_key'
+         join information_schema.columns config
+           on config.table_schema = tables.table_schema
+          and config.table_name = tables.table_name
+          and config.column_name = 'config'
+         where tables.table_schema = 'public'
+           and tables.table_name = 'performance_test_suites'`
+      );
+
+      expect(performanceSuiteTables.rows).toEqual([
+        {
+          table_name: "performance_test_suites",
+          suite_key_default: null,
+          config_default: "'{}'::jsonb"
+        }
+      ]);
+
+      const performanceSamples = await pool.query<{
+        table_name: string;
+        metrics_default: string | null;
+        suite_nullable: string;
+      }>(
+        `select tables.table_name,
+                metrics.column_default as metrics_default,
+                suite_id.is_nullable as suite_nullable
+         from information_schema.tables
+         join information_schema.columns metrics
+           on metrics.table_schema = tables.table_schema
+          and metrics.table_name = tables.table_name
+          and metrics.column_name = 'metrics'
+         join information_schema.columns suite_id
+           on suite_id.table_schema = tables.table_schema
+          and suite_id.table_name = tables.table_name
+          and suite_id.column_name = 'suite_id'
+         where tables.table_schema = 'public'
+           and tables.table_name = 'performance_test_samples'`
+      );
+
+      expect(performanceSamples.rows).toEqual([
+        {
+          table_name: "performance_test_samples",
+          metrics_default: "'{}'::jsonb",
+          suite_nullable: "NO"
         }
       ]);
     } finally {

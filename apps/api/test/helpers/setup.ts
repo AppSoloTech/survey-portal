@@ -6,7 +6,9 @@ import { applyTestEnvironment } from "./testDatabaseUrl.js";
 applyTestEnvironment();
 
 const dataTables = [
+  "performance_test_samples",
   "performance_test_runs",
+  "performance_test_suites",
   "survey_attempt_activity_events",
   "survey_response_selected_options",
   "survey_response_answers",
