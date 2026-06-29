@@ -582,6 +582,48 @@ export interface AdminUserPasswordResetResponse {
   message: string;
 }
 
+export type PerformanceTestRunStatus = "running" | "completed" | "failed" | "aborted";
+
+export interface PerformanceTestRunSummary {
+  id: number;
+  runKey: string;
+  scenario: string;
+  targetBaseUrl: string;
+  status: PerformanceTestRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  durationSeconds: number | null;
+  maxVus: number | null;
+  peakRequestsPerSecond: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+  errorRate: number | null;
+  totalRequests: number | null;
+  failedRequests: number | null;
+  bottleneck: string | null;
+  recommendation: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PerformanceTestRunDetail extends PerformanceTestRunSummary {
+  config: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  reportMarkdown: string | null;
+}
+
+export interface PerformanceTestRunsListResponse {
+  runs: PerformanceTestRunSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PerformanceTestRunDetailResponse {
+  run: PerformanceTestRunDetail;
+}
+
 export interface SoftwareReleaseNoteSection {
   heading: string;
   items: string[];

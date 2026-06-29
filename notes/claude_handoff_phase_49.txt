@@ -1,0 +1,162 @@
+# Claude Review Handoff — Phase 49
+
+Claude Code instructions:
+
+- Read this handoff and the reference documents before reviewing.
+- Review the current phase diff only.
+- Write the full review to the path listed below.
+- After writing the file, summarize the result in chat.
+- Do not leave the review only in chat.
+- Do not modify source files during review unless the human developer explicitly asks for fixes.
+
+## Review Output Requirement
+
+Write the full review to:
+
+```txt
+notes/claude_review_phase_49.txt
+```
+
+Then summarize the result in chat. Do not leave the review only in chat.
+
+## Review Goal
+
+Please review Phase 49 for:
+
+- database fit for operational performance report summaries
+- Admin-only authorization
+- read-only API scope
+- production-safety boundaries
+- JSONB usage for CLI config and summarized metric payloads
+- whether the design avoids accidental Azure/resource orchestration
+
+## Reference Documents
+
+Read these before reviewing:
+
+- `prompts/prompt_49.txt`
+- `prompts/deferred_cli_performance_testing_admin_reports.txt`
+- `prompts/MASTER_PRODUCT_CONTEXT.txt`
+- `markdown/ARCHITECTURE_PRINCIPLES.md`
+- `markdown/DATA_MODEL_VISION.md`
+- `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+- `markdown/FLOW.md`
+- `markdown/REVIEW_CHECKLIST.md`
+- `markdown/PHASE_LOG.md`
+- `markdown/RELEASE_NOTES.md`
+
+## Phase Scope
+
+Implemented:
+
+- Added migration `database/migrations/0037_performance_test_runs.sql`.
+- Added shared performance test run status, summary, detail, list, and detail-response types.
+- Added Admin-only read endpoints:
+  - `GET /api/admin/performance-runs`
+  - `GET /api/admin/performance-runs/:id`
+- Added newest-first pagination for the list endpoint.
+- Added positive integer validation for route id and pagination query parameters.
+- Added focused Admin API tests for authorization, pagination, shape, detail, 404, invalid params, and POST non-availability.
+- Added migration-test coverage for the new table.
+- Updated `markdown/DATA_MODEL_VISION.md`, `markdown/releases/unreleased.md`, and `markdown/PHASE_LOG.md`.
+
+Non-goals:
+
+- No `loadtest/` CLI harness.
+- No k6 scenarios.
+- No direct-DB load tests.
+- No Azure metric sampling.
+- No Admin UI pages.
+- No browser "Run test", "Stop test", or "Schedule test" controls.
+- No App-Service-hosted load generation.
+- No Azure Container Apps, Container Instances, Azure Load Testing, queues, functions, Blob Storage, or new cloud dependencies.
+- No `performance_test_samples` time-series table.
+- No public or participant-facing APIs.
+
+Known tradeoffs:
+
+- The list endpoint selects `config`, `summary`, and `report_markdown` from SQL because it reuses the same DB row mapper, but the list response deliberately maps only summary fields and does not expose those detail-only fields.
+- `config` and `summary` are typed as `Record<string, unknown>` because Phase 50 CLI payload shape may evolve; core list/query fields remain relational columns.
+- Invalid pagination values return 400 instead of silently falling back. The existing Admin users list has some fallback behavior, but Phase 49 explicitly called for validating pagination parameters.
+- There is no database trigger for `updated_at`; Phase 50 direct DB persistence should set `updated_at = now()` on row updates, matching existing app update patterns.
+
+Deferred work:
+
+- Phase 50: CLI load-test harness and direct PostgreSQL persistence.
+- Phase 51: read-only Admin UI report viewer.
+- Optional time-series sample table remains deferred until UI/report needs prove it is necessary.
+
+## Diff To Review
+
+Run or inspect:
+
+```bash
+git diff
+git ls-files --others --exclude-standard
+```
+
+Untracked new files expected:
+
+```txt
+apps/api/src/routes/adminPerformanceRunsRoutes.ts
+apps/api/test/adminPerformanceRuns.test.ts
+database/migrations/0037_performance_test_runs.sql
+notes/claude_handoff_phase_49.txt
+```
+
+## Validation Already Run
+
+Commands:
+
+```bash
+npm test -w apps/api -- test/adminPerformanceRuns.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Results:
+
+- Initial sandboxed focused API test failed because the harness was blocked from connecting to local PostgreSQL on `127.0.0.1:5432`.
+- Passed with approved local PostgreSQL access: `npm test -w apps/api -- test/adminPerformanceRuns.test.ts`
+  - 5 tests
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+  - Vite emitted the existing large chunk warning.
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 62 tests
+  - web: 81 tests
+  - API: 283 tests across 29 API files
+  - release-note tests: 9 tests
+- Passed: `git diff --check`
+
+Manual testing:
+
+- Focused API tests seed local performance rows and exercise list/detail endpoints as Admin.
+- Focused API tests verify unauthenticated and standard-user rejection.
+- Focused API tests verify no POST write operation exists and no row is created by a browser-style POST.
+- No browser pass was run because Phase 49 intentionally has no Admin UI.
+- No hosted CLI persistence pass was run because Phase 50 owns the CLI.
+
+## Specific Questions
+
+1. Does `performance_test_runs` fit the operational-reporting boundary without drifting into participant response data?
+2. Are the indexes sufficient for the intended list/detail Admin reads?
+3. Are `config` and `summary` appropriate JSONB fields for non-core operational payloads at this stage?
+4. Do both endpoints enforce Admin-only access correctly?
+5. Does the implementation avoid any browser-triggered load generation, write API, scheduling, or Azure runner orchestration?
+6. Should Phase 50 add an explicit `updated_at = now()` convention in its direct DB update SQL, given this phase does not add an update trigger?
+
+## Requested Output Format
+
+Write `notes/claude_review_phase_49.txt` using this format:
+
+1. Critical issues
+2. Suggested improvements
+3. Acceptable tradeoffs
+4. Questions or assumptions
+5. Product UX alignment notes
+6. Commit readiness

@@ -6,6 +6,193 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 49 — Performance Test Report Data And Admin API Foundation
+
+Date:
+2026-06-29
+
+Status:
+Implemented; Claude review complete; review cleanup applied
+
+Prompt:
+`prompts/prompt_49.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_49.txt`
+- Claude review: `notes/claude_review_phase_49.txt`
+
+## Goals
+
+- Add durable storage for command-line performance test summaries.
+- Add shared response types for Admin list/detail performance report reads.
+- Add Admin-only read APIs under `/api/admin/performance-runs`.
+- Keep load generation, CLI persistence, Admin UI, and Azure orchestration out
+  of scope.
+
+## Built
+
+- Added migration `0037_performance_test_runs.sql` with run identity, scenario,
+  target, status, timing, latency, request/error, bottleneck, recommendation,
+  JSONB config/summary, markdown report, and audit timestamp fields.
+- Added newest-first and status/start-time indexes for list/detail support.
+- Added shared `PerformanceTestRunStatus`,
+  `PerformanceTestRunSummary`, `PerformanceTestRunDetail`,
+  `PerformanceTestRunsListResponse`, and
+  `PerformanceTestRunDetailResponse` types.
+- Added read-only Admin endpoints:
+  - `GET /api/admin/performance-runs`
+  - `GET /api/admin/performance-runs/:id`
+- Added focused API tests for admin authorization, unauthenticated rejection,
+  standard-user rejection, newest-first pagination, list/detail shapes,
+  missing ids, invalid ids, invalid pagination, JSON/markdown detail payloads,
+  and POST non-availability.
+- Added migration-test coverage that verifies the new table is created by the
+  ordered migration runner.
+- Updated the test database cleanup table list so performance run rows do not
+  leak between API tests.
+- Updated data-model and unreleased release notes.
+- After Claude review, slimmed the list endpoint query so it no longer selects
+  detail-only JSONB or markdown fields, and updated `prompts/prompt_50.txt`
+  to require `updated_at = now()` in direct persistence updates.
+
+## Important Decisions
+
+### Read-Only Admin Surface
+
+Decision:
+Expose only GET endpoints for performance reports in the app.
+
+Reason:
+Phase 50 will write report rows from the command-line harness directly through
+the approved load-test database connection. The app must not start, schedule,
+stop, or host load generation.
+
+Tradeoff:
+Admins cannot create or repair report rows through the browser. That keeps the
+production-safety boundary clear for this phase.
+
+### Flexible Operational JSONB
+
+Decision:
+Keep core report summary fields relational, but store CLI configuration and
+non-core metric summaries in JSONB.
+
+Reason:
+The CLI payload and optional metric availability may evolve without making the
+first Admin read API chase every possible metric field.
+
+Tradeoff:
+Ad hoc JSONB report data is less relationally queryable than columns, but the
+indexed list/detail use cases are covered by relational columns.
+
+## Architecture Notes
+
+- Database/schema impact: additive migration `0037_performance_test_runs.sql`.
+- API contract impact: new Admin-only read endpoints and shared response types.
+- Auth or authorization impact: endpoints require `requireAuth` and
+  `requireRole("admin")`; standard users receive 403 and unauthenticated
+  callers receive 401.
+- Data privacy or visibility impact: performance runs are operational/admin
+  data and are not exposed to participants or public APIs.
+- Frontend UX impact: none.
+- Environment or deployment impact: hosted environments must run
+  `npm run db:migrate:hosted` after this migration is merged/deployed and
+  before Phase 50 CLI runs attempt to persist hosted results.
+
+## Validation
+
+Commands run:
+
+```bash
+npm test -w apps/api -- test/adminPerformanceRuns.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+npm test -w apps/api -- test/adminPerformanceRuns.test.ts
+npm run typecheck
+npm run lint
+```
+
+Results:
+
+- Initial sandboxed focused API test failed because the harness was blocked
+  from connecting to local PostgreSQL on `127.0.0.1:5432`.
+- Passed with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/adminPerformanceRuns.test.ts`
+  - 5 tests
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build` (Vite emitted the existing large chunk warning)
+- Passed with approved local PostgreSQL access: `npm test`
+  - shared: 62 tests
+  - web: 81 tests
+  - API: 283 tests across 29 API files
+  - release-note tests: 9 tests
+- Passed: `git diff --check`
+- Passed after Claude review cleanup with approved local PostgreSQL access:
+  `npm test -w apps/api -- test/adminPerformanceRuns.test.ts`
+  - 5 tests
+- Passed after Claude review cleanup: `npm run typecheck`
+- Passed after Claude review cleanup: `npm run lint`
+
+Manual tests:
+
+- The focused Supertest coverage seeds local performance run rows and exercises
+  Admin list/detail plus standard-user and unauthenticated rejection.
+- No separate browser/manual UI pass was run because Phase 49 has no Admin UI.
+- No CLI or hosted persistence pass was run because those are Phase 50 scope.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_49.txt`
+
+Status:
+
+- Completed. Claude found no critical issues and marked the phase ready to
+  commit, recommending one low-effort list-query cleanup before Phase 50.
+
+Findings and disposition:
+
+- Addressed suggested improvement 2(a): list endpoint SQL now selects only
+  summary fields, leaving JSONB config/summary and markdown report data for
+  detail reads.
+- Accepted status index note: the status/start-time index is forward-looking
+  for likely Phase 51 filtering and remains cheap.
+- Accepted pagination strictness note: malformed pagination returns 400, while
+  valid oversized `pageSize` is capped at 100 to match existing Admin list
+  patterns.
+- Promoted the `updated_at = now()` direct-persistence reminder into
+  `prompts/prompt_50.txt`.
+
+## Follow-Up Tasks
+
+- Phase 50 should build the CLI harness and direct database persistence.
+- Phase 51 should build the read-only Admin UI viewer.
+- Optional time-series sample storage remains deferred until report UI needs
+  prove it is necessary.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Claude handoff created: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: Yes; Claude found no auth or production-safety
+  blockers
+- Review findings addressed or deferred: Yes
+- Manual testing complete: API-level manual-equivalent checks complete; no UI
+  exists in this phase
+- Ready to commit: Yes
+
+---
+
 ## Phase 48 — Admin Results Open-Answer Review Tagging UI
 
 Date:

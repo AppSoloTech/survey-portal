@@ -1,0 +1,109 @@
+Claude Review — Phase 49: Performance Test Report Data And Admin API Foundation
+
+Reviewed diff:
+- database/migrations/0037_performance_test_runs.sql (new)
+- apps/api/src/routes/adminPerformanceRunsRoutes.ts (new)
+- apps/api/test/adminPerformanceRuns.test.ts (new)
+- apps/api/src/app.ts (mount)
+- apps/api/test/migrations.test.ts (table smoke check)
+- apps/api/test/helpers/setup.ts (truncate list)
+- packages/shared/src/index.ts (response types)
+- markdown/DATA_MODEL_VISION.md, markdown/releases/unreleased.md, markdown/PHASE_LOG.md
+
+Verified independently:
+- 0037 is the correct next sequence number; no collision with an existing 0037.
+- migrations.test builds expectedMigrations dynamically via listMigrationFiles(), so the
+  new file does not break the ordering assertion.
+- The table uses `integer generated always as identity`, matching the repo convention
+  (16 existing migrations use identity, 0 use serial). Codex correctly chose the repo
+  convention over the prompt's `serial` suggestion.
+- Mount order: `/api/admin/performance-runs` is registered before the `/api/admin`
+  catch-all router (app.ts:58-59 region), so it is not shadowed.
+
+============================================================
+1. CRITICAL ISSUES
+============================================================
+None. The phase is read-only, admin-gated, scope-accurate, and introduces no Azure or
+runner orchestration. Commit-ready aside from the minor items below.
+
+============================================================
+2. SUGGESTED IMPROVEMENTS
+============================================================
+(a) List query pulls heavy columns it then discards.
+    Both the list and detail queries SELECT the full column set including
+    report_markdown (unbounded text) and the config/summary JSONB, but
+    mapPerformanceTestRunSummary drops them (adminPerformanceRunsRoutes.ts:72-101,
+    191-216). On a 20-row page that marshals 20 markdown blobs + JSONB out of Postgres
+    and over the wire for nothing. Recommend a summary-only SELECT for the list endpoint
+    and keep the full SELECT only for GET /:id. Low effort; removes an unbounded payload
+    from the hot path. This is the one concrete inefficiency worth fixing before Phase 50
+    builds on it.
+
+(b) Two round-trips for count + page.
+    count(*) and the page query are separate calls (:68-101). Folding
+    `count(*) over() as total` into the page query collapses it to one round-trip and
+    removes the count/rows skew window. Minor.
+
+(c) Unused composite index for now.
+    performance_test_runs_status_started_at_idx (migration:32-33) supports a status
+    filter the list endpoint does not yet apply. Cheap and forward-looking for Phase 51
+    filtering; keep it, but it earns its keep only once filtering lands.
+
+(d) Pagination strictness is slightly inconsistent.
+    An invalid pageSize returns 400, but a valid-but-too-large pageSize is silently
+    clamped to 100 via Math.min (:188). Not wrong, just inconsistent with the otherwise
+    strict 400 philosophy. Acceptable; flagging for a deliberate decision.
+
+============================================================
+3. ACCEPTABLE TRADEOFFS
+============================================================
+- No updated_at trigger. Phase 50's direct-DB persistence must set updated_at = now()
+  on every update. This is a real footgun handed to the next phase — recommend promoting
+  it from a handoff note to an explicit checklist item in prompt_50, since a missed update
+  silently rots the column.
+- config/summary typed as Record<string, unknown> — appropriate while the CLI payload
+  shape is still forming; core list/query fields remain relational columns.
+- `create table/index if not exists` is idempotent and harmless given the checksum-tracked
+  migration runner.
+- numeric -> string -> Number conversion is handled correctly via parseNullableNumber for
+  every numeric column (peak rps, p50/p95/p99, error_rate).
+
+============================================================
+4. QUESTIONS / ASSUMPTIONS
+============================================================
+- Cross-phase sequencing: performance_test_runs lives in the production njsda-db, and
+  Phase 50's CLI writes to it directly. Migration 0037 must be applied to hosted
+  (npm run db:migrate:hosted) before the first real CLI run, or persistence fails. Not a
+  Phase 49 defect — state it explicitly as a Phase 50 prerequisite.
+- Assumed the admin-tools panel link (Phase 51) is the only intended entry point. Nothing
+  in this phase exposes the route prematurely, which is correct.
+
+============================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+============================================================
+- Nothing user-facing in this phase.
+- The data model cleanly separates operational reporting from participant response data,
+  which fits the boundary the handoff asked about.
+- The status enum (running/completed/failed/aborted) and field set are sufficient to drive
+  a useful Phase 51 summary view (scenario, status, duration, max VUs, peak rps, p95/p99,
+  error rate, bottleneck, recommendation).
+
+============================================================
+6. COMMIT READINESS
+============================================================
+Ready to commit. No blocking issues. Recommend folding in 2(a) — list-query slimming —
+before Phase 50 builds on this surface, as the cheapest time to do it; it is not a gate.
+Admin-only authorization (401 unauth / 403 standard user), read-only scope (POST returns
+404, verified by test and by no write handler existing), production-safety boundaries,
+JSONB usage, and test coverage (auth, pagination + newest-first, detail shape, 404,
+invalid id/pagination params, POST non-availability, migration smoke) all check out.
+
+Answers to the handoff's specific questions:
+1. Yes — fits the operational-reporting boundary; no drift into participant response data.
+2. Indexes are sufficient for the list (started_at desc, id desc matches ORDER BY exactly)
+   and detail (PK). The status index is currently unused but cheap and forward-looking.
+3. Yes — config/summary are appropriate JSONB for non-core operational payloads at this stage.
+4. Yes — both endpoints enforce requireAuth + requireRole("admin") correctly.
+5. Yes — no browser-triggered load generation, write API, scheduling, or Azure orchestration.
+6. Yes — Phase 50 should set updated_at = now() explicitly in its update SQL; make it a
+   checklist item, not just a note.

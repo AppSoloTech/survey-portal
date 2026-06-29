@@ -40,6 +40,35 @@ describe("migration runner", () => {
       );
 
       expect(result.rows.map((row) => row.filename)).toEqual(expectedMigrations);
+
+      const performanceTable = await pool.query<{
+        table_name: string;
+        run_key_default: string | null;
+        summary_default: string | null;
+      }>(
+        `select tables.table_name,
+                run_key.column_default as run_key_default,
+                summary.column_default as summary_default
+         from information_schema.tables
+         join information_schema.columns run_key
+           on run_key.table_schema = tables.table_schema
+          and run_key.table_name = tables.table_name
+          and run_key.column_name = 'run_key'
+         join information_schema.columns summary
+           on summary.table_schema = tables.table_schema
+          and summary.table_name = tables.table_name
+          and summary.column_name = 'summary'
+         where tables.table_schema = 'public'
+           and tables.table_name = 'performance_test_runs'`
+      );
+
+      expect(performanceTable.rows).toEqual([
+        {
+          table_name: "performance_test_runs",
+          run_key_default: null,
+          summary_default: "'{}'::jsonb"
+        }
+      ]);
     } finally {
       await pool.end();
     }

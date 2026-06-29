@@ -12,6 +12,24 @@ The actual schema may evolve during implementation, but changes should preserve 
 
 ---
 
+# Operational Report Data
+
+Operational/admin report data may live beside core survey data when it supports
+deployment, diagnostics, or admin review without changing participant behavior.
+
+`performance_test_runs` stores summarized command-line performance test results
+for Admin review. It is intentionally separate from survey responses, attempts,
+hidden tags, and participant-facing entities. Core run identity, timing, status,
+latency, error-rate, and recommendation fields are relational columns; flexible
+CLI configuration and summarized metric payloads are stored as JSONB because the
+load-test harness may evolve between operational runs.
+
+Hosted environments must apply the table migration with
+`npm run db:migrate:hosted` before Phase 50 CLI runs attempt to persist hosted
+performance results.
+
+---
+
 # Survey Experience Decision
 
 The survey-taking experience now supports page-based surveys:

@@ -255,6 +255,8 @@ Do not implement:
 * The Admin UI in Phase 51 will read summaries from PostgreSQL, not local files.
 * Raw local artifacts are useful for operators but are not the app's source of
   truth.
+* Phase 50 direct database updates to `performance_test_runs` must set
+  `updated_at = now()` explicitly when completing or failing a run.
 
 ## Open Questions
 
@@ -277,6 +279,8 @@ The phase is ready for review when:
   data.
 * A smoke `loadtest:run` can persist a started row and complete or fail it with
   useful summary data.
+* Completing or failing a persisted run updates `updated_at = now()` in the
+  direct database update SQL.
 * k6 output is summarized into `performance_test_runs`.
 * Failed runs update the row to `failed` with useful error context.
 * Write-heavy scenarios use the anonymous start/answer/complete flow by
@@ -323,6 +327,7 @@ Manual/operator smoke checks to document:
 * SQL sampler smoke: collect at least one `pg_stat_activity` and
   `pg_stat_database` sample, or document the permission/availability failure.
 * Confirm a `performance_test_runs` row is created and updated.
+* Confirm completed/failed persistence updates the row's `updated_at`.
 * Confirm local artifacts are written under `loadtest/reports/` and remain
   ignored.
 

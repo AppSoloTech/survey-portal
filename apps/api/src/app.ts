@@ -13,6 +13,7 @@ import {
 } from "./middleware/security.js";
 import { adminRouter } from "./routes/admin.js";
 import { adminGlossaryRouter } from "./routes/adminGlossaryRoutes.js";
+import { adminPerformanceRunsRouter } from "./routes/adminPerformanceRunsRoutes.js";
 import {
   anonymousSurveyDirectoryRouter,
   anonymousSurveyPublicRouter
@@ -54,6 +55,7 @@ export function createApp() {
   app.use("/api/anonymous-surveys", anonymousSurveyPublicRouter);
   app.use("/api/admin/glossary", adminGlossaryRouter);
   app.use("/api/admin/page-templates", adminPageTemplatesRouter);
+  app.use("/api/admin/performance-runs", adminPerformanceRunsRouter);
   app.use("/api/admin/templates", adminTemplatesRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/surveys", surveysRouter);
