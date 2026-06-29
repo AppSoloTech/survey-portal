@@ -3,6 +3,8 @@ import type {
   AdminUserPasswordResetResponse,
   AdminUserRoleResponse,
   AdminUsersListResponse,
+  PerformanceTestRunDetailResponse,
+  PerformanceTestRunsListResponse,
   SoftwareReleaseNotesResponse,
   UserRole
 } from "@survey-portal/shared";
@@ -51,4 +53,25 @@ export async function requestAdminUserPasswordReset(
 
 export async function fetchSoftwareReleaseNotes(): Promise<SoftwareReleaseNotesResponse> {
   return apiRequest<SoftwareReleaseNotesResponse>("/api/admin/releases");
+}
+
+export async function fetchPerformanceTestRuns(input: {
+  page: number;
+  pageSize?: number;
+}): Promise<PerformanceTestRunsListResponse> {
+  const params = new URLSearchParams({ page: String(input.page) });
+
+  if (input.pageSize) {
+    params.set("pageSize", String(input.pageSize));
+  }
+
+  return apiRequest<PerformanceTestRunsListResponse>(
+    `/api/admin/performance-runs?${params.toString()}`
+  );
+}
+
+export async function fetchPerformanceTestRunDetail(
+  runId: number
+): Promise<PerformanceTestRunDetailResponse> {
+  return apiRequest<PerformanceTestRunDetailResponse>(`/api/admin/performance-runs/${runId}`);
 }

@@ -24,6 +24,8 @@ Review this file before starting each implementation phase. When a follow-up is 
   unavailable and does not create Azure runner resources. Add optional Azure
   CLI metric sampling only if operators need it after reviewing DB/HTTP
   summaries, and keep any runner/orchestration work out of the app process.
+  Phase 51 keeps artifact browsing/downloads and time-series charts deferred
+  until admins need more than persisted summary/detail reports.
 
 ---
 

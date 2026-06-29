@@ -16,6 +16,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { ToastProvider } from "./components/ToastProvider.js";
 import { AdminGlossaryPage } from "./pages/admin/AdminGlossaryPage.js";
+import { AdminPerformancePage } from "./pages/admin/AdminPerformancePage.js";
 import { AdminReleasesPage } from "./pages/admin/AdminReleasesPage.js";
 import { AdminSurveysOverview } from "./pages/admin/AdminSurveysOverview.js";
 import { AdminTagsPage } from "./pages/admin/AdminTagsPage.js";
@@ -108,6 +109,7 @@ function AppShell() {
               </Route>
               <Route element={<AdminRoute />}>
                 <Route element={<AdminSurveysOverview />} path="/admin" />
+                <Route element={<AdminPerformancePage />} path="/admin/performance" />
                 <Route element={<AdminReleasesPage />} path="/admin/releases" />
                 <Route element={<AdminGlossaryPage />} path="/admin/glossary" />
                 <Route element={<AdminUsersPage />} path="/admin/users" />
@@ -146,7 +148,8 @@ const routeTitles = [
   { pattern: /^\/dashboard\/category\/[^/]+$/, title: "Survey group" },
   { pattern: /^\/surveys\/[^/]+\/attempt$/, title: "Survey attempt" },
   { pattern: /^\/anonymous-surveys$/, title: "Anonymous surveys" },
-  { pattern: /^\/anonymous-surveys\/[^/]+$/, title: "Anonymous survey attempt" }
+  { pattern: /^\/anonymous-surveys\/[^/]+$/, title: "Anonymous survey attempt" },
+  { pattern: /^\/admin\/performance$/, title: "Performance reports" }
 ];
 
 export function getRouteTitle(pathname: string): string | null {

@@ -315,6 +315,12 @@ function AdminToolsPanel() {
             <small>Manage participant-facing terms and definitions.</small>
           </span>
         </Link>
+        <Link className="admin-tool-link" to="/admin/performance">
+          <span>
+            <strong>Performance</strong>
+            <small>Review CLI load-test reports and capacity recommendations.</small>
+          </span>
+        </Link>
         <Link className="admin-tool-link" to="/admin/releases">
           <span>
             <strong>Software updates</strong>

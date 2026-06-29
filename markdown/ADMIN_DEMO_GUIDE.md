@@ -307,6 +307,7 @@ Talking point:
 - Review completion status and participant attempts.
 - Export results to CSV.
 - Manage reusable tag definitions.
+- Review persisted CLI performance-test reports and capacity recommendations.
 - Promote and demote admin access.
 
 ## Demo Safety Notes
@@ -317,6 +318,7 @@ Talking point:
 - Published and retired survey structure is locked by design.
 - Hidden tags are internal metadata. Do not describe them as participant-visible labels.
 - Results may be empty until at least one participant starts or submits the survey.
+- Performance reports are read-only summaries from the operator CLI; there are no browser controls to run, stop, schedule, or delete tests.
 
 ## Short Closing Script
 

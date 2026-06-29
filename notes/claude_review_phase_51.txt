@@ -1,0 +1,111 @@
+Claude Review — Phase 51: Admin Performance Report Viewer
+
+Branch: phase-51-admin-performance-viewer
+Reviewed (modified + new):
+- apps/web/src/pages/admin/AdminPerformancePage.tsx (new)
+- apps/web/src/pages/admin/AdminPerformancePage.test.ts (new)
+- apps/web/src/api/admin.ts, apps/web/src/App.tsx, apps/web/src/App.test.ts
+- apps/web/src/pages/admin/AdminSurveysOverview.tsx, apps/web/src/styles.css
+- markdown/* docs
+
+Independently verified:
+- Markdown is rendered as React-escaped text in <pre>{detail.reportMarkdown}</pre>
+  (AdminPerformancePage.tsx:426). No dangerouslySetInnerHTML anywhere; all data fields
+  (targetBaseUrl, runKey, scenario, recommendation, config/summary values) render as escaped
+  JSX text. No XSS surface.
+- Route /admin/performance is nested inside <Route element={<AdminRoute />}> (App.tsx:111),
+  the same guard as the other admin pages, so standard/unauthenticated users are blocked
+  client-side; the Phase 49 API also enforces requireRole("admin") server-side. Two-layer.
+- Only interactive controls are "View report" (selects a run) and pagination Previous/Next.
+  No run/stop/schedule/delete/retry control exists.
+- Null metrics render via formatters that return "Unavailable" (never 0); Azure/SQL
+  availability render "Available" or "Unavailable: <reason>" from summary flags.
+- API helpers use URLSearchParams for the list query and interpolate a typed numeric id for
+  detail; correct Phase 49 endpoints and typed responses.
+- JSONB config/summary are parsed defensively (isRecord/readString/readNumber/readBoolean),
+  so a malformed or evolving Phase 50 payload degrades to hidden/Unavailable rather than
+  throwing.
+- Tests cover all four statuses, every formatter's missing/present path, config-highlight
+  extraction, and a source-level scope guard asserting the page contains no "Run test"/
+  "Stop test"/"Schedule test" strings and no "loadtest/reports/" artifact path.
+- Responsive: styles.css uses the house 767.98px breakpoint to stack the list/detail layout
+  and a 430px tier; the table relies on data-label cells for the stacked card view.
+
+============================================================
+1. CRITICAL ISSUES
+============================================================
+None. Read-only, admin-guarded, no unsafe rendering, scope respected.
+
+============================================================
+2. SUGGESTED IMPROVEMENTS
+============================================================
+(a) No component-render/interaction tests. Coverage is helper-logic + a source-string scope
+    guard (.test.ts, no JSX render). The auto-select logic, pagination clicks, and the
+    loading/empty/error branches are only exercised by manual/visual QA. This matches the
+    codebase convention of exporting pure helpers for testing, so it is acceptable, but a
+    couple of React Testing Library cases (auto-select picks first run; selection survives a
+    list refresh; error state renders) would lock in the behavior the handoff explicitly
+    asked reviewers to confirm.
+(b) The source-string scope-guard test (asserting absence of "Run test"/"Schedule test") is
+    a nice intent check but brittle: legitimate future copy containing those words would fail
+    it. Minor; fine to keep as a tripwire as long as the team knows why it is there.
+(c) A 'running' row does not auto-refresh. An operator watching an in-progress run must
+    reload to see it move to completed/failed/aborted. Given the CLI is the executor and runs
+    are short, this is acceptable; consider a manual "Refresh" affordance or a note if live
+    monitoring is ever expected.
+(d) The "Target" column shows the full base URL on every row; on the 768px two-column layout
+    this is the widest cell. Not a defect (the URL is not sensitive), just the first place to
+    truncate if the desktop table feels cramped at mid widths — worth confirming in the live
+    pass the handoff recommends.
+
+============================================================
+3. ACCEPTABLE TRADEOFFS
+============================================================
+- Helper-export testing style instead of full render tests — consistent with existing web
+  tests.
+- Local CLI artifact paths intentionally omitted from the UI (verified by test). Correct for
+  the "CLI generates / Admin views" boundary.
+- Operator caveats (pg_monitor visibility, pool/instance effect on classification,
+  "signals not commands") are surfaced as static copy in the detail panel — good, and it
+  carries forward the Phase 50 review's visibility caveat into the UI.
+
+============================================================
+4. QUESTIONS / ASSUMPTIONS
+============================================================
+- Assumes AdminRoute already enforces admin role + redirects non-admins (unchanged here);
+  the new route is wired identically to existing admin routes, so it inherits that behavior.
+- Live browser pass at 375/768/1280px and light/dark themes is still worth doing — the
+  automated suite cannot confirm visual layout or focus/contrast, and the handoff flags it.
+- No new API or migration introduced; the page consumes only Phase 49 read endpoints.
+
+============================================================
+5. PRODUCT / UX ALIGNMENT NOTES
+============================================================
+- The page reads as a dense operational report surface consistent with the other admin
+  screens (reuses admin-users-table, profile-panel, status-pill, results-summary-grid).
+- Status pills cover running/completed/failed/aborted; bottleneck is humanized
+  (app_pool -> "App Pool"); metric cards + recommendation + config + metric-availability +
+  caveats + raw markdown give a complete read-only picture without implying control.
+- Empty state ("No performance runs yet") and per-panel loading/error states are handled.
+- Auto-select-first-run is a reasonable default and keeps a selection stable across refresh
+  when the run is still present.
+
+============================================================
+6. COMMIT READINESS
+============================================================
+Ready to commit / merge. No blocking issues. The viewer is safe (escaped markdown, no unsafe
+HTML), correctly admin-guarded at both layers, strictly read-only with no run/stop/schedule/
+delete controls, labels missing metrics as Unavailable, and keeps local artifacts out of the
+UI. Validation (typecheck/lint/build, full web + cross-workspace test suite) passes. The
+section-2 items are optional polish; a live responsive/theme pass remains the one thing only a
+human can sign off, as the handoff notes.
+
+Answers to the handoff's review-focus points:
+- No browser-side start/stop/schedule/delete/orchestrate ability: confirmed (only select +
+  paginate; scope-guard test enforces it).
+- Local report artifact paths/downloads kept out of the UI: confirmed (and test-asserted).
+- Unavailable Azure/SQL metrics clearly labeled, not shown as zero: confirmed.
+- Responsive at 375/768/1280px: structurally handled (767.98px + 430px breakpoints,
+  data-label table); recommend a live visual pass to sign off.
+- Selected-run loading (auto-select first; keep selection if still visible; selectable rows):
+  confirmed working as described.

@@ -1506,6 +1506,36 @@ main:focus {
   background: var(--info);
 }
 
+.status-pill.performance-running {
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+.status-pill.performance-running::before {
+  animation: pill-pulse 1.6s ease-in-out infinite;
+  background: var(--brand);
+}
+
+.status-pill.performance-completed {
+  background: var(--info-surface);
+  border-color: var(--info-border);
+}
+
+.status-pill.performance-completed::before {
+  background: var(--info);
+}
+
+.status-pill.performance-failed,
+.status-pill.performance-aborted {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+}
+
+.status-pill.performance-failed::before,
+.status-pill.performance-aborted::before {
+  background: var(--danger);
+}
+
 .status-pill.abandoned {
   background: var(--danger-surface);
   border-color: var(--danger-border);
@@ -2636,6 +2666,135 @@ main:focus {
   gap: 0.35rem;
   margin: 0;
   padding-left: 1.1rem;
+}
+
+.performance-report-layout {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.performance-run-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.performance-table-wrap {
+  max-width: 100%;
+}
+
+.performance-runs-table {
+  min-width: 980px;
+}
+
+.performance-runs-table tbody tr.selected {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.performance-run-key {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 650;
+  margin-top: 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.performance-detail-panel {
+  align-self: start;
+  max-height: calc(100vh - 7rem);
+  overflow: auto;
+  position: sticky;
+  top: 6rem;
+}
+
+.performance-detail-heading {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.performance-detail-heading h3 {
+  overflow-wrap: anywhere;
+}
+
+.performance-detail-heading p:not(.eyebrow) {
+  color: var(--text-muted);
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.performance-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.performance-detail-section {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.performance-detail-section h4 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.performance-detail-section p {
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.performance-compact-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.performance-compact-list div {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.8rem;
+}
+
+.performance-compact-list dt {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.performance-compact-list dd {
+  font-weight: 700;
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.performance-caveat-list {
+  color: var(--text-muted);
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.performance-report-markdown {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.85rem;
+  white-space: pre-wrap;
 }
 
 .glossary-layout {
@@ -5772,6 +5931,7 @@ main:focus {
 
   .admin-overview-layout,
   .admin-user-detail-layout,
+  .performance-report-layout,
   .glossary-layout,
   .release-notes-layout,
   .anonymous-directory-card,
@@ -5791,8 +5951,14 @@ main:focus {
   .admin-overview-layout,
   .builder-workspace,
   .builder-stack,
+  .performance-report-layout,
   .glossary-layout {
     gap: 1rem;
+  }
+
+  .performance-detail-panel {
+    max-height: none;
+    position: static;
   }
 
   .page-switcher {
@@ -6040,6 +6206,10 @@ main:focus {
   .admin-users-table tr,
   .admin-users-table td {
     display: block;
+  }
+
+  .performance-runs-table {
+    min-width: 0;
   }
 
   .admin-users-table tr {

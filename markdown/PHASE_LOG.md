@@ -6,6 +6,107 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 51 — Admin Performance Report Viewer
+
+Date:
+2026-06-29
+
+Status:
+Implemented; validation passed; Claude review complete
+
+Prompt:
+`prompts/prompt_51.txt`
+
+Git Commit:
+This commit
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_51.txt`
+- Claude review: `notes/claude_review_phase_51.txt`
+
+## Goals
+
+- Add a read-only Admin UI for persisted CLI performance report rows.
+- Surface status, latency, error, throughput, bottleneck, recommendation, and
+  metric availability signals from the Phase 49 API.
+- Keep the browser out of test execution: no run, stop, schedule, delete,
+  artifact-download, Azure runner, or orchestration controls.
+
+## Built
+
+- Added `/admin/performance` behind the existing Admin route guard.
+- Added Web API helpers for:
+  - `GET /api/admin/performance-runs`
+  - `GET /api/admin/performance-runs/:id`
+- Added an Admin tools-panel link from the survey overview.
+- Added a dense operational report viewer with recent-run pagination, selected
+  run detail, persisted markdown display, config highlights, HTTP/SQL metrics,
+  Azure/SQL availability labels, and operator caveats.
+- Added status coverage for `running`, `completed`, `failed`, and `aborted`.
+- Added helper tests for formatting, metric availability, SQL/HTTP highlights,
+  status mapping, and source-level guards against browser run controls/local
+  artifact exposure.
+- Updated release notes, admin demo notes, and follow-ups.
+
+## Important Decisions
+
+### Read-Only Browser Surface
+
+Decision:
+The Admin UI only reads persisted performance data. It does not create,
+schedule, stop, delete, or orchestrate load tests.
+
+Reason:
+Phase 50 intentionally keeps execution in the operator CLI where target guards,
+confirmation prompts, hosted TLS enforcement, and teardown controls live.
+
+Consequence:
+Admins can review persisted results in the portal, but operators still use the
+CLI to seed, run, persist, and tear down load-test data.
+
+### Unavailable Means Unavailable
+
+Decision:
+Unavailable Azure or SQL metric families are labeled as unavailable, optionally
+with the stored reason, rather than rendered as zero values.
+
+Reason:
+Zero implies a measured absence. Missing permissions, omitted Azure sampling,
+or absent SQL data are different operational states.
+
+Consequence:
+The viewer can show partial reports without overstating confidence in bottleneck
+or capacity signals.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none; consumes Phase 49 Admin read APIs.
+- Frontend UX impact: new Admin-only `/admin/performance` route and Admin tools
+  link.
+- Auth/authorization impact: uses the existing Admin route guard and Admin API
+  authorization.
+- Data privacy impact: performance rows are admin-only operational metadata;
+  local CLI artifact paths are not exposed.
+
+## Validation
+
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run test -w apps/web` (12 files, 86 tests)
+- Passed: `npm run build`
+- Passed: `git diff --check`
+- Passed: `npm test` (shared 5 files / 62 tests; web 12 files / 86 tests;
+  api 29 files / 283 tests; release 9 tests; loadtest 12 tests)
+
+## Follow-Ups
+
+- Artifact browsing/downloads remain deferred.
+- Time-series sample storage/charts remain deferred.
+- Azure runner/orchestration remains out of scope.
+
+---
+
 ## Phase 50 — CLI Performance Test Harness And Result Persistence
 
 Date:

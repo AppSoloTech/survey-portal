@@ -19,6 +19,7 @@ describe("App shell accessibility", () => {
     expect(getRouteTitle("/surveys/42/attempt")).toBe("Survey attempt");
     expect(getRouteTitle("/anonymous-surveys")).toBe("Anonymous surveys");
     expect(getRouteTitle("/anonymous-surveys/public-token")).toBe("Anonymous survey attempt");
+    expect(getRouteTitle("/admin/performance")).toBe("Performance reports");
     expect(getRouteTitle("/admin")).toBeNull();
   });
 

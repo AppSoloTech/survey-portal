@@ -1,0 +1,71 @@
+Phase 51 handoff for Claude review
+Date: 2026-06-29
+Branch: phase-51-admin-performance-viewer
+
+Scope implemented
+- Built only the read-only Admin performance report viewer from prompts/prompt_51.txt.
+- Added `/admin/performance` behind the existing Admin route guard.
+- Added Web API helpers for the Phase 49 read endpoints:
+  - `GET /api/admin/performance-runs`
+  - `GET /api/admin/performance-runs/:id`
+- Linked the viewer from the Admin tools panel.
+- Added a dense recent-runs table with pagination and a selected-run detail panel.
+- Rendered persisted status, scenario/run key, target, timing, max VUs, peak RPS,
+  p95/p99, error rate, bottleneck, recommendation, config highlights, HTTP/SQL
+  metric highlights, Azure/SQL availability labels, operator caveats, and the
+  stored markdown report.
+- Covered all persisted statuses: running, completed, failed, aborted.
+- Missing metrics render as "Unavailable" rather than zero.
+- Local CLI artifact paths are intentionally not shown.
+
+Explicitly not implemented
+- No browser run/stop/schedule/delete controls.
+- No CLI harness changes.
+- No Admin UI artifact browser/download controls.
+- No Azure runner resources, Azure orchestration, or app-process test execution.
+- No new API or database migration.
+
+Files changed
+- `apps/web/src/api/admin.ts`
+- `apps/web/src/App.tsx`
+- `apps/web/src/App.test.ts`
+- `apps/web/src/pages/admin/AdminPerformancePage.tsx`
+- `apps/web/src/pages/admin/AdminPerformancePage.test.ts`
+- `apps/web/src/pages/admin/AdminSurveysOverview.tsx`
+- `apps/web/src/styles.css`
+- `markdown/releases/unreleased.md`
+- `markdown/ADMIN_DEMO_GUIDE.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+
+Review focus
+- Confirm the viewer does not expose any browser-side ability to start, stop,
+  schedule, delete, or orchestrate performance tests.
+- Confirm local report artifact paths/downloads remain out of the Admin UI.
+- Confirm unavailable Azure/SQL metrics are clearly labeled and not displayed as
+  zero-value readings.
+- Confirm responsive behavior of the list/detail layout is acceptable at
+  375/768/1280px. Automated tests cover helper logic and source-level scope
+  guards; a live browser visual pass is still valuable.
+- Confirm the selected-run loading behavior is acceptable: the page auto-selects
+  the first run from the current list when no selection exists or when
+  pagination moves the prior selection out of view, and operators can select any
+  visible run for detail.
+
+Validation run
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run test -w apps/web` (12 files, 86 tests)
+- Passed: `npm run build`
+- Passed: `git diff --check`
+- Passed: `npm test`
+  - shared: 5 files, 62 tests
+  - web: 12 files, 86 tests
+  - api: 29 files, 283 tests
+  - release: 9 tests
+  - loadtest: 12 tests
+
+Operational notes
+- Hosted environments still must run `npm run db:migrate:hosted` before Phase 50
+  CLI performance test runs can persist hosted results.
+- Phase 51 only consumes rows already persisted by the Phase 50 operator CLI.
