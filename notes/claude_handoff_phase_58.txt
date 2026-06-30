@@ -1,0 +1,89 @@
+Phase 58 - Glossary Search Result To Entry Workflow
+
+Prompt:
+prompts/prompt_58.txt
+
+Branch:
+phase-58-glossary-search-result-entry-workflow
+
+Implementation summary:
+- Replaced the Phase 57 disabled "Add entry unavailable" placeholder with a
+  deliberate "Start entry from search" action on question-search result cards.
+- The result action uses the current trimmed search query as the editable
+  prefilled create-form canonical term.
+- The result action does not create a Glossary entry. It switches to the
+  Entries tab, scrolls to the existing create form, and focuses the definition
+  textarea so the Admin can review/edit the term, use dictionary suggestions,
+  and save through the existing create flow.
+- Added confirmation before replacing non-empty unsaved create-form values with
+  a selected search candidate.
+- Added client-side duplicate candidate detection against loaded Glossary
+  canonical terms and aliases using trim + case-insensitive comparison.
+- Duplicate candidates are communicated via status/toast messaging and are not
+  prefilled from search. The create submit button is also disabled while the
+  create-form canonical term matches a loaded canonical term or alias.
+- Added temporary source context near the create form with candidate,
+  assessment, page/question location, and highlighted question text.
+- The source context explicitly states it is informational only and is not saved
+  with the entry. It is stored only in React state and cleared on successful
+  create or reset.
+- Preserved dictionary lookup behavior by reusing the existing create form and
+  lookup controls after prefill.
+- Preserved Phase 57 search behavior: short-query guard, debounce,
+  AbortController, request-id stale response guard, and Phase 56 offset-based
+  highlighting are unchanged.
+- Updated focused web tests for duplicate helpers, unsaved-form detection,
+  source guardrails, deliberate result action wiring, existing create endpoint
+  usage, and no persisted source-reference wiring.
+- Updated unreleased notes and PHASE_LOG.
+
+Confirmed scope:
+- Current search query is the candidate term for Phase 58.
+- Arbitrary text selection inside a result card is not implemented.
+- Entries are not created automatically.
+- Source assessment/page/question references are not persisted.
+- Phases 54/55 remain paused.
+
+Files most worth reviewing:
+- apps/web/src/pages/admin/AdminGlossaryPage.tsx
+- apps/web/src/pages/admin/AdminGlossaryPage.test.ts
+- apps/web/src/styles.css
+- markdown/releases/unreleased.md
+- markdown/PHASE_LOG.md
+
+Review focus requested:
+- Search result action only prefills the existing create-entry flow and never
+  calls create directly.
+- Candidate term comes from the current search query, not result-card text
+  selection or recomputed highlights.
+- Duplicate detection checks loaded canonical terms and aliases without
+  replacing server-side duplicate enforcement.
+- Unsaved create-form values are not overwritten without confirmation.
+- Temporary source context is visible near the create form and is not persisted
+  in API payloads, schema, or saved entry metadata.
+- Dictionary lookup remains usable after prefill.
+- Phase 57 search guards and Phase 56 offset-based highlighting were not
+  regressed.
+
+Validation run:
+- npm run test -w apps/web -- src/pages/admin/AdminGlossaryPage.test.ts src/api/glossary.test.ts
+- npx tsc --noEmit -p apps/web/tsconfig.json
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- git diff --check
+
+Validation notes:
+- Passed: all commands above.
+- npm run build emitted the existing Vite large chunk warning.
+- The first sandboxed npm test run failed when API test setup was blocked from
+  connecting to local PostgreSQL at 127.0.0.1:5432. The same npm test command
+  passed after approved local PostgreSQL access.
+- Manual browser checks remain pending for the human browser pass:
+  search-to-entry prefill/save, unsaved-form confirmation, duplicate warning,
+  rapid typing/deleting stale-result behavior, keyboard tab/action/focus
+  behavior, and participant inline rendering after saved term if practical.
+
+Claude review output target:
+notes/claude_review_phase_58.txt

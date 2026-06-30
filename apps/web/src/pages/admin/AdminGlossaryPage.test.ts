@@ -3,10 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  findDuplicateGlossaryMatch,
+  formatGlossaryDuplicateMessage,
   formatQuestionSearchLiveMessage,
+  hasUnsavedGlossaryFormValues,
   splitQuestionSearchMatch,
   type QuestionSearchState
 } from "./AdminGlossaryPage.js";
+import { emptyGlossaryForm } from "./glossaryForm.js";
 
 const source = readFileSync(new URL("./AdminGlossaryPage.tsx", import.meta.url), "utf8");
 
@@ -73,6 +77,58 @@ describe("AdminGlossaryPage question search helpers", () => {
       )
     ).toBe("1 matching question found.");
   });
+
+  it("detects duplicate search candidates against canonical terms and aliases", () => {
+    const entries = [
+      glossaryEntry({
+        aliases: [
+          { isCanonical: true, matchText: "Risk" },
+          { isCanonical: false, matchText: "Exposure" }
+        ],
+        canonicalTerm: "Risk",
+        id: 1
+      })
+    ];
+
+    expect(findDuplicateGlossaryMatch(entries, " risk ")).toMatchObject({
+      canonicalTerm: "Risk",
+      entryId: 1,
+      isCanonical: true,
+      matchText: "Risk"
+    });
+    expect(findDuplicateGlossaryMatch(entries, "EXPOSURE")).toMatchObject({
+      canonicalTerm: "Risk",
+      entryId: 1,
+      isCanonical: false,
+      matchText: "Exposure"
+    });
+    expect(findDuplicateGlossaryMatch(entries, "controls")).toBeNull();
+  });
+
+  it("formats duplicate messages and detects unsaved create-form values", () => {
+    expect(
+      formatGlossaryDuplicateMessage(" exposure ", {
+        canonicalTerm: "Risk",
+        entryId: 1,
+        isCanonical: false,
+        matchText: "Exposure"
+      })
+    ).toBe('"exposure" already exists as the alias "Exposure" on "Risk".');
+
+    expect(hasUnsavedGlossaryFormValues(emptyGlossaryForm)).toBe(false);
+    expect(
+      hasUnsavedGlossaryFormValues({
+        ...emptyGlossaryForm,
+        canonicalTerm: "Risk"
+      })
+    ).toBe(true);
+    expect(
+      hasUnsavedGlossaryFormValues({
+        ...emptyGlossaryForm,
+        aliasesText: "Hazard"
+      })
+    ).toBe(true);
+  });
 });
 
 describe("AdminGlossaryPage question search UI structure", () => {
@@ -96,13 +152,58 @@ describe("AdminGlossaryPage question search UI structure", () => {
     expect(source).toContain("searchGlossaryQuestions(trimmedQuery");
   });
 
-  it("renders loading, empty, error, result, highlight, and non-creating action states", () => {
+  it("renders loading, empty, error, result, highlight, and deliberate entry-start states", () => {
     expect(source).toContain("Searching question text...");
     expect(source).toContain("No matching questions");
     expect(source).toContain('className="status error"');
     expect(source).toContain("<QuestionSearchResults");
     expect(source).toContain("<mark>{parts.highlighted}</mark>");
-    expect(source).toContain("Add entry unavailable");
-    expect(source).toContain("disabled");
+    expect(source).toContain("Start entry from search");
+    expect(source).toContain("handleStartEntryFromQuestionSearch");
+    expect(source).toContain("createGlossaryEntry(toGlossaryInput(createForm))");
+    expect(source).not.toContain("Add entry unavailable");
+  });
+
+  it("guards the search-to-entry workflow without saving source references", () => {
+    expect(source).toContain("questionSearchInput.trim()");
+    expect(source).toContain("findDuplicateGlossaryMatch(entries, candidateTerm)");
+    expect(source).toContain("Replace the unsaved create-entry form");
+    expect(source).toContain("setSelectedQuestionSource({ candidateTerm, result })");
+    expect(source).toContain("setActiveTab(\"entries\")");
+    expect(source).toContain("createDefinitionRef.current?.focus()");
+    expect(source).toContain("Informational only. This question reference is not saved");
+    expect(source).not.toContain("sourceQuestion");
   });
 });
+
+function glossaryEntry({
+  aliases,
+  canonicalTerm,
+  id
+}: {
+  aliases: Array<{ isCanonical: boolean; matchText: string }>;
+  canonicalTerm: string;
+  id: number;
+}) {
+  return {
+    aliases: aliases.map((alias, index) => ({
+      createdAt: "2026-06-30T00:00:00.000Z",
+      displayOrder: index + 1,
+      glossaryEntryId: id,
+      id: id * 10 + index,
+      isCanonical: alias.isCanonical,
+      matchText: alias.matchText,
+      updatedAt: "2026-06-30T00:00:00.000Z"
+    })),
+    canonicalTerm,
+    createdAt: "2026-06-30T00:00:00.000Z",
+    definition: `${canonicalTerm} definition`,
+    definitionSource: "manual" as const,
+    id,
+    isEnabled: true,
+    sourceLookupAt: null,
+    sourceProvider: null,
+    sourceReference: null,
+    updatedAt: "2026-06-30T00:00:00.000Z"
+  };
+}

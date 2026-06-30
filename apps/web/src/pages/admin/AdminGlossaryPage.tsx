@@ -11,7 +11,8 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent
+  type KeyboardEvent,
+  type Ref
 } from "react";
 
 import {
@@ -59,6 +60,23 @@ export interface QuestionSearchState {
   results: AdminGlossaryQuestionSearchResult[];
 }
 
+interface QuestionSearchActionMessage {
+  text: string;
+  variant: "error" | "success";
+}
+
+interface SelectedQuestionSourceContext {
+  candidateTerm: string;
+  result: AdminGlossaryQuestionSearchResult;
+}
+
+export interface GlossaryDuplicateMatch {
+  canonicalTerm: string;
+  entryId: number;
+  isCanonical: boolean;
+  matchText: string;
+}
+
 const emptyQuestionSearchState: QuestionSearchState = {
   error: null,
   isLoading: false,
@@ -82,11 +100,21 @@ export function AdminGlossaryPage() {
   const [questionSearchInput, setQuestionSearchInput] = useState("");
   const [questionSearch, setQuestionSearch] =
     useState<QuestionSearchState>(emptyQuestionSearchState);
+  const [questionSearchActionMessage, setQuestionSearchActionMessage] =
+    useState<QuestionSearchActionMessage | null>(null);
+  const [selectedQuestionSource, setSelectedQuestionSource] =
+    useState<SelectedQuestionSourceContext | null>(null);
+  const createFormRef = useRef<HTMLFormElement>(null);
+  const createDefinitionRef = useRef<HTMLTextAreaElement>(null);
   const questionSearchRequestId = useRef(0);
 
   const activeEntries = useMemo(
     () => entries.filter((entry) => entry.isEnabled),
     [entries]
+  );
+  const createDuplicateMatch = useMemo(
+    () => findDuplicateGlossaryMatch(entries, createForm.canonicalTerm),
+    [createForm.canonicalTerm, entries]
   );
 
   useEffect(() => {
@@ -205,6 +233,7 @@ export function AdminGlossaryPage() {
       await createGlossaryEntry(toGlossaryInput(createForm));
       setCreateForm(emptyGlossaryForm);
       setCreateLookup(emptyLookupState);
+      setSelectedQuestionSource(null);
       await refreshGlossary();
     }, "Glossary entry added");
   }
@@ -247,6 +276,58 @@ export function AdminGlossaryPage() {
     setEditingEntryId(entry.id);
     setEditForm(toFormState(entry));
     setEditLookup(emptyLookupState);
+  }
+
+  function resetCreateEntry() {
+    setCreateForm(emptyGlossaryForm);
+    setCreateLookup(emptyLookupState);
+    setSelectedQuestionSource(null);
+  }
+
+  function handleStartEntryFromQuestionSearch(result: AdminGlossaryQuestionSearchResult) {
+    const candidateTerm = questionSearchInput.trim();
+
+    if (candidateTerm.length < questionSearch.minQueryLength) {
+      const message = `Enter at least ${questionSearch.minQueryLength} characters before starting a Glossary entry.`;
+      setQuestionSearchActionMessage({ text: message, variant: "error" });
+      toast.error(message);
+      return;
+    }
+
+    const duplicateMatch = findDuplicateGlossaryMatch(entries, candidateTerm);
+
+    if (duplicateMatch) {
+      const message = formatGlossaryDuplicateMessage(candidateTerm, duplicateMatch);
+      setQuestionSearchActionMessage({ text: message, variant: "error" });
+      toast.error(message);
+      return;
+    }
+
+    if (
+      hasUnsavedGlossaryFormValues(createForm) &&
+      !confirmAdminAction(
+        "Replace the unsaved create-entry form with this search candidate?"
+      )
+    ) {
+      return;
+    }
+
+    setCreateForm({
+      ...emptyGlossaryForm,
+      canonicalTerm: candidateTerm
+    });
+    setCreateLookup(emptyLookupState);
+    setSelectedQuestionSource({ candidateTerm, result });
+    setQuestionSearchActionMessage({
+      text: `"${candidateTerm}" is ready to review in the create-entry form.`,
+      variant: "success"
+    });
+    setActiveTab("entries");
+    toast.success("Glossary entry draft started");
+    window.requestAnimationFrame(() => {
+      createFormRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+      createDefinitionRef.current?.focus();
+    });
   }
 
   function selectTab(nextTab: GlossaryAdminTab) {
@@ -355,10 +436,15 @@ export function AdminGlossaryPage() {
         <div className="glossary-layout">
           <form
             className="builder-form compact-builder-form glossary-form"
+            ref={createFormRef}
             onSubmit={handleCreateEntry}
           >
             <h3>Create entry</h3>
+            {selectedQuestionSource ? (
+              <QuestionSourceContextPanel source={selectedQuestionSource} />
+            ) : null}
             <GlossaryFields
+              definitionRef={createDefinitionRef}
               form={createForm}
               isSubmitting={isSubmitting}
               lookup={createLookup}
@@ -371,13 +457,26 @@ export function AdminGlossaryPage() {
               }
               onLookup={() => void handleDictionaryLookup(createForm, setCreateLookup)}
             />
+            {createDuplicateMatch ? (
+              <p className="status error">
+                {formatGlossaryDuplicateMessage(createForm.canonicalTerm, createDuplicateMatch)}
+              </p>
+            ) : null}
             <div className="glossary-form-actions">
               <button
                 className="button-link compact-button primary-button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || Boolean(createDuplicateMatch)}
                 type="submit"
               >
                 Add entry
+              </button>
+              <button
+                className="button-link compact-button secondary-button"
+                disabled={isSubmitting}
+                onClick={resetCreateEntry}
+                type="button"
+              >
+                Reset
               </button>
             </div>
           </form>
@@ -508,9 +607,14 @@ export function AdminGlossaryPage() {
         role="tabpanel"
       >
         <QuestionSearchPanel
+          actionMessage={questionSearchActionMessage}
           query={questionSearchInput}
           search={questionSearch}
-          onQueryChange={setQuestionSearchInput}
+          onStartEntry={handleStartEntryFromQuestionSearch}
+          onQueryChange={(nextQuery) => {
+            setQuestionSearchInput(nextQuery);
+            setQuestionSearchActionMessage(null);
+          }}
         />
       </div>
     </section>
@@ -518,11 +622,15 @@ export function AdminGlossaryPage() {
 }
 
 function QuestionSearchPanel({
+  actionMessage,
   onQueryChange,
+  onStartEntry,
   query,
   search
 }: {
+  actionMessage: QuestionSearchActionMessage | null;
   onQueryChange: (nextQuery: string) => void;
+  onStartEntry: (result: AdminGlossaryQuestionSearchResult) => void;
   query: string;
   search: QuestionSearchState;
 }) {
@@ -549,6 +657,10 @@ function QuestionSearchPanel({
       <p className="visually-hidden" role="status" aria-live="polite">
         {statusMessage}
       </p>
+
+      {actionMessage ? (
+        <p className={`status ${actionMessage.variant}`}>{actionMessage.text}</p>
+      ) : null}
 
       <div className="glossary-question-search-results" aria-label="Question search results">
         {trimmedQuery.length < search.minQueryLength ? (
@@ -577,14 +689,23 @@ function QuestionSearchPanel({
         ) : null}
 
         {search.results.length > 0 ? (
-          <QuestionSearchResults results={search.results} />
+          <QuestionSearchResults
+            results={search.results}
+            onStartEntry={onStartEntry}
+          />
         ) : null}
       </div>
     </section>
   );
 }
 
-function QuestionSearchResults({ results }: { results: AdminGlossaryQuestionSearchResult[] }) {
+function QuestionSearchResults({
+  onStartEntry,
+  results
+}: {
+  onStartEntry: (result: AdminGlossaryQuestionSearchResult) => void;
+  results: AdminGlossaryQuestionSearchResult[];
+}) {
   return (
     <div className="glossary-question-result-list">
       {results.map((result) => (
@@ -613,16 +734,60 @@ function QuestionSearchResults({ results }: { results: AdminGlossaryQuestionSear
 
           <div className="glossary-question-result-actions">
             <button
-              className="button-link compact-button secondary-button"
-              disabled
+              className="button-link compact-button primary-button"
+              onClick={() => onStartEntry(result)}
               type="button"
             >
-              Add entry unavailable
+              Start entry from search
             </button>
           </div>
         </article>
       ))}
     </div>
+  );
+}
+
+function QuestionSourceContextPanel({
+  source
+}: {
+  source: SelectedQuestionSourceContext;
+}) {
+  const { result } = source;
+
+  return (
+    <aside className="glossary-source-context" aria-label="Selected question source context">
+      <div>
+        <strong>Source context</strong>
+        <span>Informational only. This question reference is not saved with the entry.</span>
+      </div>
+      <dl>
+        <div>
+          <dt>Prefilled term</dt>
+          <dd>{source.candidateTerm}</dd>
+        </div>
+        <div>
+          <dt>Assessment</dt>
+          <dd>
+            {result.assessment.title} ({result.assessment.status})
+          </dd>
+        </div>
+        <div>
+          <dt>Location</dt>
+          <dd>
+            {result.page
+              ? `${result.page.title} - Page ${result.page.displayOrder}`
+              : "Unassigned page"}{" "}
+            - Question {result.question.displayOrder}
+          </dd>
+        </div>
+      </dl>
+      <p className="glossary-source-question">
+        <QuestionSearchHighlight
+          match={result.match}
+          questionText={result.question.questionText}
+        />
+      </p>
+    </aside>
   );
 }
 
@@ -682,6 +847,7 @@ export function formatQuestionSearchLiveMessage(
 }
 
 function GlossaryFields({
+  definitionRef,
   form,
   isSubmitting,
   lookup,
@@ -690,6 +856,7 @@ function GlossaryFields({
   onIgnoreSuggestions,
   onLookup
 }: {
+  definitionRef?: Ref<HTMLTextAreaElement>;
   form: GlossaryFormState;
   isSubmitting: boolean;
   lookup: DictionaryLookupState;
@@ -742,6 +909,7 @@ function GlossaryFields({
           disabled={isSubmitting}
           maxLength={1200}
           onChange={(event) => onChange({ ...form, definition: event.target.value })}
+          ref={definitionRef}
           required
           rows={4}
           value={form.definition}
@@ -851,6 +1019,64 @@ function clampMatchOffset(value: number, length: number): number {
   }
 
   return Math.min(Math.max(Math.trunc(value), 0), length);
+}
+
+export function findDuplicateGlossaryMatch(
+  entries: AdminGlossaryEntry[],
+  candidateTerm: string
+): GlossaryDuplicateMatch | null {
+  const normalizedCandidate = normalizeGlossaryCandidateText(candidateTerm);
+
+  if (!normalizedCandidate) {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (normalizeGlossaryCandidateText(entry.canonicalTerm) === normalizedCandidate) {
+      return {
+        canonicalTerm: entry.canonicalTerm,
+        entryId: entry.id,
+        isCanonical: true,
+        matchText: entry.canonicalTerm
+      };
+    }
+
+    const duplicateAlias = entry.aliases.find(
+      (alias) => normalizeGlossaryCandidateText(alias.matchText) === normalizedCandidate
+    );
+
+    if (duplicateAlias) {
+      return {
+        canonicalTerm: entry.canonicalTerm,
+        entryId: entry.id,
+        isCanonical: duplicateAlias.isCanonical,
+        matchText: duplicateAlias.matchText
+      };
+    }
+  }
+
+  return null;
+}
+
+export function hasUnsavedGlossaryFormValues(form: GlossaryFormState): boolean {
+  return Boolean(
+    form.canonicalTerm.trim() ||
+      form.definition.trim() ||
+      form.aliasesText.trim()
+  );
+}
+
+export function formatGlossaryDuplicateMessage(
+  candidateTerm: string,
+  duplicateMatch: GlossaryDuplicateMatch
+): string {
+  const matchKind = duplicateMatch.isCanonical ? "canonical term" : "alias";
+
+  return `"${candidateTerm.trim()}" already exists as the ${matchKind} "${duplicateMatch.matchText}" on "${duplicateMatch.canonicalTerm}".`;
+}
+
+function normalizeGlossaryCandidateText(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function getGlossaryTabId(tab: GlossaryAdminTab): string {

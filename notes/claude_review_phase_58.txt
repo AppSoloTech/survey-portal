@@ -1,0 +1,158 @@
+Phase 58 - Glossary Search Result To Entry Workflow - Claude Review
+
+Reviewer: Claude Code
+Branch: phase-58-glossary-search-result-entry-workflow
+Verdict: Approve. No correctness, scope, or data-persistence bugs found. The
+        implementation matches prompt_58 and the Phase 58 handoff, and it
+        correctly closes the search -> review -> save loop without
+        auto-creating entries or persisting source references. One product UX
+        decision (N2) is worth an explicit confirmation, and the standard
+        test-assurance note (N3) applies.
+
+Working-tree note:
+- Phase 57 is now committed (b61419e). Phase 58 is the uncommitted working
+  tree:
+    M apps/web/src/pages/admin/AdminGlossaryPage.tsx
+    M apps/web/src/pages/admin/AdminGlossaryPage.test.ts
+    M apps/web/src/styles.css
+  No backend changes (correct - Phase 58 reuses the existing Glossary CRUD and
+  the Phase 56 search API). Commit before starting any follow-up.
+
+Independent validation I ran:
+- npm run test -w apps/web -- src/pages/admin/AdminGlossaryPage.test.ts
+  src/api/glossary.test.ts  -> 2 files, 11 tests, PASS.
+- npx tsc --noEmit -p apps/web/tsconfig.json -> PASS.
+- Did not run full npm test (its API setup drops/recreates the local Postgres
+  schema). Handoff reports all gates passed.
+
+================================================================
+Verified against the requested review focus
+================================================================
+
+1. Result action only prefills; never creates directly
+   - handleStartEntryFromQuestionSearch sets the create form, switches to the
+     Entries tab, scrolls to the create form, and focuses the definition
+     textarea. It performs no API write.
+   - The only create call in the file remains
+     createGlossaryEntry(toGlossaryInput(createForm)) inside handleCreateEntry,
+     reached only by submitting the existing create form. Confirmed by reading
+     and by the test asserting createGlossaryEntry(toGlossaryInput(createForm))
+     is present and "Add entry unavailable" is gone.
+
+2. Candidate term comes from the current search query
+   - candidateTerm = questionSearchInput.trim(). It is not derived from the
+     result card text and not from recomputed highlight offsets. Matches the
+     confirmed Phase 58 scope (arbitrary in-card selection intentionally not
+     implemented).
+
+3. Duplicate detection checks canonical terms + aliases, without replacing
+   server enforcement
+   - findDuplicateGlossaryMatch normalizes with trim().toLowerCase() and
+     compares against every loaded entry's canonicalTerm and each alias
+     matchText.
+   - This normalization is IDENTICAL to the server's app-layer
+     normalizeGlossaryMatch (apps/api/src/services/validation.ts: trim() +
+     toLowerCase()) and consistent with the DB partial unique index
+     glossary_match_strings_normalized_active_unique, defined on
+     lower(btrim(match_text)) WHERE deleted_at is null
+     (database/migrations/0035_global_glossary.sql).
+   - Scope matches the index: the client checks all loaded entries (non-deleted,
+     including disabled), and the unique index also ignores only soft-deleted
+     rows. Archived (soft-deleted) terms are excluded by both sides. Consistent.
+   - Server remains the source of truth: the POST create path still maps the
+     23505 unique violation to 409 ("Glossary match string already exists"),
+     and handleCreateEntry surfaces it via runGlossaryMutation -> setError.
+   - Layered protection: duplicate candidates are not prefilled (blocked in the
+     action with a status + toast), and the create submit button is disabled
+     while createForm.canonicalTerm matches a loaded term/alias (the
+     createDuplicateMatch useMemo), with an inline error shown. The server 409
+     still covers races/stale loaded data.
+
+4. Unsaved create-form values are not overwritten without confirmation
+   - hasUnsavedGlossaryFormValues checks trimmed canonicalTerm/definition/
+     aliasesText. When true, a confirmAdminAction("Replace the unsaved
+     create-entry form ...") gates the replacement; declining aborts cleanly.
+
+5. Temporary source context is visible and never persisted
+   - selectedQuestionSource lives only in React state and is rendered by
+     QuestionSourceContextPanel with explicit copy: "Informational only. This
+     question reference is not saved with the entry." It shows candidate,
+     assessment (+status), page/question location, and the highlighted question
+     text.
+   - It is cleared on successful create (handleCreateEntry) and on reset
+     (resetCreateEntry).
+   - Persistence is structurally impossible, not just asserted: the create
+     payload is toGlossaryInput(createForm), which maps only form fields
+     (aliases, canonicalTerm, definition, definitionSource, isEnabled, and the
+     DICTIONARY sourceProvider/sourceReference/sourceLookupAt). There is no
+     question-source field in the payload, the shared input type, or the API.
+     The dictionary source fields are unrelated to the question search source.
+
+6. Dictionary lookup remains usable after prefill
+   - The same GlossaryFields/create form and lookup controls are reused. On
+     prefill, createLookup is reset to empty and the definition textarea is
+     focused (createDefinitionRef), so the Admin can immediately request a
+     suggestion or type a definition. Suggest/apply/ignore behavior is
+     unchanged.
+
+7. Phase 57 search guards and Phase 56 highlighting not regressed
+   - The debounce effect, short-query guard, AbortController, request-id stale
+     guard, and offset-based splitQuestionSearchMatch highlighting are
+     unchanged from Phase 57. Verified by reading the effect and helpers.
+
+================================================================
+Notes
+================================================================
+
+N2 (product UX, please confirm). Duplicate handling blocks rather than
+   warns-and-allows: a duplicate candidate cannot be prefilled, and a create
+   whose canonical term matches any loaded term/alias has its submit disabled.
+   prompt_58 asked to "clearly tell the Admin when the candidate already
+   exists" and to "avoid creating duplicates client-side." Blocking is a
+   defensible reading, but it is stricter than a pure warning. Consequence: an
+   Admin cannot reuse a term that currently exists only on a DISABLED entry
+   without first archiving/renaming that entry, because disabled entries still
+   reserve their match strings (by design, matching the DB index). Confirm this
+   is the intended behavior. Low impact.
+
+N3 (test assurance, house pattern). The interactive workflow - prefill, the
+   unsaved-form confirm, tab switch, scroll/focus, and the source panel - is
+   covered by source-string .toContain/.not.toContain guardrails plus the
+   pure-function unit tests (findDuplicateGlossaryMatch,
+   hasUnsavedGlossaryFormValues, splitQuestionSearchMatch,
+   formatQuestionSearchLiveMessage). No test renders the component (repo has no
+   testing-library/jsdom; this is the established convention). The
+   not.toContain("sourceQuestion") no-persistence check is weak on its own, but
+   the structural payload guarantee in item 5 makes persistence impossible
+   regardless. The pending human browser pass should exercise:
+   - start-from-search -> review -> save, then confirm the term renders inline
+     in a participant assessment,
+   - the unsaved-form confirmation (accept and cancel paths),
+   - a duplicate candidate against both a canonical term and an alias, and one
+     that exists only on a disabled entry,
+   - rapid typing/deleting to confirm Phase 57 stale-result behavior still
+     holds after the Phase 58 changes,
+   - keyboard-only: tab nav, the action button, and definition focus landing.
+
+N1 (normalization edge, negligible). Client trim() strips all Unicode
+   whitespace; DB btrim() strips only ASCII spaces. A divergence is only
+   reachable if a term contains a tab/newline, which the single-line
+   type="search" input (maxLength 500) cannot produce, and the server 409
+   backstops it anyway. No action needed.
+
+N4 (minor, additive). A new "Reset" button was added to the create form
+   (clears the form and source context). Helpful and in-spirit; just noting it
+   as a small UI addition beyond the strict Phase 58 result-action scope.
+
+================================================================
+Carry-forward
+================================================================
+
+- The earlier open product question - candidate term = current query vs.
+  arbitrary in-card selection - is now resolved and locked in the handoff
+  ("Confirmed scope: current search query is the candidate term"). Arbitrary
+  selection and persisted source references remain available as future
+  follow-ups if the client wants them.
+- Commit the Phase 58 working tree; the three-phase Glossary question-search
+  feature (56 API, 57 UI, 58 workflow) is then complete on this branch.
+- Run the whole-chain manual browser pass (N3) before release.

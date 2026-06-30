@@ -6,6 +6,184 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 58 — Glossary Search Result To Entry Workflow
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; Claude review approved
+
+Prompt:
+`prompts/prompt_58.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Client/planning intake:
+  `notes/client_review_2026-06-30_glossary_question_search.txt`
+- Codex handoff: `notes/claude_handoff_phase_58.txt`
+- Claude review: `notes/claude_review_phase_58.txt`
+
+## Goals
+
+- Replace the Phase 57 disabled question-search result placeholder with a
+  deliberate action that starts the existing Glossary create workflow.
+- Use the current search query as the editable prefilled canonical term.
+- Keep Admin review, definition entry, dictionary suggestions, and save under
+  the existing Glossary create path.
+- Detect duplicate candidates against loaded Glossary canonical terms and
+  aliases before prefill/save where practical.
+- Show temporary assessment/page/question context without persisting source
+  references.
+
+## Built
+
+- Added a `Start entry from search` action to question-search result cards.
+- The action trims the current search input and uses that query as the
+  create-form canonical term.
+- The action switches to the Entries tab, scrolls to the create form, and
+  focuses the definition textarea so the Admin can review/edit the term and
+  define it before saving.
+- Added a confirmation prompt before replacing non-empty unsaved create-form
+  values with a selected search candidate.
+- Added client-side duplicate detection against the loaded Glossary entries'
+  canonical terms and aliases using trim + case-insensitive comparison.
+- Added duplicate feedback and disabled the create submit button while the
+  create-form canonical term matches a loaded term or alias. Server-side
+  duplicate enforcement remains the source of truth.
+- Added a temporary source context panel near the create form with the
+  assessment, page, question, selected candidate, and highlighted question
+  text. The panel explicitly says the source question reference is not saved.
+- Added create-form reset handling and successful-create cleanup for the
+  temporary source context and dictionary lookup state.
+- Preserved Phase 57 debounce/abort/request-id search behavior and Phase 56
+  offset-based highlighting.
+- Added focused helper/source guardrail tests for duplicate detection, unsaved
+  form detection, the deliberate result action, existing create endpoint usage,
+  and no persisted source-reference wiring.
+- Updated `markdown/releases/unreleased.md`.
+
+## Important Decisions
+
+### Use Current Query As Candidate
+
+Decision:
+Phase 58 uses the current trimmed search query as the editable prefilled
+Glossary canonical term.
+
+Reason:
+The human confirmed this scope for Phase 58 on 2026-06-30.
+
+Consequence:
+Selecting arbitrary text inside a result card remains deferred. Admins can edit
+the prefilled query in the create form before saving.
+
+### Keep Source Context Temporary
+
+Decision:
+Selected result context is stored only in React state and cleared after
+successful create or reset.
+
+Reason:
+The first workflow should help Admins remember where a candidate came from
+without introducing schema/API changes or long-term source references.
+
+Consequence:
+No database migration, backend route, or create payload field was added for
+source assessment/page/question ids.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none; saves still use the existing Glossary create
+  endpoint.
+- Frontend UX impact: `/admin/glossary` question-search results can now start a
+  reviewed create-entry draft.
+- Auth/authorization impact: no new auth model; all affected UI remains inside
+  the Admin Glossary page.
+- Participant-facing impact: no direct rendering change; newly saved entries
+  still flow through existing participant-safe Glossary behavior.
+- Hidden-tag/reporting/response-data impact: none.
+
+## Validation
+
+- Passed: `npm run test -w apps/web -- src/pages/admin/AdminGlossaryPage.test.ts src/api/glossary.test.ts`
+- Passed: `npx tsc --noEmit -p apps/web/tsconfig.json`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test`
+- Passed: `git diff --check`
+
+Validation notes:
+- `npm run build` emitted the existing Vite large chunk warning.
+- The first sandboxed `npm test` run failed when the API test setup was blocked
+  from connecting to local PostgreSQL at `127.0.0.1:5432`. The same `npm test`
+  command passed after approved local PostgreSQL access.
+- Manual browser checks remain pending for the human browser pass.
+
+## Follow-Ups
+
+- Arbitrary word/phrase selection inside a result question remains deferred.
+- Persisted source assessment/page/question references remain deferred.
+- Automatic entry creation remains out of scope.
+- Richer fuzzy or semantic duplicate detection remains deferred.
+- Product UX confirmation to keep visible: Claude review noted that Phase 58
+  blocks duplicate candidates rather than warning-and-allowing, including terms
+  that exist only on disabled entries because disabled entries still reserve
+  match strings under the existing DB uniqueness model.
+- Phases 54/55 remain paused.
+- Manual browser pass should exercise search-to-entry prefill/save,
+  unsaved-form replacement confirmation, duplicate candidate warning, rapid
+  typing/deleting stale-result behavior, keyboard tab/result action/focus
+  behavior, and participant inline rendering after a saved term if practical.
+
+## Claude Review Notes
+
+Source:
+`notes/claude_review_phase_58.txt`
+
+Status:
+Approved. No correctness, scope, or data-persistence bugs found.
+
+Critical issues:
+None.
+
+Suggested improvements:
+- Confirm the strict duplicate UX is intended: duplicates are blocked rather
+  than warning-and-allowed, and disabled entries still reserve match strings.
+- Keep the standard manual browser pass because interactive prefill,
+  confirmation, tab switch, scroll/focus, and source-panel behavior are covered
+  by source-level guardrails and pure helper tests rather than render-level
+  component tests.
+- Normalization edge noted as negligible: client `trim()` strips more Unicode
+  whitespace than the DB `btrim()` index, with server uniqueness still
+  backstopping races or unusual input.
+
+Accepted fixes:
+None needed.
+
+Deferred findings:
+- Render-level automated coverage remains deferred until the web test harness
+  adopts DOM/component testing.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes; no new backend/schema surface was
+  introduced.
+- Security review complete: Yes; Claude review approved and implementation
+  stays on existing Admin-only UI and existing server-side create validation.
+- Review findings addressed or deferred: Yes; non-blocking UX/test-assurance
+  notes are documented above.
+- Manual testing complete: Not yet; browser pass documented as pending.
+- Ready to commit: Ready after manual browser pass.
+
+---
+
 ## Phase 57 — Glossary Tabs And Question Search UI
 
 Date:
