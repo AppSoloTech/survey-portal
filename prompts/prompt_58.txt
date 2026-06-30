@@ -13,9 +13,10 @@ notes/client_review_2026-06-30_glossary_question_search.txt
 ```
 
 This phase completes the first question-search workflow after the
-candidate-term behavior is confirmed. The current draft pre-fills the existing
-Glossary entry form from the search query tied to a selected result. It should
-save through existing Glossary CRUD only.
+candidate-term behavior is confirmed. The current draft replaces the Phase 57
+disabled `Add entry unavailable` result action with a deliberate prefill action
+that uses the search query tied to a selected result. It should save through
+existing Glossary CRUD only.
 
 ## Role Note
 
@@ -41,7 +42,11 @@ Read before implementation:
 * `markdown/CLIENT_REVIEW_INTAKE.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
-* Phase 56 and Phase 57 implementation and handoff artifacts.
+* Phase 56 and Phase 57 implementation, handoff, and review artifacts:
+  * `notes/claude_handoff_phase_56.txt`
+  * `notes/claude_review_phase_56.txt`
+  * `notes/claude_handoff_phase_57.txt`
+  * `notes/claude_review_phase_57.txt`
 * Prior glossary prompts and artifacts:
   * `prompts/prompt_39.txt`
   * `prompts/prompt_40.txt`
@@ -59,8 +64,21 @@ Read before implementation:
   * `apps/web/src/pages/admin/AdminGlossaryPage.tsx`
   * `apps/web/src/api/glossary.ts`
   * `apps/web/src/components/InlineGlossaryText.tsx`
+  * `apps/web/src/api/glossary.test.ts`
+  * `apps/web/src/pages/admin/AdminGlossaryPage.test.ts`
   * `apps/api/test/glossary.test.ts`
   * `packages/shared/test/glossaryText.test.ts`
+
+Before implementation:
+
+* Confirm Phase 57 is committed or otherwise intentionally accepted as the
+  base for Phase 58.
+* Confirm or complete the Phase 57 manual browser pass for rapid typing,
+  deleting below two characters while a request is in flight, tab state
+  preservation, and keyboard tab navigation. If not completed, keep those
+  checks in the Phase 58 manual validation list.
+* Confirm the candidate-term behavior: current search query vs arbitrary text
+  selection inside a result question.
 
 ---
 
@@ -114,7 +132,8 @@ Ask for clarification only when a safe implementation cannot be inferred.
 
 Implement:
 
-* A result action on the Phase 57 question-search result UI.
+* A result action on the Phase 57 question-search result UI, replacing the
+  disabled `Add entry unavailable` placeholder.
 * On action:
   * use the current search query, trimmed, as the prefilled `canonicalTerm`
   * switch or scroll to the existing create-entry workflow
@@ -126,6 +145,9 @@ Implement:
 * Duplicate detection before prefill or save:
   * compare the candidate query against loaded Glossary canonical terms and
     aliases using the existing normalization behavior where available
+  * if no reusable shared normalization helper exists, use the same practical
+    client-side normalization as existing glossary validation expects: trim and
+    compare case-insensitively
   * clearly tell the Admin when the candidate already exists
   * avoid creating duplicates client-side, while preserving server-side
     duplicate enforcement as the source of truth
@@ -136,6 +158,11 @@ Implement:
     reference
   * clear the context after a successful save, cancel, or reset
 * Preserve dictionary lookup behavior from Phase 40 after prefill.
+* Preserve Phase 57 search behavior after prefill:
+  * no broad searches for blank or one-character input
+  * debounce, abort, and stale-response guards remain intact
+  * offset-based result highlighting still uses the Phase 56 server offsets
+    against the original `question.questionText`
 * Save through the existing Glossary create endpoint and existing validation.
 * If the create form already contains unsaved non-empty values, ask for
   confirmation before replacing them with the selected search candidate.
@@ -168,6 +195,10 @@ Do not implement:
   preventing duplicate match strings.
 * Source context should help the Admin remember where the candidate came from,
   but it should not become permanent data yet.
+* The current web test stack does not render React components or advance fake
+  timers. If that remains true, use focused pure helper tests and source-level
+  guardrails, and make the manual browser pass explicit for the interactive
+  search-to-entry behavior.
 
 ## Open Questions
 
@@ -239,6 +270,8 @@ Add or update automated tests where practical for:
 * source context display and clearing
 * dictionary lookup remaining available after prefill
 * successful save still using existing Glossary create behavior
+* Phase 57 search behavior still guarded where practical: short-query no-call,
+  stale-response protection, and offset-based highlighting
 
 Manual checks to perform or document:
 
@@ -248,6 +281,10 @@ Manual checks to perform or document:
   confirmation behavior.
 * Admin attempts to prefill an existing canonical term or alias and sees the
   duplicate warning.
+* Admin rapidly types and deletes in the search box after Phase 58 changes and
+  confirms stale results do not replace current results.
+* Admin uses keyboard-only tab navigation and the result prefill action, then
+  confirms focus lands on the intended create-form field.
 * Saved term renders through the existing participant Glossary behavior in a
   normal assessment flow, if practical for the branch.
 
