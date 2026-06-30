@@ -3,7 +3,19 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { setDictionaryLookupOverrideForTests } from "../src/services/dictionary.js";
-import { registerAdmin, registerUser, uniqueEmail } from "./helpers/factories.js";
+import {
+  addOption,
+  addPage,
+  addQuestion,
+  addTag,
+  createDraftSurvey,
+  deleteSurvey,
+  findQuestion,
+  registerAdmin,
+  registerUser,
+  setSurveyStatus,
+  uniqueEmail
+} from "./helpers/factories.js";
 
 const app = createApp();
 
@@ -57,6 +69,10 @@ describe("admin glossary", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("Authentication required");
+
+    const searchResponse = await request(app).get("/api/admin/glossary/question-search?q=risk");
+    expect(searchResponse.status).toBe(401);
+    expect(searchResponse.body.error).toBe("Authentication required");
   });
 
   it("rejects non-admin access to glossary management routes", async () => {
@@ -92,6 +108,217 @@ describe("admin glossary", () => {
       .set("Cookie", user.cookie)
       .send({ term: "Risk" });
     expect(lookupResponse.status).toBe(403);
+
+    const questionSearchResponse = await request(app)
+      .get("/api/admin/glossary/question-search?q=risk")
+      .set("Cookie", user.cookie);
+    expect(questionSearchResponse.status).toBe(403);
+  });
+
+  it("returns empty question-search results for blank or short queries", async () => {
+    const admin = await registerAdmin(app);
+    const survey = await createDraftSurvey(app, admin, "Short query assessment");
+    await addQuestion(app, admin, survey.id, {
+      pageId: survey.pages[0].id,
+      questionText: "Describe risk controls"
+    });
+
+    const blankResponse = await request(app)
+      .get("/api/admin/glossary/question-search?q=%20%20")
+      .set("Cookie", admin.cookie);
+    expect(blankResponse.status).toBe(200);
+    expect(blankResponse.body).toEqual({
+      limit: 20,
+      minQueryLength: 2,
+      query: "",
+      results: []
+    });
+
+    const shortResponse = await request(app)
+      .get("/api/admin/glossary/question-search?q=r")
+      .set("Cookie", admin.cookie);
+    expect(shortResponse.status).toBe(200);
+    expect(shortResponse.body).toEqual({
+      limit: 20,
+      minQueryLength: 2,
+      query: "r",
+      results: []
+    });
+  });
+
+  it("validates and caps question-search limits", async () => {
+    const admin = await registerAdmin(app);
+
+    const invalidResponse = await request(app)
+      .get("/api/admin/glossary/question-search?q=risk&limit=bad")
+      .set("Cookie", admin.cookie);
+    expect(invalidResponse.status).toBe(400);
+    expect(invalidResponse.body.error).toBe("limit must be a positive integer");
+
+    const cappedResponse = await request(app)
+      .get("/api/admin/glossary/question-search?q=risk&limit=500")
+      .set("Cookie", admin.cookie);
+    expect(cappedResponse.status).toBe(200);
+    expect(cappedResponse.body).toMatchObject({
+      limit: 50,
+      query: "risk",
+      results: []
+    });
+  });
+
+  it("searches draft and published question text while excluding retired and soft-deleted assessments", async () => {
+    const admin = await registerAdmin(app);
+    const draftSurvey = await createDraftSurvey(app, admin, "Draft Fire Assessment");
+    await addQuestion(app, admin, draftSurvey.id, {
+      pageId: draftSurvey.pages[0].id,
+      questionText: "Inspect fire extinguisher monthly"
+    });
+
+    let publishedSurvey = await createDraftSurvey(app, admin, "Published Fire Assessment");
+    publishedSurvey = await addQuestion(app, admin, publishedSurvey.id, {
+      pageId: publishedSurvey.pages[0].id,
+      questionText: "Fire drill checklist"
+    });
+    await setSurveyStatus(app, admin, publishedSurvey.id, "published");
+
+    let retiredSurvey = await createDraftSurvey(app, admin, "Retired Fire Assessment");
+    retiredSurvey = await addQuestion(app, admin, retiredSurvey.id, {
+      pageId: retiredSurvey.pages[0].id,
+      questionText: "Fire retired question"
+    });
+    await setSurveyStatus(app, admin, retiredSurvey.id, "retired");
+
+    let deletedSurvey = await createDraftSurvey(app, admin, "Deleted Fire Assessment");
+    deletedSurvey = await addQuestion(app, admin, deletedSurvey.id, {
+      pageId: deletedSurvey.pages[0].id,
+      questionText: "Fire deleted question"
+    });
+    await deleteSurvey(app, admin, deletedSurvey.id);
+
+    const response = await request(app)
+      .get("/api/admin/glossary/question-search?q=%20fire%20")
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.query).toBe("fire");
+    expect(response.body.results.map((result: { assessment: { title: string } }) => result.assessment.title))
+      .toEqual(["Published Fire Assessment", "Draft Fire Assessment"]);
+    expect(response.body.results.map((result: { assessment: { status: string } }) => result.assessment.status))
+      .toEqual(["published", "draft"]);
+  });
+
+  it("returns question-search context, required offsets, and no hidden metadata", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Shape Assessment");
+    survey = await addQuestion(app, admin, survey.id, {
+      pageId: survey.pages[0].id,
+      questionText: "Describe risk controls",
+      questionType: "single_select"
+    });
+    const question = findQuestion(survey, "Describe risk controls");
+    survey = await addOption(app, admin, survey.id, question.id, "Yes");
+    const option = findQuestion(survey, "Describe risk controls").answerOptions[0];
+    await addTag(app, admin, survey.id, question.id, option.id, "hidden", "internal");
+
+    const response = await request(app)
+      .get("/api/admin/glossary/question-search?q=RISK")
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.results).toHaveLength(1);
+    expect(response.body.results[0]).toEqual({
+      assessment: {
+        id: survey.id,
+        status: "draft",
+        title: "Shape Assessment"
+      },
+      match: {
+        end: 13,
+        start: 9
+      },
+      page: {
+        displayOrder: 1,
+        id: survey.pages[0].id,
+        title: survey.pages[0].title
+      },
+      question: {
+        displayOrder: 1,
+        id: question.id,
+        questionText: "Describe risk controls"
+      }
+    });
+    expect(response.body.results[0]).not.toHaveProperty("answerOptions");
+    expect(response.body.results[0]).not.toHaveProperty("answerTags");
+    expect(response.body.results[0]).not.toHaveProperty("responses");
+    expect(response.body.results[0]).not.toHaveProperty("sourceProvider");
+  });
+
+  it("orders question-search results deterministically", async () => {
+    const admin = await registerAdmin(app);
+
+    const laterMatchSurvey = await createDraftSurvey(app, admin, "000 Later Match Assessment");
+    await addQuestion(app, admin, laterMatchSurvey.id, {
+      pageId: laterMatchSurvey.pages[0].id,
+      questionText: "Check risk controls"
+    });
+
+    const alphaSurvey = await createDraftSurvey(app, admin, "AAA Ordering Assessment");
+    await addQuestion(app, admin, alphaSurvey.id, {
+      pageId: alphaSurvey.pages[0].id,
+      questionText: "Risk title order"
+    });
+
+    let pageSurvey = await createDraftSurvey(app, admin, "Ordering Page Assessment");
+    const firstPage = pageSurvey.pages[0];
+    pageSurvey = await addPage(app, admin, pageSurvey.id, {
+      displayOrder: 2,
+      title: "Second page"
+    });
+    const secondPage = pageSurvey.pages.find((page) => page.title === "Second page");
+
+    if (!secondPage) {
+      throw new Error("Expected second page to be created");
+    }
+
+    await addQuestion(app, admin, pageSurvey.id, {
+      displayOrder: 1,
+      pageId: firstPage.id,
+      questionText: "Risk first-page first-question"
+    });
+    await addQuestion(app, admin, pageSurvey.id, {
+      displayOrder: 2,
+      pageId: firstPage.id,
+      questionText: "Risk first-page second-question"
+    });
+    await addQuestion(app, admin, pageSurvey.id, {
+      displayOrder: 1,
+      pageId: secondPage.id,
+      questionText: "Risk second-page first-question"
+    });
+
+    const limitedResponse = await request(app)
+      .get("/api/admin/glossary/question-search?q=risk&limit=1")
+      .set("Cookie", admin.cookie);
+    expect(limitedResponse.status).toBe(200);
+    expect(limitedResponse.body.results).toHaveLength(1);
+
+    const response = await request(app)
+      .get("/api/admin/glossary/question-search?q=risk")
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.body.results.map(
+        (result: { assessment: { title: string }; question: { questionText: string } }) =>
+          `${result.assessment.title}: ${result.question.questionText}`
+      )
+    ).toEqual([
+      "AAA Ordering Assessment: Risk title order",
+      "Ordering Page Assessment: Risk first-page first-question",
+      "Ordering Page Assessment: Risk first-page second-question",
+      "Ordering Page Assessment: Risk second-page first-question",
+      "000 Later Match Assessment: Check risk controls"
+    ]);
   });
 
   it("returns disabled-provider lookup state without blocking manual entry", async () => {

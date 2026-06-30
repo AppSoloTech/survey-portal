@@ -9,7 +9,13 @@ import pg from "pg";
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { lookupDictionaryTerm } from "../services/dictionary.js";
-import { fetchParticipantGlossaryEntries } from "../services/glossary.js";
+import {
+  fetchParticipantGlossaryEntries,
+  glossaryQuestionSearchDefaultLimit,
+  glossaryQuestionSearchMaxLimit,
+  glossaryQuestionSearchMinQueryLength,
+  searchAdminGlossaryQuestions
+} from "../services/glossary.js";
 import {
   readTextField,
   readPositiveIntegerParam,
@@ -170,6 +176,38 @@ function isGlossaryMatchUniqueViolation(error: unknown): boolean {
   );
 }
 
+function readQueryStringParam(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0];
+  }
+
+  return "";
+}
+
+function readQuestionSearchLimit(value: unknown): number | null {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+
+  if (rawValue === undefined) {
+    return glossaryQuestionSearchDefaultLimit;
+  }
+
+  if (typeof rawValue !== "string" || !/^\d+$/.test(rawValue)) {
+    return null;
+  }
+
+  const parsed = Number(rawValue);
+
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return null;
+  }
+
+  return Math.min(parsed, glossaryQuestionSearchMaxLimit);
+}
+
 export const adminGlossaryRouter = express.Router();
 
 adminGlossaryRouter.use(requireAuth, requireRole("admin"));
@@ -185,6 +223,32 @@ adminGlossaryRouter.get("/", async (req, res, next) => {
 adminGlossaryRouter.get("/participant-safe", async (req, res, next) => {
   try {
     res.json({ entries: await fetchParticipantGlossaryEntries() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminGlossaryRouter.get("/question-search", async (req, res, next) => {
+  const query = readQueryStringParam(req.query.q).trim();
+  const limit = readQuestionSearchLimit(req.query.limit);
+
+  if (limit === null) {
+    res.status(400).json({ error: "limit must be a positive integer" });
+    return;
+  }
+
+  try {
+    const results =
+      query.length < glossaryQuestionSearchMinQueryLength
+        ? []
+        : await searchAdminGlossaryQuestions(query, limit);
+
+    res.json({
+      query,
+      minQueryLength: glossaryQuestionSearchMinQueryLength,
+      limit,
+      results
+    });
   } catch (error) {
     next(error);
   }

@@ -39,7 +39,9 @@ Read before implementation:
 * `markdown/CLIENT_REVIEW_INTAKE.md`
 * `markdown/PHASE_LOG.md`
 * `markdown/REVIEW_CHECKLIST.md`
-* Phase 56 implementation and handoff artifacts.
+* Phase 56 implementation, handoff, and review artifacts:
+  * `notes/claude_handoff_phase_56.txt`
+  * `notes/claude_review_phase_56.txt`
 * Prior glossary prompts and artifacts:
   * `prompts/prompt_39.txt`
   * `prompts/prompt_40.txt`
@@ -117,12 +119,24 @@ Implement:
   39 and 40.
 * A web API helper for the Phase 56 question-search endpoint in
   `apps/web/src/api/glossary.ts`.
+  * Endpoint: `GET /api/admin/glossary/question-search?q=<query>&limit=<optional>`.
+  * Response: `{ query, minQueryLength, limit, results }`.
+  * Result shape: `{ assessment, page, question, match }`, where
+    `assessment` includes id/title/status, `page` is null or includes
+    id/title/displayOrder, `question` includes id/questionText/displayOrder,
+    and `match` includes start/end offsets.
+  * Use the existing `apiRequest` `RequestInit` support for `AbortSignal`
+    rather than changing the shared API client unless implementation inspection
+    shows a better established pattern.
 * A question search input that:
   * trims before search
-  * waits for the chosen minimum query length before calling the API
+  * waits for the Phase 56 minimum query length of 2 before calling the API
   * debounces requests, such as 250 ms
   * guards against stale responses by using `AbortController`, request ids, or
     an equivalent local pattern
+  * uses a conservative request limit, such as the Phase 56 default of 20;
+    do not add visible result-limit controls in this phase unless needed for
+    usability
 * Search states:
   * short/empty query
   * loading
@@ -131,6 +145,9 @@ Implement:
   * recoverable error
 * Result display below the input with assessment/page/question context and
   highlighted matched text using the required match offsets from Phase 56.
+  * Treat `match.start` and `match.end` as offsets into the returned original
+    `question.questionText` string, not into a lowercased copy.
+  * Preserve the original question text casing in rendered results.
 * Accessible tabs and search results:
   * keyboard-operable tabs
   * visible focus states
@@ -158,17 +175,21 @@ Do not implement:
 ## Assumptions
 
 * Phase 56 has already shipped or is available on the branch.
+* Phase 56 behavior is the source of truth for short queries and limits:
+  blank or one-character queries return empty results; the API defaults limit
+  to 20 and caps it at 50.
 * The existing Glossary page can absorb tabs without losing the current CRUD
-  workflow, after the tab/page confirmation item in the client review note is
-  resolved.
+  workflow. The product direction is confirmed: keep question search as a tab
+  inside `/admin/glossary`, not as a separate top-level Admin page.
 * UI copy should use assessment terminology even if API/domain fields still use
   survey-oriented names internally.
 * Search results are informational in this phase.
+* Unicode case-folding edge cases called out in the Phase 56 review are accepted
+  as non-blocking for this first English/plain-text Admin UI; highlight using
+  the provided offsets without trying to recompute match locations client-side.
 
 ## Open Questions
 
-* Confirm before implementation whether question search belongs in tabs inside
-  `/admin/glossary` or on a separate Admin page.
 * If the existing page structure makes accessible tabs unusually risky,
   document the proposed alternative before implementing it.
 
@@ -238,6 +259,9 @@ Manual checks to perform or document:
 * Admin opens `/admin/glossary`, switches between tabs, and returns to the entry
   manager without losing expected behavior.
 * Admin types a partial question and sees results refine.
+* Admin types a full known question and sees that question returned.
+* Highlighting uses the Phase 56 offsets and preserves original question text
+  casing.
 * Keyboard-only pass for tabs, input, and result list.
 * Responsive pass around 375 px, 768 px, and 1280 px.
 

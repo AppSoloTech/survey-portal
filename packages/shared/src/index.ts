@@ -354,6 +354,43 @@ export interface AdminDictionaryLookupResponse {
   message: string;
 }
 
+export interface AdminGlossaryQuestionSearchAssessmentContext {
+  id: number;
+  title: string;
+  status: SurveyStatus;
+}
+
+export interface AdminGlossaryQuestionSearchPageContext {
+  id: number;
+  title: string;
+  displayOrder: number;
+}
+
+export interface AdminGlossaryQuestionSearchQuestionContext {
+  id: number;
+  questionText: string;
+  displayOrder: number;
+}
+
+export interface AdminGlossaryQuestionSearchMatch {
+  start: number;
+  end: number;
+}
+
+export interface AdminGlossaryQuestionSearchResult {
+  assessment: AdminGlossaryQuestionSearchAssessmentContext;
+  page: AdminGlossaryQuestionSearchPageContext | null;
+  question: AdminGlossaryQuestionSearchQuestionContext;
+  match: AdminGlossaryQuestionSearchMatch;
+}
+
+export interface AdminGlossaryQuestionSearchResponse {
+  query: string;
+  minQueryLength: number;
+  limit: number;
+  results: AdminGlossaryQuestionSearchResult[];
+}
+
 export interface ParticipantGlossaryEntry {
   id: number;
   canonicalTerm: string;

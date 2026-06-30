@@ -49,8 +49,9 @@ Current planning direction:
 
 Confirmation items before implementation:
 
-- Confirm the Glossary page organization before Phase 57: tabs inside the
-  existing `/admin/glossary` page versus a separate page for question search.
+- Confirmed 2026-06-30: Phase 57 should add tabs inside the existing
+  `/admin/glossary` page rather than creating a separate page for question
+  search.
 - Confirm the candidate-term behavior before Phase 58: use the current search
   query as the editable prefilled term, or support true selection of an
   arbitrary word/phrase from inside a result question.

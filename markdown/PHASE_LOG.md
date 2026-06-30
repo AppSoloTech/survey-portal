@@ -6,6 +6,268 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Planning Update — Phase 57 Prompt Alignment After Phase 56
+
+Date:
+2026-06-30
+
+Status:
+Prompt updated; implementation not started
+
+Prompt:
+`prompts/prompt_57.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Phase 56 handoff: `notes/claude_handoff_phase_56.txt`
+- Phase 56 review: `notes/claude_review_phase_56.txt`
+
+## Goals
+
+- Carry the completed Phase 56 API contract and Claude review notes into the
+  Phase 57 UI prompt before implementation starts.
+- Keep Phase 57 scoped to UI consumption of the existing API, without drifting
+  into Phase 58 result-to-entry workflow.
+
+## Updated
+
+- Added explicit Phase 56 handoff/review artifacts to Phase 57 required
+  reading.
+- Documented the concrete question-search endpoint:
+  `GET /api/admin/glossary/question-search?q=<query>&limit=<optional>`.
+- Documented the response shape, `minQueryLength: 2`, default limit 20, cap 50,
+  and blank/one-character empty-result behavior.
+- Clarified that `match.start` and `match.end` are offsets into the returned
+  original `question.questionText` string and should preserve original casing
+  when highlighted.
+- Noted that the existing web `apiRequest` can receive `RequestInit` options,
+  so Phase 57 can use `AbortSignal` for stale-response protection without
+  changing the shared client.
+- Added manual checks for full-question search and offset-based highlighting.
+
+## Important Decisions
+
+### Keep The Product Confirmation Visible
+
+Decision:
+The Phase 57 page-organization question is now resolved: question search should
+be implemented as a tab inside the existing `/admin/glossary` page, not as a
+separate Admin page.
+
+Reason:
+The human confirmed the tabs direction on 2026-06-30 after reviewing the
+Phase 57 prompt alignment.
+
+Consequence:
+Phase 57 can proceed with accessible tabs inside `/admin/glossary`. The
+candidate-term behavior for Phase 58 remains a separate confirmation item.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none; this update documents the Phase 56 contract for
+  the UI phase.
+- Frontend UX impact: none yet.
+- Auth/authorization impact: none.
+
+## Validation
+
+- Passed: `git diff --check`
+
+## Follow-Ups
+
+- Phase 57 page organization is confirmed: use tabs inside `/admin/glossary`.
+- Keep Phase 58 candidate-term behavior confirmation separate from Phase 57.
+
+## Commit Readiness
+
+- Requirements implemented: Prompt alignment only.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: No runtime behavior changed.
+- Review findings addressed or deferred: Phase 56 carry-forward notes were
+  reflected in the Phase 57 prompt.
+- Manual testing complete: Not applicable.
+- Ready to commit: Yes.
+
+---
+
+## Phase 56 — Glossary Question Search API Foundation
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; Claude review approved; review notes addressed
+
+Prompt:
+`prompts/prompt_56.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Client/planning intake:
+  `notes/client_review_2026-06-30_glossary_question_search.txt`
+- Codex handoff: `notes/claude_handoff_phase_56.txt`
+- Claude review: `notes/claude_review_phase_56.txt`
+
+## Goals
+
+- Add the API foundation for Admins to search assessment question text from the
+  Glossary area.
+- Keep Phase 56 backend-only, with no Admin Glossary tab UI and no result to
+  entry workflow.
+- Preserve hidden-tag, response-data, and Admin-only glossary metadata
+  boundaries.
+
+## Built
+
+- Added shared Admin Glossary question-search response types in
+  `packages/shared/src/index.ts`.
+- Added `GET /api/admin/glossary/question-search?q=...` under the existing
+  Admin-only Glossary router.
+- Added server-side query validation:
+  - trims `q`
+  - returns empty results for blank or one-character queries
+  - defaults `limit` to 20
+  - caps `limit` at 50
+  - rejects non-positive or non-integer limits
+- Added question-text-only substring search across draft and published
+  assessments.
+- Excluded retired and soft-deleted assessments.
+- Returned deterministic result context:
+  - assessment id/title/status
+  - page id/title/display order when available
+  - question id/text/display order
+  - first-match start/end offsets
+- Added API tests for unauthenticated access, non-admin authorization,
+  validation behavior, inclusion/exclusion by assessment status/deleted state,
+  result shape, hidden metadata omission, limits, offsets, and ordering.
+
+## Important Decisions
+
+### Short Query Behavior
+
+Decision:
+Blank and one-character queries return a normal 200 response with an empty
+`results` array.
+
+Reason:
+This avoids broad scans during dynamic typing while keeping the later UI simple
+and predictable.
+
+Consequence:
+The response includes `minQueryLength: 2` so Phase 57 can show client behavior
+without hardcoding an undocumented threshold.
+
+### Search Implementation
+
+Decision:
+Use plain case-insensitive substring matching with PostgreSQL `position` for
+filtering and ordering.
+
+Reason:
+The prompt explicitly scopes this as an Admin helper foundation and defers
+fuzzy search, ranking engines, full-text search, and new indexes.
+
+Consequence:
+`markdown/FOLLOW_UPS.md` now tracks indexed/ranked search as a future scaling
+follow-up if content volume approaches roughly 10k questions or searches feel
+slow.
+
+### Backend-Only Scope
+
+Decision:
+No UI, tabs, debounce, result rendering, or Glossary creation workflow was
+implemented.
+
+Reason:
+Those are Phase 57 and Phase 58 responsibilities, and the user explicitly
+confirmed that Phases 54/55 remain paused while Phase 56 is the next active
+feature prompt.
+
+Consequence:
+Production behavior changes only by adding the Admin-only API contract and
+tests.
+
+### Claude Review Follow-Up
+
+Decision:
+Claude approved Phase 56 with no blocking findings. Two small hardening notes
+were addressed after review:
+
+- `searchAdminGlossaryQuestions` now caps its own `limit` argument defensively,
+  matching the route cap even if a future test or caller invokes the service
+  directly.
+- The match-offset code now documents that offsets are for JavaScript string
+  slicing of the returned `questionText`.
+
+Reason:
+Both changes are low-risk and make Phase 57 integration clearer.
+
+Consequence:
+The remaining Unicode case-fold and astral-character ordering caveats are
+documented review context, not active blockers for the current English/plain
+text assessment workflow.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: new Admin-only
+  `GET /api/admin/glossary/question-search`.
+- Frontend UX impact: none.
+- Auth/authorization impact: endpoint is protected by existing Glossary
+  `requireAuth` and `requireRole("admin")` middleware.
+- Hidden-tag/reporting/response-data impact: none; the endpoint queries only
+  surveys, pages, and questions and returns no answer, tag, response, or
+  glossary source metadata.
+
+## Validation
+
+- Passed: `npm run test -w apps/api -- test/glossary.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test`
+- Passed: `git diff --check`
+- Post-review passed: `npx tsc --noEmit -p apps/api/tsconfig.json`
+- Post-review passed: `npm run test -w apps/api -- test/glossary.test.ts`
+- Post-review passed: `git diff --check`
+
+Validation notes:
+- API tests required approved local PostgreSQL access because the harness
+  drops/recreates and migrates the test schema.
+- `npm run build` emitted the existing Vite large chunk warning.
+- Endpoint behavior was exercised through focused Admin-authenticated API tests
+  with known matching questions; no browser UI was added in this phase.
+
+## Follow-Ups
+
+- Phase 57 should build the Admin Glossary tabs/question-search UI on top of
+  this API contract after confirming the page organization direction.
+- Phase 58 should wire search results into the existing Glossary create flow
+  only after confirming candidate-term behavior.
+- Revisit indexed or ranked search only if real assessment volume or observed
+  latency justifies it.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: Endpoint is server-side Admin-only and avoids
+  hidden tags/response data; Claude review approved.
+- Review findings addressed or deferred: Minor N1/N2 notes addressed or
+  documented; no blocking findings.
+- Manual testing complete: Browser manual testing not applicable; API behavior
+  covered by automated tests.
+- Ready to commit: Yes, after human review and optional Claude review.
+
+---
+
 ## Planning Update — Glossary Question Search Refactor Prompts
 
 Date:

@@ -98,6 +98,11 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Add reporting pagination and hidden-tag filtering when attempt volume or analysis needs grow.
 - The surveys overview fetches one report per non-draft survey for its completion indicator (now only for the visible page); replace with a batched count endpoint if survey count grows.
 - Add a lightweight server-paginated survey list endpoint (without full question trees) when survey volume outgrows client-side pagination on the dashboard and admin overview.
+- Phase 56 glossary question search scaling: the first Admin helper endpoint
+  uses case-insensitive substring matching over question text. If real
+  assessment content approaches roughly 10k questions or Admin searches feel
+  slow, revisit indexed search such as `pg_trgm`, full-text search, or another
+  ranked search approach before expanding the workflow.
 - Consider an FK from `answer_tags` to `tag_definitions` (normalization) once catalog usage settles; today the catalog is an independent registry backfilled from saved tags.
 - Add an admin view for browsing soft-deleted surveys; deleted surveys are currently reachable only by id (survey, report, attempts, CSV remain available for analytics).
 - Add category filters to reporting and CSV export if category-based analysis is requested.

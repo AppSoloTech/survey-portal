@@ -1,0 +1,136 @@
+Phase 56 - Glossary Question Search API Foundation - Claude Review
+
+Reviewer: Claude Code
+Branch: phase-56-question-search-api
+Verdict: Approve. No blocking correctness, authorization, or data-exposure
+        bugs found. The implementation faithfully matches prompt_56 and the
+        Phase 56 handoff. A few minor, non-blocking notes are recorded below
+        for the implementer's awareness and for Phase 57/58 planning.
+
+================================================================
+Summary
+================================================================
+
+The implementation does exactly what the phase scopes and nothing more:
+
+- New Admin-only endpoint GET /api/admin/glossary/question-search?q=&limit=
+  under the existing adminGlossaryRouter. No UI, tabs, debounce, or
+  result-to-entry wiring (correctly deferred to Phase 57/58).
+- Shared types (AdminGlossaryQuestionSearch*) match the documented response
+  contract exactly.
+- Question-text-only substring search over survey_questions.question_text,
+  joined to surveys for status/soft-delete filtering and left-joined to
+  survey_pages for context.
+
+Independent validation I ran:
+- npm run typecheck -> PASS across packages/shared, apps/web, apps/api.
+- I did NOT run the API test suite. The harness drops/recreates and migrates
+  the local Postgres public schema, which is destructive; the handoff states
+  all gates (typecheck, lint, build, npm test, git diff --check) passed, and
+  static review found nothing that would fail them.
+
+================================================================
+Verified against the requested review focus
+================================================================
+
+1. Admin-only authorization and route ordering before /:entryId
+   - adminGlossaryRouter.use(requireAuth, requireRole("admin")) applies to
+     every route on the router, including question-search.
+   - /question-search is registered before /:entryId (and after
+     /participant-safe and /lookup), so it is never captured by the param
+     route. Confirmed by reading the route registration order.
+   - Tests assert 401 for unauthenticated and 403 for non-admin specifically
+     against the question-search path.
+
+2. Query validation, short-query empty results, limit capping/rejection
+   - q is trimmed at the route and again in the service (redundant but
+     harmless).
+   - Queries shorter than minQueryLength (2) return 200 with results: []
+     and never reach a broad scan; guarded in both the route and the service.
+   - limit defaults to 20, caps at 50, and rejects non-positive/invalid
+     values with 400 ("limit must be a positive integer"). The
+     readQuestionSearchLimit chain (regex -> Number.isSafeInteger -> < 1 ->
+     Math.min) correctly handles "bad", "-5", "0", "1.5", overlong digit
+     strings, and array-valued params without throwing.
+   - Search uses position(lower($1) in lower(question_text)) - a literal
+     substring match, not ILIKE with % wildcards - so there is no
+     wildcard-injection surface. All SQL is parameterized.
+
+3. Non-retired filtering: draft/published included, retired/soft-deleted
+   excluded
+   - WHERE surveys.deleted_at is null AND surveys.status in
+     ('draft','published'). Retired and soft-deleted surveys are excluded at
+     the query level.
+   - The filtering test creates draft, published, retired, and soft-deleted
+     surveys and asserts only draft + published are returned.
+   - Note for the record: survey_pages and survey_questions are hard-deleted
+     (delete from ...), not soft-deleted, so there is no stale-context risk in
+     the left join survey_pages and no missing question-level deleted_at
+     filter. The earlier "soft-delete where the schema supports it" hedge was
+     correct.
+
+4. Data exposure
+   - Only assessment {id,title,status}, page {id,title,displayOrder}|null,
+     question {id,questionText,displayOrder}, and match {start,end} are
+     projected. No hidden tags, answer options, response data, or glossary
+     source metadata.
+   - The shape test deliberately attaches a hidden tag AND an answer option to
+     the matched question, then asserts the result has no answerOptions,
+     answerTags, responses, or sourceProvider. Good adversarial coverage.
+
+5. Match offsets and deterministic ordering
+   - Ordering is match-position-first, then lower(title), title, page
+     display order (coalesced to a max sentinel for null pages), question
+     display order, question id. Fully deterministic.
+   - The ordering test proves the non-obvious case: a "000"-titled survey
+     sorts LAST because its match position is later, confirming match
+     position dominates the title tiebreak. It also verifies page-order then
+     question-order within one survey.
+   - Offsets are computed in JS (indexOf on the lowercased text), which is the
+     correct basis for the frontend to slice the original JS string. Case
+     insensitivity verified with an uppercase query against lowercase text.
+
+6. No Phase 57/58 scope creep
+   - Confirmed: no web UI, no API helper in apps/web, no tabs, no debounce,
+     no prefill/create wiring. Service and route only.
+
+================================================================
+Minor notes (non-blocking)
+================================================================
+
+N1. Unicode offset edge case. match.start/end come from
+    question_text.toLowerCase().indexOf(query.toLowerCase()). For the rare
+    characters whose lowercase changes string length (e.g. Turkish dotted
+    capital I), the reported offset can drift from the original string that
+    the Phase 57 UI will slice. Negligible for English survey/clinical text.
+    Separately, SQL position (counts code points) vs JS indexOf (UTF-16 code
+    units) can diverge in ORDERING only for astral characters such as emoji -
+    cosmetic, never a correctness issue for offsets. A one-line code comment
+    noting the JS-string basis would be enough.
+
+N2. No service-level limit cap. The 50 cap lives only in the route;
+    searchAdminGlossaryQuestions trusts its limit argument. Fine today because
+    the route is the sole caller, but a Math.min(limit,
+    glossaryQuestionSearchMaxLimit) inside the service would be cheap
+    defense-in-depth once Phase 57 begins calling it directly or via tests.
+
+N3. Performance. The leading-substring position(lower(...)) forces a full
+    sequential scan with no usable index, and is evaluated in both WHERE and
+    ORDER BY. Correct for an admin helper at current volume; the pg_trgm
+    follow-up is already logged in FOLLOW_UPS. Just confirm nobody expects
+    this to stay fast at large question counts before relying on it widely.
+
+N4. Cosmetic redundancy. q is trimmed and min-length-checked in both the
+    route and the service. Harmless belt-and-suspenders; no change required.
+
+================================================================
+Phase 57 / 58 carry-forward
+================================================================
+
+- Phase 57 UI should treat match.start/end as offsets into the original
+  questionText string (not the lowercased form) when highlighting.
+- Reconfirm with the client the Phase 58 assumption that the candidate
+  Glossary term is the current search query, not an arbitrary word/phrase
+  selected from a result card (flagged during plan review).
+- If Phase 57 tests call searchAdminGlossaryQuestions directly, consider
+  landing N2 first so limit behavior is identical to the route.

@@ -1,0 +1,109 @@
+Phase 56 - Glossary Question Search API Foundation
+
+Prompt:
+prompts/prompt_56.txt
+
+Branch:
+phase-56-question-search-api
+
+Implementation summary:
+- Added shared Admin Glossary question-search types in packages/shared/src/index.ts.
+- Added GET /api/admin/glossary/question-search?q=... under the existing
+  Admin-only Glossary router.
+- Added query validation:
+  - q is trimmed.
+  - blank and one-character queries return 200 with no results.
+  - limit defaults to 20.
+  - limit is capped at 50.
+  - invalid/non-positive limits return 400.
+- Added apps/api/src/services/glossary.ts search helper using
+  case-insensitive substring matching over survey_questions.question_text only.
+- Search includes draft and published assessments, excludes retired
+  assessments, and excludes soft-deleted surveys.
+- Results include assessment/page/question context plus first-match start/end
+  offsets.
+- Results order by earliest match position, assessment title, page display
+  order, question display order, and question id.
+- Added focused API tests in apps/api/test/glossary.test.ts for auth,
+  authorization, validation, status/deleted filtering, offsets, shape,
+  metadata omission, limits, and ordering.
+- Updated unreleased notes, PHASE_LOG, and FOLLOW_UPS.
+
+Important scope notes:
+- No Admin Glossary UI, tabs, debounce, loading/empty states, or rendering were
+  implemented. That remains Phase 57.
+- No result-to-entry workflow or prefilled Glossary creation wiring was
+  implemented. That remains Phase 58.
+- No migrations, indexes, full-text search, fuzzy search, answer-option search,
+  hidden-tag search, reports, responses, or glossary source metadata were
+  added to the search surface.
+- Phases 54/55 remain paused.
+
+Key files to review:
+- packages/shared/src/index.ts
+- apps/api/src/services/glossary.ts
+- apps/api/src/routes/adminGlossaryRoutes.ts
+- apps/api/test/glossary.test.ts
+- markdown/releases/unreleased.md
+- markdown/FOLLOW_UPS.md
+- markdown/PHASE_LOG.md
+
+API contract:
+- GET /api/admin/glossary/question-search?q=<query>&limit=<optional>
+- Admin-only via requireAuth + requireRole("admin") on the existing
+  adminGlossaryRouter.
+- Response shape:
+  {
+    query: string,
+    minQueryLength: 2,
+    limit: number,
+    results: [
+      {
+        assessment: { id, title, status },
+        page: { id, title, displayOrder } | null,
+        question: { id, questionText, displayOrder },
+        match: { start, end }
+      }
+    ]
+  }
+
+Review focus requested:
+- Admin-only authorization and route ordering before /:entryId.
+- Query validation behavior, especially short-query empty results and limit
+  capping/rejection.
+- Non-retired filtering: draft and published included, retired and
+  soft-deleted surveys excluded.
+- Data exposure: no hidden tags, answer options, response data, or glossary
+  source metadata returned.
+- Match offsets and deterministic ordering.
+- No accidental Phase 57/58 UI/workflow scope creep.
+
+Validation run:
+- npm run test -w apps/api -- test/glossary.test.ts
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- git diff --check
+
+Validation notes:
+- All commands above passed.
+- API tests required approved local PostgreSQL access because the test harness
+  drops/recreates and migrates the public schema.
+- npm run build emitted the existing Vite large chunk warning.
+- Endpoint behavior was exercised through automated Admin-authenticated API
+  tests with known matching questions. No browser manual pass was applicable
+  because this phase adds no UI.
+
+Post-review update:
+- Claude approved Phase 56 in notes/claude_review_phase_56.txt with no
+  blocking correctness, authorization, or data-exposure findings.
+- Addressed N2 by capping searchAdminGlossaryQuestions limit defensively inside
+  the service as well as at the route.
+- Addressed N1 with a code comment clarifying that match offsets are intended
+  for JavaScript string slicing of the returned questionText. The remaining
+  Unicode case-fold caveat is accepted as non-blocking for the current
+  English/plain-text assessment workflow.
+
+Claude review output target:
+notes/claude_review_phase_56.txt
