@@ -18,7 +18,7 @@ Prompt:
 `prompts/prompt_58.txt`
 
 Git Commit:
-Pending
+`a8c8b05`
 
 Review Artifacts:
 - Client/planning intake:
@@ -122,7 +122,7 @@ Validation notes:
 - The first sandboxed `npm test` run failed when the API test setup was blocked
   from connecting to local PostgreSQL at `127.0.0.1:5432`. The same `npm test`
   command passed after approved local PostgreSQL access.
-- Manual browser checks remain pending for the human browser pass.
+- Manual browser checks passed per developer testing on 2026-06-30.
 
 ## Follow-Ups
 
@@ -179,8 +179,8 @@ Deferred findings:
   stays on existing Admin-only UI and existing server-side create validation.
 - Review findings addressed or deferred: Yes; non-blocking UX/test-assurance
   notes are documented above.
-- Manual testing complete: Not yet; browser pass documented as pending.
-- Ready to commit: Ready after manual browser pass.
+- Manual testing complete: Yes.
+- Ready to commit: Committed in `a8c8b05`.
 
 ---
 
