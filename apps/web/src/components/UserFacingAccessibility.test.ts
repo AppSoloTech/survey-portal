@@ -17,6 +17,7 @@ const anonymousDirectorySource = readFileSync(
 );
 const homeSource = readFileSync(new URL("../pages/Home.tsx", import.meta.url), "utf8");
 const glossarySource = readFileSync(new URL("./InlineGlossaryText.tsx", import.meta.url), "utf8");
+const stylesSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
 describe("user-facing accessibility polish", () => {
   it("adds survey title context inside repeated dashboard survey actions", () => {
@@ -47,6 +48,7 @@ describe("user-facing accessibility polish", () => {
     expect(glossarySource).toContain("aria-describedby={popoverId}");
     expect(glossarySource).toContain("hidden={!isOpen}");
     expect(glossarySource).toContain('role="tooltip"');
+    expect(stylesSource).toMatch(/\.inline-glossary-popover\[hidden\]\s*\{\s*display: none;/);
     expect(glossarySource).not.toContain("aria-description");
   });
 });

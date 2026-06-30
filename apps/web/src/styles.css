@@ -1810,6 +1810,7 @@ main:focus {
 
 .question-form .question-prompt {
   color: var(--ink);
+  display: block;
   font-family: var(--font-display);
   font-size: clamp(1.25rem, 2.4vw, 1.5rem);
   font-weight: 700;
@@ -1817,9 +1818,10 @@ main:focus {
   margin: 0 0 0.35rem;
   max-width: var(--answer-max);
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   white-space: normal;
   width: 100%;
+  word-break: normal;
 }
 
 .inline-glossary {
@@ -1880,6 +1882,10 @@ main:focus {
   position: absolute;
   top: calc(100% + 0.4rem);
   z-index: 30;
+}
+
+.inline-glossary-popover[hidden] {
+  display: none;
 }
 
 .inline-glossary-popover strong {
