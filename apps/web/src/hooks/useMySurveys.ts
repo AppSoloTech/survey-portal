@@ -19,7 +19,7 @@ export function useMySurveys() {
       })
       .catch((loadError) => {
         if (isActive) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load surveys");
+          setError(loadError instanceof Error ? loadError.message : "Could not load assessments");
         }
       })
       .finally(() => {

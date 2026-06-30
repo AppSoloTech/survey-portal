@@ -33,10 +33,10 @@ export function SurveyFlowMap({
       <div className="builder-section-heading">
         <div>
           <p className="eyebrow">Flow map</p>
-          <h3>Survey flow map</h3>
+          <h3>Assessment flow map</h3>
           <p className="builder-heading-note">
             Read-only view derived from saved questions and jump rules. It updates as
-            builder changes are saved and never edits survey data itself.
+            builder changes are saved and never edits assessment data itself.
           </p>
         </div>
       </div>
@@ -57,7 +57,7 @@ export function SurveyFlowMap({
         <div className="builder-empty-state compact">
           <strong>No questions to map</strong>
           <span>
-            Add questions in the Questions section above to see the survey flow. Jump
+            Add questions in the Questions section above to see the assessment flow. Jump
             rules appear here once selection questions and rules exist.
           </span>
         </div>
@@ -262,10 +262,10 @@ function describeNormalFlow(
   const nextLabel =
     node.normalNextQuestionId !== null
       ? `continues to ${formatNodeReference(nodesByQuestionId.get(node.normalNextQuestionId))}`
-      : "ends the survey";
+      : "ends the assessment";
 
   if (node.isConditionalOnly) {
-    return `Skipped in normal flow. After a jump lands here, the survey ${nextLabel}.`;
+    return `Skipped in normal flow. After a jump lands here, the assessment ${nextLabel}.`;
   }
 
   return `Normal flow ${nextLabel}.`;

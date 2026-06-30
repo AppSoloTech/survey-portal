@@ -28,7 +28,7 @@ export function AnonymousSurveyDirectoryPage() {
           setError(
             directoryError instanceof Error
               ? directoryError.message
-              : "Could not load anonymous surveys"
+              : "Could not load anonymous assessments"
           );
           setSurveys([]);
         }
@@ -47,18 +47,18 @@ export function AnonymousSurveyDirectoryPage() {
   return (
     <section className="page anonymous-directory-page" ref={revealRef}>
       <div className="page-header anonymous-directory-header" data-reveal>
-        <p className="eyebrow">Anonymous surveys</p>
-        <h1>Public survey directory</h1>
-        <p>Open surveys that can be completed without signing in.</p>
+        <p className="eyebrow">Anonymous assessments</p>
+        <h1>Public assessment directory</h1>
+        <p>Open assessments that can be completed without signing in.</p>
       </div>
 
       {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
-      {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
+      {isLoading ? <AlertMessage variant="info">Loading assessments...</AlertMessage> : null}
 
       {!isLoading && !error && surveys.length === 0 ? (
         <div className="builder-empty-state" data-reveal>
-          <strong>No public anonymous surveys</strong>
-          <span>Check back later for open survey links.</span>
+          <strong>No public anonymous assessments</strong>
+          <span>Check back later for open assessment links.</span>
         </div>
       ) : null}
 
@@ -79,7 +79,7 @@ export function AnonymousSurveyDirectoryPage() {
                 {survey.surveyDescription ? <p>{survey.surveyDescription}</p> : null}
               </div>
               <a className="button-link compact-button primary-button" href={survey.publicUrl}>
-                Start survey
+                Start assessment
                 <span className="visually-hidden">: {survey.surveyTitle}</span>
               </a>
             </article>

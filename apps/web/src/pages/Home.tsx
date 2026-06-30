@@ -11,12 +11,12 @@ export function Home() {
   return (
     <section className="page home-page" ref={revealRef}>
       <div className="page-header home-header" data-reveal>
-        <p className="eyebrow">Survey Portal</p>
+        <p className="eyebrow">Assessment Portal</p>
         <h1>
-          Surveys that feel <span className="hero-accent">considered</span>, not collected.
+          Assessments that feel <span className="hero-accent">considered</span>, not collected.
         </h1>
         <p>
-          Access assigned surveys, save progress as you go, and manage published survey
+          Access assigned assessments, save progress as you go, and manage published assessment
           content from the admin workspace when your account allows it.
         </p>
       </div>
@@ -48,19 +48,19 @@ export function Home() {
       <article className="home-anonymous-card" data-reveal>
         <div className="home-anonymous-card-main">
           <p className="eyebrow">No account required</p>
-          <h3>Browse public anonymous surveys</h3>
+          <h3>Browse public anonymous assessments</h3>
           <p>
-            Open surveys listed by administrators can be started directly from the
+            Open assessments listed by administrators can be started directly from the
             public directory.
           </p>
           <div className="home-anonymous-meta">
             <span>Public directory</span>
             <span>Anonymous access</span>
-            <span>Tokenized survey links</span>
+            <span>Tokenized assessment links</span>
           </div>
         </div>
         <Link className="button-link primary-button" to="/anonymous-surveys">
-          View anonymous surveys
+          View anonymous assessments
           <span className="visually-hidden"> in the public directory</span>
         </Link>
       </article>

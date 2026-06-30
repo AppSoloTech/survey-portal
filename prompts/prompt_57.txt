@@ -1,0 +1,261 @@
+# Phase 57 — Glossary Tabs And Question Search UI
+
+## Purpose
+
+Refactor `/admin/glossary` into a tabbed Admin page and add the dynamic
+question-search interface backed by the Phase 56 API.
+
+Source feedback or planning note:
+
+```txt
+notes/client_review_2026-06-30_glossary_question_search.txt
+```
+
+This phase adds the UI for finding candidate Glossary terms in assessment
+question text. It should not wire search results into Glossary entry creation
+yet.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_57.txt`
+* Claude review: `notes/claude_review_phase_57.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/client_review_2026-06-30_glossary_question_search.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Phase 56 implementation and handoff artifacts.
+* Prior glossary prompts and artifacts:
+  * `prompts/prompt_39.txt`
+  * `prompts/prompt_40.txt`
+  * `prompts/prompt_41.txt`
+  * `notes/claude_handoff_phase_39_glossary_admin.txt`
+  * `notes/claude_review_phase_39_glossary_admin.txt`
+  * `notes/claude_handoff_phase_40_glossary_dictionary_assist.txt`
+  * `notes/claude_review_phase_40_glossary_dictionary_assist.txt`
+  * `notes/claude_handoff_phase_41_inline_glossary_rendering.txt`
+  * `notes/claude_review_phase_41_inline_glossary_rendering.txt`
+* Current glossary and assessment files:
+  * `packages/shared/src/index.ts`
+  * `apps/api/src/routes/adminGlossaryRoutes.ts`
+  * `apps/api/src/services/glossary.ts`
+  * `apps/web/src/pages/admin/AdminGlossaryPage.tsx`
+  * `apps/web/src/api/glossary.ts`
+  * `apps/web/src/components/InlineGlossaryText.tsx`
+  * `apps/api/test/glossary.test.ts`
+  * `packages/shared/test/glossaryText.test.ts`
+
+---
+
+# Received Feedback
+
+1. The Glossary page now needs to serve two distinct jobs: existing term
+   management and question-text discovery.
+2. The client wants a search bar that updates results dynamically as the Admin
+   types.
+3. Results should display below the search bar and refine with each added
+   letter.
+4. An Admin should be able to type an entire question and see the matching
+   question emerge as a result.
+5. This phase owns the search UI only; creation workflow wiring remains
+   deferred to Phase 58.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* feature request
+* UX/admin workflow change
+* accessibility expectation
+* API consumer change
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none.
+* API contracts: consume the Phase 56 endpoint; no new backend contract expected.
+* Participant-facing assessment behavior: none.
+* Hidden-tag visibility: none.
+* Authentication or authorization: no new auth model; preserve existing Admin
+  Glossary route protections.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, add focused web/API-helper coverage where
+  practical.
+
+Ask for clarification only when a safe implementation cannot be inferred.
+
+---
+
+# Scope
+
+Implement:
+
+* A tabbed layout on `/admin/glossary`:
+  * one tab for existing Glossary entries
+  * one tab for question search
+* Preservation of all existing Glossary entry management behavior from Phases
+  39 and 40.
+* A web API helper for the Phase 56 question-search endpoint in
+  `apps/web/src/api/glossary.ts`.
+* A question search input that:
+  * trims before search
+  * waits for the chosen minimum query length before calling the API
+  * debounces requests, such as 250 ms
+  * guards against stale responses by using `AbortController`, request ids, or
+    an equivalent local pattern
+* Search states:
+  * short/empty query
+  * loading
+  * results
+  * no results
+  * recoverable error
+* Result display below the input with assessment/page/question context and
+  highlighted matched text using the required match offsets from Phase 56.
+* Accessible tabs and search results:
+  * keyboard-operable tabs
+  * visible focus states
+  * useful labels
+  * polite live-region updates for loading/result-count changes where fitting
+* Responsive layout at common mobile, tablet, and desktop widths.
+* A disabled or clearly non-creating result action placeholder if needed to
+  prepare for Phase 58, without creating or pre-filling entries yet.
+
+## Non-Goals
+
+Do not implement:
+
+* Add-to-Glossary creation wiring.
+* Automatic Glossary entry creation.
+* Duplicate detection in the create-entry workflow.
+* Persisted source-question references.
+* Backend endpoint changes beyond consuming the Phase 56 API.
+* Search over answer options, hidden tags, response data, or non-question
+  content.
+* A new top-level Admin route unless the existing route cannot support the
+  required accessible tab layout.
+* Broad visual redesign of the Admin area.
+
+## Assumptions
+
+* Phase 56 has already shipped or is available on the branch.
+* The existing Glossary page can absorb tabs without losing the current CRUD
+  workflow, after the tab/page confirmation item in the client review note is
+  resolved.
+* UI copy should use assessment terminology even if API/domain fields still use
+  survey-oriented names internally.
+* Search results are informational in this phase.
+
+## Open Questions
+
+* Confirm before implementation whether question search belongs in tabs inside
+  `/admin/glossary` or on a separate Admin page.
+* If the existing page structure makes accessible tabs unusually risky,
+  document the proposed alternative before implementing it.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Preserve existing Glossary entry management.
+2. Build accessible tabs and search controls.
+3. Implement responsive, stable result rendering.
+4. Add request debounce and stale-response protection.
+5. Cover the new UI behavior with focused tests where practical.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* `/admin/glossary` presents separate tabs for existing entries and question
+  search.
+* Existing Glossary create/edit/archive/dictionary behavior still works.
+* Admins can type in the question search box and see dynamic results from the
+  Phase 56 endpoint.
+* Blank and too-short queries do not show stale results or fire broad searches.
+* Loading, empty, error, and result states are visible and understandable.
+* Result rows/cards include enough assessment/page/question context for an
+  Admin to understand where the text came from.
+* Result rows/cards highlight the matched substring; missing highlight behavior
+  is not acceptable now that Phase 56 requires offsets.
+* The search UI is keyboard-operable and screen-reader friendly.
+* The layout remains usable on mobile, tablet, and desktop.
+* No result action creates or pre-fills a Glossary entry yet.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a
+  documented question.
+
+---
+
+# Testing Requirements
+
+Run the default full validation gate unless a narrower phase-specific gate is
+agreed before implementation:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update automated tests where practical for:
+
+* tab rendering and tab selection
+* existing Glossary entry management still being present
+* API helper request behavior
+* short-query behavior
+* loading, empty, error, and result states
+* stale-response handling if the existing test stack can model it reliably
+
+Manual checks to perform or document:
+
+* Admin opens `/admin/glossary`, switches between tabs, and returns to the entry
+  manager without losing expected behavior.
+* Admin types a partial question and sees results refine.
+* Keyboard-only pass for tabs, input, and result list.
+* Responsive pass around 375 px, 768 px, and 1280 px.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for
+  production-bound changes.
+* `markdown/FOLLOW_UPS.md` for deferred result-to-entry workflow notes not
+  already covered by Phase 58.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* Admin workflow docs if the Glossary page organization changes operator
+  behavior.
+* `notes/claude_handoff_phase_57.txt` before marking implementation complete.

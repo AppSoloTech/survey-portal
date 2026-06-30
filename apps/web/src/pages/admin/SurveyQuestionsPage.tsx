@@ -199,7 +199,7 @@ export function SurveyQuestionsPage() {
     event.preventDefault();
 
     if (survey.status !== "draft") {
-      setFeedback({ error: "Questions can only be added to draft surveys", notice: null });
+      setFeedback({ error: "Questions can only be added to draft assessments", notice: null });
       return;
     }
 
@@ -847,7 +847,7 @@ export function SurveyQuestionsPage() {
                 <h3>Add question to {activePage.title}</h3>
                 {!isDraft ? (
                   <p className="builder-heading-note">
-                    New questions can only be added while the survey is a draft.
+                    New questions can only be added while the assessment is a draft.
                   </p>
                 ) : null}
               </div>
@@ -926,7 +926,7 @@ export function SurveyQuestionsPage() {
                 <input
                   disabled={isTemplateListLoading}
                   onChange={(event) => setQuestionTemplateSearch(event.target.value)}
-                  placeholder="Name, source survey, page, or question"
+                  placeholder="Name, source assessment, page, or question"
                   value={questionTemplateSearch}
                 />
               </label>
@@ -966,7 +966,7 @@ export function SurveyQuestionsPage() {
             </div>
             {selectedQuestionTemplate ? (
               <p className="builder-heading-note">
-                {selectedQuestionTemplate.sourceSurveyTitle ?? "Unknown survey"}
+                {selectedQuestionTemplate.sourceSurveyTitle ?? "Unknown assessment"}
                 {selectedQuestionTemplate.sourcePageTitle
                   ? ` / ${selectedQuestionTemplate.sourcePageTitle}`
                   : ""}
@@ -1085,7 +1085,7 @@ export function SurveyQuestionsPage() {
         <div className="builder-empty-state">
           <strong>No pages yet</strong>
           <span>
-            Add the first page on the Organize tab. Published surveys need at least one page
+            Add the first page on the Organize tab. Published assessments need at least one page
             and one question before they make sense for users.
           </span>
           <div className="inline-actions">

@@ -1,0 +1,271 @@
+# Phase 58 — Glossary Search Result To Entry Workflow
+
+## Purpose
+
+Connect Glossary question-search results to the existing create-entry workflow
+so Admins can turn discovered question text into reviewed, defined Glossary
+terms without automatic entry creation.
+
+Source feedback or planning note:
+
+```txt
+notes/client_review_2026-06-30_glossary_question_search.txt
+```
+
+This phase completes the first question-search workflow after the
+candidate-term behavior is confirmed. The current draft pre-fills the existing
+Glossary entry form from the search query tied to a selected result. It should
+save through existing Glossary CRUD only.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_58.txt`
+* Claude review: `notes/claude_review_phase_58.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/client_review_2026-06-30_glossary_question_search.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Phase 56 and Phase 57 implementation and handoff artifacts.
+* Prior glossary prompts and artifacts:
+  * `prompts/prompt_39.txt`
+  * `prompts/prompt_40.txt`
+  * `prompts/prompt_41.txt`
+  * `notes/claude_handoff_phase_39_glossary_admin.txt`
+  * `notes/claude_review_phase_39_glossary_admin.txt`
+  * `notes/claude_handoff_phase_40_glossary_dictionary_assist.txt`
+  * `notes/claude_review_phase_40_glossary_dictionary_assist.txt`
+  * `notes/claude_handoff_phase_41_inline_glossary_rendering.txt`
+  * `notes/claude_review_phase_41_inline_glossary_rendering.txt`
+* Current glossary and assessment files:
+  * `packages/shared/src/index.ts`
+  * `apps/api/src/routes/adminGlossaryRoutes.ts`
+  * `apps/api/src/services/glossary.ts`
+  * `apps/web/src/pages/admin/AdminGlossaryPage.tsx`
+  * `apps/web/src/api/glossary.ts`
+  * `apps/web/src/components/InlineGlossaryText.tsx`
+  * `apps/api/test/glossary.test.ts`
+  * `packages/shared/test/glossaryText.test.ts`
+
+---
+
+# Received Feedback
+
+1. Admins should be able to search existing assessment question text and use a
+   matching word, phrase, or question text to start a Glossary entry.
+2. The selected candidate should become a term to define and later use in the
+   existing hover/focus pop-up behavior.
+3. The workflow must remain deliberate: search selection should not immediately
+   create a Glossary entry.
+4. The first implementation should not persist source-question references.
+5. The current draft uses the raw search query as the editable prefilled term.
+   This must be confirmed against the client's "select text, word, or phrase"
+   expectation before implementation starts.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* feature request
+* admin workflow change
+* UX polish
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none.
+* API contracts: no new backend API expected; use existing Glossary CRUD and
+  Phase 56 search API.
+* Participant-facing assessment behavior: no direct behavior change, though
+  newly saved Glossary entries will continue to render through existing
+  participant-safe Glossary behavior.
+* Hidden-tag visibility: none.
+* Authentication or authorization: no new auth model; preserve Admin-only
+  Glossary management.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, cover prefill, duplicate handling, and save
+  path behavior where practical.
+
+Ask for clarification only when a safe implementation cannot be inferred.
+
+---
+
+# Scope
+
+Implement:
+
+* A result action on the Phase 57 question-search result UI.
+* On action:
+  * use the current search query, trimmed, as the prefilled `canonicalTerm`
+  * switch or scroll to the existing create-entry workflow
+  * leave definition review and save under Admin control
+  * focus the next useful field, preferably the definition field if the term is
+    prefilled successfully
+  * keep the term editable so Admins can shorten a full-question search into a
+    more reusable Glossary term before saving
+* Duplicate detection before prefill or save:
+  * compare the candidate query against loaded Glossary canonical terms and
+    aliases using the existing normalization behavior where available
+  * clearly tell the Admin when the candidate already exists
+  * avoid creating duplicates client-side, while preserving server-side
+    duplicate enforcement as the source of truth
+* Temporary source context:
+  * show the assessment/page/question context for the selected search result
+    near the create form
+  * make clear that the context is informational and not saved as a source
+    reference
+  * clear the context after a successful save, cancel, or reset
+* Preserve dictionary lookup behavior from Phase 40 after prefill.
+* Save through the existing Glossary create endpoint and existing validation.
+* If the create form already contains unsaved non-empty values, ask for
+  confirmation before replacing them with the selected search candidate.
+
+## Non-Goals
+
+Do not implement:
+
+* Automatic Glossary entry creation from a search result.
+* Persisted source assessment/page/question references.
+* Database schema changes.
+* New backend create routes.
+* Selecting arbitrary substrings from a result card beyond using the current
+  query as the candidate term, unless the pre-Phase 58 confirmation changes this
+  scope.
+* Fuzzy duplicate detection or semantic duplicate detection.
+* Participant-facing rendering changes beyond whatever existing Glossary entries
+  already cause after being saved.
+* Search over answer options, hidden tags, response data, or non-question
+  content.
+
+## Assumptions
+
+* Phase 56 and Phase 57 are implemented and available.
+* The current query is the desired candidate term, even when the clicked result
+  contains a longer question. This assumption must be confirmed before Phase 58
+  starts.
+* Existing Glossary CRUD remains the authoritative save path.
+* Existing server-side uniqueness validation remains the source of truth for
+  preventing duplicate match strings.
+* Source context should help the Admin remember where the candidate came from,
+  but it should not become permanent data yet.
+
+## Open Questions
+
+* Confirm before implementation: should Phase 58 use the current search query as
+  the editable prefilled term, or should it support selecting an arbitrary
+  word/phrase from inside the result question text?
+* Confirm whether the UI should actively caution Admins when the candidate term
+  is a full question, since whole-question Glossary entries are usually less
+  reusable than shorter terms or phrases.
+* Persisted source references and richer duplicate detection should be revisited
+  only after the first workflow is in use.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Preserve existing create/edit/archive and dictionary behavior.
+2. Prevent accidental overwrites of unsaved create-form data.
+3. Prefill the candidate term cleanly and keep Admin review/save deliberate.
+4. Provide duplicate warnings without bypassing server validation.
+5. Keep source context temporary and clearly non-persistent.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* A search result action can prefill the existing Glossary create form with the
+  confirmed candidate text.
+* Selecting a result does not immediately create an entry.
+* Admins can review or edit the prefilled term, add a definition, use existing
+  dictionary assistance, and save through the existing create flow.
+* Duplicate candidates are detected against loaded canonical terms and aliases
+  and communicated before creation.
+* Server-side duplicate validation still handles race conditions or stale loaded
+  entry data.
+* Temporary source assessment/page/question context is shown after selection and
+  is cleared at the appropriate time.
+* No persisted source-question reference is added.
+* Existing Glossary management behavior is not regressed.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a
+  documented question.
+
+---
+
+# Testing Requirements
+
+Run the default full validation gate unless a narrower phase-specific gate is
+agreed before implementation:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+Add or update automated tests where practical for:
+
+* result action pre-filling the create form with the current query
+* no immediate create request on result action
+* duplicate candidate warning
+* source context display and clearing
+* dictionary lookup remaining available after prefill
+* successful save still using existing Glossary create behavior
+
+Manual checks to perform or document:
+
+* Admin searches for part of a question, selects a result, reviews the prefilled
+  term, adds a definition, and saves.
+* Admin selects a result while the create form has unsaved data and sees the
+  confirmation behavior.
+* Admin attempts to prefill an existing canonical term or alias and sees the
+  duplicate warning.
+* Saved term renders through the existing participant Glossary behavior in a
+  normal assessment flow, if practical for the branch.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for
+  production-bound changes.
+* `markdown/FOLLOW_UPS.md` for persisted source-reference, arbitrary text
+  selection, or richer duplicate-detection ideas.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* Admin workflow docs if the Glossary search-to-entry behavior needs durable
+  operator guidance.
+* `notes/claude_handoff_phase_58.txt` before marking implementation complete.

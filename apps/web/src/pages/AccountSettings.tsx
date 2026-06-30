@@ -171,7 +171,7 @@ export function AccountSettings() {
         </section>
 
         <section className="profile-panel">
-          <h3>Survey stats</h3>
+          <h3>Assessment stats</h3>
           {isProfileLoading ? (
             <AlertMessage variant="info">Loading profile...</AlertMessage>
           ) : null}

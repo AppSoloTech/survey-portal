@@ -254,7 +254,7 @@ export function SurveyOrganizePage() {
     event.preventDefault();
 
     if (survey.status !== "draft") {
-      setFeedback({ error: "Templates can only be inserted into draft surveys", notice: null });
+      setFeedback({ error: "Templates can only be inserted into draft assessments", notice: null });
       return;
     }
 
@@ -484,7 +484,7 @@ export function SurveyOrganizePage() {
       {survey.pages.length === 0 ? (
         <div className="builder-empty-state">
           <strong>No pages yet</strong>
-          <span>Add the first page above to start building this survey.</span>
+          <span>Add the first page above to start building this assessment.</span>
         </div>
       ) : (
         <DndContext
@@ -559,7 +559,7 @@ function TemplateSummary({ template }: { template: SurveyPageTemplateSummary | n
   return (
     <div className="template-summary-inline">
       <span>
-        From {template.sourceSurveyTitle ?? "a survey"}
+        From {template.sourceSurveyTitle ?? "an assessment"}
         {template.sourcePageTitle ? ` / ${template.sourcePageTitle}` : ""}
       </span>
       {template.excludedLogicCount > 0 ? (

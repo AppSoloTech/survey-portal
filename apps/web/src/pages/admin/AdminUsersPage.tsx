@@ -127,7 +127,7 @@ export function AdminUsersPage() {
         <AdminUserClassSection
           className="admin"
           currentUserId={currentUser?.id ?? null}
-          description="Accounts with access to survey setup, reporting, and user tools."
+          description="Accounts with access to assessment setup, reporting, and user tools."
           isSubmitting={isSubmitting}
           onPageChange={(page) => setAdminList((current) => ({ ...current, page }))}
           onRoleChange={handleRoleChange}
@@ -139,7 +139,7 @@ export function AdminUsersPage() {
         <AdminUserClassSection
           className="standard"
           currentUserId={currentUser?.id ?? null}
-          description="Registered participants who can complete assigned and published surveys."
+          description="Registered participants who can complete assigned and published assessments."
           isSubmitting={isSubmitting}
           onPageChange={(page) => setStandardList((current) => ({ ...current, page }))}
           onRoleChange={handleRoleChange}
@@ -422,7 +422,7 @@ export function AdminUserDetailPage() {
           </section>
 
           <section className="profile-panel">
-            <h3>Registered survey stats</h3>
+            <h3>Registered assessment stats</h3>
             <div className="settings-stats-grid">
               <div className="settings-stat-tile">
                 <span>Available</span>

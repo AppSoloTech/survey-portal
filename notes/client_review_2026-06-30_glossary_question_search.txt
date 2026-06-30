@@ -1,0 +1,81 @@
+# Client Review Intake - Glossary Question Search Refactor
+
+Date:
+2026-06-30
+
+Source:
+Direct user/client feedback during the 2026-06-30 planning session.
+
+Raw feedback:
+
+The Glossary section needs a larger refactor. The current glossary works for
+maintaining terms and definitions, but the planned expansion requires either
+page bifurcation or a smarter one-page design. The Glossary should support two
+distinct jobs, while today it mostly supports one.
+
+The new job is a global question search across all non-retired assessments. The
+client wants a search bar where typing words dynamically searches assessment
+question text and displays matching results below the search bar. Results should
+refine as each letter is added. In theory, an Admin should be able to type an
+entire question and eventually see that full question as a result. The Admin
+should then be able to use that matching text, word, or phrase to start adding a
+Glossary term that can be defined and used by the existing inline pop-up
+behavior.
+
+Current planning direction:
+
+- Prefer keeping the work in the existing Admin Glossary area and introducing
+  tabs rather than creating a separate top-level page. This should be confirmed
+  before Phase 57 starts.
+- Treat the current Glossary entry management UI as one tab and the new question
+  search workflow as another tab, pending the tab confirmation above.
+- Search question text only for the first implementation. Do not search answer
+  options, page descriptions, assessment descriptions, hidden tags, reports, or
+  response data.
+- Search across active assessment content in any state except retired. Include
+  draft and published assessments. Exclude retired assessments and any
+  soft-deleted records.
+- The first planned result action uses the current search query as the prefilled
+  candidate Glossary term. This is a deliberate scope reduction from true
+  arbitrary word/phrase selection and must be confirmed before Phase 58 starts.
+- Selecting a search result should not immediately create a Glossary entry.
+  Admins must still review the candidate term, provide or accept a definition,
+  and save through the existing Glossary create workflow.
+- Do not persist source-question references in the first workflow. Source
+  assessment/page/question context may be shown as temporary UI context only.
+- Keep existing developer-facing survey-oriented route, table, and type names
+  unless a specific implementation phase explicitly changes them. User-facing UI
+  copy should continue to say assessment.
+
+Confirmation items before implementation:
+
+- Confirm the Glossary page organization before Phase 57: tabs inside the
+  existing `/admin/glossary` page versus a separate page for question search.
+- Confirm the candidate-term behavior before Phase 58: use the current search
+  query as the editable prefilled term, or support true selection of an
+  arbitrary word/phrase from inside a result question.
+- Confirm expected scale before treating substring search as a long-term
+  solution. Leading-wildcard PostgreSQL `ILIKE` is acceptable for an Admin
+  helper at modest volume, but 10k+ questions may require `pg_trgm`,
+  full-text search, or another indexed search approach.
+
+Phase split:
+
+- Phase 56 - Glossary Question Search API Foundation:
+  Add shared response types, an Admin-only question text search endpoint,
+  validation, authorization checks, deterministic result shaping, and API tests.
+  Do not change the UI.
+- Phase 57 - Glossary Tabs And Question Search UI:
+  Add tabs to `/admin/glossary`, preserve existing entry management, and add the
+  dynamic question search UI. Do not wire result actions into Glossary creation
+  yet.
+- Phase 58 - Glossary Search Result To Entry Workflow:
+  Wire a result action into the existing create-entry workflow by pre-filling
+  the candidate term from the current query, showing source context, checking
+  duplicates, and saving through existing Glossary CRUD. Do not start this phase
+  until the candidate-term confirmation item is resolved.
+
+Implementation status:
+
+Not started. This note only captures the accepted plan and should be used as
+source material for future implementation prompts.

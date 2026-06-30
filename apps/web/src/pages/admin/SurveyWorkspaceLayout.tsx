@@ -62,7 +62,7 @@ export function SurveyWorkspaceLayout() {
       })
       .catch((fetchError) => {
         if (isActive) {
-          setLoadError(fetchError instanceof Error ? fetchError.message : "Could not load survey");
+          setLoadError(fetchError instanceof Error ? fetchError.message : "Could not load assessment");
         }
       })
       .finally(() => {
@@ -121,7 +121,7 @@ export function SurveyWorkspaceLayout() {
       if (
         status === "retired" &&
         !confirmAdminAction(
-          `Retire "${survey.title}"? Users will no longer be able to start this survey.`
+          `Retire "${survey.title}"? Users will no longer be able to start this assessment.`
         )
       ) {
         return;
@@ -135,9 +135,9 @@ export function SurveyWorkspaceLayout() {
           }),
         status === "published"
           ? survey.status === "retired"
-            ? "Survey republished"
-            : "Survey published"
-          : "Survey retired"
+            ? "Assessment republished"
+            : "Assessment published"
+          : "Assessment retired"
       );
     },
     [runSurveyMutation, survey]
@@ -199,7 +199,7 @@ export function SurveyWorkspaceLayout() {
   if (isLoading || !survey) {
     return (
       <section className="page admin-builder-page">
-        <p className="status muted">Loading survey...</p>
+        <p className="status muted">Loading assessment...</p>
       </section>
     );
   }
@@ -226,7 +226,7 @@ export function SurveyWorkspaceLayout() {
               <Link className="workspace-back-link" to="/admin">
                 Admin portal
               </Link>{" "}
-              / Survey workspace
+              / Assessment workspace
             </p>
             <h2>{survey.title}</h2>
           </div>
@@ -238,7 +238,7 @@ export function SurveyWorkspaceLayout() {
               onClick={() => void handleDuplicate()}
               type="button"
             >
-              {isDraft ? "Duplicate survey" : "Create editable draft copy"}
+              {isDraft ? "Duplicate assessment" : "Create editable draft copy"}
             </button>
             <button
               className="button-link compact-button primary-button"
@@ -246,7 +246,7 @@ export function SurveyWorkspaceLayout() {
               onClick={() => void changeStatus("published")}
               type="button"
             >
-              {isRetired ? "Republish survey" : "Publish survey"}
+              {isRetired ? "Republish assessment" : "Publish assessment"}
             </button>
             <button
               className="button-link compact-button danger-button"
@@ -254,7 +254,7 @@ export function SurveyWorkspaceLayout() {
               onClick={() => void changeStatus("retired")}
               type="button"
             >
-              Retire survey
+              Retire assessment
             </button>
           </div>
         </div>
@@ -262,7 +262,7 @@ export function SurveyWorkspaceLayout() {
         <SurveyEditStateBanner survey={survey} />
       </div>
 
-      <nav className="workspace-tabs" aria-label="Survey workspace pages">
+      <nav className="workspace-tabs" aria-label="Assessment workspace pages">
         <WorkspaceTab label="Setup" to="setup" />
         <WorkspaceTab label={`Questions (${survey.questions.length})`} to="questions" />
         <WorkspaceTab label={`Organize (${survey.pages.length})`} to="organize" />
@@ -292,17 +292,17 @@ function WorkspaceNotFound({ loadError }: { loadError: string | null }) {
     <section className="page admin-builder-page">
       <div className="page-header">
         <p className="eyebrow">Admin portal</p>
-        <h2>Survey not found</h2>
+        <h2>Assessment not found</h2>
       </div>
       <div className="builder-empty-state">
-        <strong>{loadError ?? "This survey does not exist"}</strong>
+        <strong>{loadError ?? "This assessment does not exist"}</strong>
         <span>
-          The survey may have been deleted, or the link may be incorrect. Pick a survey
+          The assessment may have been deleted, or the link may be incorrect. Pick an assessment
           from the overview to keep working.
         </span>
         <div className="inline-actions">
           <Link className="button-link compact-button primary-button" to="/admin">
-            Back to all surveys
+            Back to all assessments
           </Link>
         </div>
       </div>

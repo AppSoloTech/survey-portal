@@ -172,7 +172,7 @@ export function SurveyTemplatesPage() {
               <input
                 disabled={isLoading}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Name, note, source survey, page, or question"
+                placeholder="Name, note, source assessment, page, or question"
                 value={search}
               />
             </label>
@@ -244,7 +244,7 @@ function TemplateSummary({ template }: { template: SurveyTemplateSummary }) {
   return (
     <div className="template-summary-inline">
       <span>
-        From {template.sourceSurveyTitle ?? "a survey"}
+        From {template.sourceSurveyTitle ?? "an assessment"}
         {template.sourcePageTitle ? ` / ${template.sourcePageTitle}` : ""}
         {template.sourceQuestionTitle ? ` / ${template.sourceQuestionTitle}` : ""}
       </span>

@@ -35,22 +35,22 @@ export function CategorySurveysPage() {
       <nav aria-label="Breadcrumb" className="attempt-breadcrumbs">
         <Link to="/dashboard">Dashboard</Link>
         <span aria-hidden="true">/</span>
-        <span className="attempt-breadcrumb-current">{categoryName ?? "Survey group"}</span>
+        <span className="attempt-breadcrumb-current">{categoryName ?? "Assessment group"}</span>
       </nav>
 
       <div className="page-header">
-        <p className="eyebrow">Survey group</p>
-        <h1>{categoryName ?? "Survey group"}</h1>
+        <p className="eyebrow">Assessment group</p>
+        <h1>{categoryName ?? "Assessment group"}</h1>
         {categorySummaries.length > 0 ? (
           <p>
             {categorySummaries.length}{" "}
-            {categorySummaries.length === 1 ? "survey" : "surveys"} in this group.
+            {categorySummaries.length === 1 ? "assessment" : "assessments"} in this group.
           </p>
         ) : null}
       </div>
 
       {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
-      {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
+      {isLoading ? <AlertMessage variant="info">Loading assessments...</AlertMessage> : null}
       {!isLoading && categorySummaries.length === 0 ? (
         <div
           aria-atomic="true"
@@ -58,9 +58,9 @@ export function CategorySurveysPage() {
           className="builder-empty-state"
           role="status"
         >
-          <strong>No surveys in this group.</strong>
+          <strong>No assessments in this group.</strong>
           <span>
-            The group may have been removed or its surveys unpublished.{" "}
+            The group may have been removed or its assessments unpublished.{" "}
             <Link to="/dashboard">Back to dashboard</Link>.
           </span>
         </div>

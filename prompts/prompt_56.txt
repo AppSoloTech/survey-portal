@@ -1,0 +1,255 @@
+# Phase 56 — Glossary Question Search API Foundation
+
+## Purpose
+
+Add the backend and shared-type foundation for Admins to search question text
+across non-retired assessments from the Glossary area.
+
+Source feedback or planning note:
+
+```txt
+notes/client_review_2026-06-30_glossary_question_search.txt
+```
+
+This phase creates only the API foundation. It should not change the Admin UI.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_56.txt`
+* Claude review: `notes/claude_review_phase_56.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/client_review_2026-06-30_glossary_question_search.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Prior glossary prompts and artifacts:
+  * `prompts/prompt_39.txt`
+  * `prompts/prompt_40.txt`
+  * `prompts/prompt_41.txt`
+  * `notes/claude_handoff_phase_39_glossary_admin.txt`
+  * `notes/claude_review_phase_39_glossary_admin.txt`
+  * `notes/claude_handoff_phase_40_glossary_dictionary_assist.txt`
+  * `notes/claude_review_phase_40_glossary_dictionary_assist.txt`
+  * `notes/claude_handoff_phase_41_inline_glossary_rendering.txt`
+  * `notes/claude_review_phase_41_inline_glossary_rendering.txt`
+* Current glossary and assessment files:
+  * `packages/shared/src/index.ts`
+  * `apps/api/src/routes/adminGlossaryRoutes.ts`
+  * `apps/api/src/services/glossary.ts`
+  * `apps/api/test/glossary.test.ts`
+  * `packages/shared/test/glossaryText.test.ts`
+  * `apps/web/src/pages/admin/AdminGlossaryPage.tsx`
+  * `apps/web/src/api/glossary.ts`
+  * `apps/web/src/components/InlineGlossaryText.tsx`
+
+---
+
+# Received Feedback
+
+1. The Glossary needs a second workflow that helps Admins find terms or phrases
+   from existing assessment question text.
+2. Search should cover all non-retired assessments, not only one assessment or
+   one state.
+3. Search should refine dynamically as the Admin types, eventually allowing a
+   full question to appear when the full question text is typed.
+4. This phase owns only the API foundation needed for that later UI.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* feature request
+* admin workflow foundation
+* API contract change
+* authorization and data-visibility concern
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none expected.
+* API contracts: yes, add an Admin-only Glossary question-search endpoint.
+* Participant-facing assessment behavior: none.
+* Hidden-tag visibility: none; hidden tags must not be searched or returned.
+* Authentication or authorization: yes, the endpoint must remain Admin-only.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, add focused API coverage.
+
+Ask for clarification only when a safe implementation cannot be inferred.
+
+---
+
+# Scope
+
+Implement:
+
+* Shared response types for Admin Glossary question search in
+  `packages/shared/src/index.ts`.
+* An Admin-only endpoint under the existing Glossary Admin API surface, such as
+  `GET /api/admin/glossary/question-search?q=...`.
+* Query validation:
+  * trim whitespace
+  * reject or return an empty result for queries shorter than the chosen minimum
+    length, with consistent API behavior documented in tests
+  * cap result count with a conservative default, such as 20, and a hard upper
+    bound, such as 50
+* Question-text-only search over assessment questions.
+* Filtering that includes draft and published assessments while excluding
+  retired assessments and soft-deleted records.
+* Case-insensitive substring matching. Do not implement fuzzy search yet.
+* Deterministic result shape including enough context for the UI:
+  * assessment id, title, and status
+  * page id, title, and display order when available
+  * question id, question text, and display order
+  * required match start/end offsets for the first case-insensitive substring
+    match in `questionText`
+* Deterministic ordering suitable for repeated keystroke searches:
+  * earliest match position first
+  * then assessment title
+  * then page display order
+  * then question display order
+  * then question id as a final tie-breaker
+* Focused API tests for authentication, role authorization, validation, status
+  filtering, soft-delete filtering where the schema supports it, and returned
+  result shape.
+
+## Non-Goals
+
+Do not implement:
+
+* Admin Glossary tabs or any UI changes.
+* Search result rendering, debounce, loading states, or empty states.
+* Add-to-Glossary creation wiring.
+* Persisted source-question references on Glossary entries.
+* Database schema changes, migrations, indexes, or full-text-search
+  infrastructure unless the existing schema already requires a tiny supporting
+  adjustment to make tests pass.
+* Search over answer options, page descriptions, assessment descriptions,
+  hidden tags, reports, or response data.
+* Fuzzy matching, stemming, ranking engines, or external search providers.
+* Participant-facing API changes.
+
+## Assumptions
+
+* Developer-facing route, table, and type names may continue to use
+  survey-oriented identifiers where the current codebase does.
+* User-facing strings introduced later should say assessment, but this API phase
+  may return fields aligned with existing domain types.
+* Non-retired means draft and published assessment records only.
+* The first implementation can use database substring matching because this is
+  an Admin helper workflow, not a public high-volume endpoint.
+* Empty or short queries should not scan all questions.
+* Leading-wildcard PostgreSQL `ILIKE` is acceptable for the first Admin helper
+  version, but should be revisited if real content volume approaches or exceeds
+  roughly 10k questions.
+
+## Open Questions
+
+* None blocking Phase 56. Future phases may revisit full-text search,
+  `pg_trgm`, or another indexed search approach if real assessment volume makes
+  substring search too slow.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Admin-only authorization and avoidance of hidden-tag/response-data exposure.
+2. Correct non-retired assessment filtering.
+3. Stable shared API contract and validation behavior.
+4. Focused regression coverage.
+5. Clear handoff notes for the UI phases.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Non-admin and unauthenticated users cannot access the question-search
+  endpoint.
+* Admins can search question text across draft and published assessments.
+* Retired assessments are excluded.
+* Hidden tags, response data, answer data, and Admin-only glossary source
+  metadata are not returned.
+* Short or blank queries do not trigger broad unbounded searches.
+* Returned results include assessment/page/question context needed by the
+  planned UI.
+* Returned results include match start/end offsets for highlighting.
+* Results follow the documented deterministic ordering.
+* API tests cover the new behavior and relevant edge cases.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a
+  documented question.
+
+---
+
+# Testing Requirements
+
+Run the default full validation gate unless a narrower phase-specific gate is
+agreed before implementation:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+git diff --check
+```
+
+At minimum, add or update API tests around:
+
+* unauthenticated access
+* non-admin access
+* Admin search success
+* short/blank query behavior
+* draft and published inclusion
+* retired exclusion
+* required match offsets
+* result shape and deterministic ordering
+
+Manual checks to perform or document:
+
+* Exercise the endpoint as an Admin with a known matching question.
+* Confirm the endpoint returns no hidden tags, responses, or glossary source
+  metadata.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for
+  production-bound changes.
+* `markdown/FOLLOW_UPS.md` for deferred indexing, ranking, or search-scaling
+  follow-ups discovered during implementation.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* API docs or setup docs if endpoint usage or operator behavior needs durable
+  documentation.
+* `notes/claude_handoff_phase_56.txt` before marking implementation complete.

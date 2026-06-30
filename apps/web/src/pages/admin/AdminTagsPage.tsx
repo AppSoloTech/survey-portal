@@ -413,7 +413,7 @@ export function AdminTagsPage() {
         <p className="eyebrow">Admin portal</p>
         <h2>Tag catalog</h2>
         <p>
-          Reusable hidden tag categories and values. Tags saved in the survey builder
+          Reusable hidden tag categories and values. Tags saved in the assessment builder
           register here automatically; categories help admins arrange catalog pairs
           without changing participant-facing data.
         </p>
@@ -504,7 +504,7 @@ export function AdminTagsPage() {
         {!isLoading && tags.length === 0 && groups.length === 0 ? (
           <div className="builder-empty-state">
             <strong>No catalog tags yet</strong>
-            <span>Add an entry above, or save hidden tags in the survey builder.</span>
+            <span>Add an entry above, or save hidden tags in the assessment builder.</span>
           </div>
         ) : null}
 

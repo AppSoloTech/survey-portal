@@ -150,7 +150,7 @@ export function buildSurveyFlowGraph(survey: Survey): SurveyFlowGraph {
     issues.push({
       code: "circular_navigation",
       questionId: cyclePath[0],
-      message: `Survey navigation can loop: ${cycleLabel}. Valid admin-created jump rules are forward-only, so this indicates legacy or imported data.`
+      message: `Assessment navigation can loop: ${cycleLabel}. Valid admin-created jump rules are forward-only, so this indicates legacy or imported data.`
     });
   }
 
@@ -217,7 +217,7 @@ function buildConditionalEdges(
       edgeIssues.push({
         code: "missing_source_question",
         ruleId: rule.id,
-        message: `Rule ${rule.id}: source question (id ${rule.sourceQuestionId}) does not exist in this survey, so the rule can never trigger.`
+        message: `Rule ${rule.id}: source question (id ${rule.sourceQuestionId}) does not exist in this assessment, so the rule can never trigger.`
       });
     } else if (!isAllowedRuleSource(rule, sourceQuestion)) {
       edgeIssues.push({
@@ -241,7 +241,7 @@ function buildConditionalEdges(
       edgeIssues.push({
         code: "unsupported_condition_operator",
         ruleId: rule.id,
-        message: `Rule ${rule.id}: condition operator "${rule.conditionOperator}" is not supported by the survey runtime; only "equals" and "is_blank" are evaluated.`
+        message: `Rule ${rule.id}: condition operator "${rule.conditionOperator}" is not supported by the assessment runtime; only "equals" and "is_blank" are evaluated.`
       });
     }
 
@@ -267,7 +267,7 @@ function buildConditionalEdges(
       edgeIssues.push({
         code: "unsupported_action_type",
         ruleId: rule.id,
-        message: `Rule ${rule.id}: action type "${rule.actionType}" is not executed by the survey runtime.`
+        message: `Rule ${rule.id}: action type "${rule.actionType}" is not executed by the assessment runtime.`
       });
     }
 
@@ -280,7 +280,7 @@ function buildConditionalEdges(
         ruleId: rule.id,
         message: `Rule ${rule.id}: target question${
           rule.targetQuestionId !== null ? ` (id ${rule.targetQuestionId})` : ""
-        } does not exist in this survey. If this rule triggered, the survey would end at the source question.`
+        } does not exist in this assessment. If this rule triggered, the assessment would end at the source question.`
       });
     } else if (sourceQuestion && isEmptyPageSkip) {
       // Empty-page skip: no first question to order against, so check page order.

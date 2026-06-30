@@ -48,7 +48,7 @@ export function AdminSurveysOverview() {
       })
       .catch((loadError) => {
         if (isActive) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load surveys");
+          setError(loadError instanceof Error ? loadError.message : "Could not load assessments");
         }
       })
       .finally(() => {
@@ -168,7 +168,7 @@ export function AdminSurveysOverview() {
     try {
       await deleteSurvey(survey.id);
       setSurveys((current) => current.filter((item) => item.id !== survey.id));
-      toast.success(`Survey "${survey.title}" deleted`);
+      toast.success(`Assessment "${survey.title}" deleted`);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Request failed");
     } finally {
@@ -192,7 +192,7 @@ export function AdminSurveysOverview() {
       <div className="admin-overview-layout">
         <div className="admin-overview-side">
           <form className="builder-form compact-builder-form" onSubmit={handleCreateSurvey}>
-            <h3>Create survey</h3>
+            <h3>Create assessment</h3>
             <label>
               Title
               <input name="title" required />
@@ -206,10 +206,10 @@ export function AdminSurveysOverview() {
               disabled={isSubmitting}
               type="submit"
             >
-              Create draft survey
+              Create draft assessment
             </button>
             <p className="builder-heading-note">
-              New surveys start as drafts and open in the survey workspace.
+              New assessments start as drafts and open in the assessment workspace.
             </p>
           </form>
 
@@ -218,12 +218,12 @@ export function AdminSurveysOverview() {
           <CategoryManagerPanel />
         </div>
 
-        <div className="overview-survey-list" aria-label="Admin survey list">
-          {isLoading ? <p className="status muted">Loading surveys...</p> : null}
+        <div className="overview-survey-list" aria-label="Admin assessment list">
+          {isLoading ? <p className="status muted">Loading assessments...</p> : null}
           {!isLoading && surveys.length === 0 ? (
             <div className="builder-empty-state">
-              <strong>No surveys yet</strong>
-              <span>Create the first survey to start building questions and logic.</span>
+              <strong>No assessments yet</strong>
+              <span>Create the first assessment to start building questions and logic.</span>
             </div>
           ) : null}
           {pagedSurveys.map((survey) => (
@@ -246,7 +246,7 @@ export function AdminSurveysOverview() {
                   className="button-link compact-button secondary-button"
                   disabled={isSubmitting}
                   onClick={() => void handleDuplicateSurvey(survey)}
-                  title="Create an editable draft copy of this survey"
+                  title="Create an editable draft copy of this assessment"
                   type="button"
                 >
                   Duplicate
@@ -263,7 +263,7 @@ export function AdminSurveysOverview() {
             </div>
           ))}
           {pageCount > 1 ? (
-            <div className="pagination-row" aria-label="Survey list pages">
+            <div className="pagination-row" aria-label="Assessment list pages">
               <button
                 className="button-link compact-button secondary-button"
                 disabled={safePage <= 1}
@@ -408,7 +408,7 @@ function CategoryManagerPanel() {
   async function handleDelete(category: SurveyCategory) {
     if (
       !confirmAdminAction(
-        `Delete category "${category.name}"? Surveys assigned to it become uncategorized.`
+        `Delete category "${category.name}"? Assessments assigned to it become uncategorized.`
       )
     ) {
       return;
@@ -430,9 +430,9 @@ function CategoryManagerPanel() {
 
   return (
     <section className="builder-form compact-builder-form category-manager-panel">
-      <h3>Survey categories</h3>
+      <h3>Assessment categories</h3>
       <p className="builder-heading-note">
-        Group surveys for the dashboard. Assign a category on each survey&apos;s setup page.
+        Group assessments for the dashboard. Assign a category on each assessment&apos;s setup page.
       </p>
 
       {error ? <p className="status error">{error}</p> : null}

@@ -48,14 +48,14 @@ export function UserDashboard() {
     <section className="page dashboard-page" ref={revealRef}>
       <div className="page-header" data-reveal>
         <p className="eyebrow">User portal</p>
-        <h1>Survey Dashboard</h1>
-        <p>Browse available surveys, resume saved progress, and review completed attempts.</p>
+        <h1>Assessment Dashboard</h1>
+        <p>Browse available assessments, resume saved progress, and review completed attempts.</p>
       </div>
 
       {error ? <AlertMessage variant="error">{error}</AlertMessage> : null}
-      {isLoading ? <AlertMessage variant="info">Loading surveys...</AlertMessage> : null}
+      {isLoading ? <AlertMessage variant="info">Loading assessments...</AlertMessage> : null}
       {!isLoading && summaries.length === 0 ? (
-        <AlertMessage variant="info">No published surveys are available.</AlertMessage>
+        <AlertMessage variant="info">No published assessments are available.</AlertMessage>
       ) : null}
 
       <ResumeNudge summaries={summaries} />
@@ -63,13 +63,13 @@ export function UserDashboard() {
       {summaries.length > 0 ? (
         <div className="dashboard-search" data-reveal>
           <label>
-            <span className="visually-hidden">Search surveys</span>
+            <span className="visually-hidden">Search assessments</span>
             <input
               onChange={(event) => {
                 setQuery(event.target.value);
                 setPage(1);
               }}
-              placeholder="Search surveys and groups..."
+              placeholder="Search assessments and groups..."
               type="search"
               value={query}
             />
@@ -78,7 +78,7 @@ export function UserDashboard() {
       ) : null}
 
       {!isLoading && summaries.length > 0 && cards.length === 0 ? (
-        <AlertMessage variant="info">No surveys match "{query.trim()}".</AlertMessage>
+        <AlertMessage variant="info">No assessments match "{query.trim()}".</AlertMessage>
       ) : null}
 
       <div className="survey-grid">
@@ -116,14 +116,17 @@ function ResumeNudge({ summaries }: { summaries: SurveyAttemptSummary[] }) {
   }
 
   const others = inProgress.length - 1;
+  const otherAssessmentCopy =
+    others > 0
+      ? ` (and ${others} other ${others === 1 ? "assessment" : "assessments"})`
+      : "";
 
   return (
     <div className="resume-nudge" data-reveal>
       <div>
         <strong>Pick up where you left off</strong>
         <span>
-          "{latest.survey.title}" is still in progress
-          {others > 0 ? ` (and ${others} other ${others === 1 ? "survey" : "surveys"})` : ""}.
+          "{latest.survey.title}" is still in progress{otherAssessmentCopy}.
         </span>
       </div>
       <button
@@ -131,7 +134,7 @@ function ResumeNudge({ summaries }: { summaries: SurveyAttemptSummary[] }) {
         onClick={() => navigate(`/surveys/${latest.survey.id}/attempt`)}
         type="button"
       >
-        Resume survey
+        Resume assessment
         <span className="visually-hidden">: {latest.survey.title}</span>
       </button>
     </div>
@@ -144,7 +147,7 @@ function CategoryGroupCard({ group }: { group: CategoryGroupSummary }) {
   return (
     <article className="survey-card category-card">
       <div>
-        <p className="eyebrow">Survey group</p>
+        <p className="eyebrow">Assessment group</p>
         <h4>{group.categoryName}</h4>
         <p>
           {group.completedCount} of {group.surveyCount} completed
@@ -152,14 +155,14 @@ function CategoryGroupCard({ group }: { group: CategoryGroupSummary }) {
       </div>
       <div className="survey-card-footer">
         <span className="status-pill">
-          {group.surveyCount === 1 ? "1 survey" : `${group.surveyCount} surveys`}
+          {group.surveyCount === 1 ? "1 assessment" : `${group.surveyCount} assessments`}
         </span>
         <button
           className="button-link compact-button primary-button"
           onClick={() => navigate(`/dashboard/category/${group.categoryId}`)}
           type="button"
         >
-          View surveys
+          View assessments
           <span className="visually-hidden"> in {group.categoryName}</span>
         </button>
       </div>

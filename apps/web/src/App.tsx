@@ -135,7 +135,7 @@ function AppShell() {
   );
 }
 
-const appTitle = "Survey Portal";
+const appTitle = "Assessment Portal";
 
 const routeTitles = [
   { pattern: /^\/$/, title: "Home" },
@@ -145,10 +145,10 @@ const routeTitles = [
   { pattern: /^\/reset-password$/, title: "Reset password" },
   { pattern: /^\/dashboard$/, title: "Dashboard" },
   { pattern: /^\/settings$/, title: "Account settings" },
-  { pattern: /^\/dashboard\/category\/[^/]+$/, title: "Survey group" },
-  { pattern: /^\/surveys\/[^/]+\/attempt$/, title: "Survey attempt" },
-  { pattern: /^\/anonymous-surveys$/, title: "Anonymous surveys" },
-  { pattern: /^\/anonymous-surveys\/[^/]+$/, title: "Anonymous survey attempt" },
+  { pattern: /^\/dashboard\/category\/[^/]+$/, title: "Assessment group" },
+  { pattern: /^\/surveys\/[^/]+\/attempt$/, title: "Assessment attempt" },
+  { pattern: /^\/anonymous-surveys$/, title: "Anonymous assessments" },
+  { pattern: /^\/anonymous-surveys\/[^/]+$/, title: "Anonymous assessment attempt" },
   { pattern: /^\/admin\/performance$/, title: "Performance reports" }
 ];
 
@@ -240,8 +240,8 @@ function PublicHeader() {
   return (
     <header className={isScrolled ? "app-header scrolled" : "app-header"}>
       <Link className="brand-link" to="/anonymous-surveys">
-        <p className="eyebrow">Survey Portal</p>
-        <span className="brand-title">Anonymous surveys</span>
+        <p className="eyebrow">Assessment Portal</p>
+        <span className="brand-title">Anonymous assessments</span>
       </Link>
       <div className="header-actions">
         <ThemeToggle />
@@ -314,7 +314,7 @@ function Header() {
       ]
     : [
         { to: "/", label: "Home" },
-        { to: "/anonymous-surveys", label: "Anonymous surveys" },
+        { to: "/anonymous-surveys", label: "Anonymous assessments" },
         { to: "/register", label: "Create account" }
       ];
   const isAccountActive = location.pathname.startsWith("/settings");
@@ -333,8 +333,8 @@ function Header() {
   return (
     <header className={isScrolled ? "app-header scrolled" : "app-header"}>
       <Link className="brand-link" onClick={closeMenu} to="/">
-        <p className="eyebrow">Survey Portal</p>
-        <span className="brand-title">Survey workspace</span>
+        <p className="eyebrow">Assessment Portal</p>
+        <span className="brand-title">Assessment workspace</span>
       </Link>
       <div className="header-actions">
         <ThemeToggle />

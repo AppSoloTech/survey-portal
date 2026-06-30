@@ -15,10 +15,12 @@ describe("App shell accessibility", () => {
     expect(getRouteTitle("/reset-password")).toBe("Reset password");
     expect(getRouteTitle("/dashboard")).toBe("Dashboard");
     expect(getRouteTitle("/settings")).toBe("Account settings");
-    expect(getRouteTitle("/dashboard/category/12")).toBe("Survey group");
-    expect(getRouteTitle("/surveys/42/attempt")).toBe("Survey attempt");
-    expect(getRouteTitle("/anonymous-surveys")).toBe("Anonymous surveys");
-    expect(getRouteTitle("/anonymous-surveys/public-token")).toBe("Anonymous survey attempt");
+    expect(getRouteTitle("/dashboard/category/12")).toBe("Assessment group");
+    expect(getRouteTitle("/surveys/42/attempt")).toBe("Assessment attempt");
+    expect(getRouteTitle("/anonymous-surveys")).toBe("Anonymous assessments");
+    expect(getRouteTitle("/anonymous-surveys/public-token")).toBe(
+      "Anonymous assessment attempt"
+    );
     expect(getRouteTitle("/admin/performance")).toBe("Performance reports");
     expect(getRouteTitle("/admin")).toBeNull();
   });

@@ -12,7 +12,7 @@ export function PaginationRow({
   }
 
   return (
-    <div aria-label="Survey pages" className="pagination-row">
+    <div aria-label="Assessment pages" className="pagination-row">
       <button
         className="button-link compact-button secondary-button"
         disabled={page <= 1}

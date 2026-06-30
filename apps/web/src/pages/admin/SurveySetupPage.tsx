@@ -135,7 +135,7 @@ export function SurveySetupPage() {
           status: survey.status,
           categoryId: selectedCategoryId
         }),
-      "Survey metadata saved"
+      "Assessment metadata saved"
     );
   }
 
@@ -179,7 +179,7 @@ export function SurveySetupPage() {
       });
       setAnonymousLinks((current) => [response.link, ...current]);
       setNewAnonymousUrl(response.link.publicUrl);
-      setFeedback({ error: null, notice: "Anonymous survey link created" });
+      setFeedback({ error: null, notice: "Anonymous assessment link created" });
       await copyText(response.link.publicUrl)
         .then(() => setCopiedAnonymousLinkId(response.link.id))
         .catch(() => undefined);
@@ -188,7 +188,7 @@ export function SurveySetupPage() {
         error:
           createError instanceof Error
             ? createError.message
-            : "Could not create anonymous survey link",
+            : "Could not create anonymous assessment link",
         notice: null
       });
     } finally {
@@ -205,13 +205,13 @@ export function SurveySetupPage() {
       setAnonymousLinks((current) =>
         current.map((link) => (link.id === linkId ? response.link : link))
       );
-      setFeedback({ error: null, notice: "Anonymous survey link disabled" });
+      setFeedback({ error: null, notice: "Anonymous assessment link disabled" });
     } catch (disableError) {
       setFeedback({
         error:
           disableError instanceof Error
             ? disableError.message
-            : "Could not disable anonymous survey link",
+            : "Could not disable anonymous assessment link",
         notice: null
       });
     } finally {
@@ -227,7 +227,7 @@ export function SurveySetupPage() {
     try {
       await copyText(link.publicUrl);
       setCopiedAnonymousLinkId(link.id);
-      setFeedback({ error: null, notice: "Anonymous survey link copied" });
+      setFeedback({ error: null, notice: "Anonymous assessment link copied" });
     } catch {
       setFeedback({ error: "Could not copy link", notice: null });
     }
@@ -284,7 +284,7 @@ export function SurveySetupPage() {
         ...current.map((link) => (link.id === response.disabledLink.id ? response.disabledLink : link))
       ]);
       setNewAnonymousUrl(response.link.publicUrl);
-      setFeedback({ error: null, notice: "Anonymous survey link rotated" });
+      setFeedback({ error: null, notice: "Anonymous assessment link rotated" });
       await copyText(response.link.publicUrl)
         .then(() => setCopiedAnonymousLinkId(response.link.id))
         .catch(() => undefined);
@@ -293,7 +293,7 @@ export function SurveySetupPage() {
         error:
           rotateError instanceof Error
             ? rotateError.message
-            : "Could not rotate anonymous survey link",
+            : "Could not rotate anonymous assessment link",
         notice: null
       });
     } finally {
@@ -320,7 +320,7 @@ export function SurveySetupPage() {
       });
       setTiming(response.timing);
       setTimingOverrideMinutes(String(Math.round((response.timing.adminOverrideSeconds ?? 0) / 60)));
-      setFeedback({ error: null, notice: "Survey timing override saved" });
+      setFeedback({ error: null, notice: "Assessment timing override saved" });
       await reloadSurvey();
     } catch (timingError) {
       setFeedback({
@@ -339,7 +339,7 @@ export function SurveySetupPage() {
       const response = await clearSurveyTimingOverride(survey.id);
       setTiming(response.timing);
       setTimingOverrideMinutes("");
-      setFeedback({ error: null, notice: "Survey timing override cleared" });
+      setFeedback({ error: null, notice: "Assessment timing override cleared" });
       await reloadSurvey();
     } catch (timingError) {
       setFeedback({
@@ -359,10 +359,10 @@ export function SurveySetupPage() {
       <form className="builder-form" key={`metadata-${survey.id}`} onSubmit={handleSaveMetadata}>
         <div className="builder-section-heading">
           <div>
-            <p className="eyebrow">Survey metadata</p>
+            <p className="eyebrow">Assessment metadata</p>
             <h3>Title, description, and category</h3>
             <p className="builder-heading-note">
-              Draft changes are saved here without publishing the survey.
+              Draft changes are saved here without publishing the assessment.
             </p>
           </div>
         </div>
@@ -430,9 +430,9 @@ export function SurveySetupPage() {
         <div className="builder-section-heading">
           <div>
             <p className="eyebrow">Completion estimate</p>
-            <h3>Survey timing</h3>
+            <h3>Assessment timing</h3>
             <p className="builder-heading-note">
-              Effective time is used by participant-facing survey payloads.
+              Effective time is used by participant-facing assessment payloads.
             </p>
           </div>
           {timing ? (
@@ -511,7 +511,7 @@ export function SurveySetupPage() {
             <p className="eyebrow">Anonymous access</p>
             <h3>Tokenized public links</h3>
             <p className="builder-heading-note">
-              Published surveys can be completed without an account through scoped links.
+              Published assessments can be completed without an account through scoped links.
             </p>
           </div>
           <div className="anonymous-link-create-controls">
@@ -541,7 +541,7 @@ export function SurveySetupPage() {
         </div>
 
         {survey.status !== "published" ? (
-          <p className="status muted">Publish the survey before creating anonymous links.</p>
+          <p className="status muted">Publish the assessment before creating anonymous links.</p>
         ) : null}
 
         {newAnonymousUrl ? (
@@ -559,7 +559,7 @@ export function SurveySetupPage() {
         {!isLoadingLinks && anonymousLinks.length === 0 ? (
           <div className="builder-empty-state">
             <strong>No anonymous links</strong>
-            <span>Create a tokenized link when this survey should be available without login.</span>
+            <span>Create a tokenized link when this assessment should be available without login.</span>
           </div>
         ) : null}
 
@@ -573,7 +573,7 @@ export function SurveySetupPage() {
             {enabledAnonymousLinks.length === 0 ? (
               <div className="builder-empty-state compact-empty-state">
                 <strong>No enabled links</strong>
-                <span>Create or rotate a tokenized link when this survey should be available without login.</span>
+                <span>Create or rotate a tokenized link when this assessment should be available without login.</span>
               </div>
             ) : null}
             {enabledAnonymousLinks.map((link) => {
@@ -614,7 +614,7 @@ export function SurveySetupPage() {
                         <span />
                       </span>
                       <span className="anonymous-directory-toggle-copy">
-                        <span>Show on anonymous surveys page</span>
+                        <span>Show on anonymous assessments page</span>
                         <small>Allow this link to appear in the public directory.</small>
                       </span>
                     </label>

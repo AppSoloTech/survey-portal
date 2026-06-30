@@ -33,7 +33,7 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
   if (survey.status === "draft") {
     return (
       <div className="builder-state-banner draft">
-        <strong>Draft survey</strong>
+        <strong>Draft assessment</strong>
         <span>
           All builder controls are editable. Publish only after questions, options, and
           jump rules are ready for users.
@@ -45,9 +45,9 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
   if (survey.status === "published") {
     return (
       <div className="builder-state-banner locked">
-        <strong>Published survey</strong>
+        <strong>Published assessment</strong>
         <span>
-          Users can access this survey. Questions, options, and rules are locked to
+          Users can access this assessment. Questions, options, and rules are locked to
           protect existing responses, while hidden tags can still be maintained for
           reporting. Title, description, and category stay editable. Create an editable
           draft copy to make structural changes.
@@ -58,10 +58,10 @@ export function SurveyEditStateBanner({ survey }: { survey: Survey }) {
 
   return (
     <div className="builder-state-banner retired">
-      <strong>Retired survey</strong>
+      <strong>Retired assessment</strong>
       <span>
         New starts are paused. The structure stays locked — create an editable draft copy
-        to make changes, or republish if the survey should become available again.
+        to make changes, or republish if the assessment should become available again.
       </span>
     </div>
   );
@@ -84,14 +84,14 @@ export function StatusActionPanel({
     <section className="builder-form status-action-panel">
       <div className="builder-section-heading">
         <div>
-          <p className="eyebrow">Survey status</p>
+          <p className="eyebrow">Assessment status</p>
           <h3>Availability</h3>
           <p className="builder-heading-note">
             {isDraft
-              ? "This survey is saved as a draft. Publish when required questions, options, and rules are ready."
+              ? "This assessment is saved as a draft. Publish when required questions, options, and rules are ready."
               : isPublished
-                ? "This survey is live for users. Retire it to stop new starts while preserving existing attempts."
-                : "This survey is retired and unavailable for new starts. Republish it when it passes validation."}
+                ? "This assessment is live for users. Retire it to stop new starts while preserving existing attempts."
+                : "This assessment is retired and unavailable for new starts. Republish it when it passes validation."}
           </p>
         </div>
         <span className={`status-pill ${survey.status}`}>{survey.status}</span>
@@ -108,7 +108,7 @@ export function StatusActionPanel({
             onClick={() => void onStatusChange("published")}
             type="button"
           >
-            {isRetired ? "Republish survey" : "Publish survey"}
+            {isRetired ? "Republish assessment" : "Publish assessment"}
           </button>
           <button
             className="button-link compact-button danger-button"
@@ -116,7 +116,7 @@ export function StatusActionPanel({
             onClick={() => void onStatusChange("retired")}
             type="button"
           >
-            Retire survey
+            Retire assessment
           </button>
         </div>
       </div>
@@ -880,7 +880,7 @@ export function SurveyPreviewPanel({
       <div className="builder-section-heading">
         <div>
           <p className="eyebrow">Read-only preview</p>
-          <h3>User survey preview</h3>
+          <h3>User assessment preview</h3>
           <p className="builder-heading-note">
             Preview shows configured question order. Conditional jumps still depend on
             user answers during completion.
@@ -891,7 +891,7 @@ export function SurveyPreviewPanel({
 
       <div className="preview-surface" aria-label={`Preview of ${survey.title}`}>
         <div className="preview-intro">
-          <p className="eyebrow">Survey</p>
+          <p className="eyebrow">Assessment</p>
           <h4>{survey.title}</h4>
           {survey.description ? <p>{survey.description}</p> : null}
         </div>
@@ -899,7 +899,7 @@ export function SurveyPreviewPanel({
         {orderedQuestions.length === 0 ? (
           <div className="builder-empty-state compact">
             <strong>No questions to preview</strong>
-            <span>Add questions above to see how this survey will read for users.</span>
+            <span>Add questions above to see how this assessment will read for users.</span>
           </div>
         ) : null}
 

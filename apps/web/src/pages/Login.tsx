@@ -44,7 +44,7 @@ export function Login() {
         <div className="page-header auth-card-header">
           <p className="eyebrow">User access</p>
           <h1>Welcome back</h1>
-          <p>Access your survey workspace.</p>
+          <p>Access your assessment workspace.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
           {passwordResetComplete ? (

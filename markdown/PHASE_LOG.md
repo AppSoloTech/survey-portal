@@ -6,6 +6,268 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Planning Update — Glossary Question Search Refactor Prompts
+
+Date:
+2026-06-30
+
+Status:
+Prompt drafts created; review feedback addressed; validation passed;
+implementation not started
+
+Prompt:
+`prompts/prompt_56.txt`, `prompts/prompt_57.txt`, and
+`prompts/prompt_58.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Client/planning intake:
+  `notes/client_review_2026-06-30_glossary_question_search.txt`
+- Claude/Codex handoff: Not created; this is planning documentation only.
+- Claude prompt review: External feedback provided by the human and addressed
+  in the planning docs.
+
+## Goals
+
+- Preserve the established phase workflow while preparing the larger Glossary
+  refactor.
+- Split the accepted Glossary question-search plan into implementation-sized
+  prompts.
+- Keep all production behavior unchanged until a future implementation phase.
+
+## Planned
+
+- Added the accepted client feedback and current planning direction for a
+  two-workflow Admin Glossary area:
+  - existing Glossary entry management
+  - new question-text discovery across non-retired assessments
+- Drafted `prompts/prompt_56.txt` for the Admin-only Glossary question search
+  API foundation.
+- Drafted `prompts/prompt_57.txt` for `/admin/glossary` tabs and the dynamic
+  question search UI.
+- Drafted `prompts/prompt_58.txt` for connecting a search result to the
+  existing create-entry workflow without immediate entry creation.
+
+## Important Decisions
+
+### Review Feedback Tightening
+
+Decision:
+The planning docs now call out two confirmation points before implementation:
+tabs versus a separate Glossary question-search page, and raw query prefill
+versus true arbitrary word/phrase selection from a result.
+
+Reason:
+Claude review found the plan sound, but noted that those two details should not
+be treated as final client decisions without explicit sign-off.
+
+Consequence:
+Phase 56 remains safe to start as the API foundation. Phase 57 should confirm
+the page-organization direction before UI implementation, and Phase 58 should
+confirm candidate-term behavior before workflow implementation.
+
+### Required Match Offsets
+
+Decision:
+Phase 56 now requires match start/end offsets and names the result ordering.
+
+Reason:
+The question-search UI depends on reliable highlighting, and deterministic
+ordering should be specific enough for tests and review.
+
+Consequence:
+Phase 57 can treat highlight data as part of the API contract instead of an
+optional best effort.
+
+### Prompt Queue Alignment
+
+Decision:
+Phases 54 and 55 remain paused. Phase 56 is the next active feature prompt.
+
+Reason:
+The previous queue pause explicitly reserved Phase 56 for the next resumed
+feature prompt, and the accepted Glossary question-search work is now the next
+planned feature sequence.
+
+Consequence:
+Future implementation should begin with `prompts/prompt_56.txt` unless the
+human changes priority.
+
+### Documentation Only
+
+Decision:
+This update creates planning artifacts only.
+
+Reason:
+The accepted request was to write prompts and update non-code planning docs, not
+to implement the Glossary refactor.
+
+Consequence:
+No backend, frontend, schema, test, release-note, package version, or production
+behavior changes are part of this planning update.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none yet; Phase 56 will introduce the planned contract.
+- Frontend UX impact: none yet; Phase 57 will introduce the planned UI.
+- Auth/authorization impact: none yet; Phase 56 must preserve Admin-only access.
+- Operational impact: none.
+
+## Validation
+
+- Passed: `git diff --check`
+- Passed: prompt heading inspection with
+  `rg -n "Phase 5[6-8]|glossary question" prompts markdown notes`
+- No app tests, typecheck, build, release bump, or package changes required for
+  this docs-only planning update.
+
+## Follow-Ups
+
+- Implement Phase 56 when the team is ready to begin the Glossary refactor.
+- Keep staging intentional so these prompt docs do not accidentally mix with
+  unrelated uncommitted app/versioning changes.
+
+## Commit Readiness
+
+- Requirements implemented: Planning docs only.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: No runtime security behavior changed.
+- Review findings addressed or deferred: Claude prompt-review feedback was
+  addressed; no formal implementation review is applicable yet.
+- Manual testing complete: Not applicable for docs-only planning.
+- Ready to commit: Yes, after validation passes and human review of the prompt
+  wording.
+
+---
+
+## Maintenance Update — Assessment Terminology And Question Rendering Fixes
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; release v0.9.2 prepared
+
+Prompt:
+Direct user requests during the 2026-06-30 session:
+
+- Fix Safari initial question prompt rendering and inline glossary popover
+  visibility regressions.
+- Replace user-facing "survey" terminology with "assessment" terminology.
+- Update app versioning, patch notes, and phase log for the session changes.
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Claude/Codex handoff: Not created; this was handled as a direct maintenance
+  patch rather than a numbered prompt phase.
+- Claude review: Not run; review remains pending if the team wants a separate
+  AI review before commit.
+
+## Goals
+
+- Keep existing routes, APIs, database schema, and TypeScript domain names
+  stable while changing visible product language.
+- Fix participant-facing question prompt and glossary display regressions
+  without changing glossary matching behavior.
+- Promote patch notes through the existing release-note workflow.
+
+## Built
+
+- Stabilized participant question prompt layout for Safari by rendering prompts
+  as block-level text and avoiding overly aggressive `overflow-wrap: anywhere`
+  behavior during initial layout.
+- Restored proper closed-state glossary tooltip behavior by explicitly hiding
+  `.inline-glossary-popover[hidden]`.
+- Updated visible copy from "survey/surveys" to "assessment/assessments"
+  across public pages, participant attempt flow, dashboard/category cards,
+  account stats, admin overview, admin builder setup/status/templates/results,
+  flow-map diagnostics, and accessibility/document-title labels.
+- Updated web source-text regression tests for assessment terminology and the
+  glossary hidden-state CSS guard.
+- Prepared release `v0.9.2 - Capacity Suites And Assessment UI Polish`,
+  bumping the root app version from `0.9.1` to `0.9.2`, updating the root
+  lockfile, creating `markdown/releases/v0.9.2.md`, and resetting
+  `markdown/releases/unreleased.md`.
+
+## Important Decisions
+
+### UI Copy Only, Not Domain Rename
+
+Decision:
+Only user-visible copy, aria labels, page titles, release notes, and patch-log
+language were changed to "assessment".
+
+Reason:
+The existing API paths, database tables, shared types, CSS class names, and
+route paths still use survey-oriented identifiers. Renaming those contracts
+would be a much larger migration and was not required for the UX copy request.
+
+Consequence:
+Admins and participants see "assessment" language, while developer-facing
+identifiers such as `SurveyAttemptPage`, `/api/surveys`, and `survey.id`
+remain unchanged.
+
+### Release Includes Existing Capacity Draft
+
+Decision:
+The existing capacity-suite draft bullets in `markdown/releases/unreleased.md`
+were preserved and promoted together with this session's UI polish.
+
+Reason:
+The release workflow treats `unreleased.md` as the working draft for the next
+patch. Overwriting the existing capacity-suite notes would have dropped
+production-bound project memory.
+
+Consequence:
+`v0.9.2` covers both the capacity suite foundation already drafted and this
+session's assessment UI/rendering polish.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Frontend UX impact: visible terminology now says "assessment"; question
+  prompt and glossary tooltip rendering were fixed.
+- Auth/authorization impact: none.
+- Operational impact: root version is now `0.9.2`; latest versioned release
+  note is `markdown/releases/v0.9.2.md`.
+
+## Validation
+
+- Passed: `npm run test -w apps/web`
+- Passed: `npm run typecheck -w apps/web`
+- Passed: `npm run lint -w apps/web`
+- Passed: `git diff --check`
+- Passed: `npm run release:preview`
+- Passed: `npm run release:prepare` (also ran release-note validation)
+
+## Follow-Ups
+
+- Optional: run a browser smoke pass for the public directory, dashboard,
+  participant attempt flow, and admin workspace to review the new assessment
+  terminology in context.
+- Optional: run a separate Claude/Codex review if the team wants a formal
+  review artifact before commit.
+
+## Commit Readiness
+
+- Requirements implemented: Yes
+- Product context still aligned: Yes
+- Architecture principles still aligned: Yes
+- Security review complete: No security-sensitive behavior changed.
+- Review findings addressed or deferred: No formal review run; optional review
+  remains available.
+- Manual testing complete: Not run by Codex; browser smoke remains optional.
+- Ready to commit: Yes, after human review of the broad copy sweep.
+
+---
+
 ## Prompt Queue Pause — Capacity Assessment Phases 54/55
 
 Date:

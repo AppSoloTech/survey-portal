@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("SurveyAttemptPage participant accessibility", () => {
-  it("renders semantic progress for the current survey path", () => {
+  it("renders semantic progress for the current assessment path", () => {
     const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("<progress");
-    expect(source).toContain('aria-label="Survey progress"');
-    expect(source).toContain("on your current survey path");
+    expect(source).toContain('aria-label="Assessment progress"');
+    expect(source).toContain("on your current assessment path");
     expect(source).not.toMatch(/Question\s*\{[^}]+\}\s*of\s*\{[^}]+\}/);
   });
 

@@ -20,7 +20,7 @@ const glossarySource = readFileSync(new URL("./InlineGlossaryText.tsx", import.m
 const stylesSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
 describe("user-facing accessibility polish", () => {
-  it("adds survey title context inside repeated dashboard survey actions", () => {
+  it("adds assessment title context inside repeated dashboard actions", () => {
     expect(surveyCardSource).toContain('className="visually-hidden">: {summary.survey.title}');
   });
 
@@ -33,11 +33,11 @@ describe("user-facing accessibility polish", () => {
     expect(categorySource).toContain('className="builder-empty-state"');
     expect(categorySource).toContain('role="status"');
     expect(categorySource).toContain('aria-live="polite"');
-    expect(categorySource).toContain("No surveys in this group.");
+    expect(categorySource).toContain("No assessments in this group.");
     expect(categorySource).not.toContain('<AlertMessage className="builder-empty-state"');
   });
 
-  it("adds context to public anonymous survey entry links", () => {
+  it("adds context to public anonymous assessment entry links", () => {
     expect(anonymousDirectorySource).toContain(
       'className="visually-hidden">: {survey.surveyTitle}'
     );

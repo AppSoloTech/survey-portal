@@ -33,7 +33,7 @@ function getSurveyActionLabel(status: SurveyAttemptStatus | undefined): string {
     return "View completed";
   }
 
-  return status === "in_progress" ? "Resume survey" : "Start survey";
+  return status === "in_progress" ? "Resume assessment" : "Start assessment";
 }
 
 function getSurveyActionButtonClass(status: SurveyAttemptStatus | undefined): string {

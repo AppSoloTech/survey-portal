@@ -265,7 +265,7 @@ export function SurveyResultsPage() {
             <p className="eyebrow">Results</p>
             <h3>Completion summary</h3>
             <p className="builder-heading-note">
-              Counts cover every attempt of this survey. Hidden tags shown here are
+              Counts cover every attempt of this assessment. Hidden tags shown here are
               internal metadata and are never visible to participants.
             </p>
           </div>
@@ -396,7 +396,7 @@ export function SurveyResultsPage() {
           <div className="builder-empty-state">
             <strong>No attempts yet</strong>
             <span>
-              Results appear here once participants start the published survey.
+              Results appear here once participants start the published assessment.
             </span>
           </div>
         ) : (
@@ -546,6 +546,10 @@ function AnswerStateBadge({ answer }: { answer: AdminAttemptAnswer }) {
 }
 
 function formatParticipantEmail(participant: { email: string; type: "user" | "anonymous" }): string {
+  if (participant.type === "anonymous" && participant.email === "Anonymous survey link") {
+    return "Anonymous assessment link";
+  }
+
   if (participant.type === "anonymous" && participant.email !== "Anonymous survey link") {
     return `Unverified follow-up: ${participant.email}`;
   }

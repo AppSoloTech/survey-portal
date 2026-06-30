@@ -121,13 +121,13 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   useEffect(() => {
     if (mode === "authenticated" && surveyId === null) {
       setIsLoading(false);
-      setLoadError("Survey not found");
+      setLoadError("Assessment not found");
       return;
     }
 
     if (mode === "anonymous" && !anonymousToken) {
       setIsLoading(false);
-      setLoadError("Survey link unavailable");
+      setLoadError("Assessment link unavailable");
       return;
     }
 
@@ -172,7 +172,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       })
       .catch((openError) => {
         if (isActive) {
-          setLoadError(openError instanceof Error ? openError.message : "Could not open survey");
+          setLoadError(openError instanceof Error ? openError.message : "Could not open assessment");
         }
       })
       .finally(() => {
@@ -465,7 +465,7 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         setHasDeclinedAnonymousRegistration(false);
       }
     } catch (completeError) {
-      setError(completeError instanceof Error ? completeError.message : "Could not submit survey");
+      setError(completeError instanceof Error ? completeError.message : "Could not submit assessment");
       setErrorQuestionId(null);
     } finally {
       setIsSubmitting(false);
@@ -700,12 +700,12 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         </Link>
         <span aria-hidden="true">/</span>
         <span className="attempt-breadcrumb-current">
-          {activeSurvey?.survey.title ?? "Survey"}
+          {activeSurvey?.survey.title ?? "Assessment"}
         </span>
       </nav>
       <h1 className="visually-hidden">
         {activeSurvey?.survey.title ??
-          (mode === "anonymous" ? "Anonymous survey attempt" : "Survey attempt")}
+          (mode === "anonymous" ? "Anonymous assessment attempt" : "Assessment attempt")}
       </h1>
 
       {error && errorQuestionId === null ? (
@@ -715,14 +715,14 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       ) : null}
       {isLoading ? (
         <p aria-live="polite" className="status muted" role="status">
-          Opening survey...
+          Opening assessment...
         </p>
       ) : null}
 
       {!isLoading && loadError ? (
         <div className="builder-empty-state" role="alert">
           <strong>{loadError}</strong>
-          <span>The survey may be unavailable or already completed.</span>
+          <span>The assessment may be unavailable or already completed.</span>
           <div className="inline-actions">
             <Link
               className="button-link compact-button primary-button"
@@ -882,12 +882,12 @@ function SurveyRunner({
         <div className="completion-heading" data-reveal>
           <div>
             <p className="eyebrow">{survey.title}</p>
-            <h3>{isCompleted ? "Survey submitted" : "Ready to submit"}</h3>
+            <h3>{isCompleted ? "Assessment submitted" : "Ready to submit"}</h3>
           </div>
           <span className={`status-pill ${attempt.status}`}>{formatAttemptStatus(attempt.status)}</span>
         </div>
 
-        <dl className="completion-summary" aria-label="Survey attempt summary" data-reveal>
+        <dl className="completion-summary" aria-label="Assessment attempt summary" data-reveal>
           <div>
             <dt>Answered</dt>
             <dd>
@@ -907,7 +907,7 @@ function SurveyRunner({
           <span>
             {isCompleted
               ? "Your responses are saved as a completed attempt."
-              : "You can go back to review saved answers before submitting the survey."}
+              : "You can go back to review saved answers before submitting the assessment."}
           </span>
         </div>
         {isAnonymous && isCompleted && attempt.userId === null ? (
@@ -951,7 +951,7 @@ function SurveyRunner({
             onClick={onComplete}
             type="button"
           >
-            {isSubmitting ? "Submitting..." : "Submit survey"}
+            {isSubmitting ? "Submitting..." : "Submit assessment"}
           </button>
           <button
             className="button-link ghost-button"
@@ -959,7 +959,7 @@ function SurveyRunner({
             onClick={onClose}
             type="button"
           >
-            Back to surveys
+            Back to assessments
           </button>
         </div>
       </div>
@@ -986,7 +986,7 @@ function SurveyRunner({
     currentIndex >= 0 ? Math.min(currentIndex + 1, totalPathPages) : totalPathPages;
   const progressContextId = `survey-progress-context-${attempt.id}`;
   const progressTimeId = `survey-progress-time-${attempt.id}`;
-  const progressValueText = `Page ${currentPathPageNumber} of ${totalPathPages} on your current survey path, ${progressValue}% complete. ${remainingEstimate.copy}`;
+  const progressValueText = `Page ${currentPathPageNumber} of ${totalPathPages} on your current assessment path, ${progressValue}% complete. ${remainingEstimate.copy}`;
   const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
   const pageQuestions = currentPageQuestionIds
     .map((questionId) => questionsById.get(questionId))
@@ -1005,7 +1005,7 @@ function SurveyRunner({
           <p className="eyebrow">{survey.title}</p>
           <h3>{currentPage.title}</h3>
           <p className="progress-context" id={progressContextId}>
-            Page {currentPathPageNumber} of {totalPathPages} on your current survey path
+            Page {currentPathPageNumber} of {totalPathPages} on your current assessment path
           </p>
           <p aria-live="polite" className="remaining-time-label" id={progressTimeId}>
             {remainingEstimate.copy}
@@ -1013,7 +1013,7 @@ function SurveyRunner({
         </div>
         <progress
           aria-describedby={`${progressContextId} ${progressTimeId}`}
-          aria-label="Survey progress"
+          aria-label="Assessment progress"
           aria-valuetext={progressValueText}
           className="survey-progress-meter"
           max={100}
@@ -1124,7 +1124,7 @@ function SurveyRunner({
           onClick={onClose}
           type="button"
         >
-          Back to surveys
+          Back to assessments
         </button>
       </div>
     </div>
@@ -1150,9 +1150,9 @@ function AnonymousRegistrationPanel({
     <form className="anonymous-registration-panel" onSubmit={onSubmit}>
       <div className="anonymous-registration-heading">
         <p className="eyebrow">Save to an account</p>
-        <h4>Create an account for this completed survey?</h4>
+        <h4>Create an account for this completed assessment?</h4>
         <p className="muted">
-          Your saved responses will move into your new account and appear in your survey history.
+          Your saved responses will move into your new account and appear in your assessment history.
         </p>
       </div>
       <div className="anonymous-registration-grid">
@@ -1254,8 +1254,8 @@ function AnonymousContactEmailModal({
           <h3 id="anonymous-contact-email-title">Share an email for follow-up?</h3>
         </div>
         <p className="muted" id="anonymous-contact-email-description">
-          Enter an email if you would like the survey owner to contact you about this survey.
-          This address is optional and will be visible to the survey owner.
+          Enter an email if you would like the assessment owner to contact you about this
+          assessment. This address is optional and will be visible to the assessment owner.
         </p>
         <label>
           <span id="anonymous-contact-email-label">Email</span>
