@@ -11,12 +11,14 @@ export async function fetchTagDefinitions(): Promise<TagDefinitionsResponse> {
 }
 
 export async function createTagDefinition(input: {
+  emoji?: string | null;
   groupId?: number | null;
   tagKey: string;
   tagValue: string;
 }): Promise<TagDefinitionResponse> {
   return apiRequest<TagDefinitionResponse>("/api/tags", {
     body: JSON.stringify({
+      emoji: input.emoji,
       groupId: input.groupId,
       tagKey: input.tagKey,
       tagValue: input.tagValue
@@ -26,6 +28,7 @@ export async function createTagDefinition(input: {
 }
 
 export async function updateTagDefinition(input: {
+  emoji?: string | null;
   groupId?: number | null;
   tagId: number;
   tagKey: string;
@@ -33,9 +36,23 @@ export async function updateTagDefinition(input: {
 }): Promise<TagDefinitionResponse> {
   return apiRequest<TagDefinitionResponse>(`/api/tags/${input.tagId}`, {
     body: JSON.stringify({
+      emoji: input.emoji,
       groupId: input.groupId,
       tagKey: input.tagKey,
       tagValue: input.tagValue
+    }),
+    method: "PUT"
+  });
+}
+
+export async function updateTagCategoryEmoji(input: {
+  emoji: string | null;
+  tagKey: string;
+}): Promise<TagDefinitionsResponse> {
+  return apiRequest<TagDefinitionsResponse>("/api/tags/category-emoji", {
+    body: JSON.stringify({
+      emoji: input.emoji,
+      tagKey: input.tagKey
     }),
     method: "PUT"
   });

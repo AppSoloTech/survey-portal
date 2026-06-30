@@ -14,7 +14,6 @@ import {
   fetchActiveAttempt,
   fetchAttemptForUser,
   fetchCompletedAttempt,
-  fetchAttemptWithResponses,
   insertSurveyAttemptOrFetchActive,
   pruneOffPathAnswers,
   saveAnswer,
@@ -441,14 +440,12 @@ surveyAttemptRouter.post("/:id/complete", requireAuth, async (req, res, next) =>
     }
 
     if (attempt.status === "completed") {
-      const completedAttempt = await fetchAttemptWithResponses(attempt.id, user.id);
-
-      if (!completedAttempt) {
-        res.status(404).json({ error: "Survey attempt not found" });
-        return;
-      }
-
-      const existingResponse: CompleteSurveyResponse = { attempt: completedAttempt };
+      const completedDetail = await buildAttemptDetail(attempt.id, user.id);
+      const existingResponse: CompleteSurveyResponse = {
+        attempt: completedDetail.attempt,
+        issueProfileProgress: completedDetail.issueProfileProgress,
+        issueProfileEmojiCollection: completedDetail.issueProfileEmojiCollection
+      };
       res.json(existingResponse);
       return;
     }
@@ -498,14 +495,12 @@ surveyAttemptRouter.post("/:id/complete", requireAuth, async (req, res, next) =>
       visibleQuestionIds: []
     });
 
-    const completedAttempt = await fetchAttemptWithResponses(updateResult.rows[0].id, user.id);
-
-    if (!completedAttempt) {
-      res.status(404).json({ error: "Survey attempt not found" });
-      return;
-    }
-
-    const response: CompleteSurveyResponse = { attempt: completedAttempt };
+    const completedDetail = await buildAttemptDetail(updateResult.rows[0].id, user.id);
+    const response: CompleteSurveyResponse = {
+      attempt: completedDetail.attempt,
+      issueProfileProgress: completedDetail.issueProfileProgress,
+      issueProfileEmojiCollection: completedDetail.issueProfileEmojiCollection
+    };
     res.json(response);
   } catch (error) {
     next(error);

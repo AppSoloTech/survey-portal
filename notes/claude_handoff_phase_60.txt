@@ -1,0 +1,103 @@
+# Claude Handoff — Phase 60 Issue Profile Emoji Burst
+
+## Summary
+
+Phase 60 adds admin-managed emoji metadata to tag catalog definitions and uses
+that metadata to create a participant-safe Ready to submit emoji burst from the
+issue profile thermometer.
+
+The privacy boundary remains the main review concern: participants and
+anonymous runners receive only emoji/count aggregate items and a total count.
+They must not receive tag keys, tag values, tag definition IDs, tag group names,
+category labels, selected tag names, or hidden tag arrays.
+
+## Main Changes
+
+- Added migration `database/migrations/0039_tag_definition_emoji.sql`.
+- Added nullable `emoji` to shared `TagDefinition` and hidden-only tag record
+  types.
+- Updated the Admin Tags catalog create/edit UI and API to manage optional emoji
+  metadata.
+- Enriched hidden-only survey tag structures with emoji metadata via
+  `tag_definitions` key/value joins.
+- Added `SurveyIssueProfileEmojiCollection` with:
+  - `items: { emoji: string; count: number }[]`
+  - `totalCount: number`
+- Added `calculateSurveyIssueProfileEmojiCollection`.
+- Added `issueProfileEmojiCollection` to registered and anonymous runner
+  payloads on start/resume, answer, complete, and anonymous contact-email
+  refresh.
+- Added a capped CSS/DOM emoji burst on the Ready to submit screen, static
+  collected emoji chips, event-scoped screen-reader status, and reduced-motion
+  particle suppression.
+- Folded Phase 60 release notes into `markdown/releases/v1.0.0.md` because
+  Phase 59 and Phase 60 are shipping together as `1.0.0`.
+
+## Semantics
+
+- Emoji counts are frequency-based.
+- A matched selected-option tag contributes one count for its configured emoji.
+- A matched Other tag contributes when `otherText` is nonblank.
+- A matched text/integer value tag contributes when `valueTagMatchesResponse`
+  is true.
+- Tags without emoji are ignored.
+- Multiple tag definitions with the same emoji aggregate into one emoji item.
+- Off-path/pruned responses do not contribute emoji counts.
+- Burst particles are capped at 40 and weighted by emoji frequency.
+- The live region announces only the Ready to submit collected-details event;
+  per-answer fill changes remain silent unless the progressbar is queried.
+- Static chips show up to eight emoji types plus a `+N` overflow indicator.
+
+## Review Focus
+
+- Confirm participant and anonymous payloads expose only emoji/count aggregates,
+  never hidden tag identities or tag catalog IDs/groups.
+- Confirm hidden-only survey structures are not returned to participants.
+- Confirm admin tag emoji is nullable, clearable, and does not affect existing
+  tags without emoji.
+- Confirm selected option, Other, value-tag, frequency, same-emoji aggregation,
+  and off-path pruning semantics.
+- Confirm the Ready to submit burst plays only when `totalCount > 0`.
+- Confirm reduced-motion users do not receive animated particles and still see
+  static emoji chips/status.
+- Confirm the live region is not noisy during normal per-answer saves.
+- Confirm `v1.0.0.md` contains the Phase 60 notes and `unreleased.md` is reset.
+- Confirm the existing assessment progress meter and issue profile thermometer
+  remain separate.
+
+## Tests Added Or Updated
+
+- `packages/shared/test/surveyIssueProfileProgress.test.ts`
+  - frequency-based emoji counts
+  - selected option, Other, and value emoji sources
+  - tags without emoji ignored
+  - same-emoji aggregation
+  - off-path responses ignored
+- `apps/api/test/issueProfileProgress.test.ts`
+  - registered and anonymous emoji aggregate payloads
+  - tagged-to-untagged answer changes clear emoji counts
+  - hidden-tag privacy assertions still pass
+- `apps/web/src/pages/SurveyAttemptPage.test.ts`
+  - emoji burst component/source guardrails
+  - decorative particles
+  - reduced-motion fallback
+  - non-scoring participant copy
+
+## Validation Completed
+
+- Passed: `npm run test -w packages/shared -- surveyIssueProfileProgress`
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/issueProfileProgress.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+## Notes
+
+- The first sandboxed API test could not connect to local PostgreSQL at
+  `127.0.0.1:5432`; rerunning with approved local DB access passed.
+- `npm run build` emitted the existing Vite large chunk warning.
+- Manual browser/accessibility checks are tracked in `markdown/FOLLOW_UPS.md`.

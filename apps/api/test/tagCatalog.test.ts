@@ -98,6 +98,12 @@ describe("tag catalog", () => {
       .send({ groupId: null, tagIds: [1] });
     expect(reorderTagsResponse.status).toBe(403);
 
+    const categoryEmojiResponse = await request(app)
+      .put("/api/tags/category-emoji")
+      .set("Cookie", user.cookie)
+      .send({ emoji: "😫", tagKey: "Equity" });
+    expect(categoryEmojiResponse.status).toBe(403);
+
     const moveTagResponse = await request(app)
       .patch("/api/tags/1/group")
       .set("Cookie", user.cookie)
@@ -245,6 +251,42 @@ describe("tag catalog", () => {
     expect(listResponse.body.ungroupedTags).toEqual([
       expect.objectContaining({ tagKey: ungroupedPair.tagKey, tagValue: ungroupedPair.tagValue })
     ]);
+  });
+
+  it("applies and clears an emoji across an existing tag category", async () => {
+    const admin = await registerAdmin(app);
+    const categoryKey = uniqueEmail("category-emoji").split("@")[0];
+    const first = await createTagDefinition(app, admin, categoryKey, "first");
+    const second = await createTagDefinition(app, admin, categoryKey, "second");
+    const unrelated = await createTagDefinition(app, admin, `${categoryKey}-other`, "first", "🙂");
+
+    const applyResponse = await request(app)
+      .put("/api/tags/category-emoji")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: "😫", tagKey: categoryKey });
+
+    expect(applyResponse.status).toBe(200);
+    expect(applyResponse.body.tags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.id, emoji: "😫" }),
+        expect.objectContaining({ id: second.id, emoji: "😫" }),
+        expect.objectContaining({ id: unrelated.id, emoji: "🙂" })
+      ])
+    );
+
+    const clearResponse = await request(app)
+      .put("/api/tags/category-emoji")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: null, tagKey: categoryKey });
+
+    expect(clearResponse.status).toBe(200);
+    expect(clearResponse.body.tags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.id, emoji: null }),
+        expect.objectContaining({ id: second.id, emoji: null }),
+        expect.objectContaining({ id: unrelated.id, emoji: "🙂" })
+      ])
+    );
   });
 
   it("preserves a tag group when editing category and value", async () => {

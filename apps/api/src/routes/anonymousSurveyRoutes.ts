@@ -669,7 +669,11 @@ anonymousSurveyPublicRouter.post("/:token/complete", async (req, res, next) => {
         owner.link.id,
         owner.accessTokenHash
       );
-      const existingResponse: CompleteSurveyResponse = { attempt: completedAttempt.attempt };
+      const existingResponse: CompleteSurveyResponse = {
+        attempt: completedAttempt.attempt,
+        issueProfileProgress: completedAttempt.issueProfileProgress,
+        issueProfileEmojiCollection: completedAttempt.issueProfileEmojiCollection
+      };
       res.json(existingResponse);
       return;
     }
@@ -729,7 +733,11 @@ anonymousSurveyPublicRouter.post("/:token/complete", async (req, res, next) => {
       owner.link.id,
       owner.accessTokenHash
     );
-    const response: CompleteSurveyResponse = { attempt: completedAttempt.attempt };
+    const response: CompleteSurveyResponse = {
+      attempt: completedAttempt.attempt,
+      issueProfileProgress: completedAttempt.issueProfileProgress,
+      issueProfileEmojiCollection: completedAttempt.issueProfileEmojiCollection
+    };
     res.json(response);
   } catch (error) {
     handleAnonymousPublicError(error, res, next);
@@ -964,7 +972,11 @@ anonymousSurveyPublicRouter.post("/:token/contact-email", async (req, res, next)
       owner.link.id,
       owner.accessTokenHash
     );
-    const response: CompleteSurveyResponse = { attempt: detail.attempt };
+    const response: CompleteSurveyResponse = {
+      attempt: detail.attempt,
+      issueProfileProgress: detail.issueProfileProgress,
+      issueProfileEmojiCollection: detail.issueProfileEmojiCollection
+    };
     res.json(response);
   } catch (error) {
     handleAnonymousPublicError(error, res, next);

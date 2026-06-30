@@ -1,0 +1,138 @@
+# Claude Handoff — Phase 59 Participant Issue Profile Thermometer
+
+## Summary
+
+Phase 59 adds a participant-facing issue profile thermometer to the registered
+and anonymous survey runner. The thermometer is intentionally abstract: it
+represents "issue profile in progress" / "profile building" / "profile
+complete," not score, severity, violation count, or percentage of violations.
+
+Hidden-tag privacy is the main review concern. The API computes progress from a
+hidden-tag-aware survey structure server-side, but participant and anonymous
+payloads receive only aggregate `issueProfileProgress` values.
+
+## Main Changes
+
+- Added `SurveyIssueProfileProgress` and `calculateSurveyIssueProfileProgress`
+  in `packages/shared/src/index.ts`.
+- Added `issueProfileProgress` to runner response types:
+  `StartSurveyResponse`, `MySurveyResponse`, `AnswerSurveyResponse`, and
+  `CompleteSurveyResponse`.
+- Updated authenticated and anonymous attempt builders/routes to include
+  progress on start/resume, answer, complete, and anonymous contact-email
+  completion refresh responses.
+- Added `IssueProfileThermometer` to `apps/web/src/pages/SurveyAttemptPage.tsx`
+  and styles in `apps/web/src/styles.css`.
+- Kept the existing horizontal assessment progress meter.
+- Moved the thermometer into one sticky runner header above the question and
+  completion panels.
+- Removed the earlier high-water display behavior; normal in-progress pages now
+  show the current server aggregate so answer changes can reduce the fill.
+- Added a runner-only ready-to-submit override: before final submission, the
+  thermometer displays `100` when at least one category has been identified and
+  uses "Review and submit when ready" detail copy.
+- Added distinct submitted/no-profile-details copy for completed attempts with
+  no identified categories.
+- Added a polite screen-reader status mirror for issue profile thermometer
+  updates.
+- Updated the thermometer fill to a cool-to-warm gradient that starts with cool
+  colors near the bottom and reaches red at the top, while keeping participant
+  copy abstract and non-scoring.
+- Added Phase 59 prompt, phase log entry, follow-up, and release `v1.0.0`.
+
+## Progress Semantics
+
+- Category unit: unique hidden `tagKey`.
+- Identified categories:
+  - selected answer option tags
+  - Other tags when `otherText` is present
+  - matching text/integer value tags
+- Encountered categories: tag-bearing questions reached/revealed so far.
+- Fill:
+  - no identified categories: `0`
+  - completed with at least one identified category: `100`
+  - otherwise: `min(94, round(pathProgressPercent * 0.7 + discoveryRatio * 30))`
+  - `discoveryRatio = identifiedCategoryCount / max(1, encounteredCategoryCount)`
+- The API returns the raw aggregate fill. The web runner uses that current value
+  during normal progress, allowing the visual to decrease when saved responses
+  no longer identify a category.
+- On the Ready to submit screen only, the runner displays `100` when at least
+  one category is identified. This is a participant display rule, not an API
+  completion status change.
+
+## Review Focus
+
+- Confirm participant/anonymous responses do not expose hidden tag identities:
+  no `tagKey`, `tagValue`, `answerTags`, `valueTags`, `otherTags`, category
+  labels, or selected tag names.
+- Confirm server-side aggregate computation uses hidden tags without returning
+  the hidden-tag-aware survey object.
+- Confirm completion fills to 100% only when at least one category was
+  identified.
+- Confirm answer changes from tagged to untagged responses can reduce the
+  aggregate counts/fill and do not leave stale profile progress.
+- Confirm the Ready to submit screen can show `100` before final submission
+  while completed/no-category and in-progress/no-category states remain at `0`.
+- Confirm the sticky runner header stays visible without obscuring content on
+  mobile/tablet/desktop.
+- Confirm the UI copy does not imply score, severity, grade, violation count,
+  or "winning."
+- Confirm anonymous and authenticated flows remain behaviorally aligned.
+- Confirm no reporting/admin tag behavior changed.
+
+## Tests Added Or Updated
+
+- `packages/shared/test/surveyIssueProfileProgress.test.ts`
+  - unique tag-key aggregation
+  - selected option, Other, and value-tag identification
+  - empty/no-tag behavior
+  - completed with/without identified categories
+  - stale off-path branch response ignored
+- `apps/api/test/issueProfileProgress.test.ts`
+  - authenticated start/resume/answer/complete aggregate payloads
+  - anonymous start/answer/complete aggregate payloads
+  - changing a tagged selection to an untagged selection drops aggregate
+    progress
+  - participant/anonymous hidden-tag privacy assertions
+- `apps/web/src/pages/SurveyAttemptPage.test.ts`
+  - existing assessment progress preserved
+  - separate semantic issue profile thermometer rendered
+  - issue profile copy remains abstract and non-scoring
+  - no high-water display state remains
+  - ready-to-submit state can display `100` before final submission
+  - sticky thermometer wrapper exists
+  - complete-empty copy remains distinct
+  - polite status mirror exists for screen-reader updates
+
+## Validation Completed
+
+- Passed: `npm run test -w packages/shared -- surveyIssueProfileProgress`
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed after shared build: `npm run test -w apps/api -- issueProfileProgress`
+- Passed after final thermometer polish: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed after test-notes polish: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed after test-notes polish: `npm run test -w apps/api -- test/issueProfileProgress.test.ts`
+- Passed after Claude review polish: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+Notes:
+
+- `npm run build` emitted the existing Vite large chunk warning.
+- The first sandboxed API test could not connect to local PostgreSQL at
+  `127.0.0.1:5432`; focused API and full suite passed after approved local DB
+  access.
+- Focused API test needed `npm run build -w packages/shared` before rerun
+  because the API imports the built shared package.
+- Manual browser/accessibility checks are not completed locally and are tracked
+  in `markdown/FOLLOW_UPS.md`.
+
+## Release
+
+- Root version promoted to `1.0.0`.
+- Created `markdown/releases/v1.0.0.md`.
+- `markdown/releases/unreleased.md` reset for the next release.

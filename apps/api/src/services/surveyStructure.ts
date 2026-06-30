@@ -152,15 +152,19 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     options.includeHiddenTags && optionIds.length > 0
       ? await pool.query<AnswerTagRecord>(
           `select
-             id,
-             answer_option_id,
-             tag_key,
-             tag_value,
-             created_at,
-             updated_at
+             answer_tags.id,
+             answer_tags.answer_option_id,
+             answer_tags.tag_key,
+             answer_tags.tag_value,
+             tag_definitions.emoji,
+             answer_tags.created_at,
+             answer_tags.updated_at
            from answer_tags
-           where answer_option_id = any($1::int[])
-           order by answer_option_id, tag_key, tag_value, id`,
+           left join tag_definitions
+             on tag_definitions.tag_key = answer_tags.tag_key
+            and tag_definitions.tag_value = answer_tags.tag_value
+           where answer_tags.answer_option_id = any($1::int[])
+           order by answer_tags.answer_option_id, answer_tags.tag_key, answer_tags.tag_value, answer_tags.id`,
           [optionIds]
         )
       : { rows: [] as AnswerTagRecord[] };
@@ -169,17 +173,21 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     options.includeHiddenTags && questionIds.length > 0
       ? await pool.query<QuestionValueTagRecord>(
           `select
-             id,
-             question_id,
-             integer_min,
-             integer_max,
-             tag_key,
-             tag_value,
-             created_at,
-             updated_at
+             question_value_tags.id,
+             question_value_tags.question_id,
+             question_value_tags.integer_min,
+             question_value_tags.integer_max,
+             question_value_tags.tag_key,
+             question_value_tags.tag_value,
+             tag_definitions.emoji,
+             question_value_tags.created_at,
+             question_value_tags.updated_at
            from question_value_tags
-           where question_id = any($1::int[])
-           order by question_id, tag_key, tag_value, id`,
+           left join tag_definitions
+             on tag_definitions.tag_key = question_value_tags.tag_key
+            and tag_definitions.tag_value = question_value_tags.tag_value
+           where question_value_tags.question_id = any($1::int[])
+           order by question_value_tags.question_id, question_value_tags.tag_key, question_value_tags.tag_value, question_value_tags.id`,
           [questionIds]
         )
       : { rows: [] as QuestionValueTagRecord[] };
@@ -188,15 +196,19 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     options.includeHiddenTags && questionIds.length > 0
       ? await pool.query<QuestionOtherTagRecord>(
           `select
-             id,
-             question_id,
-             tag_key,
-             tag_value,
-             created_at,
-             updated_at
+             question_other_tags.id,
+             question_other_tags.question_id,
+             question_other_tags.tag_key,
+             question_other_tags.tag_value,
+             tag_definitions.emoji,
+             question_other_tags.created_at,
+             question_other_tags.updated_at
            from question_other_tags
-           where question_id = any($1::int[])
-           order by question_id, tag_key, tag_value, id`,
+           left join tag_definitions
+             on tag_definitions.tag_key = question_other_tags.tag_key
+            and tag_definitions.tag_value = question_other_tags.tag_value
+           where question_other_tags.question_id = any($1::int[])
+           order by question_other_tags.question_id, question_other_tags.tag_key, question_other_tags.tag_value, question_other_tags.id`,
           [questionIds]
         )
       : { rows: [] as QuestionOtherTagRecord[] };

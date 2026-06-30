@@ -90,6 +90,7 @@ export interface AnswerTag {
   answerOptionId: number;
   tagKey: string;
   tagValue: string;
+  emoji?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,6 +106,7 @@ export interface QuestionValueTag {
   integerMax: number | null;
   tagKey: string;
   tagValue: string;
+  emoji?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -116,6 +118,7 @@ export interface QuestionOtherTag {
   questionId: number;
   tagKey: string;
   tagValue: string;
+  emoji?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -264,6 +267,7 @@ export interface TagDefinition {
   id: number;
   tagKey: string;
   tagValue: string;
+  emoji: string | null;
   groupId: number | null;
   displayOrder: number;
   createdAt: string;
@@ -927,6 +931,29 @@ export interface SurveyAttempt {
   responses: SurveyResponseAnswer[];
 }
 
+export type SurveyIssueProfileProgressStatus =
+  | "empty"
+  | "building"
+  | "complete"
+  | "complete_empty";
+
+export interface SurveyIssueProfileProgress {
+  fillPercent: number;
+  identifiedCategoryCount: number;
+  encounteredCategoryCount: number;
+  status: SurveyIssueProfileProgressStatus;
+}
+
+export interface SurveyIssueProfileEmojiCollectionItem {
+  emoji: string;
+  count: number;
+}
+
+export interface SurveyIssueProfileEmojiCollection {
+  items: SurveyIssueProfileEmojiCollectionItem[];
+  totalCount: number;
+}
+
 export interface SurveyAttemptSummary {
   attempt: SurveyAttempt | null;
   survey: Survey;
@@ -935,6 +962,8 @@ export interface SurveyAttemptSummary {
 export interface SurveyAttemptDetail {
   attempt: SurveyAttempt;
   survey: Survey;
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -982,6 +1011,8 @@ export interface MySurveyResponse {
   attempt: SurveyAttempt;
   survey: Survey;
   glossaryEntries: ParticipantGlossaryEntry[];
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -991,6 +1022,8 @@ export interface StartSurveyResponse {
   attempt: SurveyAttempt;
   survey: Survey;
   glossaryEntries: ParticipantGlossaryEntry[];
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -1056,6 +1089,8 @@ export interface StartAnonymousSurveyResponse extends StartSurveyResponse {
 
 export interface AnswerSurveyResponse {
   attempt: SurveyAttempt;
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -1064,6 +1099,8 @@ export interface AnswerSurveyResponse {
 
 export interface CompleteSurveyResponse {
   attempt: SurveyAttempt;
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
 }
 
 export interface ConvertAnonymousSurveyAttemptResponse {
@@ -1462,6 +1499,228 @@ export function calculateSurveyRemainingTimeEstimate(input: {
     totalEstimateSeconds,
     totalPathWeightSeconds
   };
+}
+
+export function calculateSurveyIssueProfileProgress(input: {
+  attemptStatus: SurveyAttemptStatus;
+  responses: SurveyResponseAnswer[];
+  survey: Survey;
+}): SurveyIssueProfileProgress {
+  const state = resolveProgressivePageState(input.survey, input.responses);
+  const visibleQuestionIds = new Set(Object.values(state.visibleQuestionIdsByPageId).flat());
+  const encounteredQuestionIds = collectEncounteredIssueProfileQuestionIds(
+    state,
+    input.attemptStatus
+  );
+  const responsesByQuestionId = new Map(
+    input.responses.map((response) => [response.questionId, response])
+  );
+  const identifiedCategoryKeys = new Set<string>();
+  const encounteredCategoryKeys = new Set<string>();
+
+  for (const question of input.survey.questions) {
+    if (encounteredQuestionIds.has(question.id)) {
+      for (const tagKey of collectConfiguredIssueCategoryKeys(question)) {
+        encounteredCategoryKeys.add(tagKey);
+      }
+    }
+
+    if (!visibleQuestionIds.has(question.id)) {
+      continue;
+    }
+
+    const response = responsesByQuestionId.get(question.id);
+
+    if (!response) {
+      continue;
+    }
+
+    for (const tagKey of collectIdentifiedIssueCategoryKeys(question, response)) {
+      identifiedCategoryKeys.add(tagKey);
+      encounteredCategoryKeys.add(tagKey);
+    }
+  }
+
+  const identifiedCategoryCount = identifiedCategoryKeys.size;
+  const encounteredCategoryCount = encounteredCategoryKeys.size;
+  const isCompleted = input.attemptStatus === "completed";
+  const status: SurveyIssueProfileProgressStatus =
+    identifiedCategoryCount === 0
+      ? isCompleted
+        ? "complete_empty"
+        : "empty"
+      : isCompleted
+        ? "complete"
+        : "building";
+
+  if (identifiedCategoryCount === 0) {
+    return {
+      fillPercent: 0,
+      identifiedCategoryCount,
+      encounteredCategoryCount,
+      status
+    };
+  }
+
+  if (isCompleted) {
+    return {
+      fillPercent: 100,
+      identifiedCategoryCount,
+      encounteredCategoryCount,
+      status
+    };
+  }
+
+  const pathProgressPercent = calculateIssueProfilePathProgressPercent(
+    input.survey,
+    state,
+    input.responses
+  );
+  const discoveryRatio = identifiedCategoryCount / Math.max(1, encounteredCategoryCount);
+  const fillPercent = Math.min(
+    94,
+    Math.max(0, Math.round(pathProgressPercent * 0.7 + discoveryRatio * 30))
+  );
+
+  return {
+    fillPercent,
+    identifiedCategoryCount,
+    encounteredCategoryCount,
+    status
+  };
+}
+
+export function calculateSurveyIssueProfileEmojiCollection(input: {
+  responses: SurveyResponseAnswer[];
+  survey: Survey;
+}): SurveyIssueProfileEmojiCollection {
+  const state = resolveProgressivePageState(input.survey, input.responses);
+  const visibleQuestionIds = new Set(Object.values(state.visibleQuestionIdsByPageId).flat());
+  const responsesByQuestionId = new Map(
+    input.responses.map((response) => [response.questionId, response])
+  );
+  const countsByEmoji = new Map<string, number>();
+
+  for (const question of input.survey.questions) {
+    if (!visibleQuestionIds.has(question.id)) {
+      continue;
+    }
+
+    const response = responsesByQuestionId.get(question.id);
+
+    if (!response) {
+      continue;
+    }
+
+    for (const emoji of collectIdentifiedIssueProfileEmojis(question, response)) {
+      countsByEmoji.set(emoji, (countsByEmoji.get(emoji) ?? 0) + 1);
+    }
+  }
+
+  const items = [...countsByEmoji.entries()]
+    .map(([emoji, count]) => ({ emoji, count }))
+    .sort((left, right) => right.count - left.count || left.emoji.localeCompare(right.emoji));
+
+  return {
+    items,
+    totalCount: items.reduce((total, item) => total + item.count, 0)
+  };
+}
+
+function collectEncounteredIssueProfileQuestionIds(
+  state: ProgressivePageState,
+  attemptStatus: SurveyAttemptStatus
+): Set<number> {
+  if (attemptStatus === "completed" || !state.currentPage) {
+    return new Set(Object.values(state.visibleQuestionIdsByPageId).flat());
+  }
+
+  const encounteredQuestionIds = new Set<number>();
+
+  for (const page of state.path) {
+    for (const questionId of state.visibleQuestionIdsByPageId[page.id] ?? []) {
+      encounteredQuestionIds.add(questionId);
+    }
+
+    if (page.id === state.currentPage.id) {
+      break;
+    }
+  }
+
+  return encounteredQuestionIds;
+}
+
+function collectConfiguredIssueCategoryKeys(question: SurveyQuestion): string[] {
+  return [
+    ...question.answerOptions.flatMap((option) =>
+      (option.answerTags ?? []).map((tag) => tag.tagKey)
+    ),
+    ...(question.otherTags ?? []).map((tag) => tag.tagKey),
+    ...(question.valueTags ?? []).map((tag) => tag.tagKey)
+  ];
+}
+
+function collectIdentifiedIssueCategoryKeys(
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer
+): string[] {
+  const selectedOptionIds = new Set(response.selectedAnswerOptionIds);
+  const selectedOptionTagKeys = question.answerOptions
+    .filter((option) => selectedOptionIds.has(option.id))
+    .flatMap((option) => (option.answerTags ?? []).map((tag) => tag.tagKey));
+  const otherTagKeys = response.otherText?.trim()
+    ? (question.otherTags ?? []).map((tag) => tag.tagKey)
+    : [];
+  const valueTagKeys = (question.valueTags ?? [])
+    .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
+    .map((tag) => tag.tagKey);
+
+  return [...selectedOptionTagKeys, ...otherTagKeys, ...valueTagKeys];
+}
+
+function collectIdentifiedIssueProfileEmojis(
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer
+): string[] {
+  const selectedOptionIds = new Set(response.selectedAnswerOptionIds);
+  const selectedOptionEmojis = question.answerOptions
+    .filter((option) => selectedOptionIds.has(option.id))
+    .flatMap((option) => (option.answerTags ?? []).map((tag) => tag.emoji));
+  const otherEmojis = response.otherText?.trim()
+    ? (question.otherTags ?? []).map((tag) => tag.emoji)
+    : [];
+  const valueEmojis = (question.valueTags ?? [])
+    .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
+    .map((tag) => tag.emoji);
+
+  return [...selectedOptionEmojis, ...otherEmojis, ...valueEmojis].flatMap((emoji) => {
+    const normalizedEmoji = emoji?.trim();
+    return normalizedEmoji ? [normalizedEmoji] : [];
+  });
+}
+
+function calculateIssueProfilePathProgressPercent(
+  survey: Survey,
+  state: ProgressivePageState,
+  responses: SurveyResponseAnswer[]
+): number {
+  const visibleQuestionIds = uniqueNumbers(Object.values(state.visibleQuestionIdsByPageId).flat());
+
+  if (visibleQuestionIds.length === 0) {
+    return 0;
+  }
+
+  const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
+  const responsesByQuestionId = new Map(responses.map((response) => [response.questionId, response]));
+  const answeredCount = visibleQuestionIds.filter((questionId) => {
+    const question = questionsById.get(questionId);
+
+    return question
+      ? hasProgressiveResponseForQuestion(question, responsesByQuestionId.get(questionId))
+      : false;
+  }).length;
+
+  return Math.max(0, Math.min(100, (answeredCount / visibleQuestionIds.length) * 100));
 }
 
 export function formatRemainingTimeCopy(remainingSeconds: number): string {

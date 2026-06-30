@@ -29,6 +29,7 @@ import {
   moveTagDefinition,
   reorderTagCatalogSections,
   reorderTags,
+  updateTagCategoryEmoji,
   updateTagDefinition,
   updateTagGroup
 } from "../../api/tags.js";
@@ -71,10 +72,14 @@ export function AdminTagsPage() {
   const [editingGroupName, setEditingGroupName] = useState("");
   const [newTagKey, setNewTagKey] = useState("");
   const [newTagValue, setNewTagValue] = useState("");
+  const [newTagEmoji, setNewTagEmoji] = useState("");
   const [newTagGroupId, setNewTagGroupId] = useState("");
+  const [categoryEmojiTagKey, setCategoryEmojiTagKey] = useState("");
+  const [categoryEmoji, setCategoryEmoji] = useState("");
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [editingTagKey, setEditingTagKey] = useState("");
   const [editingTagValue, setEditingTagValue] = useState("");
+  const [editingTagEmoji, setEditingTagEmoji] = useState("");
   const [editingTagGroupId, setEditingTagGroupId] = useState("");
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
   const [selectedMoveTagId, setSelectedMoveTagId] = useState<number | null>(null);
@@ -142,6 +147,10 @@ export function AdminTagsPage() {
     () => [ungroupedSectionKey, ...groups.map((group) => getGroupSectionKey(group.id))],
     [groups]
   );
+  const tagCategoryOptions = useMemo(
+    () => getTagCategoryOptions(tags),
+    [tags]
+  );
   const catalogSections = useMemo<CatalogSection[]>(
     () => {
       const sections: CatalogSection[] = [
@@ -182,6 +191,7 @@ export function AdminTagsPage() {
     setSelectedMoveTagId(null);
     setEditingTagKey(tag.tagKey);
     setEditingTagValue(tag.tagValue);
+    setEditingTagEmoji(tag.emoji ?? "");
     setEditingTagGroupId(tag.groupId === null ? "" : String(tag.groupId));
   }
 
@@ -246,14 +256,34 @@ export function AdminTagsPage() {
 
     await runCatalogMutation(async () => {
       await createTagDefinition({
+        emoji: newTagEmoji.trim() || null,
         groupId: readGroupSelectValue(newTagGroupId),
         tagKey: newTagKey.trim(),
         tagValue: newTagValue.trim()
       });
       setNewTagKey("");
       setNewTagValue("");
+      setNewTagEmoji("");
       await refreshCatalog();
     }, "Tag added to the catalog");
+  }
+
+  function handleCategoryEmojiTagKeyChange(tagKey: string) {
+    setCategoryEmojiTagKey(tagKey);
+    setCategoryEmoji(tagCategoryOptions.find((option) => option.tagKey === tagKey)?.commonEmoji ?? "");
+  }
+
+  async function handleSaveCategoryEmoji(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    await runCatalogMutation(async () => {
+      applyCatalog(
+        await updateTagCategoryEmoji({
+          emoji: categoryEmoji.trim() || null,
+          tagKey: categoryEmojiTagKey
+        })
+      );
+    }, categoryEmoji.trim() ? "Tag category emoji applied" : "Tag category emoji cleared");
   }
 
   async function handleSaveTag(event: FormEvent<HTMLFormElement>, tag: TagDefinition) {
@@ -261,6 +291,7 @@ export function AdminTagsPage() {
 
     await runCatalogMutation(async () => {
       await updateTagDefinition({
+        emoji: editingTagEmoji.trim() || null,
         groupId: readGroupSelectValue(editingTagGroupId),
         tagId: tag.id,
         tagKey: editingTagKey.trim(),
@@ -477,6 +508,17 @@ export function AdminTagsPage() {
                 value={newTagValue}
               />
             </label>
+            <label>
+              Emoji
+              <input
+                aria-label="Emoji for issue profile burst"
+                maxLength={24}
+                name="emoji"
+                onChange={(event) => setNewTagEmoji(event.target.value)}
+                placeholder="Optional"
+                value={newTagEmoji}
+              />
+            </label>
             <TagGroupSelect
               groups={groups}
               label="Category"
@@ -496,6 +538,61 @@ export function AdminTagsPage() {
               type="submit"
             >
               Add tag
+            </button>
+          </div>
+        </form>
+
+        <form className="builder-form tag-catalog-create" onSubmit={handleSaveCategoryEmoji}>
+          <div className="builder-section-heading">
+            <div>
+              <p className="eyebrow">Issue profile animation</p>
+              <h3>Apply emoji to tag category</h3>
+            </div>
+          </div>
+          <div className="builder-grid three-columns">
+            <label>
+              Tag category
+              <select
+                onChange={(event) => handleCategoryEmojiTagKeyChange(event.target.value)}
+                required
+                value={categoryEmojiTagKey}
+              >
+                <option value="">Select tag category</option>
+                {tagCategoryOptions.map((option) => (
+                  <option key={option.tagKey} value={option.tagKey}>
+                    {option.tagKey} ({option.count})
+                    {option.commonEmoji ? ` ${option.commonEmoji}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Emoji
+              <input
+                aria-label="Emoji to apply to every tag in this category"
+                maxLength={24}
+                name="categoryEmoji"
+                onChange={(event) => setCategoryEmoji(event.target.value)}
+                placeholder="Leave blank to clear"
+                value={categoryEmoji}
+              />
+            </label>
+            <div className="tag-category-emoji-help">
+              <span>
+                Applies to every existing catalog entry with this Tag category value.
+              </span>
+              <span>
+                Example: Equity updates all Equity tag values.
+              </span>
+            </div>
+          </div>
+          <div className="inline-actions">
+            <button
+              className="button-link compact-button primary-button"
+              disabled={isSubmitting || !categoryEmojiTagKey}
+              type="submit"
+            >
+              Apply emoji
             </button>
           </div>
         </form>
@@ -539,6 +636,7 @@ export function AdminTagsPage() {
                       disabled={isSubmitting}
                       editingTagGroupId={editingTagGroupId}
                       editingTagId={editingTagId}
+                      editingTagEmoji={editingTagEmoji}
                       editingTagKey={editingTagKey}
                       editingTagValue={editingTagValue}
                       groupId={null}
@@ -549,6 +647,7 @@ export function AdminTagsPage() {
                       onCancelEdit={() => setEditingTagId(null)}
                       onDeleteTag={handleDeleteTag}
                       onEditingTagGroupChange={setEditingTagGroupId}
+                      onEditingTagEmojiChange={setEditingTagEmoji}
                       onEditingTagKeyChange={setEditingTagKey}
                       onEditingTagValueChange={setEditingTagValue}
                       onMoveSelectedTag={handleMoveSelectedTag}
@@ -570,6 +669,7 @@ export function AdminTagsPage() {
                       editingGroupName={editingGroupName}
                       editingTagGroupId={editingTagGroupId}
                       editingTagId={editingTagId}
+                      editingTagEmoji={editingTagEmoji}
                       editingTagKey={editingTagKey}
                       editingTagValue={editingTagValue}
                       group={section.group}
@@ -583,6 +683,7 @@ export function AdminTagsPage() {
                       onDeleteTag={handleDeleteTag}
                       onEditingGroupNameChange={setEditingGroupName}
                       onEditingTagGroupChange={setEditingTagGroupId}
+                      onEditingTagEmojiChange={setEditingTagEmoji}
                       onEditingTagKeyChange={setEditingTagKey}
                       onEditingTagValueChange={setEditingTagValue}
                       onMoveSelectedTag={handleMoveSelectedTag}
@@ -620,6 +721,7 @@ function SortableTagGroupCard({
   editingGroupName,
   editingTagGroupId,
   editingTagId,
+  editingTagEmoji,
   editingTagKey,
   editingTagValue,
   group,
@@ -632,6 +734,7 @@ function SortableTagGroupCard({
   onDeleteTag,
   onEditingGroupNameChange,
   onEditingTagGroupChange,
+  onEditingTagEmojiChange,
   onEditingTagKeyChange,
   onEditingTagValueChange,
   onMoveSelectedTag,
@@ -651,6 +754,7 @@ function SortableTagGroupCard({
   editingGroupName: string;
   editingTagGroupId: string;
   editingTagId: number | null;
+  editingTagEmoji: string;
   editingTagKey: string;
   editingTagValue: string;
   group: TagCatalogGroup;
@@ -663,6 +767,7 @@ function SortableTagGroupCard({
   onDeleteTag: (tag: TagDefinition) => void;
   onEditingGroupNameChange: (value: string) => void;
   onEditingTagGroupChange: (value: string) => void;
+  onEditingTagEmojiChange: (value: string) => void;
   onEditingTagKeyChange: (value: string) => void;
   onEditingTagValueChange: (value: string) => void;
   onMoveSelectedTag: (event: FormEvent<HTMLFormElement>, tag: TagDefinition) => void;
@@ -778,6 +883,7 @@ function SortableTagGroupCard({
           disabled={disabled}
           editingTagGroupId={editingTagGroupId}
           editingTagId={editingTagId}
+          editingTagEmoji={editingTagEmoji}
           editingTagKey={editingTagKey}
           editingTagValue={editingTagValue}
           groupId={group.id}
@@ -787,6 +893,7 @@ function SortableTagGroupCard({
           onCancelEdit={onCancelEditTag}
           onDeleteTag={onDeleteTag}
           onEditingTagGroupChange={onEditingTagGroupChange}
+          onEditingTagEmojiChange={onEditingTagEmojiChange}
           onEditingTagKeyChange={onEditingTagKeyChange}
           onEditingTagValueChange={onEditingTagValueChange}
           onMoveSelectedTag={onMoveSelectedTag}
@@ -808,6 +915,7 @@ function TagSection({
   disabled,
   editingTagGroupId,
   editingTagId,
+  editingTagEmoji,
   editingTagKey,
   editingTagValue,
   groupId,
@@ -817,6 +925,7 @@ function TagSection({
   onCancelEdit,
   onDeleteTag,
   onEditingTagGroupChange,
+  onEditingTagEmojiChange,
   onEditingTagKeyChange,
   onEditingTagValueChange,
   onMoveSelectedTag,
@@ -834,6 +943,7 @@ function TagSection({
   disabled: boolean;
   editingTagGroupId: string;
   editingTagId: number | null;
+  editingTagEmoji: string;
   editingTagKey: string;
   editingTagValue: string;
   groupId: number | null;
@@ -843,6 +953,7 @@ function TagSection({
   onCancelEdit: () => void;
   onDeleteTag: (tag: TagDefinition) => void;
   onEditingTagGroupChange: (value: string) => void;
+  onEditingTagEmojiChange: (value: string) => void;
   onEditingTagKeyChange: (value: string) => void;
   onEditingTagValueChange: (value: string) => void;
   onMoveSelectedTag: (event: FormEvent<HTMLFormElement>, tag: TagDefinition) => void;
@@ -907,6 +1018,7 @@ function TagSection({
           disabled={disabled}
           editingTagGroupId={editingTagGroupId}
           editingTagId={editingTagId}
+          editingTagEmoji={editingTagEmoji}
           editingTagKey={editingTagKey}
           editingTagValue={editingTagValue}
           groupId={groupId}
@@ -916,6 +1028,7 @@ function TagSection({
           onCancelEdit={onCancelEdit}
           onDeleteTag={onDeleteTag}
           onEditingTagGroupChange={onEditingTagGroupChange}
+          onEditingTagEmojiChange={onEditingTagEmojiChange}
           onEditingTagKeyChange={onEditingTagKeyChange}
           onEditingTagValueChange={onEditingTagValueChange}
           onMoveSelectedTag={onMoveSelectedTag}
@@ -936,6 +1049,7 @@ function TagRows({
   disabled,
   editingTagGroupId,
   editingTagId,
+  editingTagEmoji,
   editingTagKey,
   editingTagValue,
   groupId,
@@ -945,6 +1059,7 @@ function TagRows({
   onCancelEdit,
   onDeleteTag,
   onEditingTagGroupChange,
+  onEditingTagEmojiChange,
   onEditingTagKeyChange,
   onEditingTagValueChange,
   onMoveSelectedTag,
@@ -959,6 +1074,7 @@ function TagRows({
   disabled: boolean;
   editingTagGroupId: string;
   editingTagId: number | null;
+  editingTagEmoji: string;
   editingTagKey: string;
   editingTagValue: string;
   groupId: number | null;
@@ -968,6 +1084,7 @@ function TagRows({
   onCancelEdit: () => void;
   onDeleteTag: (tag: TagDefinition) => void;
   onEditingTagGroupChange: (value: string) => void;
+  onEditingTagEmojiChange: (value: string) => void;
   onEditingTagKeyChange: (value: string) => void;
   onEditingTagValueChange: (value: string) => void;
   onMoveSelectedTag: (event: FormEvent<HTMLFormElement>, tag: TagDefinition) => void;
@@ -998,6 +1115,7 @@ function TagRows({
             <SortableTagRow
               disabled={disabled || editingTagId === tag.id}
               editingGroupId={editingTagGroupId}
+              editingEmoji={editingTagEmoji}
               editingKey={editingTagKey}
               editingTagId={editingTagId}
               editingValue={editingTagValue}
@@ -1009,6 +1127,7 @@ function TagRows({
               onCancelEdit={onCancelEdit}
               onDeleteTag={onDeleteTag}
               onEditingGroupChange={onEditingTagGroupChange}
+              onEditingEmojiChange={onEditingTagEmojiChange}
               onEditingKeyChange={onEditingTagKeyChange}
               onEditingValueChange={onEditingTagValueChange}
               onMoveSelectedTag={onMoveSelectedTag}
@@ -1029,6 +1148,7 @@ function TagRows({
 
 function SortableTagRow({
   disabled,
+  editingEmoji,
   editingGroupId,
   editingKey,
   editingTagId,
@@ -1039,6 +1159,7 @@ function SortableTagRow({
   isSubmitting,
   onCancelEdit,
   onDeleteTag,
+  onEditingEmojiChange,
   onEditingGroupChange,
   onEditingKeyChange,
   onEditingValueChange,
@@ -1052,6 +1173,7 @@ function SortableTagRow({
   tag
 }: {
   disabled: boolean;
+  editingEmoji: string;
   editingGroupId: string;
   editingKey: string;
   editingTagId: number | null;
@@ -1062,6 +1184,7 @@ function SortableTagRow({
   isSubmitting: boolean;
   onCancelEdit: () => void;
   onDeleteTag: (tag: TagDefinition) => void;
+  onEditingEmojiChange: (value: string) => void;
   onEditingGroupChange: (value: string) => void;
   onEditingKeyChange: (value: string) => void;
   onEditingValueChange: (value: string) => void;
@@ -1108,6 +1231,17 @@ function SortableTagRow({
             onChange={(event) => onEditingValueChange(event.target.value)}
             required
             value={editingValue}
+          />
+        </label>
+        <label>
+          Emoji
+          <input
+            aria-label="Emoji for issue profile burst"
+            maxLength={24}
+            name="emoji"
+            onChange={(event) => onEditingEmojiChange(event.target.value)}
+            placeholder="Optional"
+            value={editingEmoji}
           />
         </label>
         <TagGroupSelect
@@ -1162,6 +1296,11 @@ function SortableTagRow({
           onClick={() => onStartMoveTag(tag)}
           type="button"
         >
+          {tag.emoji ? (
+            <span aria-label="Issue profile burst emoji" className="tag-catalog-emoji">
+              {tag.emoji}
+            </span>
+          ) : null}
           <strong>{tag.tagKey}</strong>
           <span>{tag.tagValue}</span>
         </button>
@@ -1253,6 +1392,38 @@ function CollapsedTagDropZone({
       <span>Drop here to move a tag into this section.</span>
     </div>
   );
+}
+
+function getTagCategoryOptions(tags: TagDefinition[]): Array<{
+  commonEmoji: string;
+  count: number;
+  tagKey: string;
+}> {
+  const optionsByKey = new Map<string, { emojis: Set<string>; count: number; tagKey: string }>();
+
+  for (const tag of tags) {
+    const option = optionsByKey.get(tag.tagKey) ?? {
+      count: 0,
+      emojis: new Set<string>(),
+      tagKey: tag.tagKey
+    };
+
+    option.count += 1;
+
+    if (tag.emoji) {
+      option.emojis.add(tag.emoji);
+    }
+
+    optionsByKey.set(tag.tagKey, option);
+  }
+
+  return [...optionsByKey.values()]
+    .map((option) => ({
+      commonEmoji: option.emojis.size === 1 ? [...option.emojis][0] : "",
+      count: option.count,
+      tagKey: option.tagKey
+    }))
+    .sort((left, right) => left.tagKey.localeCompare(right.tagKey));
 }
 
 function getGroupSectionKey(groupId: number): string {

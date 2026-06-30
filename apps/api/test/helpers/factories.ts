@@ -3,6 +3,7 @@ import type {
   ParticipantGlossaryEntry,
   Survey,
   SurveyAttempt,
+  SurveyIssueProfileProgress,
   SurveyPage,
   SurveyQuestion,
   SurveyQuestionType,
@@ -295,18 +296,19 @@ export async function createTagDefinition(
   app: Express,
   admin: TestSession,
   tagKey: string,
-  tagValue: string
-): Promise<{ id: number; tagKey: string; tagValue: string }> {
+  tagValue: string,
+  emoji: string | null = null
+): Promise<{ emoji: string | null; id: number; tagKey: string; tagValue: string }> {
   const response = await request(app)
     .post("/api/tags")
     .set("Cookie", admin.cookie)
-    .send({ tagKey, tagValue });
+    .send({ emoji, tagKey, tagValue });
 
   if (response.status !== 201) {
     throw new Error(`Tag create failed with ${response.status}: ${JSON.stringify(response.body)}`);
   }
 
-  return response.body.tag as { id: number; tagKey: string; tagValue: string };
+  return response.body.tag as { emoji: string | null; id: number; tagKey: string; tagValue: string };
 }
 
 export async function createGlossaryEntry(
@@ -530,6 +532,7 @@ export async function startAttempt(
     attempt: SurveyAttempt;
     survey: Survey;
     glossaryEntries: ParticipantGlossaryEntry[];
+    issueProfileProgress: SurveyIssueProfileProgress;
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
     currentPageQuestionIds: number[];
@@ -562,6 +565,7 @@ export async function submitAnswer(
 
   return response.body as {
     attempt: SurveyAttempt;
+    issueProfileProgress: SurveyIssueProfileProgress;
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
     currentPageQuestionIds: number[];
@@ -598,6 +602,7 @@ export async function submitPageAnswers(
 
   return response.body as {
     attempt: SurveyAttempt;
+    issueProfileProgress: SurveyIssueProfileProgress;
     currentQuestion: SurveyQuestion | null;
     currentPage: SurveyPage | null;
     currentPageQuestionIds: number[];
@@ -621,7 +626,10 @@ export async function completeAttempt(
     throw new Error(`Complete failed with ${response.status}: ${JSON.stringify(response.body)}`);
   }
 
-  return response.body as { attempt: { id: number; status: string } };
+  return response.body as {
+    attempt: { id: number; status: string };
+    issueProfileProgress: SurveyIssueProfileProgress;
+  };
 }
 
 // Recursively collects every object key in a JSON payload so tests can assert

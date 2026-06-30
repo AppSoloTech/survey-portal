@@ -1,0 +1,225 @@
+# Phase 59 — Participant Issue Profile Thermometer
+
+## Purpose
+
+Add a participant-facing thermometer visualization that makes the assessment
+feel more responsive and polished while preserving the hidden-tag privacy model.
+
+Source planning note:
+
+```txt
+notes/game_plan.txt
+```
+
+This phase is intended as the 1.0.0 feature-complete phase.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_59.txt`
+* Claude review: `notes/claude_review_phase_59.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/game_plan.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/ACCESSIBILITY_PRIMITIVES.md`
+* `markdown/ACCESSIBILITY_TEST_PLAN.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current survey runner, attempt API, hidden-tag visibility, reporting, and
+  value-tag implementation/tests.
+
+---
+
+# Received Feedback
+
+1. Add a thermometer-style visualization to the participant survey experience.
+2. The thermometer should represent an issue profile being identified, not a
+   score, grade, severity rating, violation count, or percentage of violations.
+3. The visualization should be driven by hidden-tag categories accumulated from
+   responses while preserving hidden-tag privacy.
+4. During completion, if at least one issue category was identified, the
+   thermometer should animate to 100% as "Profile complete."
+5. The design should feel encouraging, informative, accessible, and appropriate
+   for ADA, accessibility, and civil-rights subject matter.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* feature request
+* participant-facing survey behavior
+* UX polish
+* accessibility-sensitive visual change
+* data-visibility risk
+* API contract change
+* release/versioning change
+
+Expected change areas:
+
+* Database schema or migrations: none.
+* API contracts: yes, add participant-safe aggregate issue-profile progress to
+  runner responses.
+* Participant-facing assessment behavior: yes, add a thermometer beside the
+  existing progress meter.
+* Hidden-tag visibility: critical guardrail; participants must not receive tag
+  keys, values, labels, groups, or category names.
+* Authentication or authorization: no model change; preserve existing
+  authenticated and anonymous attempt ownership.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, cover aggregate computation, API payloads,
+  visibility isolation, and web source guardrails.
+
+---
+
+# Scope
+
+Implement:
+
+* A participant-safe `SurveyIssueProfileProgress` shared type with:
+  * `fillPercent`
+  * `identifiedCategoryCount`
+  * `encounteredCategoryCount`
+  * `status: "empty" | "building" | "complete" | "complete_empty"`
+* Add `issueProfileProgress` to authenticated and anonymous runner payloads:
+  start/resume, answer, and complete.
+* Compute issue profile progress server-side using a hidden-tag-aware survey
+  structure, then return only aggregate counts/status/fill.
+* Count one category as one unique hidden `tagKey`.
+* Identified categories come from saved responses on the revealed/final path:
+  selected option tags, Other tags when Other text exists, and matching value
+  tags for text/integer responses.
+* Encountered categories come from tag-bearing questions the participant has
+  reached/revealed so far.
+* Fill formula:
+  * no identified categories: `0`
+  * completed with at least one identified category: `100`
+  * otherwise: `min(94, round(pathProgressPercent * 0.7 + discoveryRatio * 30))`
+  * `discoveryRatio = identifiedCategoryCount / max(1, encounteredCategoryCount)`
+* Keep the existing semantic horizontal assessment progress meter.
+* Add a separate thermometer visualization in the runner header and completion
+  panel using abstract copy:
+  * `Issue profile in progress`
+  * `Profile building`
+  * `Profile complete`
+* Preserve accessibility:
+  * programmatic label/value text for the thermometer
+  * reduced-motion support
+  * no color-only meaning
+  * no hidden tag terms or category names in participant-facing text.
+* Update release notes, phase log, and handoff. Promote the release to 1.0.0
+  after validation.
+
+## Non-Goals
+
+Do not implement:
+
+* Showing hidden tag keys, values, groups, category names, or labels to
+  participants.
+* New Admin tag configuration.
+* Database migrations.
+* New participant or anonymous routes.
+* New score, severity, violation-count, or recommendation semantics.
+* Changes to reporting, CSV, tag catalog, glossary, survey builder, or
+  conditional logic behavior except where tests need fixtures.
+* Browser automation dependencies such as Playwright, axe, jsdom, or React
+  Testing Library.
+
+## Assumptions
+
+* An issue category is a unique hidden `tagKey`, not a tag value or tag group.
+* The thermometer is enabled for both registered and anonymous attempts.
+* Participant copy remains abstract and does not mention hidden tags.
+* Existing admin/reporting tag behavior remains unchanged.
+* No database migration is needed.
+
+## Open Questions
+
+* None for this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Authenticated and anonymous runner responses include `issueProfileProgress`.
+* Participant/anonymous payloads still do not expose `tagKey`, `tagValue`,
+  `answerTags`, `valueTags`, `otherTags`, category labels, or selected tag
+  names.
+* The runner shows both the existing assessment progress meter and the new
+  issue-profile thermometer.
+* The thermometer uses non-scoring participant copy and accessible progress
+  semantics.
+* Completion fills to 100% only when at least one issue category was identified.
+* Every received feedback item is fixed, deferred with a reason, or blocked by
+  a documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+Add or update automated tests for:
+
+* unique tag-key aggregation
+* selected option, Other, and value-tag identification
+* empty/no-tag behavior
+* completed behavior with and without identified categories
+* branch changes/pruned off-path answers
+* authenticated and anonymous payloads
+* hidden-tag privacy guardrails
+* web source guardrails for semantic progress and non-scoring copy
+
+Manual checks to perform or document:
+
+* Registered and anonymous attempts.
+* No-tag, one-tag, and multi-tag surveys.
+* Answer changes that add or remove identified categories.
+* Completion animation behavior.
+* Keyboard/screen-reader sanity pass for the runner.
+* Light/dark responsive checks at 375px, 768px, and 1280px.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/FOLLOW_UPS.md` for deferred or uncompleted manual checks
+* `notes/claude_handoff_phase_59.txt`
+* Promote release notes to `markdown/releases/v1.0.0.md` after validation.

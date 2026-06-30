@@ -1,0 +1,72 @@
+# Claude Review — Phase 59 Participant Issue Profile Thermometer
+
+Date: 2026-06-30
+
+## Verdict
+
+No blocking issues.
+
+Claude reviewed the shared calculation, API services/routes, web runner UI,
+styles, tests, and release artifacts. Hidden-tag privacy, progress semantics,
+sticky thermometer behavior, ready-to-submit behavior, and release workflow were
+found sound.
+
+## Review Summary
+
+- Privacy: PASS. Participant and anonymous payloads use tag-free survey
+  structures and receive only aggregate `issueProfileProgress` values.
+- Semantics: PASS. Unique hidden `tagKey` is the category unit; selected
+  options, Other text, and matching value tags contribute correctly.
+- Release/workflow: PASS. `package.json`, `v1.0.0` release notes, Phase Log,
+  prompt, handoff, and follow-up tracking align.
+
+## Findings
+
+### M1 — Product Confirmation: Forward-Progress Wobble
+
+The current raw-fill runner behavior can visibly decrease during normal forward
+progress, not only after answer edits, because newly encountered tag-bearing
+questions can lower the discovery ratio faster than path progress rises.
+
+Disposition: Deferred as a product decision. The Phase 59 test notes explicitly
+requested removing high-water behavior so progress can decrement when answers
+change. The remaining tension is tracked in `markdown/FOLLOW_UPS.md`.
+
+### M2 — Complete-Empty Copy
+
+Completed attempts with no identified categories showed "Profile complete" over
+an empty 0% thermometer.
+
+Disposition: Addressed. `complete_empty` now uses distinct submitted/no-profile
+details copy.
+
+### L1 — Progressbar Update Announcements
+
+The progressbar value changed visually, but screen readers would only hear
+updates if the progressbar was focused.
+
+Disposition: Addressed. The thermometer now includes a polite screen-reader
+status mirror.
+
+### L2 — Ready-To-Submit Reversal On Previous
+
+Going back from the Ready to submit screen returns the thermometer from the
+runner-only `100` display to raw fill.
+
+Disposition: Accepted. This reflects re-entering review/edit flow.
+
+### L3 — Double Survey Structure Fetch
+
+Attempt detail responses fetch a participant-safe survey structure and a
+hidden-tag-aware structure for aggregate computation.
+
+Disposition: Accepted for Phase 59. The two fetches are parallelized and keep
+privacy boundaries simple.
+
+### L4 — Scale Value Tags
+
+Scale value tags are not identified because value-tag matching only handles text
+and integer answers.
+
+Disposition: Accepted as pre-existing/reporting-aligned behavior, not a Phase
+59 regression.

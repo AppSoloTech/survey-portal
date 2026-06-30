@@ -45,6 +45,24 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Active Follow-Ups
 
+### Phase 60 Issue Profile Emoji Burst
+
+- Run the manual browser/accessibility pass for admin tag emoji create/edit,
+  registered and anonymous Ready to submit emoji bursts, reduced-motion static
+  emoji presentation, and hidden-tag privacy sanity on runner payloads.
+
+### Phase 59 Participant Issue Profile Thermometer
+
+- Run the manual browser/accessibility pass for the issue profile thermometer:
+  registered and anonymous attempts, no-tag/one-tag/multi-tag surveys, answer
+  changes that add or remove identified categories, completion animation,
+  keyboard and screen-reader sanity checks, light/dark themes, and responsive
+  layouts at 375/768/1280px.
+- Confirm the product decision on forward-progress thermometer wobble. The
+  runner intentionally follows raw aggregate fill so tagged-to-untagged answer
+  changes can decrement progress, but the same raw behavior can also reduce fill
+  when forward progress reaches newly encountered untagged categories.
+
 ### Phase 12 Builder Page Split + Organize Tab
 
 - Run a manual browser + responsive pass (375/768/1280px) on the Questions and Organize tabs: page pill rail + jump dropdown, page-scoped add-question, within-page Up/Down; on Organize — drag-reorder pages, drag-reorder questions, drag a question across pages (lands at the drop position), add page, delete empty page, keyboard drag (Tab to handle, Space, arrows, Space), and read-only behavior on a published survey.

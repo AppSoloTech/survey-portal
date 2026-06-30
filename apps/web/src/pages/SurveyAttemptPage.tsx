@@ -6,6 +6,8 @@ import {
   type ParticipantGlossaryEntry,
   type Survey,
   type SurveyAttempt,
+  type SurveyIssueProfileEmojiCollection,
+  type SurveyIssueProfileProgress,
   type SurveyAttemptActivityEventType,
   type SurveyAttemptStatus,
   type SurveyPage,
@@ -18,6 +20,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type CSSProperties,
   type FormEvent,
   type SetStateAction
 } from "react";
@@ -47,6 +50,8 @@ import { prefersReducedMotion, useReveal } from "../motion/motion.js";
 interface ActiveSurveyState {
   survey: Survey;
   glossaryEntries: ParticipantGlossaryEntry[];
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   attempt: SurveyAttempt;
   attemptAccessToken: string | null;
   currentQuestion: SurveyQuestion | null;
@@ -404,6 +409,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       setActiveSurvey({
         survey: activeSurvey.survey,
         glossaryEntries: activeSurvey.glossaryEntries,
+        issueProfileProgress: response.issueProfileProgress,
+        issueProfileEmojiCollection: response.issueProfileEmojiCollection,
         attempt: response.attempt,
         attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion:
@@ -451,6 +458,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
       setActiveSurvey({
         survey: activeSurvey.survey,
         glossaryEntries: activeSurvey.glossaryEntries,
+        issueProfileProgress: response.issueProfileProgress,
+        issueProfileEmojiCollection: response.issueProfileEmojiCollection,
         attempt: response.attempt,
         attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion: null,
@@ -504,6 +513,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
 
       setActiveSurvey({
         ...activeSurvey,
+        issueProfileProgress: response.issueProfileProgress,
+        issueProfileEmojiCollection: response.issueProfileEmojiCollection,
         attempt: response.attempt
       });
       setContactEmailMessage("Email saved");
@@ -736,6 +747,15 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
 
       {activeSurvey ? (
         <div className="attempt-surface">
+          <div className="issue-profile-sticky-shell">
+            <IssueProfileThermometer
+              burstKey={getIssueProfileBurstKey(activeSurvey)}
+              displayFillPercent={getIssueProfileDisplayFillPercent(activeSurvey)}
+              emojiCollection={activeSurvey.issueProfileEmojiCollection}
+              isReadyToSubmit={isIssueProfileReadyToSubmit(activeSurvey)}
+              progress={activeSurvey.issueProfileProgress}
+            />
+          </div>
           <SurveyRunner
             activeSurvey={activeSurvey}
             anonymousRegistrationDraft={anonymousRegistrationDraft}
@@ -1219,6 +1239,365 @@ function AnonymousRegistrationPanel({
       </div>
     </form>
   );
+}
+
+function getIssueProfileDisplayFillPercent(activeSurvey: ActiveSurveyState): number {
+  return isIssueProfileReadyToSubmit(activeSurvey)
+    ? 100
+    : activeSurvey.issueProfileProgress.fillPercent;
+}
+
+function isIssueProfileReadyToSubmit(activeSurvey: ActiveSurveyState): boolean {
+  return (
+    activeSurvey.currentPage === null &&
+    activeSurvey.attempt.status !== "completed" &&
+    activeSurvey.issueProfileProgress.identifiedCategoryCount > 0
+  );
+}
+
+function getIssueProfileBurstKey(activeSurvey: ActiveSurveyState): string | null {
+  if (!isIssueProfileReadyToSubmit(activeSurvey)) {
+    return null;
+  }
+
+  return [
+    activeSurvey.attempt.id,
+    activeSurvey.issueProfileEmojiCollection.totalCount,
+    ...activeSurvey.attempt.responses.map((response) => `${response.questionId}:${response.updatedAt}`)
+  ].join("|");
+}
+
+function IssueProfileThermometer({
+  burstKey,
+  displayFillPercent,
+  emojiCollection,
+  isReadyToSubmit,
+  progress
+}: {
+  burstKey: string | null;
+  displayFillPercent: number;
+  emojiCollection: SurveyIssueProfileEmojiCollection;
+  isReadyToSubmit: boolean;
+  progress: SurveyIssueProfileProgress;
+}) {
+  const label = getIssueProfileLabel(progress.status, isReadyToSubmit);
+  const safeDisplayFillPercent = Math.max(0, Math.min(100, Math.round(displayFillPercent)));
+  const shouldShowEmojiCollection = isReadyToSubmit && emojiCollection.totalCount > 0;
+  const [activeBurstKey, setActiveBurstKey] = useState<string | null>(null);
+  const valueText =
+    isReadyToSubmit
+      ? "Profile complete, review and submit when ready"
+      : progress.status === "empty"
+      ? "Issue profile in progress, no profile signal identified yet"
+      : progress.status === "building"
+        ? `Profile building, thermometer visualization ${safeDisplayFillPercent}% filled`
+        : progress.status === "complete"
+          ? "Profile complete, thermometer visualization filled"
+          : "Assessment submitted, no profile details identified";
+
+  useEffect(() => {
+    if (!shouldShowEmojiCollection || !burstKey) {
+      setActiveBurstKey(null);
+      return undefined;
+    }
+
+    setActiveBurstKey(burstKey);
+
+    const timeoutId = window.setTimeout(() => {
+      setActiveBurstKey(null);
+    }, 3400);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [burstKey, shouldShowEmojiCollection]);
+
+  return (
+    <>
+      <div
+        aria-label="Issue profile progress"
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={safeDisplayFillPercent}
+        aria-valuetext={valueText}
+        className={`issue-profile-thermometer ${progress.status}${isReadyToSubmit ? " ready" : ""}`}
+        data-reveal
+        role="progressbar"
+      >
+        <div aria-hidden="true" className="issue-profile-thermometer-visual">
+          <div className="issue-profile-thermometer-tube">
+            <span
+              className="issue-profile-thermometer-fill"
+              style={{ height: `${safeDisplayFillPercent}%` }}
+            />
+          </div>
+          <div className="issue-profile-thermometer-bulb">
+            <span
+              className="issue-profile-thermometer-bulb-fill"
+              style={{ transform: `scale(${safeDisplayFillPercent > 0 ? 1 : 0})` }}
+            />
+          </div>
+        </div>
+        <div className="issue-profile-thermometer-copy">
+          <span>{label}</span>
+          <small>{getIssueProfileDetail(progress.status, isReadyToSubmit)}</small>
+          {shouldShowEmojiCollection ? (
+            <IssueProfileEmojiCollection collection={emojiCollection} />
+          ) : null}
+        </div>
+        {shouldShowEmojiCollection && activeBurstKey ? (
+          <IssueProfileEmojiBurst collection={emojiCollection} key={activeBurstKey} />
+        ) : null}
+      </div>
+      {activeBurstKey ? (
+        <span aria-live="polite" className="visually-hidden" role="status">
+          Issue profile details collected
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function IssueProfileEmojiCollection({
+  collection
+}: {
+  collection: SurveyIssueProfileEmojiCollection;
+}) {
+  const visibleItems = collection.items.slice(0, 8);
+  const hiddenItemCount = Math.max(0, collection.items.length - visibleItems.length);
+
+  return (
+    <span className="issue-profile-emoji-collection">
+      {visibleItems.map((item) => (
+        <span className="issue-profile-emoji-chip" key={item.emoji}>
+          <span aria-hidden="true">{item.emoji}</span>
+          <span className="visually-hidden">
+            {item.emoji} {item.count} collected
+          </span>
+          <small aria-hidden="true">×{item.count}</small>
+        </span>
+      ))}
+      {hiddenItemCount > 0 ? (
+        <span className="issue-profile-emoji-chip overflow">
+          <span aria-hidden="true">+{hiddenItemCount}</span>
+          <span className="visually-hidden">
+            {hiddenItemCount} more issue profile detail types collected
+          </span>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function IssueProfileEmojiBurst({
+  collection
+}: {
+  collection: SurveyIssueProfileEmojiCollection;
+}) {
+  const particles = buildEmojiBurstParticles(collection);
+  const sparks = buildEmojiBurstSparks(collection, particles.length);
+
+  return (
+    <span aria-hidden="true" className="issue-profile-emoji-burst">
+      {sparks.map((spark) => (
+        <span
+          className="issue-profile-burst-spark"
+          key={spark.id}
+          style={
+            {
+              "--spark-delay": `${spark.delay}ms`,
+              "--spark-fall-y": `${spark.fallY}px`,
+              "--spark-lift-y": `${spark.liftY}px`,
+              "--spark-peak-x": `${spark.peakX}px`,
+              "--spark-size": `${spark.size}px`,
+              "--spark-x": `${spark.x}px`
+            } as CSSProperties
+          }
+        />
+      ))}
+      {particles.map((particle) => (
+        <span
+          className="issue-profile-emoji-particle"
+          key={particle.id}
+          style={
+            {
+              "--burst-delay": `${particle.delay}ms`,
+              "--burst-drift": `${particle.drift}px`,
+              "--burst-drift-soft": `${particle.driftSoft}px`,
+              "--burst-fall-y": `${particle.fallY}px`,
+              "--burst-lift-y": `${particle.liftY}px`,
+              "--burst-mid-y": `${particle.midY}px`,
+              "--burst-rotate-fall": `${particle.rotateFall}deg`,
+              "--burst-rotate-final": `${particle.rotateFinal}deg`,
+              "--burst-rotate-peak": `${particle.rotatePeak}deg`,
+              "--burst-x": `${particle.x}px`,
+              "--burst-x-fall": `${particle.xFall}px`,
+              "--burst-x-peak": `${particle.xPeak}px`
+            } as CSSProperties
+          }
+        >
+          {particle.emoji}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function buildEmojiBurstParticles(
+  collection: SurveyIssueProfileEmojiCollection,
+  maxParticles = 40
+): Array<{
+  delay: number;
+  drift: number;
+  driftSoft: number;
+  emoji: string;
+  fallY: number;
+  id: string;
+  liftY: number;
+  midY: number;
+  rotateFall: number;
+  rotateFinal: number;
+  rotatePeak: number;
+  x: number;
+  xFall: number;
+  xPeak: number;
+}> {
+  const particleCount = Math.min(maxParticles, collection.totalCount);
+
+  if (particleCount <= 0) {
+    return [];
+  }
+
+  const particles: Array<{
+    delay: number;
+    drift: number;
+    driftSoft: number;
+    emoji: string;
+    fallY: number;
+    id: string;
+    liftY: number;
+    midY: number;
+    rotateFall: number;
+    rotateFinal: number;
+    rotatePeak: number;
+    x: number;
+    xFall: number;
+    xPeak: number;
+  }> = [];
+
+  for (let index = 0; index < particleCount; index += 1) {
+    const targetWeight = (index / particleCount) * collection.totalCount;
+    let cursor = 0;
+    const item =
+      collection.items.find((candidate) => {
+        cursor += candidate.count;
+        return cursor > targetWeight;
+      }) ?? collection.items[0];
+    const side = index % 2 === 0 ? -1 : 1;
+    const spread = 26 + (index % 8) * 11;
+    const lift = 76 + (index % 7) * 16;
+    const fall = 110 + (index % 6) * 22;
+    const rotate = side * (16 + (index % 8) * 7);
+    const drift = side * (6 + (index % 5) * 4);
+
+    particles.push({
+      delay: (index % 12) * 48,
+      drift,
+      driftSoft: Math.round(drift * 0.72),
+      emoji: item.emoji,
+      fallY: fall,
+      id: `${item.emoji}-${index}`,
+      liftY: -lift,
+      midY: Math.round(-lift * 0.22 + 24),
+      rotateFall: Math.round(rotate * 0.82),
+      rotateFinal: Math.round(rotate * 1.18),
+      rotatePeak: Math.round(rotate * 0.56),
+      x: side * spread,
+      xFall: Math.round(side * spread * 0.95),
+      xPeak: Math.round(side * spread * 0.72)
+    });
+  }
+
+  return particles;
+}
+
+function buildEmojiBurstSparks(
+  collection: SurveyIssueProfileEmojiCollection,
+  emojiParticleCount: number,
+  maxSparks = 32
+): Array<{
+  delay: number;
+  fallY: number;
+  id: string;
+  liftY: number;
+  peakX: number;
+  size: number;
+  x: number;
+}> {
+  const sparkCount = Math.min(maxSparks, Math.max(0, emojiParticleCount, collection.totalCount));
+
+  return Array.from({ length: sparkCount }, (_, index) => {
+    const side = index % 2 === 0 ? -1 : 1;
+    const spread = 14 + (index % 9) * 8;
+    const lift = 64 + (index % 6) * 14;
+    const fall = 28 + (index % 5) * 14;
+
+    return {
+      delay: 30 + (index % 10) * 42,
+      fallY: fall,
+      id: `spark-${index}`,
+      liftY: -lift,
+      peakX: Math.round(side * spread * 0.82),
+      size: 3 + (index % 3),
+      x: side * spread
+    };
+  });
+}
+
+function getIssueProfileLabel(
+  status: SurveyIssueProfileProgress["status"],
+  isReadyToSubmit: boolean
+): string {
+  if (isReadyToSubmit) {
+    return "Profile complete";
+  }
+
+  if (status === "building") {
+    return "Profile building";
+  }
+
+  if (status === "complete") {
+    return "Profile complete";
+  }
+
+  if (status === "complete_empty") {
+    return "Assessment submitted";
+  }
+
+  return "Issue profile in progress";
+}
+
+function getIssueProfileDetail(
+  status: SurveyIssueProfileProgress["status"],
+  isReadyToSubmit: boolean
+): string {
+  if (isReadyToSubmit) {
+    return "Review and submit when ready";
+  }
+
+  if (status === "building") {
+    return "Assessment insights are being assembled";
+  }
+
+  if (status === "complete") {
+    return "Assessment insight profile is ready";
+  }
+
+  if (status === "complete_empty") {
+    return "No profile details were identified";
+  }
+
+  return "Assessment insights will build as you answer";
 }
 
 function AnonymousContactEmailModal({

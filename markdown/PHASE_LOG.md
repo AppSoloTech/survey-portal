@@ -6,6 +6,369 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 60 — Issue Profile Emoji Burst
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; Claude review addressed
+
+Prompt:
+`prompts/prompt_60.txt`
+
+Git Commit:
+This commit (`Add issue profile thermometer and emoji burst`)
+
+Review Artifacts:
+- Reference images: `game_info/meter.png`, `game_info/image.png`
+- Codex handoff: `notes/claude_handoff_phase_60.txt`
+- Claude review: `notes/claude_review_phase_60.txt`
+
+## Goals
+
+- Add admin-managed emoji metadata to hidden tag catalog definitions.
+- Compute participant-safe emoji/count aggregates from matched hidden tags
+  without exposing tag keys, values, IDs, group names, or category labels.
+- Add a capped CSS/DOM emoji burst from the issue profile thermometer on the
+  Ready to submit screen.
+- Preserve reduced-motion and screen-reader behavior.
+
+## Built
+
+- Added migration `0039_tag_definition_emoji.sql` with nullable
+  `tag_definitions.emoji`.
+- Added `emoji` to shared/admin tag definition types and Admin Tags create/edit
+  UI.
+- Enriched hidden-only survey tag structures with catalog emoji metadata via
+  key/value joins.
+- Added shared `SurveyIssueProfileEmojiCollection` and frequency-based
+  aggregation.
+- Added `issueProfileEmojiCollection` to registered and anonymous start/resume,
+  answer, complete, and contact-email refresh payloads.
+- Added a Ready to submit emoji burst, static collected emoji chips, and
+  reduced-motion particle suppression in the survey runner.
+- Added an admin tag-category emoji action that applies one emoji across all
+  existing catalog values for a hidden tag category.
+- Refined the burst after manual review so it replays when returning to Ready
+  to submit, uses a slower upward burst, continues into a smoother falling arc,
+  and includes decorative spark particles.
+- Adjusted screen-reader announcements so the emoji/profile live region only
+  announces the meaningful collected-details event, not every fill percentage
+  update.
+- Added a static emoji chip overflow indicator and per-chip accessible count
+  text.
+- Added focused shared/API/web guardrail tests.
+
+## Important Decisions
+
+### Emoji-Only Participant Payload
+
+Decision:
+Participants receive only emoji/count aggregate items and a total count.
+
+Reason:
+Emoji can make the runner feel more game-like without exposing hidden tag
+identity or admin category metadata.
+
+Consequence:
+The runner does not show tag keys, values, IDs, group names, category labels, or
+selected tag names.
+
+### Frequency-Based Counts
+
+Decision:
+Every matched selected-option, Other, or value tag with emoji contributes one
+count.
+
+Reason:
+The final burst should represent repeated themes gathered through the attempt,
+not just unique category presence.
+
+Consequence:
+Multiple tag definitions sharing one emoji aggregate into the same emoji count.
+
+### CSS/DOM Burst
+
+Decision:
+Use capped DOM emoji particles instead of canvas or a new animation dependency.
+
+Reason:
+This keeps the implementation accessible, testable, and consistent with the
+current runner.
+
+Consequence:
+The burst caps at 40 particles, uses weighted representation for larger totals,
+and falls back to static emoji chips for reduced-motion users.
+
+## Impact
+
+- Database/schema impact: additive nullable `tag_definitions.emoji`.
+- API contract impact: runner payloads now include
+  `issueProfileEmojiCollection`.
+- Frontend UX impact: Admin Tags has an optional emoji field; participants see a
+  Ready to submit emoji burst and static collected emoji chips.
+- Hidden-tag/reporting impact: hidden tag identities remain excluded from
+  participant and anonymous payloads; admin reporting is unchanged.
+- Release impact: Phase 60 notes are folded into
+  `markdown/releases/v1.0.0.md`; `markdown/releases/unreleased.md` is reset for
+  the next release.
+
+## Validation
+
+- Passed: `npm run test -w packages/shared -- surveyIssueProfileProgress`
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run test -w apps/api -- tagCatalog`
+- Passed with approved local PostgreSQL access:
+  `npm run test -w apps/api -- test/issueProfileProgress.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+Validation notes:
+- The first sandboxed API test could not connect to local PostgreSQL at
+  `127.0.0.1:5432`; the focused API test passed after approved local database
+  access.
+- `npm run build` emitted the existing Vite large chunk warning.
+- Manual browser and assistive-technology checks remain pending and are tracked
+  in `markdown/FOLLOW_UPS.md`.
+
+## Follow-Ups
+
+- Run the Phase 60 manual browser/accessibility pass for admin emoji editing,
+  registered and anonymous bursts, reduced-motion static presentation, and
+  hidden-tag privacy sanity.
+
+## Claude Review Notes
+
+Status:
+Completed 2026-06-30.
+
+Findings:
+- No blockers.
+- Addressed live-region chattiness by announcing only the Ready to submit
+  collected-details event.
+- Addressed release-note placement by folding Phase 60 bullets into
+  `v1.0.0.md`.
+- Addressed collected-emoji chip overflow with a `+N` chip.
+- Addressed per-chip accessibility by removing the collection-level label and
+  exposing visible chip counts through visually hidden text.
+- Accepted stacked Phase 59/60 commit boundary as pending user direction.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes; migration is additive and
+  participant payload remains aggregate-only.
+- Security review complete: Yes; Claude review found the privacy model sound
+  and automated visibility tests confirm hidden tags remain excluded from
+  participant and anonymous payloads.
+- Review findings addressed or deferred: Yes.
+- Manual testing complete: No; tracked as follow-up.
+- Ready to commit: Pending manual acceptance.
+
+---
+
+## Phase 59 — Participant Issue Profile Thermometer
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; Claude review addressed
+
+Prompt:
+`prompts/prompt_59.txt`
+
+Git Commit:
+This commit (`Add issue profile thermometer and emoji burst`)
+
+Review Artifacts:
+- Planning note: `notes/game_plan.txt`
+- Codex handoff: `notes/claude_handoff_phase_59.txt`
+- Claude review: `notes/claude_review_phase_59.txt`
+
+## Goals
+
+- Add a participant-facing thermometer that represents an issue profile being
+  built, not a score, severity rating, violation count, or percentage of
+  violations.
+- Preserve hidden-tag privacy by computing thermometer state server-side and
+  returning only aggregate participant-safe progress.
+- Treat one issue category as one unique hidden `tagKey`.
+- Include registered and anonymous survey attempt flows.
+- Promote the feature-complete release to `v1.0.0`.
+
+## Built
+
+- Added shared `SurveyIssueProfileProgress` response data and
+  `calculateSurveyIssueProfileProgress`.
+- Added issue profile progress to authenticated and anonymous start/resume,
+  answer, and complete payloads.
+- The API computes the aggregate from a hidden-tag-aware survey structure but
+  returns only `fillPercent`, aggregate counts, and abstract status.
+- Identified categories include selected answer option tags, Other tags when
+  Other text is present, and matching text/integer value tags.
+- Encountered categories are based on tag-bearing questions reached/revealed so
+  far.
+- Added a separate accessible issue profile thermometer to the participant
+  runner while preserving the existing horizontal assessment progress meter.
+- Moved the thermometer into a single sticky runner header so it remains visible
+  above the question and completion panels.
+- The runner now follows the current server aggregate during normal progress,
+  allowing the fill to decrease when an answer change removes an identified
+  category.
+- Added a ready-to-submit display rule that fills the thermometer to `100`
+  before final submission when at least one category has been identified.
+- Added distinct `complete_empty` participant copy for submitted attempts with
+  no profile details.
+- Added a polite screen-reader status mirror for issue profile thermometer
+  changes.
+- Updated the thermometer fill to a cool-to-warm gradient that starts with cool
+  colors near the bottom and reaches red at the top, while keeping participant
+  copy abstract and non-scoring.
+- Added tests for aggregation behavior, branch/off-path handling, authenticated
+  and anonymous API payloads, hidden-tag isolation, and web source guardrails.
+- Created `prompts/prompt_59.txt`.
+- Prepared release `v1.0.0` and reset `markdown/releases/unreleased.md`.
+
+## Important Decisions
+
+### Keep Tag Identity Server-Side
+
+Decision:
+Participants receive only aggregate issue-profile progress.
+
+Reason:
+Hidden tags are internal business metadata and must not be exposed to
+participants.
+
+Consequence:
+The UI does not show category names, tag keys, tag values, or category counts.
+
+### Unique `tagKey` Category Unit
+
+Decision:
+One issue category equals one unique hidden `tagKey`.
+
+Reason:
+This matches the planning assumption and avoids value-level scoring behavior.
+
+Consequence:
+Multiple selected values with the same tag key count as one identified category.
+
+### Allow Answer-Change Decrements
+
+Decision:
+The server returns the raw aggregate `fillPercent`, and the web runner displays
+that current value during normal in-progress pages.
+
+Reason:
+If a participant changes a tagged answer to an untagged answer, the issue
+profile should reflect the current saved response set rather than preserve stale
+visual progress.
+
+Consequence:
+The thermometer can decrease during normal progress after answer changes. This
+is intentional and keeps the displayed aggregate aligned with saved responses.
+
+### Ready-To-Submit Completion Display
+
+Decision:
+When the participant reaches the Ready to submit screen with at least one
+identified category, the runner displays the thermometer at `100` before final
+submission.
+
+Reason:
+The participant has completed the reachable assessment path, but the durable API
+aggregate should not mark the attempt complete until submission.
+
+Consequence:
+The `100` pre-submit fill is a runner display rule only; shared/API aggregate
+semantics remain unchanged.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: registered and anonymous runner payloads now include
+  `issueProfileProgress`.
+- Frontend UX impact: participant attempt pages show a sticky compact
+  thermometer in addition to the existing assessment progress meter.
+- Auth/authorization impact: no model change.
+- Hidden-tag/reporting impact: hidden tag identities remain excluded from
+  participant and anonymous payloads; Admin reporting behavior is unchanged.
+- Release impact: root app version is now `1.0.0` with
+  `markdown/releases/v1.0.0.md`.
+
+## Validation
+
+- Passed: `npm run test -w packages/shared -- surveyIssueProfileProgress`
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed after `npm run build -w packages/shared`: `npm run test -w apps/api -- issueProfileProgress`
+- Passed after final thermometer polish: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed after test-notes polish: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed after test-notes polish: `npm run test -w apps/api -- test/issueProfileProgress.test.ts`
+- Passed after Claude review polish: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+Validation notes:
+- `npm run build` emitted the existing Vite large chunk warning.
+- The first sandboxed API test could not connect to local PostgreSQL at
+  `127.0.0.1:5432`; the focused API test and full `npm test` passed after
+  approved local PostgreSQL access.
+- The focused API test needed `npm run build -w packages/shared` first because
+  the API imports the built shared package.
+- Manual browser and assistive-technology checks remain pending and are tracked
+  in `markdown/FOLLOW_UPS.md`.
+
+## Follow-Ups
+
+- Run the Phase 59 manual browser/accessibility pass for registered and
+  anonymous attempts, no-tag/one-tag/multi-tag surveys, answer changes,
+  completion animation, keyboard/screen-reader sanity, light/dark themes, and
+  375/768/1280px layouts.
+- Confirm the product decision on forward-progress thermometer wobble: current
+  behavior intentionally follows raw aggregate fill so answer changes can
+  decrement progress, but this can also reduce the fill after forward progress
+  into newly encountered untagged categories.
+
+## Claude Review Notes
+
+Status:
+Completed 2026-06-30.
+
+Findings:
+- No blockers.
+- Addressed `complete_empty` copy so a submitted no-profile-details attempt no
+  longer presents as a ready profile over a 0% fill.
+- Addressed screen-reader announcement polish with a polite status mirror.
+- Tracked the remaining forward-progress wobble tension as a product follow-up
+  because the test notes explicitly requested raw/decrement-capable display
+  behavior.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes; no database migration or new
+  route was introduced.
+- Security review complete: Yes; Claude review found the privacy model sound
+  and automated visibility tests confirm hidden tags remain excluded from
+  participant and anonymous payloads.
+- Review findings addressed or deferred: Yes.
+- Manual testing complete: No; tracked as follow-up.
+- Ready to commit: Pending manual acceptance.
+
+---
+
 ## Phase 58 — Glossary Search Result To Entry Workflow
 
 Date:

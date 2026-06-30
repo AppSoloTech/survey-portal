@@ -60,6 +60,7 @@ export interface AnswerTagRecord {
   answer_option_id: number;
   tag_key: string;
   tag_value: string;
+  emoji: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -71,6 +72,7 @@ export interface QuestionValueTagRecord {
   integer_max: number | null;
   tag_key: string;
   tag_value: string;
+  emoji: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -80,6 +82,7 @@ export interface QuestionOtherTagRecord {
   question_id: number;
   tag_key: string;
   tag_value: string;
+  emoji: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -247,6 +250,7 @@ export function mapAnswerTagRecord(record: AnswerTagRecord): AnswerTag {
     answerOptionId: record.answer_option_id,
     tagKey: record.tag_key,
     tagValue: record.tag_value,
+    emoji: record.emoji,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -260,6 +264,7 @@ export function mapQuestionValueTagRecord(record: QuestionValueTagRecord): Quest
     integerMax: record.integer_max,
     tagKey: record.tag_key,
     tagValue: record.tag_value,
+    emoji: record.emoji,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -271,6 +276,7 @@ export function mapQuestionOtherTagRecord(record: QuestionOtherTagRecord): Quest
     questionId: record.question_id,
     tagKey: record.tag_key,
     tagValue: record.tag_value,
+    emoji: record.emoji,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -391,6 +397,7 @@ export async function fetchTagForOption(
        answer_tags.answer_option_id,
        answer_tags.tag_key,
        answer_tags.tag_value,
+       null::text as emoji,
        answer_tags.created_at,
        answer_tags.updated_at
      from answer_tags
@@ -418,6 +425,7 @@ export async function fetchOtherTagForQuestion(
        question_other_tags.question_id,
        question_other_tags.tag_key,
        question_other_tags.tag_value,
+       null::text as emoji,
        question_other_tags.created_at,
        question_other_tags.updated_at
      from question_other_tags

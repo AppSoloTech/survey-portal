@@ -1,0 +1,123 @@
+# Phase 60 — Issue Profile Emoji Burst
+
+## Purpose
+
+Expand the Phase 59 issue profile thermometer with admin-managed emoji metadata
+and a participant-safe end-of-survey emoji burst.
+
+Source feedback or planning note:
+
+```txt
+User request in chat, based on game_info/meter.png and game_info/image.png.
+```
+
+## Role Note
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_60.txt`
+* Claude review: `notes/claude_review_phase_60.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `game_info/meter.png`
+* `game_info/image.png`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FLOW.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* Current tag catalog, survey attempt response, hidden-tag, and survey runner code.
+
+---
+
+# Received Feedback
+
+Implement an issue profile emoji burst:
+
+1. Admins manage emoji metadata on tag catalog definitions.
+2. Participants accumulate emoji counts from matched hidden tags.
+3. Participants receive only emoji/count aggregates, never hidden tag keys,
+   values, categories, labels, or IDs.
+4. The Ready to submit screen plays a short emoji burst from the thermometer top.
+5. Reduced-motion users get a static collected emoji presentation.
+
+---
+
+# Scope
+
+Implement:
+
+* Add nullable emoji metadata to tag definitions.
+* Add participant-safe emoji aggregate to runner responses.
+* Compute frequency-based emoji counts from selected option tags, Other tags,
+  and matching value tags.
+* Add CSS/DOM emoji burst and static collected emoji cluster to the survey
+  runner.
+* Add focused shared/API/web tests and update phase/release docs.
+
+## Non-Goals
+
+Do not implement:
+
+* Participant-visible tag/category labels.
+* Canvas or third-party particle engine.
+* Emoji mapping from `game_info/tag_emoji_mapping.txt`.
+
+## Assumptions
+
+* Emoji metadata is managed in the Admin Tags catalog.
+* Frequency-based counts are preferred over unique-category counts.
+* Burst particle count is capped at 40.
+* Emoji-only participant output is acceptable.
+
+## Open Questions
+
+None.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Tag definitions can store nullable emoji metadata.
+* Runner payloads include only `{ emoji, count }` aggregate items and
+  `totalCount`.
+* Hidden tag identities remain absent from participant and anonymous payloads.
+* Ready to submit triggers one capped emoji burst when emoji counts exist.
+* Reduced-motion behavior skips animated particles and keeps static emoji
+  collection visible.
+
+---
+
+# Testing Requirements
+
+Run:
+
+```bash
+npm run test -w packages/shared -- surveyIssueProfileProgress
+npm run test -w apps/api -- test/issueProfileProgress.test.ts
+npm run test -w apps/web -- SurveyAttemptPage.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm run release:check
+git diff --check
+```
+
+Manual checks to perform or document:
+
+* Admin tag create/edit with emoji and emoji clearing.
+* Registered and anonymous Ready to submit burst.
+* Reduced-motion static path.
+* Hidden-tag privacy sanity on runner payloads.

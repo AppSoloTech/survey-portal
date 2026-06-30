@@ -15,6 +15,7 @@ import {
   readPositiveIntegerParam,
   sameIdSet,
   validateReorderBody,
+  validateTagCategoryEmojiBody,
   validateTagDefinitionBody,
   validateTagGroupBody,
   validateTagMoveBody,
@@ -29,6 +30,7 @@ interface TagDefinitionRecord {
   id: number;
   tag_key: string;
   tag_value: string;
+  emoji: string | null;
   group_id: number | null;
   display_order: number;
   created_at: Date;
@@ -52,6 +54,7 @@ function mapTagDefinitionRecord(record: TagDefinitionRecord): TagDefinition {
     id: record.id,
     tagKey: record.tag_key,
     tagValue: record.tag_value,
+    emoji: record.emoji,
     groupId: record.group_id,
     displayOrder: record.display_order,
     createdAt: record.created_at.toISOString(),
@@ -77,7 +80,7 @@ async function fetchTagCatalog(queryable: Queryable = pool): Promise<TagDefiniti
        order by display_order, lower(name), id`
     ),
     queryable.query<TagDefinitionRecord>(
-      `select id, tag_key, tag_value, group_id, display_order, created_at, updated_at
+      `select id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at
        from tag_definitions
        order by group_id nulls first, display_order, tag_key, tag_value, id`
     ),
@@ -606,10 +609,10 @@ tagsRouter.post("/", async (req, res, next) => {
 
     const displayOrder = await fetchNextTagDisplayOrder(client, groupId);
     const result = await client.query<TagDefinitionRecord>(
-      `insert into tag_definitions (tag_key, tag_value, group_id, display_order)
-       values ($1, $2, $3, $4)
-       returning id, tag_key, tag_value, group_id, display_order, created_at, updated_at`,
-      [validation.value.tagKey, validation.value.tagValue, groupId, displayOrder]
+      `insert into tag_definitions (tag_key, tag_value, emoji, group_id, display_order)
+       values ($1, $2, $3, $4, $5)
+       returning id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at`,
+      [validation.value.tagKey, validation.value.tagValue, validation.value.emoji, groupId, displayOrder]
     );
 
     await client.query("commit");
@@ -626,6 +629,35 @@ tagsRouter.post("/", async (req, res, next) => {
     next(error);
   } finally {
     client.release();
+  }
+});
+
+tagsRouter.put("/category-emoji", async (req, res, next) => {
+  const validation = validateTagCategoryEmojiBody(req.body);
+
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  try {
+    const result = await pool.query<{ id: number }>(
+      `update tag_definitions
+       set emoji = $2,
+           updated_at = now()
+       where tag_key = $1
+       returning id`,
+      [validation.value.tagKey, validation.value.emoji]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Tag category not found" });
+      return;
+    }
+
+    res.json(await fetchTagCatalog());
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -751,12 +783,13 @@ tagsRouter.put("/:id", async (req, res, next) => {
       `update tag_definitions
        set tag_key = $2,
            tag_value = $3,
-           group_id = $4,
-           display_order = $5,
+           emoji = $4,
+           group_id = $5,
+           display_order = $6,
            updated_at = now()
        where id = $1
-       returning id, tag_key, tag_value, group_id, display_order, created_at, updated_at`,
-      [id, validation.value.tagKey, validation.value.tagValue, nextGroupId, displayOrder]
+       returning id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at`,
+      [id, validation.value.tagKey, validation.value.tagValue, validation.value.emoji, nextGroupId, displayOrder]
     );
 
     if (movedGroups) {
@@ -799,7 +832,7 @@ tagsRouter.delete("/:id", async (req, res, next) => {
     const result = await client.query<TagDefinitionRecord>(
       `delete from tag_definitions
        where id = $1
-       returning id, tag_key, tag_value, group_id, display_order, created_at, updated_at`,
+       returning id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at`,
       [id]
     );
 

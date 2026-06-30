@@ -1,0 +1,107 @@
+# Thermometer Visualization Concept – Discussion Summary
+
+## Goal
+
+The client would like to make the survey-taking experience more engaging by adding a thermometer-style visualization that updates as the user progresses through the survey.
+
+Although inspired by game mechanics, the visualization should **not** feel like a game or a score. Because the surveys relate to ADA compliance, accessibility, and civil rights violations, the thermometer should instead represent the survey gradually identifying relevant issue categories.
+
+## Existing Survey Model
+
+* Survey answers may have one or more hidden tags associated with them.
+* Tags represent issue categories such as:
+
+  * Equity
+  * Federal Civil Rights
+  * ADA Accessibility
+  * Effective Communication
+  * Program Access
+  * (additional client-defined categories)
+* The application already aggregates these tags throughout survey completion.
+* These tags are later used when generating the user's results.
+
+## Purpose of the Thermometer
+
+The thermometer should visually communicate that the application is progressively identifying relevant issue categories while the user answers questions.
+
+It should **not** represent:
+
+* A score
+* A severity rating
+* A count of violations
+* A percentage of violations
+
+Instead, it should represent something closer to:
+
+* Issue Profile in Progress
+* Issue Categories Identified
+* Profile Building
+* Survey Insight Progress
+
+The intent is that users feel they are uncovering information rather than earning points.
+
+## Dynamic Scaling
+
+One challenge discussed was how the thermometer should scale throughout the survey.
+
+Using the total possible tags across the entire survey would often result in a mostly empty thermometer, even when meaningful issue categories had already been identified.
+
+Instead, the thermometer should dynamically scale based on the portion of the survey completed and the opportunities encountered so far.
+
+The desired behavior is:
+
+* The thermometer grows naturally as the survey progresses.
+* Tagged answers contribute to the fill amount.
+* As additional tagged opportunities appear later in the survey, the scaling adjusts naturally.
+* The visualization should always feel responsive without misleading the user into thinking it represents a score.
+
+The implementation details can be refined later, but the overall objective is that the thermometer feels like a combination of survey progress and issue profile discovery.
+
+## Completion Behavior
+
+During survey completion, the thermometer represents the issue profile being built.
+
+Once the survey is complete:
+
+* If at least one issue category was identified, the thermometer should smoothly animate to 100%.
+* The final animation represents **Profile Complete**, not "maximum violations."
+* This separates the meaning of the thermometer during survey completion from its meaning after the survey has finished.
+
+In other words:
+
+* During the survey:
+  "We are identifying your issue profile."
+
+* At completion:
+  "Your issue profile is complete."
+
+This distinction avoids implying that a full thermometer means the user has more or worse violations.
+
+## Visual Direction
+
+The client specifically prefers the thermometer aesthetic.
+
+Current design thoughts include:
+
+* Empty outline when no issue categories have been identified.
+* Smooth animated fill.
+* Cool colors (blue/teal) at the bottom.
+* Gradual transition through green/yellow.
+* Warm orange near the top.
+* Brief glow or pulse animation when the first tagged answer is identified.
+* Smooth fill animations as additional tagged answers contribute.
+* A completion animation once the survey finishes.
+
+The color gradient should communicate progression rather than danger.
+
+## UX Philosophy
+
+The thermometer should reinforce that:
+
+* The survey is gathering information.
+* Relevant issue categories are being identified.
+* The user's issue profile is becoming more complete.
+
+It should never communicate that the user is "winning," "losing," receiving a grade, or accumulating a severity score.
+
+The overall experience should feel encouraging, informative, and polished while remaining appropriate for the subject matter.

@@ -14,6 +14,7 @@ const answerOptionTextMaxLength = 240;
 const otherAnswerTextMaxLength = answerOptionTextMaxLength;
 const answerTagKeyMaxLength = 80;
 const answerTagValueMaxLength = 180;
+const tagEmojiMaxLength = 24;
 const tagGroupNameMaxLength = 120;
 const glossaryTermMaxLength = 120;
 const glossaryDefinitionMaxLength = 1200;
@@ -463,6 +464,7 @@ export function validateAnswerTagBody(body: unknown): ValidationResult<{
 export function validateTagDefinitionBody(body: unknown): ValidationResult<{
   tagKey: string;
   tagValue: string;
+  emoji: string | null;
   groupId: number | null | undefined;
 }> {
   const tagValidation = validateAnswerTagBody(body);
@@ -474,9 +476,24 @@ export function validateTagDefinitionBody(body: unknown): ValidationResult<{
   const record = body as Record<string, unknown>;
   const groupId =
     Object.hasOwn(record, "groupId") ? readOptionalPositiveIntegerField(record, "groupId") : undefined;
+  const rawEmoji = record.emoji;
+  const emoji =
+    rawEmoji === undefined || rawEmoji === null
+      ? null
+      : typeof rawEmoji === "string"
+        ? rawEmoji.trim() || null
+        : false;
 
   if (groupId === false) {
     return { ok: false, error: "groupId must be a positive integer or null" };
+  }
+
+  if (emoji === false) {
+    return { ok: false, error: "Emoji must be text or null" };
+  }
+
+  if (emoji !== null && Array.from(emoji).length > tagEmojiMaxLength) {
+    return { ok: false, error: `Emoji must be ${tagEmojiMaxLength} characters or fewer` };
   }
 
   return {
@@ -484,7 +501,50 @@ export function validateTagDefinitionBody(body: unknown): ValidationResult<{
     value: {
       tagKey: tagValidation.value.tagKey,
       tagValue: tagValidation.value.tagValue,
+      emoji,
       groupId
+    }
+  };
+}
+
+export function validateTagCategoryEmojiBody(body: unknown): ValidationResult<{
+  emoji: string | null;
+  tagKey: string;
+}> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body is required" };
+  }
+
+  const tagKey = readTextField(body, "tagKey");
+  const rawEmoji = body.emoji;
+  const emoji =
+    rawEmoji === undefined || rawEmoji === null
+      ? null
+      : typeof rawEmoji === "string"
+        ? rawEmoji.trim() || null
+        : false;
+
+  if (!tagKey) {
+    return { ok: false, error: "Tag category is required" };
+  }
+
+  if (tagKey.length > answerTagKeyMaxLength) {
+    return { ok: false, error: `Tag category must be ${answerTagKeyMaxLength} characters or fewer` };
+  }
+
+  if (emoji === false) {
+    return { ok: false, error: "Emoji must be text or null" };
+  }
+
+  if (emoji !== null && Array.from(emoji).length > tagEmojiMaxLength) {
+    return { ok: false, error: `Emoji must be ${tagEmojiMaxLength} characters or fewer` };
+  }
+
+  return {
+    ok: true,
+    value: {
+      emoji,
+      tagKey
     }
   };
 }

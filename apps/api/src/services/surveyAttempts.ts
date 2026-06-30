@@ -1,4 +1,6 @@
 import {
+  calculateSurveyIssueProfileEmojiCollection,
+  calculateSurveyIssueProfileProgress,
   getQuestionsForPage,
   resolveProgressivePageState,
   type AnswerSurveyResponse,
@@ -8,6 +10,8 @@ import {
   type StartSurveyResponse,
   type Survey,
   type SurveyAttempt,
+  type SurveyIssueProfileEmojiCollection,
+  type SurveyIssueProfileProgress,
   type SurveyPage,
   type SurveyQuestion,
   type SurveyResponseAnswer
@@ -241,6 +245,8 @@ export async function buildStartSurveyResponse(
     attempt: detail.attempt,
     survey: detail.survey,
     glossaryEntries: detail.glossaryEntries,
+    issueProfileProgress: detail.issueProfileProgress,
+    issueProfileEmojiCollection: detail.issueProfileEmojiCollection,
     currentQuestion: detail.currentQuestion,
     currentPage: detail.currentPage,
     currentPageQuestionIds: detail.currentPageQuestionIds
@@ -263,6 +269,8 @@ export async function buildStartAnonymousSurveyResponse(input: {
     attempt: detail.attempt,
     survey: detail.survey,
     glossaryEntries: detail.glossaryEntries,
+    issueProfileProgress: detail.issueProfileProgress,
+    issueProfileEmojiCollection: detail.issueProfileEmojiCollection,
     currentQuestion: detail.currentQuestion,
     currentPage: detail.currentPage,
     currentPageQuestionIds: detail.currentPageQuestionIds,
@@ -278,6 +286,8 @@ export async function buildAnswerSurveyResponse(
 
   return {
     attempt: detail.attempt,
+    issueProfileProgress: detail.issueProfileProgress,
+    issueProfileEmojiCollection: detail.issueProfileEmojiCollection,
     currentQuestion: detail.currentQuestion,
     currentPage: detail.currentPage,
     currentPageQuestionIds: detail.currentPageQuestionIds,
@@ -294,6 +304,8 @@ export async function buildAnonymousAnswerSurveyResponse(
 
   return {
     attempt: detail.attempt,
+    issueProfileProgress: detail.issueProfileProgress,
+    issueProfileEmojiCollection: detail.issueProfileEmojiCollection,
     currentQuestion: detail.currentQuestion,
     currentPage: detail.currentPage,
     currentPageQuestionIds: detail.currentPageQuestionIds,
@@ -311,11 +323,18 @@ export async function buildMySurveyResponse(
     return null;
   }
 
-  const [survey] = await fetchSurveyStructures({
-    surveyId: attempt.surveyId,
-    includeAllStatuses: true,
-    includeHiddenTags: false
-  });
+  const [[survey], [issueProfileSurvey]] = await Promise.all([
+    fetchSurveyStructures({
+      surveyId: attempt.surveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: false
+    }),
+    fetchSurveyStructures({
+      surveyId: attempt.surveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: true
+    })
+  ]);
 
   if (!survey || survey.status === "draft") {
     return null;
@@ -325,6 +344,11 @@ export async function buildMySurveyResponse(
     attempt,
     survey,
     glossaryEntries: await fetchParticipantGlossaryEntries(),
+    issueProfileProgress: buildIssueProfileProgressFromSurvey(issueProfileSurvey ?? survey, attempt),
+    issueProfileEmojiCollection: buildIssueProfileEmojiCollectionFromSurvey(
+      issueProfileSurvey ?? survey,
+      attempt
+    ),
     ...determineProgressiveAttemptState(survey, attempt)
   };
 }
@@ -336,6 +360,8 @@ export async function buildAttemptDetail(
   attempt: SurveyAttempt;
   survey: Survey;
   glossaryEntries: ParticipantGlossaryEntry[];
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -357,6 +383,8 @@ export async function buildAnonymousAttemptDetail(
   attempt: SurveyAttempt;
   survey: Survey;
   glossaryEntries: ParticipantGlossaryEntry[];
+  issueProfileProgress: SurveyIssueProfileProgress;
+  issueProfileEmojiCollection: SurveyIssueProfileEmojiCollection;
   currentQuestion: SurveyQuestion | null;
   currentPage: SurveyPage | null;
   currentPageQuestionIds: number[];
@@ -371,11 +399,18 @@ export async function buildAnonymousAttemptDetail(
     throw new AnonymousSurveyUnavailableError();
   }
 
-  const [survey] = await fetchSurveyStructures({
-    surveyId: attempt.surveyId,
-    includeAllStatuses: true,
-    includeHiddenTags: false
-  });
+  const [[survey], [issueProfileSurvey]] = await Promise.all([
+    fetchSurveyStructures({
+      surveyId: attempt.surveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: false
+    }),
+    fetchSurveyStructures({
+      surveyId: attempt.surveyId,
+      includeAllStatuses: true,
+      includeHiddenTags: true
+    })
+  ]);
 
   if (!survey || survey.status !== "published" || survey.deletedAt) {
     throw new AnonymousSurveyUnavailableError();
@@ -385,8 +420,74 @@ export async function buildAnonymousAttemptDetail(
     attempt,
     survey,
     glossaryEntries: await fetchParticipantGlossaryEntries(),
+    issueProfileProgress: buildIssueProfileProgressFromSurvey(issueProfileSurvey ?? survey, attempt),
+    issueProfileEmojiCollection: buildIssueProfileEmojiCollectionFromSurvey(
+      issueProfileSurvey ?? survey,
+      attempt
+    ),
     ...determineProgressiveAttemptState(survey, attempt)
   };
+}
+
+export async function buildIssueProfileProgress(
+  attempt: SurveyAttempt
+): Promise<SurveyIssueProfileProgress> {
+  const [survey] = await fetchSurveyStructures({
+    surveyId: attempt.surveyId,
+    includeAllStatuses: true,
+    includeHiddenTags: true
+  });
+
+  return buildIssueProfileProgressFromSurvey(survey, attempt);
+}
+
+export async function buildIssueProfileEmojiCollection(
+  attempt: SurveyAttempt
+): Promise<SurveyIssueProfileEmojiCollection> {
+  const [survey] = await fetchSurveyStructures({
+    surveyId: attempt.surveyId,
+    includeAllStatuses: true,
+    includeHiddenTags: true
+  });
+
+  return buildIssueProfileEmojiCollectionFromSurvey(survey, attempt);
+}
+
+function buildIssueProfileProgressFromSurvey(
+  survey: Survey | undefined,
+  attempt: SurveyAttempt
+): SurveyIssueProfileProgress {
+  if (!survey) {
+    return {
+      fillPercent: 0,
+      identifiedCategoryCount: 0,
+      encounteredCategoryCount: 0,
+      status: attempt.status === "completed" ? "complete_empty" : "empty"
+    };
+  }
+
+  return calculateSurveyIssueProfileProgress({
+    attemptStatus: attempt.status,
+    responses: attempt.responses,
+    survey
+  });
+}
+
+function buildIssueProfileEmojiCollectionFromSurvey(
+  survey: Survey | undefined,
+  attempt: SurveyAttempt
+): SurveyIssueProfileEmojiCollection {
+  if (!survey) {
+    return {
+      items: [],
+      totalCount: 0
+    };
+  }
+
+  return calculateSurveyIssueProfileEmojiCollection({
+    responses: attempt.responses,
+    survey
+  });
 }
 
 export async function buildMySurveysResponse(userId: number): Promise<MySurveysResponse> {
