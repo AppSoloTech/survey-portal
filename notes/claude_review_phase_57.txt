@@ -1,0 +1,151 @@
+Phase 57 - Glossary Tabs And Question Search UI - Claude Review
+
+Reviewer: Claude Code
+Branch: phase-57-glossary-tabs-question-search-ui
+Verdict: Approve. No correctness, accessibility, or scope bugs found. The
+        implementation matches prompt_57 and the Phase 57 handoff. One
+        test-assurance gap is called out (B/N1) because the riskiest logic -
+        debounce/abort/stale-response - is not exercised by an automated
+        render test; this raises the importance of the still-pending human
+        browser pass.
+
+Working-tree note:
+- Phase 57 is uncommitted. The branch HEAD is still the Phase 56 commit
+  (a61dac1). The Phase 57 changes live in the working tree:
+    M apps/web/src/api/glossary.ts
+    M apps/web/src/pages/admin/AdminGlossaryPage.tsx
+    M apps/web/src/styles.css
+    ?? apps/web/src/api/glossary.test.ts
+    ?? apps/web/src/pages/admin/AdminGlossaryPage.test.ts
+  This review covers that working tree. Confirmed there are NO backend
+  changes in Phase 57 (matches the handoff claim that it consumes the Phase
+  56 API).
+
+Independent validation I ran:
+- npm run test -w apps/web -- src/api/glossary.test.ts
+  src/pages/admin/AdminGlossaryPage.test.ts  -> 2 files, 8 tests, PASS.
+- npx tsc --noEmit -p apps/web/tsconfig.json -> PASS.
+- I did not run the full npm test (its API setup drops/recreates the local
+  Postgres schema). The handoff reports all gates passed.
+
+================================================================
+Verified against the requested review focus
+================================================================
+
+1. Existing entry management not regressed by the tab wrapper
+   - The full Phase 39/40 workflow (create, edit, enable/disable, archive,
+     dictionary suggest/apply/ignore) is intact inside the Entries tabpanel.
+     Handlers handleCreateEntry/handleSaveEntry/handleToggleEntry/
+     handleArchiveEntry and the dictionary lookup are unchanged in logic.
+   - Both tabpanels use the HTML hidden attribute, so React keeps the entries
+     panel mounted while the search tab is active. Form/edit state is
+     preserved across tab switches (e.g., an in-progress edit survives a trip
+     to the search tab). Good.
+
+2. Tabs accessible and keyboard-operable
+   - Correct ARIA tabs pattern: role tablist/tab/tabpanel, aria-selected,
+     aria-controls, aria-labelledby, and roving tabIndex (0 active / -1
+     inactive).
+   - ArrowLeft/Right wrap, Home/End jump, preventDefault on handled keys, and
+     focus is moved to the newly selected tab via requestAnimationFrame +
+     getElementById. Click selects without force-moving focus, which is
+     correct.
+   - Minor (N4): tabpanels do not set tabIndex={0}; not required here because
+     each panel contains focusable content.
+
+3. No API call for blank or one-character queries
+   - The debounce effect early-returns when trimmedQuery.length <
+     minQueryLength: it bumps the request id, clears results, and sets no
+     timer and no fetch. Verified by reading the effect.
+
+4. Debounce / AbortController / request-id prevent stale responses
+   - 250 ms debounce timer; a per-effect monotonically increasing request id;
+     a per-effect AbortController. Cleanup clears the timer AND aborts.
+   - Both .then and .catch guard on
+     questionSearchRequestId.current !== requestId, and .catch also ignores
+     isAbortError. This is belt-and-suspenders: a stale resolve is dropped by
+     the id check even if abort detection fails.
+   - Confirmed the abort is actually wired: searchGlossaryQuestions passes
+     { signal } and apiRequest spreads ...init into fetch, so the signal
+     reaches fetch. The short-query path also bumps the id, invalidating any
+     in-flight longer-query request.
+
+5. Highlighting uses returned offsets, no client-side recompute
+   - splitQuestionSearchMatch slices the original question.questionText using
+     match.start/match.end (clamped to [0, length], end >= start). It never
+     searches for the query in the text. Unit tests cover a normal split and
+     an out-of-range clamp. Casing of the original text is preserved.
+
+6. Search states are understandable
+   - short/empty ("Search is ready, enter at least N characters"), loading
+     ("Searching question text..."), error (status error), no-results ("No
+     matching questions"), and results are all present and gated on
+     trimmedQuery vs minQueryLength. Loading is set synchronously on keystroke
+     so there is no empty flash before the debounce fires.
+   - A visually-hidden role=status aria-live=polite region announces the
+     current state; .visually-hidden exists in styles.css.
+
+7. Result action remains non-creating; no Phase 58 present
+   - Result rows render a disabled "Add entry unavailable" button with no
+     onClick, no prefill, and no candidate/duplicate logic. searchGlossary-
+     Questions is the only new API call. No create/prefill/duplicate/source-
+     persistence code is present.
+
+8. Responsive layout
+   - .admin-tab-list uses flex-wrap; .glossary-layout and
+     .glossary-question-result-header collapse to a single column at the
+     mobile breakpoint; result action buttons stretch. Reads as usable across
+     mobile/tablet/desktop.
+
+9. Did NOT repeat the inline-glossary-popover [hidden] bug
+   - No CSS rule sets display on the tabpanel divs (they carry no class, and
+     the .admin-tab* rules target the buttons), so the hidden attribute on the
+     inactive panel is not overridden. Panels hide correctly.
+
+================================================================
+Notes
+================================================================
+
+N1 (assurance gap, house-pattern). The interactive search path -
+   debounce, AbortController, request-id stale-response handling, tab
+   keyboard nav, and the non-creating action - is covered only by
+   source-string .toContain assertions plus two pure-function unit tests
+   (splitQuestionSearchMatch, formatQuestionSearchLiveMessage). No test
+   renders the component or advances fake timers to assert fetch call counts
+   or stale-response ordering. This matches the established web-test
+   convention in this repo (no @testing-library/react, no jsdom; every web
+   test uses the readFileSync source-string pattern), and the implementer did
+   the right thing within that constraint by extracting the riskiest logic
+   into testable pure functions. Consequence: the runtime behavior of
+   debounce/abort/tabs is not automatically verified, so the pending human
+   browser pass genuinely matters. Recommend it specifically exercise:
+   - rapid typing to confirm only the latest results render (stale ordering),
+   - deleting back to < 2 chars while a request is in flight,
+   - switching tabs mid-edit and confirming the edit form state survives,
+   - keyboard-only tab navigation (Arrow/Home/End) and focus movement.
+
+N2 (low risk). On unmount with an in-flight request, the requestId guard does
+   not help (no subsequent effect runs), so safety relies on the fetch abort
+   surfacing as a DOMException AbortError that isAbortError() catches. That
+   holds today. If apiRequest's error wrapping ever changes to mask the abort,
+   a setState-after-unmount warning could appear. Harmless either way; worth a
+   one-line awareness if the client layer is refactored.
+
+N3 (cosmetic). Appending trailing whitespace to an existing query (e.g.
+   "risk ") changes questionSearchInput though trimmedQuery is identical,
+   triggering one redundant refetch. Harmless.
+
+================================================================
+Phase 58 carry-forward
+================================================================
+
+- The disabled "Add entry unavailable" button is the wiring point for Phase
+  58. Replace it with the prefill-to-create action there.
+- Still open from the plan review: reconfirm with the client that the Phase 58
+  candidate Glossary term is the current search query (not an arbitrary word/
+  phrase selected from a result card).
+- Highlighting depends on the Phase 56 server offsets (match.start/end against
+  the returned questionText). Keep that contract stable; do not switch to
+  client-side match recomputation.
+- Commit the Phase 57 working tree before starting Phase 58 so the branch
+  history reflects the shipped UI.

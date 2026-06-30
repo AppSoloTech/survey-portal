@@ -1,0 +1,92 @@
+Phase 57 - Glossary Tabs And Question Search UI
+
+Prompt:
+prompts/prompt_57.txt
+
+Branch:
+phase-57-glossary-tabs-question-search-ui
+
+Implementation summary:
+- Refactored /admin/glossary into two accessible tabs:
+  - Entries: preserves the existing Phase 39/40 create, edit, enable/disable,
+    archive, and dictionary-suggestion workflows.
+  - Question search: adds the Phase 57 dynamic assessment question-search UI.
+- Added apps/web/src/api/glossary.ts searchGlossaryQuestions() for
+  GET /api/admin/glossary/question-search?q=<query>&limit=<optional>, passing
+  AbortSignal through the existing apiRequest RequestInit support.
+- Added a debounced question-search input:
+  - trims before search
+  - waits for min query length 2
+  - uses a 250 ms debounce
+  - requests limit 20
+  - uses AbortController and request ids to prevent stale responses from
+    updating state
+  - clears results for blank or one-character queries
+- Added search states for short/empty input, loading, results, no results, and
+  recoverable errors.
+- Rendered assessment/page/question context for results, preserving
+  assessment-facing UI copy while consuming survey-oriented internals.
+- Highlighted the matched substring with the Phase 56 match.start/match.end
+  offsets against the returned original question.questionText.
+- Added a disabled "Add entry unavailable" placeholder on result rows so no
+  Phase 58 creation or prefill behavior is wired yet.
+- Added polite live-region search status updates and keyboard tab handling for
+  ArrowLeft/ArrowRight/Home/End.
+- Added responsive CSS for tabs and result cards.
+- Added focused web tests:
+  - API helper trims/encodes query, optional limit handling, and signal pass-through.
+  - question search offset splitting, live-region messages, and source
+    guardrails for tabs/debounce/abort/non-creating action.
+- Updated unreleased notes and PHASE_LOG.
+
+Important scope notes:
+- No backend endpoint changes were made; Phase 57 consumes the Phase 56 API.
+- No Add-to-Glossary creation wiring, candidate prefill, duplicate detection,
+  persisted source-question references, answer-option search, hidden-tag
+  search, response search, or report search was implemented.
+- Existing Glossary entry management remains in the Entries tab.
+- Phases 54/55 remain paused.
+
+Key files to review:
+- apps/web/src/pages/admin/AdminGlossaryPage.tsx
+- apps/web/src/api/glossary.ts
+- apps/web/src/styles.css
+- apps/web/src/api/glossary.test.ts
+- apps/web/src/pages/admin/AdminGlossaryPage.test.ts
+- markdown/releases/unreleased.md
+- markdown/PHASE_LOG.md
+
+Review focus requested:
+- Existing entry management behavior is still reachable and not regressed by
+  the tab wrapper.
+- Tabs are accessible and keyboard-operable enough for the Admin route.
+- Question search does not call the API for blank or one-character queries.
+- Debounce/AbortController/request-id handling prevents stale responses.
+- Highlighting slices the original question text using the returned offsets and
+  does not recompute match positions client-side.
+- Search states are understandable: short/empty, loading, results, no results,
+  error.
+- Result action remains non-creating; Phase 58 work is not accidentally present.
+- Responsive layout remains usable on mobile/tablet/desktop widths.
+
+Validation run:
+- npm run test -w apps/web -- src/api/glossary.test.ts src/pages/admin/AdminGlossaryPage.test.ts
+- npx tsc --noEmit -p apps/web/tsconfig.json
+- npm run typecheck
+- npm run lint
+- npm run build
+- npm test
+- git diff --check
+
+Validation notes:
+- All commands above passed.
+- The first sandboxed npm test run failed when API test setup was blocked from
+  connecting to local PostgreSQL at 127.0.0.1:5432. The same npm test command
+  passed after approved local PostgreSQL access.
+- npm run build emitted the existing Vite large chunk warning.
+- Manual browser checks for /admin/glossary tab switching, dynamic search, and
+  returning to entry management are documented as pending for the human browser
+  pass.
+
+Claude review output target:
+notes/claude_review_phase_57.txt

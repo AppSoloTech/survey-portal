@@ -2,6 +2,7 @@ import type {
   AdminDictionaryLookupResponse,
   AdminGlossaryEntriesResponse,
   AdminGlossaryEntryResponse,
+  AdminGlossaryQuestionSearchResponse,
   GlossaryDefinitionSource,
   ParticipantGlossaryEntriesResponse
 } from "@survey-portal/shared";
@@ -34,6 +35,22 @@ export async function lookupGlossaryDefinition(
     body: JSON.stringify({ term }),
     method: "POST"
   });
+}
+
+export async function searchGlossaryQuestions(
+  query: string,
+  options: { limit?: number; signal?: AbortSignal } = {}
+): Promise<AdminGlossaryQuestionSearchResponse> {
+  const params = new URLSearchParams({ q: query.trim() });
+
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+
+  return apiRequest<AdminGlossaryQuestionSearchResponse>(
+    `/api/admin/glossary/question-search?${params.toString()}`,
+    { signal: options.signal }
+  );
 }
 
 export async function createGlossaryEntry(

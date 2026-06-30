@@ -1,16 +1,26 @@
 import type {
   AdminDictionaryDefinitionSuggestion,
   AdminDictionaryLookupResponse,
-  AdminGlossaryEntry
+  AdminGlossaryEntry,
+  AdminGlossaryQuestionSearchMatch,
+  AdminGlossaryQuestionSearchResult
 } from "@survey-portal/shared";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent
+} from "react";
 
 import {
   archiveGlossaryEntry,
   createGlossaryEntry,
   fetchGlossaryEntries,
   lookupGlossaryDefinition,
-  updateGlossaryEntry,
+  searchGlossaryQuestions,
+  updateGlossaryEntry
 } from "../../api/glossary.js";
 import { confirmAdminAction } from "../../components/admin/builderForm.js";
 import { useToast } from "../../components/ToastProvider.js";
@@ -35,8 +45,31 @@ const emptyLookupState: DictionaryLookupState = {
   result: null
 };
 
+const glossaryQuestionSearchMinLength = 2;
+const glossaryQuestionSearchLimit = 20;
+const glossaryQuestionSearchDebounceMs = 250;
+
+type GlossaryAdminTab = "entries" | "question-search";
+
+export interface QuestionSearchState {
+  error: string | null;
+  isLoading: boolean;
+  lastQuery: string;
+  minQueryLength: number;
+  results: AdminGlossaryQuestionSearchResult[];
+}
+
+const emptyQuestionSearchState: QuestionSearchState = {
+  error: null,
+  isLoading: false,
+  lastQuery: "",
+  minQueryLength: glossaryQuestionSearchMinLength,
+  results: []
+};
+
 export function AdminGlossaryPage() {
   const toast = useToast();
+  const [activeTab, setActiveTab] = useState<GlossaryAdminTab>("entries");
   const [entries, setEntries] = useState<AdminGlossaryEntry[]>([]);
   const [createForm, setCreateForm] = useState<GlossaryFormState>(emptyGlossaryForm);
   const [editForm, setEditForm] = useState<GlossaryFormState>(emptyGlossaryForm);
@@ -46,6 +79,10 @@ export function AdminGlossaryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [questionSearchInput, setQuestionSearchInput] = useState("");
+  const [questionSearch, setQuestionSearch] =
+    useState<QuestionSearchState>(emptyQuestionSearchState);
+  const questionSearchRequestId = useRef(0);
 
   const activeEntries = useMemo(
     () => entries.filter((entry) => entry.isEnabled),
@@ -76,6 +113,71 @@ export function AdminGlossaryPage() {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    const trimmedQuery = questionSearchInput.trim();
+
+    if (trimmedQuery.length < questionSearch.minQueryLength) {
+      questionSearchRequestId.current += 1;
+      setQuestionSearch((current) => ({
+        ...current,
+        error: null,
+        isLoading: false,
+        lastQuery: trimmedQuery,
+        results: []
+      }));
+      return;
+    }
+
+    const requestId = questionSearchRequestId.current + 1;
+    questionSearchRequestId.current = requestId;
+    const controller = new AbortController();
+
+    setQuestionSearch((current) => ({
+      ...current,
+      error: null,
+      isLoading: true,
+      lastQuery: trimmedQuery,
+      results: current.lastQuery === trimmedQuery ? current.results : []
+    }));
+
+    const debounceTimer = window.setTimeout(() => {
+      searchGlossaryQuestions(trimmedQuery, {
+        limit: glossaryQuestionSearchLimit,
+        signal: controller.signal
+      })
+        .then((response) => {
+          if (questionSearchRequestId.current !== requestId) {
+            return;
+          }
+
+          setQuestionSearch({
+            error: null,
+            isLoading: false,
+            lastQuery: response.query,
+            minQueryLength: response.minQueryLength,
+            results: response.results
+          });
+        })
+        .catch((searchError) => {
+          if (questionSearchRequestId.current !== requestId || isAbortError(searchError)) {
+            return;
+          }
+
+          setQuestionSearch((current) => ({
+            ...current,
+            error: searchError instanceof Error ? searchError.message : "Question search failed",
+            isLoading: false,
+            results: []
+          }));
+        });
+    }, glossaryQuestionSearchDebounceMs);
+
+    return () => {
+      window.clearTimeout(debounceTimer);
+      controller.abort();
+    };
+  }, [questionSearch.minQueryLength, questionSearchInput]);
 
   async function refreshGlossary() {
     const response = await fetchGlossaryEntries();
@@ -147,6 +249,36 @@ export function AdminGlossaryPage() {
     setEditLookup(emptyLookupState);
   }
 
+  function selectTab(nextTab: GlossaryAdminTab) {
+    setActiveTab(nextTab);
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: GlossaryAdminTab) {
+    const tabs: GlossaryAdminTab[] = ["entries", "question-search"];
+    const currentIndex = tabs.indexOf(currentTab);
+    let nextTab: GlossaryAdminTab | null = null;
+
+    if (event.key === "ArrowRight") {
+      nextTab = tabs[(currentIndex + 1) % tabs.length];
+    } else if (event.key === "ArrowLeft") {
+      nextTab = tabs[(currentIndex - 1 + tabs.length) % tabs.length];
+    } else if (event.key === "Home") {
+      nextTab = tabs[0];
+    } else if (event.key === "End") {
+      nextTab = tabs[tabs.length - 1];
+    }
+
+    if (!nextTab) {
+      return;
+    }
+
+    event.preventDefault();
+    setActiveTab(nextTab);
+    window.requestAnimationFrame(() => {
+      document.getElementById(getGlossaryTabId(nextTab))?.focus();
+    });
+  }
+
   async function handleDictionaryLookup(
     form: GlossaryFormState,
     setLookup: (next: DictionaryLookupState) => void
@@ -185,35 +317,70 @@ export function AdminGlossaryPage() {
 
       {error ? <p className="status error">{error}</p> : null}
 
-      <div className="glossary-layout">
-        <form
-          className="builder-form compact-builder-form glossary-form"
-          onSubmit={handleCreateEntry}
+      <div className="admin-tab-list" aria-label="Glossary sections" role="tablist">
+        <button
+          aria-controls="glossary-entries-panel"
+          aria-selected={activeTab === "entries"}
+          className="admin-tab"
+          id="glossary-entries-tab"
+          onClick={() => selectTab("entries")}
+          onKeyDown={(event) => handleTabKeyDown(event, "entries")}
+          role="tab"
+          tabIndex={activeTab === "entries" ? 0 : -1}
+          type="button"
         >
-          <h3>Create entry</h3>
-          <GlossaryFields
-            form={createForm}
-            isSubmitting={isSubmitting}
-            lookup={createLookup}
-            onApplySuggestion={(suggestion) =>
-              setCreateForm((current) => applyDictionarySuggestion(current, suggestion))
-            }
-            onChange={setCreateForm}
-            onIgnoreSuggestions={() =>
-              setCreateForm((current) => ignoreDictionarySuggestion(current))
-            }
-            onLookup={() => void handleDictionaryLookup(createForm, setCreateLookup)}
-          />
-          <div className="glossary-form-actions">
-            <button
-              className="button-link compact-button primary-button"
-              disabled={isSubmitting}
-              type="submit"
-            >
-              Add entry
-            </button>
-          </div>
-        </form>
+          Entries
+        </button>
+        <button
+          aria-controls="glossary-question-search-panel"
+          aria-selected={activeTab === "question-search"}
+          className="admin-tab"
+          id="glossary-question-search-tab"
+          onClick={() => selectTab("question-search")}
+          onKeyDown={(event) => handleTabKeyDown(event, "question-search")}
+          role="tab"
+          tabIndex={activeTab === "question-search" ? 0 : -1}
+          type="button"
+        >
+          Question search
+        </button>
+      </div>
+
+      <div
+        aria-labelledby="glossary-entries-tab"
+        hidden={activeTab !== "entries"}
+        id="glossary-entries-panel"
+        role="tabpanel"
+      >
+        <div className="glossary-layout">
+          <form
+            className="builder-form compact-builder-form glossary-form"
+            onSubmit={handleCreateEntry}
+          >
+            <h3>Create entry</h3>
+            <GlossaryFields
+              form={createForm}
+              isSubmitting={isSubmitting}
+              lookup={createLookup}
+              onApplySuggestion={(suggestion) =>
+                setCreateForm((current) => applyDictionarySuggestion(current, suggestion))
+              }
+              onChange={setCreateForm}
+              onIgnoreSuggestions={() =>
+                setCreateForm((current) => ignoreDictionarySuggestion(current))
+              }
+              onLookup={() => void handleDictionaryLookup(createForm, setCreateLookup)}
+            />
+            <div className="glossary-form-actions">
+              <button
+                className="button-link compact-button primary-button"
+                disabled={isSubmitting}
+                type="submit"
+              >
+                Add entry
+              </button>
+            </div>
+          </form>
 
         <div className="glossary-list" aria-label="Glossary entries">
           <div className="glossary-list-summary">
@@ -332,8 +499,186 @@ export function AdminGlossaryPage() {
           })}
         </div>
       </div>
+      </div>
+
+      <div
+        aria-labelledby="glossary-question-search-tab"
+        hidden={activeTab !== "question-search"}
+        id="glossary-question-search-panel"
+        role="tabpanel"
+      >
+        <QuestionSearchPanel
+          query={questionSearchInput}
+          search={questionSearch}
+          onQueryChange={setQuestionSearchInput}
+        />
+      </div>
     </section>
   );
+}
+
+function QuestionSearchPanel({
+  onQueryChange,
+  query,
+  search
+}: {
+  onQueryChange: (nextQuery: string) => void;
+  query: string;
+  search: QuestionSearchState;
+}) {
+  const trimmedQuery = query.trim();
+  const statusMessage = formatQuestionSearchLiveMessage(search, trimmedQuery);
+
+  return (
+    <section className="glossary-question-search">
+      <div className="builder-form compact-builder-form glossary-question-search-form">
+        <label htmlFor="glossary-question-search-input">
+          Search assessment question text
+          <input
+            autoComplete="off"
+            id="glossary-question-search-input"
+            maxLength={500}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Start typing a term or full question"
+            type="search"
+            value={query}
+          />
+        </label>
+      </div>
+
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {statusMessage}
+      </p>
+
+      <div className="glossary-question-search-results" aria-label="Question search results">
+        {trimmedQuery.length < search.minQueryLength ? (
+          <div className="builder-empty-state">
+            <strong>Search is ready</strong>
+            <span>Enter at least {search.minQueryLength} characters.</span>
+          </div>
+        ) : null}
+
+        {trimmedQuery.length >= search.minQueryLength && search.isLoading ? (
+          <p className="status muted">Searching question text...</p>
+        ) : null}
+
+        {trimmedQuery.length >= search.minQueryLength && search.error ? (
+          <p className="status error">{search.error}</p>
+        ) : null}
+
+        {trimmedQuery.length >= search.minQueryLength &&
+        !search.isLoading &&
+        !search.error &&
+        search.results.length === 0 ? (
+          <div className="builder-empty-state">
+            <strong>No matching questions</strong>
+            <span>No assessment question text matches "{trimmedQuery}".</span>
+          </div>
+        ) : null}
+
+        {search.results.length > 0 ? (
+          <QuestionSearchResults results={search.results} />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function QuestionSearchResults({ results }: { results: AdminGlossaryQuestionSearchResult[] }) {
+  return (
+    <div className="glossary-question-result-list">
+      {results.map((result) => (
+        <article className="glossary-question-result" key={result.question.id}>
+          <div className="glossary-question-result-header">
+            <div>
+              <h3>{result.assessment.title}</h3>
+              <p>
+                {result.page
+                  ? `${result.page.title} - Page ${result.page.displayOrder}`
+                  : "Unassigned page"}{" "}
+                - Question {result.question.displayOrder}
+              </p>
+            </div>
+            <span className={`status-pill ${result.assessment.status}`}>
+              {result.assessment.status}
+            </span>
+          </div>
+
+          <p className="glossary-question-text">
+            <QuestionSearchHighlight
+              match={result.match}
+              questionText={result.question.questionText}
+            />
+          </p>
+
+          <div className="glossary-question-result-actions">
+            <button
+              className="button-link compact-button secondary-button"
+              disabled
+              type="button"
+            >
+              Add entry unavailable
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function QuestionSearchHighlight({
+  match,
+  questionText
+}: {
+  match: AdminGlossaryQuestionSearchMatch;
+  questionText: string;
+}) {
+  const parts = splitQuestionSearchMatch(questionText, match);
+
+  if (!parts.highlighted) {
+    return <>{questionText}</>;
+  }
+
+  return (
+    <>
+      {parts.before}
+      <mark>{parts.highlighted}</mark>
+      {parts.after}
+    </>
+  );
+}
+
+export function splitQuestionSearchMatch(
+  questionText: string,
+  match: AdminGlossaryQuestionSearchMatch
+): { after: string; before: string; highlighted: string } {
+  const start = clampMatchOffset(match.start, questionText.length);
+  const end = Math.max(start, clampMatchOffset(match.end, questionText.length));
+
+  return {
+    after: questionText.slice(end),
+    before: questionText.slice(0, start),
+    highlighted: questionText.slice(start, end)
+  };
+}
+
+export function formatQuestionSearchLiveMessage(
+  search: Pick<QuestionSearchState, "error" | "isLoading" | "minQueryLength" | "results">,
+  trimmedQuery: string
+): string {
+  if (trimmedQuery.length < search.minQueryLength) {
+    return `Enter at least ${search.minQueryLength} characters to search questions.`;
+  }
+
+  if (search.isLoading) {
+    return "Searching question text.";
+  }
+
+  if (search.error) {
+    return `Question search error: ${search.error}`;
+  }
+
+  return `${formatCount(search.results.length, "matching question")} found.`;
 }
 
 function GlossaryFields({
@@ -498,4 +843,20 @@ function formatDate(value: string): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function clampMatchOffset(value: number, length: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(Math.trunc(value), 0), length);
+}
+
+function getGlossaryTabId(tab: GlossaryAdminTab): string {
+  return tab === "entries" ? "glossary-entries-tab" : "glossary-question-search-tab";
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }

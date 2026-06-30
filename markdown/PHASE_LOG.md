@@ -6,6 +6,177 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 57 — Glossary Tabs And Question Search UI
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; Claude review approved
+
+Prompt:
+`prompts/prompt_57.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Client/planning intake:
+  `notes/client_review_2026-06-30_glossary_question_search.txt`
+- Codex handoff: `notes/claude_handoff_phase_57.txt`
+- Claude review: `notes/claude_review_phase_57.txt`
+
+## Goals
+
+- Refactor `/admin/glossary` into separate Admin tabs for existing entry
+  management and question-text discovery.
+- Consume the Phase 56 Admin-only question-search API from the web app without
+  changing the backend contract.
+- Preserve all existing Glossary CRUD and dictionary-assist behavior while
+  keeping Phase 58 creation/prefill workflow deferred.
+
+## Built
+
+- Added accessible tabs on `/admin/glossary`:
+  - `Entries` contains the existing create, edit, enable/disable, archive, and
+    dictionary-suggestion workflows.
+  - `Question search` contains the new dynamic assessment question search UI.
+- Added `searchGlossaryQuestions()` in `apps/web/src/api/glossary.ts` for
+  `GET /api/admin/glossary/question-search?q=<query>&limit=<optional>`,
+  passing `AbortSignal` through the existing `apiRequest` `RequestInit` path.
+- Added question-search behavior that trims input, waits for the Phase 56
+  minimum query length of 2, debounces requests by 250 ms, uses a conservative
+  limit of 20, aborts stale requests, and guards responses with request ids.
+- Added short/empty, loading, results, no-results, and recoverable-error states.
+- Rendered result cards with assessment/page/question context and highlighted
+  matched text using the returned `match.start`/`match.end` offsets against the
+  original `question.questionText`.
+- Added a disabled result action placeholder only; no entry creation or prefill
+  behavior was wired.
+- Added polite live-region updates for search state and keyboard support for
+  ArrowLeft/ArrowRight/Home/End tab movement.
+- Added responsive CSS for tabs and result cards.
+- Added focused web tests for the API helper, highlight slicing, live-region
+  messages, and source guardrails around tabs/debounce/abort/non-creating
+  action.
+- Updated `markdown/releases/unreleased.md`.
+
+## Important Decisions
+
+### Keep Search Informational In Phase 57
+
+Decision:
+Result rows include a disabled non-creating action placeholder and do not
+prefill or create Glossary entries.
+
+Reason:
+The prompt explicitly reserves result-to-entry workflow behavior for Phase 58,
+and the candidate-term behavior still needs separate confirmation.
+
+Consequence:
+Admins can discover matching question text now, but entry creation still goes
+through the existing manual entry form.
+
+### Use Phase 56 Offsets Directly
+
+Decision:
+The UI slices the returned original `question.questionText` using
+`match.start` and `match.end`, with only defensive clamping.
+
+Reason:
+Phase 56 defines those offsets as JavaScript-string offsets for the returned
+question text, and recomputing matches client-side could drift from backend
+behavior.
+
+Consequence:
+Original casing is preserved in search results. Unicode case-fold edge cases
+remain accepted Phase 56 review context, not a Phase 57 blocker.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none; Phase 57 consumes the existing Phase 56 endpoint.
+- Frontend UX impact: `/admin/glossary` now has tabs and a new question-search
+  tab.
+- Auth/authorization impact: no new auth model; the consumed endpoint remains
+  Admin-only server-side.
+- Hidden-tag/reporting/response-data impact: none; the UI renders only the
+  Phase 56 question-search response.
+
+## Validation
+
+- Passed: `npm run test -w apps/web -- src/api/glossary.test.ts src/pages/admin/AdminGlossaryPage.test.ts`
+- Passed: `npx tsc --noEmit -p apps/web/tsconfig.json`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm test`
+- Passed: `git diff --check`
+
+Validation notes:
+- The first sandboxed `npm test` run failed when API test setup was blocked
+  from connecting to local PostgreSQL at `127.0.0.1:5432`. The same `npm test`
+  command passed after approved local PostgreSQL access.
+- `npm run build` emitted the existing Vite large chunk warning.
+- Manual browser checks for opening `/admin/glossary`, switching tabs,
+  exercising dynamic search, and returning to the entry manager are pending for
+  the human browser pass.
+
+## Follow-Ups
+
+- Phase 58 should wire search results into the existing Glossary create flow
+  only after confirming candidate-term behavior.
+- Manual browser pass should specifically exercise rapid typing/stale result
+  ordering, deleting back below two characters while a request is in flight,
+  switching tabs mid-edit with entry form state preserved, and keyboard-only
+  tab navigation with Arrow/Home/End focus movement.
+- Phases 54/55 remain paused.
+
+## Claude Review Notes
+
+Source:
+`notes/claude_review_phase_57.txt`
+
+Status:
+Approved. No correctness, accessibility, or scope bugs found.
+
+Critical issues:
+None.
+
+Suggested improvements:
+- Review noted an assurance gap: debounce, abort, stale-response handling, tab
+  keyboard behavior, and the disabled result action are covered by source-level
+  guardrails and pure helper tests, not render-level component tests. This
+  matches the current repo web-test pattern and makes the pending human browser
+  pass important.
+- Low-risk awareness note: if the shared web API client ever masks fetch abort
+  errors, an unmount during an in-flight search could theoretically surface a
+  setState-after-unmount warning.
+- Cosmetic note: adding trailing whitespace to an unchanged trimmed query can
+  trigger one redundant refetch.
+
+Accepted fixes:
+None needed.
+
+Deferred findings:
+- Render-level automated coverage remains deferred until the web test harness
+  adopts DOM/component testing.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: Yes; Claude review approved and no new backend or
+  auth surface was added in this phase.
+- Review findings addressed or deferred: Yes; the non-blocking test-assurance
+  gap is documented for manual browser verification and future test-harness
+  evolution.
+- Manual testing complete: Not yet; browser pass documented as pending.
+- Ready to commit: Ready for Claude/human review after manual browser pass.
+
+---
+
 ## Planning Update — Phase 57 Prompt Alignment After Phase 56
 
 Date:

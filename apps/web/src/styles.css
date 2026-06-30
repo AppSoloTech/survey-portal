@@ -2803,6 +2803,42 @@ main:focus {
   white-space: pre-wrap;
 }
 
+.admin-tab-list {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.admin-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.85rem;
+}
+
+.admin-tab:hover,
+.admin-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.admin-tab[aria-selected="true"] {
+  border-bottom-color: var(--brand);
+}
+
+.admin-tab:focus-visible {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  outline: none;
+}
+
 .glossary-layout {
   align-items: start;
   display: grid;
@@ -2965,6 +3001,70 @@ main:focus {
   justify-self: end;
   text-transform: lowercase;
   width: fit-content;
+}
+
+.glossary-question-search,
+.glossary-question-search-results,
+.glossary-question-result-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.glossary-question-search-form {
+  max-width: 760px;
+}
+
+.glossary-question-search-form input {
+  max-width: none;
+}
+
+.glossary-question-result {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.glossary-question-result-header {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.glossary-question-result-header h3 {
+  font-size: 1.02rem;
+  line-height: 1.25;
+  margin: 0 0 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.glossary-question-result-header p,
+.glossary-question-text {
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.glossary-question-text {
+  color: var(--ink);
+}
+
+.glossary-question-text mark {
+  background: color-mix(in srgb, var(--brand) 20%, transparent);
+  border-radius: var(--radius-xs);
+  color: inherit;
+  font-weight: 800;
+  padding: 0.05rem 0.15rem;
+}
+
+.glossary-question-result-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .overview-survey-list {
@@ -6023,20 +6123,30 @@ main:focus {
     grid-template-columns: 1fr;
   }
 
+  .glossary-question-result-header {
+    grid-template-columns: 1fr;
+  }
+
   .glossary-entry .status-pill {
+    justify-self: start;
+  }
+
+  .glossary-question-result .status-pill {
     justify-self: start;
   }
 
   .glossary-entry-actions,
   .glossary-form-actions,
-  .glossary-lookup-actions {
+  .glossary-lookup-actions,
+  .glossary-question-result-actions {
     align-items: stretch;
     justify-content: stretch;
   }
 
   .glossary-entry-actions .button-link,
   .glossary-form-actions .button-link,
-  .glossary-lookup-actions .button-link {
+  .glossary-lookup-actions .button-link,
+  .glossary-question-result-actions .button-link {
     flex: 1 1 calc(50% - 0.25rem);
     min-width: min(100%, 9rem);
   }
