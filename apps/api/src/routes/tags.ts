@@ -161,6 +161,22 @@ async function fetchNextTagDisplayOrder(
   return result.rows[0]?.next_display_order ?? 1;
 }
 
+async function fetchCommonTagKeyEmoji(
+  queryable: Queryable,
+  tagKey: string
+): Promise<string | null> {
+  const result = await queryable.query<{ emoji: string }>(
+    `select distinct emoji
+     from tag_definitions
+     where tag_key = $1
+       and emoji is not null
+     order by emoji`,
+    [tagKey]
+  );
+
+  return result.rows.length === 1 ? result.rows[0].emoji : null;
+}
+
 async function fetchTagGroupIds(queryable: Queryable): Promise<number[]> {
   const result = await queryable.query<{ id: number }>(
     `select id
@@ -624,11 +640,13 @@ tagsRouter.post("/", async (req, res, next) => {
     }
 
     const displayOrder = await fetchNextTagDisplayOrder(client, groupId);
+    const emoji =
+      validation.value.emoji ?? (await fetchCommonTagKeyEmoji(client, validation.value.tagKey));
     const result = await client.query<TagDefinitionRecord>(
       `insert into tag_definitions (tag_key, tag_value, emoji, group_id, display_order)
        values ($1, $2, $3, $4, $5)
        returning id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at`,
-      [validation.value.tagKey, validation.value.tagValue, validation.value.emoji, groupId, displayOrder]
+      [validation.value.tagKey, validation.value.tagValue, emoji, groupId, displayOrder]
     );
 
     if (groupId !== null) {

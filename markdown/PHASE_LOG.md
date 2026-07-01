@@ -6,6 +6,187 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 62 — Tag Category Emoji Inheritance
+
+Date:
+2026-07-01
+
+Status:
+Implemented; validation passed; Claude review accepted
+
+Prompt:
+`prompts/prompt_62.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_62.txt`
+- Claude review: `notes/claude_review_phase_62.txt`
+
+## Goals
+
+- Fix the Admin Tags workflow so new catalog tags inherit a tag-key category
+  emoji when the category already has one shared emoji.
+- Preserve explicit per-tag emoji overrides.
+- Avoid guessing when the category emoji has been cleared or existing matching
+  tags have conflicting emoji values.
+- Keep participant payloads limited to emoji/count aggregates and never expose
+  hidden tag identities.
+
+## Built
+
+- Added `fetchCommonTagKeyEmoji` in `apps/api/src/routes/tags.ts` to find the
+  one shared non-null emoji for an existing `tag_key`.
+- Updated `POST /api/tags` so blank, null, or omitted create-time emoji values
+  inherit that common emoji when it exists.
+- Preserved explicit create-time emoji values as intentional overrides.
+- Left `PUT /api/tags/category-emoji` behavior unchanged: it still applies or
+  clears emoji for existing definitions with the selected `tagKey`.
+- Added focused API regressions covering inherited emoji, explicit override,
+  cleared category emoji, mixed/ambiguous emoji values, and existing non-admin
+  route protection.
+- Updated unreleased notes and created the Phase 62 handoff.
+
+## Important Decisions
+
+### Tag-Key Category Source
+
+Decision:
+Use the existing tag-key category model for inheritance, matching the Admin Tags
+`Apply emoji to tag category` action.
+
+Reason:
+Phase 60 introduced category emoji as a `tag_definitions.tag_key` bulk action,
+not as metadata on visual `tag_groups`. Phase 62 is a bug fix for that existing
+workflow and does not add a new `tag_groups.emoji` schema concept.
+
+Tradeoff:
+Visual tag groups remain independent organization sections. If the client later
+means group-section emoji inheritance, that should be a separate schema/product
+phase.
+
+### Ambiguous Emoji Handling
+
+Decision:
+Inherit only when exactly one non-null emoji exists for matching tag
+definitions.
+
+Reason:
+This preserves clear category defaults while avoiding a silent guess when admins
+have intentionally set different per-tag emoji values.
+
+Tradeoff:
+If a category has mixed emoji values, admins must choose an explicit emoji for
+the new tag or reapply the category emoji first.
+
+Clarification:
+Matching rows with null emoji do not block inheritance. If a tag key has one
+distinct non-null emoji plus any number of null emoji rows, a new blank tag
+inherits that one non-null emoji.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: no new endpoint; `POST /api/tags` now stores an inherited
+  emoji in the created tag response when the request does not provide one and a
+  single category default exists.
+- Auth or authorization impact: none; `/api/tags` routes remain Admin-only.
+- Data privacy or visibility impact: participant and anonymous payloads remain
+  unchanged and continue to expose only emoji/count aggregates.
+- Frontend UX impact: no UI changes. The existing Admin Tags create form sends
+  `null` for blank emoji, which now inherits a server-side category default
+  where appropriate.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run test -w apps/api -- tagCatalog
+npm run typecheck
+npm run lint
+npm run release:check
+npm run build
+git diff --check
+npm test
+```
+
+Results:
+
+- Initial sandboxed focused API command could not connect to local PostgreSQL
+  (`EPERM 127.0.0.1:5432`); rerun with approved local DB access passed.
+- Passed with approved local DB access:
+  `npm run test -w apps/api -- tagCatalog` (22 tests).
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run release:check`.
+- Passed: `npm run build` (Vite emitted the existing large chunk warning).
+- Passed: `git diff --check`.
+- Passed with approved local DB access: `npm test`.
+  - shared: 71 tests
+  - web: 106 tests
+  - API: 313 tests
+  - release: 9 tests
+  - loadtest: 29 tests
+
+Manual tests:
+
+- Passed by developer on 2026-07-01. Manual QA confirmed the Phase 62 Admin
+  Tags emoji inheritance workflow after automated validation.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes.
+- Handoff path: `notes/claude_handoff_phase_62.txt`
+- Claude review status before commit: Accepted.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_62.txt`
+
+Status:
+
+- Completed; clean, correctly scoped, safe to accept.
+
+Findings and disposition:
+
+- No blocking findings.
+- Accepted clarification: partial-null inheritance is intentional. Matching
+  rows with null emoji do not block inheritance when there is exactly one
+  distinct non-null emoji for the tag key.
+- Confirmed Phase 62 closes only `notes/1.0_test_notes.txt` item 1. Results
+  summary collapse and large-data presentation remain split into Phase 63.
+
+## Problems Encountered
+
+- Problem: Focused API tests need local PostgreSQL access and the sandbox blocks
+  `127.0.0.1:5432`.
+  Resolution: Reran focused API and full test suites with approved local DB
+  access.
+
+## Follow-Up Tasks
+
+- None.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Codex handoff created: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: Yes; Claude review accepted and server-side
+  Admin-only route protections are unchanged and covered by existing tests.
+- Review findings addressed or deferred: Yes; no blockers, clarification
+  documented.
+- Manual testing complete: Yes.
+- Ready to commit: Yes.
+
+---
+
 ## Phase 61 — Category All Review Tags
 
 Date:

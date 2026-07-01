@@ -615,6 +615,78 @@ describe("tag catalog", () => {
     );
   });
 
+  it("inherits a tag category emoji when creating new matching catalog tags", async () => {
+    const admin = await registerAdmin(app);
+    const categoryKey = uniqueEmail("category-emoji-inherit").split("@")[0];
+    await createTagDefinition(app, admin, categoryKey, "first");
+    await createTagDefinition(app, admin, categoryKey, "second");
+
+    const applyResponse = await request(app)
+      .put("/api/tags/category-emoji")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: "🧭", tagKey: categoryKey });
+    expect(applyResponse.status).toBe(200);
+
+    const inherited = await request(app)
+      .post("/api/tags")
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: categoryKey, tagValue: "third" });
+    expect(inherited.status).toBe(201);
+    expect(inherited.body.tag.emoji).toBe("🧭");
+
+    const explicit = await request(app)
+      .post("/api/tags")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: "🔥", tagKey: categoryKey, tagValue: "explicit" });
+    expect(explicit.status).toBe(201);
+    expect(explicit.body.tag.emoji).toBe("🔥");
+
+    const listResponse = await request(app).get("/api/tags").set("Cookie", admin.cookie);
+    expect(listResponse.body.tags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: inherited.body.tag.id, emoji: "🧭" }),
+        expect.objectContaining({ id: explicit.body.tag.id, emoji: "🔥" })
+      ])
+    );
+  });
+
+  it("does not inherit a cleared or ambiguous tag category emoji", async () => {
+    const admin = await registerAdmin(app);
+    const clearedCategoryKey = uniqueEmail("category-emoji-clear").split("@")[0];
+    await createTagDefinition(app, admin, clearedCategoryKey, "first");
+    await createTagDefinition(app, admin, clearedCategoryKey, "second");
+
+    const applyResponse = await request(app)
+      .put("/api/tags/category-emoji")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: "🧩", tagKey: clearedCategoryKey });
+    expect(applyResponse.status).toBe(200);
+
+    const clearResponse = await request(app)
+      .put("/api/tags/category-emoji")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: null, tagKey: clearedCategoryKey });
+    expect(clearResponse.status).toBe(200);
+
+    const afterClear = await request(app)
+      .post("/api/tags")
+      .set("Cookie", admin.cookie)
+      .send({ emoji: null, tagKey: clearedCategoryKey, tagValue: "after-clear" });
+    expect(afterClear.status).toBe(201);
+    expect(afterClear.body.tag.emoji).toBeNull();
+
+    const mixedCategoryKey = uniqueEmail("category-emoji-mixed").split("@")[0];
+    await createTagDefinition(app, admin, mixedCategoryKey, "one", "🟢");
+    await createTagDefinition(app, admin, mixedCategoryKey, "two", "🟣");
+
+    const mixed = await request(app)
+      .post("/api/tags")
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: mixedCategoryKey, tagValue: "no-guess" });
+    expect(mixed.status).toBe(201);
+    expect(mixed.body.tag.emoji).toBeNull();
+  });
+
   it("preserves a tag group when editing category and value", async () => {
     const admin = await registerAdmin(app);
     const group = await createTagGroup(admin);

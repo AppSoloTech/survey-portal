@@ -1,0 +1,130 @@
+# Claude Handoff — Phase 62 Tag Category Emoji Inheritance
+
+## Phase
+
+Phase 62 — Tag Category Emoji Inheritance
+
+Prompt:
+
+```txt
+prompts/prompt_62.txt
+```
+
+Source feedback:
+
+```txt
+notes/1.0_test_notes.txt
+```
+
+## Summary
+
+Phase 62 fixes the Admin Tags create workflow so a new tag inherits the existing
+tag-key category emoji when the Admin leaves the emoji field blank and exactly
+one distinct non-null emoji exists across matching `tag_definitions.tag_key`
+entries. Matching rows with null emoji do not block inheritance.
+
+The implementation is intentionally server-side. The Admin Tags UI already
+sends `null` for a blank emoji field, so the backend now treats null/omitted
+create-time emoji as "inherit a safe category default if one exists."
+
+## Files Changed
+
+- `apps/api/src/routes/tags.ts`
+- `apps/api/test/tagCatalog.test.ts`
+- `markdown/releases/unreleased.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_handoff_phase_62.txt`
+
+## Implementation Details
+
+- Added `fetchCommonTagKeyEmoji(queryable, tagKey)` in
+  `apps/api/src/routes/tags.ts`.
+- The helper queries distinct non-null emoji values for the matching
+  `tag_key`.
+- `POST /api/tags` now uses:
+  - the explicit request emoji when non-null
+  - otherwise the common tag-key emoji when exactly one exists
+  - otherwise `null`
+- No schema changes, migrations, new endpoints, or UI controls were added.
+- `PUT /api/tags/category-emoji` remains unchanged and continues applying or
+  clearing emoji on existing definitions for a `tagKey`.
+
+## Acceptance Coverage
+
+Covered by focused API tests in `apps/api/test/tagCatalog.test.ts`:
+
+- category emoji apply then new matching tag creation inherits emoji
+- explicit emoji on create overrides inherited category emoji
+- cleared category emoji does not inherit
+- mixed existing emoji values do not infer a category default
+- existing non-admin tag catalog route protection remains in place
+
+## Security And Privacy Notes
+
+- `/api/tags` remains protected by `requireAuth` and `requireRole("admin")`.
+- This phase does not change participant or anonymous payloads.
+- Hidden tag keys, values, tag ids, group names, and category labels remain
+  absent from participant-facing responses.
+- Participant issue-profile output remains emoji/count aggregate data only.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run test -w apps/api -- tagCatalog
+npm run typecheck
+npm run lint
+npm run release:check
+npm run build
+git diff --check
+npm test
+```
+
+Results:
+
+- Initial sandboxed focused API command was blocked from local PostgreSQL with
+  `EPERM 127.0.0.1:5432`.
+- Passed with approved local DB access:
+  `npm run test -w apps/api -- tagCatalog` (22 tests).
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed: `npm run release:check`.
+- Passed: `npm run build`.
+  - Vite emitted the existing large chunk warning.
+- Passed: `git diff --check`.
+- Passed with approved local DB access: `npm test`.
+  - shared: 71 tests
+  - web: 106 tests
+  - API: 313 tests
+  - release: 9 tests
+  - loadtest: 29 tests
+
+## Manual Validation
+
+Passed by developer on 2026-07-01 after automated validation.
+
+Manual pass covered:
+
+1. In Admin Tags, apply an emoji to an existing tag category.
+2. Add a new tag with the same category and no emoji; confirm the new row shows
+   the inherited emoji.
+3. Add another matching tag with an explicit different emoji; confirm the
+   explicit value is preserved.
+4. Clear the category emoji and confirm a later matching tag does not inherit
+   the old emoji.
+5. Confirm participant runner payloads still contain only emoji/count aggregate
+   data, not hidden tag metadata.
+
+## Review Focus
+
+Please review:
+
+- Whether the tag-key category interpretation matches Phase 60's existing
+  category emoji workflow.
+- Whether ignoring ambiguous mixed emoji values is the right conservative
+  behavior.
+- Whether the create route preserves Phase 61 propagation semantics for review
+  tag category bindings and builder hidden-tag `<ALL>` subscriptions.
+- Whether any frontend hint is needed to make inherited server-side emoji more
+  discoverable before save.
