@@ -1,3 +1,6 @@
-1) Updating an answer from one with a tag to one without at tag, should cause the meter to decrement. 
-2) The bar should reach 100% full prior to 'Submit assessment'. It will only fill to the top upon submission. Before submission is where the animation will occure. 
-3) Let's make the meter a stick header that will allow the user to see it at all times. This may be difficult on mobile view considering the screen space. A seperate, smart design would be a good start for mobile. 
+1) Updating an answer from one with a tag to one without at tag, should cause the meter to decrement.
+2) The bar should reach 100% full prior to 'Submit assessment'. It will only fill to the top upon submission. Before submission is where the animation will occure.
+3) Let's make the meter a stick header that will allow the user to see it at all times. This may be difficult on mobile view considering the screen space. A seperate, smart design would be a good start for mobile.
+
+# Second Round
+1)

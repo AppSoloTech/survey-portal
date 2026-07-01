@@ -91,6 +91,21 @@ export interface AnswerTag {
   tagKey: string;
   tagValue: string;
   emoji?: string | null;
+  isManual?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HiddenTagAllBindingTarget = "answer_option" | "question_other" | "question_value";
+
+export interface HiddenTagAllBinding {
+  id: number;
+  targetType: HiddenTagAllBindingTarget;
+  answerOptionId: number | null;
+  questionId: number | null;
+  integerMin: number | null;
+  integerMax: number | null;
+  tagKey: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -107,6 +122,7 @@ export interface QuestionValueTag {
   tagKey: string;
   tagValue: string;
   emoji?: string | null;
+  isManual?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -119,6 +135,7 @@ export interface QuestionOtherTag {
   tagKey: string;
   tagValue: string;
   emoji?: string | null;
+  isManual?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -160,6 +177,7 @@ export interface AnswerOption {
   createdAt: string;
   updatedAt: string;
   answerTags?: AnswerTag[];
+  answerTagAllBindings?: HiddenTagAllBinding[];
 }
 
 export interface SurveyQuestion {
@@ -179,8 +197,10 @@ export interface SurveyQuestion {
   answerOptions: AnswerOption[];
   // Populated for admins only, mirroring answerTags on options.
   valueTags?: QuestionValueTag[];
+  valueTagAllBindings?: HiddenTagAllBinding[];
   // Populated for admins only when Allow Other is enabled on selection questions.
   otherTags?: QuestionOtherTag[];
+  otherTagAllBindings?: HiddenTagAllBinding[];
 }
 
 export interface ConditionalLogicRule {
@@ -1202,6 +1222,7 @@ export interface AdminAttemptReviewTag {
   tagDefinitionId: number;
   tagKey: string;
   tagValue: string;
+  isManual: boolean;
   assignedByUserId: number | null;
   createdAt: string;
 }
@@ -1233,6 +1254,10 @@ export interface AdminAttemptAnswer {
   // Manual Admin review tags applied to this specific saved response answer.
   // Admin-only and separate from automatic hidden/value/Other tags.
   reviewTags: AdminAttemptReviewTag[];
+  // Category-level review tag bindings created by the virtual "apply all in
+  // category" action. Admin-only; the group names are read from the tag
+  // catalog when needed, not stored on the answer payload.
+  reviewTagGroupIds: number[];
   // True when the question is revealed on the final path implied by the
   // attempt's saved answers. As of Phase 14, off-path answers are pruned at
   // save time, so this flag is a safety net: any answer that escaped pruning,
@@ -1250,6 +1275,7 @@ export interface AdminAttemptDetailResponse {
 
 export interface UpdateResponseAnswerReviewTagsResponse {
   reviewTags: AdminAttemptReviewTag[];
+  reviewTagGroupIds: number[];
 }
 
 export function resolveNextQuestion(

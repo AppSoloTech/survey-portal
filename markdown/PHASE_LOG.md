@@ -6,6 +6,307 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 61 — Category All Review Tags
+
+Date:
+2026-06-30
+
+Status:
+Implemented; validation passed; Claude review finding addressed
+
+Prompt:
+`prompts/prompt_61.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_61.txt`
+- Claude review: `notes/claude_review_phase_61.txt`
+
+## Goals
+
+- Add an admin-only category `<ALL>` convenience action for review tags on text
+  answers.
+- Keep `<ALL>` virtual so no system tag rows are created in
+  `tag_definitions`.
+- Persist category-level bindings so future category tags propagate to
+  previously bound submitted answers.
+- Preserve Admin Tags management, reporting, CSV, and participant privacy
+  boundaries.
+
+## Built
+
+- Added `response_answer_tag_groups` and
+  `response_answer_tag_group_tags` to persist category-all review tag bindings
+  and inherited tag sources without creating `<ALL>` tag definition rows.
+- Split Phase 61 schema into `0040_response_answer_tag_groups.sql` and
+  `0041_response_answer_tag_group_sources.sql` so dev databases that had already
+  applied the initial `0040` draft keep a valid migration checksum.
+- Added an admin-only category review-tag endpoint that stores the binding and
+  bulk-inserts all real tag definitions for a category into
+  `response_answer_tags`.
+- Reused the existing answered-text validation and `response_answer_tags`
+  uniqueness constraint for idempotency.
+- Added tag catalog propagation so tags created, edited, or moved into a bound
+  category are inserted onto already-bound answers.
+- Added tag catalog cleanup so tags moved out of a bound category are removed
+  from bound answers when they were inherited-only.
+- Added category deletion cleanup so inherited-only expanded review tags are
+  removed before category binding/source rows cascade away.
+- Updated the Survey Results review-tag dropdown to synthesize
+  `<ALL> - Apply all in {category}` options for categories not yet bound to the
+  answer.
+- Updated the Questions tab hidden-tag add and existing tag forms so choosing
+  visible value `<ALL>` creates a living auto-apply subscription for the
+  selected tag category on option tags, Other tags, and text/integer value tags.
+- Added `hidden_tag_all_bindings`,
+  `hidden_tag_all_binding_tags`, and `is_manual` flags on builder hidden-tag
+  tables so inherited hidden tags can sync with the tag catalog while manual
+  hidden tags remain sticky.
+- Added hidden-tag propagation from Admin Tags so created, edited, and deleted
+  catalog values sync to option, Other, and text/integer value-tag targets with
+  active `<ALL>` subscriptions.
+- Added migration `0042_hidden_tag_all_marker_backfill.sql` to backfill existing
+  marker targets with all current catalog values.
+- Added migration `0043_hidden_tag_all_bindings.sql` to convert older
+  `All`/`<ALL>` marker targets into real hidden-tag subscriptions and remove
+  marker rows.
+- Added a `Stop` control for category auto-apply that removes inherited-only
+  tags while preserving manual tags.
+- Suppressed individual remove buttons for inherited-only review chips so Stop
+  remains the clear removal path for category-applied tags.
+- Kept `<ALL>` out of persisted review chips, CSV values, report aggregates,
+  tag catalog rows, and Admin Tags management.
+- Added focused API and web guardrail tests for virtual category application.
+- Updated release notes, follow-ups, and phase handoff.
+
+## Important Decisions
+
+### Virtual Selector
+
+Decision:
+Use a virtual dropdown selector and category bulk endpoint rather than real
+`<ALL>` rows in `tag_definitions`.
+
+Reason:
+The virtual approach satisfies the admin workflow without fake catalog rows,
+seed changes, category-delete orphaned tag definitions, or extra filtering
+across every tag catalog/reporting query.
+
+Tradeoff:
+The app now needs a small binding table and propagation hooks in tag catalog
+mutations so future category membership changes reach previously bound answers.
+The app also tracks inherited tag sources separately from manual tags so synced
+category removals do not erase manual review work.
+
+### Living Binding
+
+Decision:
+Future tags added or moved into a category must propagate to answers where the
+category `<ALL>` selector was already applied, including completed/submitted
+attempts.
+
+Reason:
+The product owner clarified that category all should remain semantically tied
+to the category over time, not just bulk-apply the current tag set.
+
+Tradeoff:
+Inherited category tags stay in parity with the category. Manual tags are
+sticky and remain until the admin removes them.
+
+## Architecture Notes
+
+- Database/schema impact: additive `response_answer_tag_groups` in migration
+  `0040`, `response_answer_tags.is_manual` and
+  `response_answer_tag_group_tags` in migration `0041`, plus builder
+  hidden-tag subscription tables and manual flags in migration `0043`.
+- API contract impact: added a category bulk-add review-tag action under the
+  existing admin survey reporting route plus a category stop-auto-apply action;
+  admin attempt answers and review-tag mutation responses include
+  `reviewTagGroupIds`, and review tag payloads include `isManual`.
+- Auth or authorization impact: no model change; the new action is admin-only
+  and validates the same survey/attempt/answered text ownership as individual
+  review tags.
+- Data privacy or visibility impact: participant and anonymous payloads remain
+  unchanged; `<ALL>` is never persisted or exposed as a tag value.
+- Frontend UX impact: Survey Results text-answer review-tag dropdown now shows
+  `<ALL> - Apply all in {category}` for categories not yet bound to the answer
+  and `Auto-applying all in {category}` bindings with Stop controls;
+  inherited-only chips do not show individual remove buttons. Questions tab
+  hidden-tag add and existing tag forms now show a visible `<ALL>` value once a
+  catalog category is selected, then render a managed `<ALL>` subscription row
+  with Stop controls and inherited-only rows marked as managed.
+- Reporting impact: submitted attempts read current hidden tags from the survey
+  structure, so propagated hidden-tag values appear in admin detail/reporting
+  for both existing and future attempts.
+- Environment or deployment impact: none.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run test -w apps/web -- SurveyQuestionsPage.test.ts SurveyResultsPage.test.ts
+npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm run db:migrate
+npm run release:check
+npm test
+git diff --check
+git diff --check -- database/migrations/0040_response_answer_tag_groups.sql database/migrations/0041_response_answer_tag_group_sources.sql packages/shared/src/index.ts apps/api/src/services/surveyReporting.ts apps/api/src/routes/surveyReportingRoutes.ts apps/api/src/routes/tags.ts apps/api/test/helpers/setup.ts apps/api/test/reporting.test.ts apps/web/src/api/surveys.ts apps/web/src/pages/admin/SurveyResultsPage.tsx apps/web/src/pages/admin/SurveyResultsPage.test.ts apps/web/src/styles.css markdown/releases/unreleased.md markdown/FOLLOW_UPS.md markdown/PHASE_LOG.md notes/claude_handoff_phase_61.txt notes/claude_review_phase_61.txt prompts/prompt_61.txt
+```
+
+Results:
+
+- Passed: `npm run test -w apps/web -- SurveyResultsPage.test.ts`
+- Passed after builder hidden-tag `<ALL>` update:
+  `npm run test -w apps/web -- SurveyQuestionsPage.test.ts SurveyResultsPage.test.ts`
+- Initial sandboxed API test could not connect to local PostgreSQL
+  (`EPERM 127.0.0.1:5432`); rerun with approved local DB access passed:
+  `npm run test -w apps/api -- test/reporting.test.ts`
+- After the living-binding update, focused API reporting tests passed again
+  with approved local DB access and applied Phase 61 migrations.
+- After the 100% parity update, focused API reporting tests passed again with
+  25 tests, covering move-out removal, manual preservation, and Stop
+  auto-apply.
+- After Claude's second review, focused API reporting tests passed again with
+  26 tests, covering category deletion cleanup and inherited/manual payload
+  source flags.
+- After the migration split, local `npm run db:migrate` passed and applied
+  `0041_response_answer_tag_group_sources.sql`.
+- After the builder hidden-tag subscriber update, local `npm run db:migrate`
+  passed and applied `0043_hidden_tag_all_bindings.sql`; a follow-up run
+  reported no pending migrations.
+- Passed after the builder hidden-tag subscriber update:
+  `npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts`
+  (73 tests)
+- Passed after addressing Claude's builder-side coverage finding:
+  `npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts test/surveyDuplicate.test.ts`
+  (83 tests)
+- Passed after the builder hidden-tag subscriber update:
+  `npm run test -w apps/web -- SurveyQuestionsPage.test.ts SurveyResultsPage.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed with approved local DB access after the parity update: `npm test`
+- Passed with approved local DB access after the second-review fixes:
+  `npm test` (shared 71, web 105, API 306, release 9, loadtest 29)
+- Passed with approved local DB access after the migration split:
+  `npm test` (shared 71, web 105, API 306, release 9, loadtest 29)
+- `git diff --check` reported unrelated trailing whitespace in
+  `notes/game_plan-test_notes.txt`, which was already modified outside this
+  phase and left untouched.
+- Passed for Phase 61 files: scoped `git diff --check -- ...`
+
+Manual tests:
+
+- Passed by developer on 2026-07-01. Manual QA covered the admin/user
+  process for category `<ALL>` review tags and builder hidden-tag `<ALL>`
+  subscriptions, including future Admin Tags propagation to submitted answers.
+
+Phase closeout artifacts:
+
+- Codex handoff created before final implementation summary: Yes.
+- Handoff path: `notes/claude_handoff_phase_61.txt`
+- Claude review status before commit: Completed; product finding addressed.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_61.txt`
+
+Status:
+
+- Completed; no blockers in original review. Product-signoff finding and
+  second-review polish items were addressed.
+
+Critical issues:
+
+- None.
+
+Suggested improvements:
+
+- Claude noted that snapshot versus living binding needed product sign-off.
+  The product owner confirmed living propagation is required.
+- Claude's second review noted inherited chips had a misleading remove button
+  and category deletion left inherited-only expanded tags behind.
+- Claude's builder hidden-tag subscription review found the architecture sound
+  but requested stronger behavioral coverage before broad manual QA.
+
+Accepted fixes:
+
+- Reworked Phase 61 from snapshot bulk apply to living category binding.
+- Reworked inherited tag tracking so moved-out category tags are removed from
+  subscribed answers unless the tag was also manually applied.
+- Added `isManual` to review tag payloads and hid individual remove buttons for
+  inherited-only chips.
+- Added category deletion cleanup for inherited-only expanded review tags.
+- Added builder-side API regressions for question value subscriptions, Other
+  subscriptions, catalog rename/delete propagation, Stop/manual preservation,
+  individual hidden-tag delete downgrade behavior, and duplicate-survey binding
+  copy.
+
+Deferred findings:
+
+- None from the current review.
+
+## Problems Encountered
+
+- Problem: The original phase prompt considered real `<ALL>` tag rows, which
+  would have increased schema and leakage risk.
+  Resolution: Prompt 61 was revised before implementation to require a virtual
+  selector design.
+- Problem: Claude review identified snapshot semantics as a product decision.
+  Resolution: The product owner confirmed future tags must propagate to
+  submitted answers; implementation was updated to persist category bindings.
+- Problem: Product owner confirmed 100% category parity should remove tags that
+  leave a subscribed category while preserving manually added tags.
+  Resolution: Added inherited source tracking and category stop-auto-apply.
+- Problem: Second Claude review found category deletion did not mirror move-out
+  parity and inherited-only chips offered a misleading remove action.
+  Resolution: Category deletion now removes inherited-only expanded tags before
+  cascades, and review tag chips expose/use `isManual` so only manual chips have
+  individual removal.
+- Problem: Local `npm run db:migrate` found a checksum mismatch because the
+  initial `0040` draft had already been applied before later schema additions
+  were folded into the same migration file.
+  Resolution: Restored `0040` to its applied checksum and moved the manual flag
+  plus inherited source table into new migration `0041`.
+- Problem: Manual screenshot showed the expected `<ALL>` value was missing from
+  the Questions tab hidden-tag value dropdown.
+  Resolution: Added a visible virtual `<ALL>` value to builder hidden-tag add
+  forms and expanded it client-side into the selected category's real catalog
+  values.
+- Problem: Manual testing showed new Admin Tags values did not propagate to
+  answer options/questions that had previously used hidden-tag `<ALL>`/`All`.
+  Resolution: Added server-side hidden-tag propagation when catalog values are
+  created or updated; targets with an `All`/`<ALL>` marker receive the new value,
+  and migration `0042` backfills existing marker targets.
+
+## Follow-Up Tasks
+
+- Run the Phase 61 manual browser pass tracked in `markdown/FOLLOW_UPS.md`.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Codex handoff created: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: Claude review completed; second-review polish items
+  addressed.
+- Review findings addressed or deferred: Product-signoff finding and
+  second-review polish items addressed.
+- Manual testing complete: No; tracked as follow-up.
+- Ready to commit: Pending optional re-review and manual acceptance.
+
+---
+
 ## Phase 60 — Issue Profile Emoji Burst
 
 Date:

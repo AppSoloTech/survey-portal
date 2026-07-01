@@ -1,0 +1,160 @@
+# Claude Review — Phase 61 Category All Review Tags
+
+Date:
+2026-06-30
+
+## Verdict
+
+The living-binding implementation is well-engineered and correctly delivers the
+product owner's requirement: future tags propagate to already-tagged answers,
+including submitted attempts. Propagation is transactionally safe and `<ALL>`
+still never persists as a catalog row. Claude identified M1 before commit:
+binding was a one-way door with no unsubscribe path. The product owner also
+clarified that category bindings should maintain 100% parity, including removal
+when a tag leaves a category unless the tag was manually added.
+
+## History
+
+### Product Decision — Snapshot vs. Living Binding (resolved)
+
+The original virtual-selector implementation chose snapshot behavior: category
+all bulk-applied the tags that existed at click time, and future tags required
+re-selecting the action.
+
+The product owner clarified after review:
+
+```txt
+If a new tag is added to a Category later on down the road, I do need it to
+propagate to all answers, even submitted answers.
+```
+
+Resolution: Phase 61 was updated from snapshot to living category bindings.
+`response_answer_tag_groups` persists the category↔answer relationship,
+`response_answer_tag_group_tags` tracks inherited tag sources, and tag catalog
+create/edit/move mutations sync bound answers, including completed attempts.
+
+## What Is Correct
+
+- Propagation is atomic with the catalog mutation.
+  `applyTagDefinitionToBoundReviewTagCategory` takes a Queryable and is called on
+  the open transaction `client` in all three mutation paths — create
+  (`tags.ts` POST /), move-group (`tags.ts` PATCH /:id/group), and
+  edit-with-group-change (`tags.ts` PUT /:id). A tag and its propagation commit
+  or roll back together.
+- All membership-change entry points are covered. Group rename correctly needs
+  no handling because bindings key on `group_id`, not name — which also sidesteps
+  the rename-sync risk the original prompt worried about.
+- Idempotent on both axes: `response_answer_tag_groups(answer_id, group_id)`
+  unique for the binding; `response_answer_tags(answer_id, tag_definition_id)`
+  unique for expansion; both inserts use ON CONFLICT DO NOTHING.
+- Cascades are right: migration 0040 FKs the category binding to both the answer
+  and the group, migration 0041 FKs inherited sources to the binding, and
+  category deletion now removes inherited-only expanded tags before those
+  binding sources cascade away.
+- No leak by construction: `reviewTagGroupIds` lives only on `AdminAttemptAnswer`
+  (admin detail); CSV/reporting read `response_answer_tags`, so the binding never
+  surfaces as a chip, CSV value, or report aggregate. Tested.
+
+## Findings
+
+### M1 (Medium) — Binding is a one-way door
+
+Two coupled issues:
+
+1. No endpoint or UI removes a `response_answer_tag_groups` row.
+   `removeResponseAnswerReviewTag` deletes only the tag, not the binding. Once
+   "Apply all in A" is clicked, that answer is permanently subscribed — future
+   tags added to A reappear on it forever, even if the admin manually removed
+   A's tags. There is no "stop auto-applying A here."
+2. `SurveyResultsPage.tsx` filters `groupedAvailableTags` by
+   `!appliedGroupIds.has(group.id)`, so a bound category vanishes entirely from
+   the dropdown — including its individual tags. Normally fine (binding applied
+   them all), but if the admin removes one tag via its chip ✕, they cannot re-add
+   it from the dropdown: the group is hidden, the tag is gone, dead end. Recovery
+   requires editing that tag in the catalog to re-trigger propagation.
+
+Recommendation: add an "unbind category" affordance that deletes the binding row
+(ideally surfaced when removing a bound category), or at minimum keep a bound
+group's individual tags addable so a mistaken removal is recoverable. This is the
+gap most likely to confuse an admin in practice.
+
+Resolution:
+Implemented. Survey Results now shows `Auto-applying all in {category}` with a
+Stop button. Stopping auto-apply deletes the category binding and inherited tag
+sources, removes inherited-only review tags, preserves manual review tags, and
+prevents future propagation for that answer/category.
+
+### L1 (Low) — Move-out leaves orphans and lets binding membership drift
+
+Documented and intentional: moving a tag out of a bound category does not pull it
+off bound answers (cannot distinguish auto from manual). Acceptable, but an answer
+"bound to A" can carry tags no longer in A while still receiving A's future tags.
+Worth the product owner explicitly okaying, since the UI does not surface it.
+
+Resolution:
+Implemented parity. Inherited tag sources are now tracked separately from manual
+tags. Moving a tag out of a bound category removes inherited-only review tags
+from bound answers and preserves tags that were also manually applied.
+
+### L2 (Low) — Standalone category-apply is not wrapped in a transaction
+
+`addResponseAnswerReviewTagCategory` runs the binding insert and the expansion
+insert as two separate pool.query calls. A crash between them leaves a binding
+with unexpanded tags — self-healing on reapply and via future propagation, so low
+impact, but the catalog-mutation path already models the right pattern (single
+transaction) and this one could match it.
+
+Resolution:
+Implemented. Category binding insert, inherited-source insert, and effective
+review-tag expansion now run in a single transaction.
+
+### L3 (Low) — Attribution on propagated tags
+
+Inherited source rows copy `response_answer_tag_groups.assigned_by` (the
+original binder), not the admin who created/moved the tag in the catalog.
+Defensible, but the audit trail then attributes a tag the binder never explicitly
+placed. Minor; flag for the owner.
+
+Status:
+Accepted for this phase. The visible tag remains a category-subscription result;
+the catalog mutation itself is not represented as the answer-level assigner.
+
+## Confirmed Non-Issues
+
+- Empty / already-fully-applied categories still show "Apply all" until bound, so
+  an admin can subscribe them for future propagation — consistent with the handoff.
+- Group/tag deletion paths cascade correctly; category deletion now also cleans
+  inherited-only expanded tags to maintain the product owner's parity rule.
+
+## Second Review Notes
+
+Claude re-reviewed the final parity implementation and found two non-blocking
+polish items:
+
+- Inherited-only review chips displayed an individual remove button even though
+  the live category source caused removal to be a no-op.
+- Deleting a bound category cascaded the binding/source rows but left inherited
+  expanded review tags behind, unlike the move-out parity path.
+
+Resolution:
+
+- `AdminAttemptReviewTag` now exposes `isManual`; Survey Results only renders
+  the individual chip remove button for manual review tags. Inherited-only chips
+  remain visible and are managed through the category Stop action.
+- Category deletion now runs inherited-source cleanup before deleting the group,
+  removing inherited-only expanded review tags and preserving manual tags.
+
+## Review Notes
+
+- Keep `<ALL>` virtual; do not create real `tag_definitions` rows.
+- Preserve Admin Tags management visibility: no `<ALL>` catalog rows.
+- Preserve participant/anonymous privacy boundaries.
+- Keep category apply and propagation idempotent.
+- Keep CSV/reporting/detail output limited to expanded real review tags, never
+  `<ALL>`.
+
+## Status
+
+M1, L1, and L2 were addressed before commit. L3 attribution semantics were
+accepted for this phase. A fresh review of the final parity implementation is
+still useful if time permits.

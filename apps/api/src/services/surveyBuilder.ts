@@ -847,6 +847,363 @@ export async function registerTagDefinition(
   );
 }
 
+type HiddenTagAllBindingTargetType = "answer_option" | "question_other" | "question_value";
+
+interface HiddenTagAllBindingInput {
+  targetType: HiddenTagAllBindingTargetType;
+  answerOptionId?: number;
+  questionId?: number;
+  integerMin?: number | null;
+  integerMax?: number | null;
+  tagKey: string;
+}
+
+interface HiddenTagAllBindingRow {
+  id: number;
+  target_type: HiddenTagAllBindingTargetType;
+  answer_option_id: number | null;
+  question_id: number | null;
+  integer_min: number | null;
+  integer_max: number | null;
+  tag_key: string;
+}
+
+async function fetchHiddenTagAllBinding(
+  queryable: Queryable,
+  input: HiddenTagAllBindingInput
+): Promise<HiddenTagAllBindingRow | null> {
+  const result = await queryable.query<HiddenTagAllBindingRow>(
+    `select id, target_type, answer_option_id, question_id, integer_min, integer_max, tag_key
+     from hidden_tag_all_bindings
+     where target_type = $1
+       and answer_option_id is not distinct from $2
+       and question_id is not distinct from $3
+       and integer_min is not distinct from $4
+       and integer_max is not distinct from $5
+       and tag_key = $6`,
+    [
+      input.targetType,
+      input.answerOptionId ?? null,
+      input.questionId ?? null,
+      input.integerMin ?? null,
+      input.integerMax ?? null,
+      input.tagKey
+    ]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function applyHiddenTagAllBindingSources(
+  queryable: Queryable,
+  bindingId: number
+): Promise<void> {
+  await queryable.query(
+    `insert into hidden_tag_all_binding_tags (binding_id, tag_value)
+     select bindings.id, tag_definitions.tag_value
+     from hidden_tag_all_bindings bindings
+     join tag_definitions
+       on tag_definitions.tag_key = bindings.tag_key
+     where bindings.id = $1
+       and lower(tag_definitions.tag_value) not in ('all', '<all>')
+     on conflict (binding_id, tag_value) do nothing`,
+    [bindingId]
+  );
+
+  await applyHiddenTagAllBindingEffectiveTags(queryable, bindingId);
+}
+
+async function applyHiddenTagAllBindingEffectiveTags(
+  queryable: Queryable,
+  bindingId: number
+): Promise<void> {
+  await queryable.query(
+    `insert into answer_tags (answer_option_id, tag_key, tag_value, is_manual)
+     select bindings.answer_option_id, bindings.tag_key, sources.tag_value, false
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.id = $1
+       and bindings.target_type = 'answer_option'
+     on conflict (answer_option_id, tag_key, tag_value) do nothing`,
+    [bindingId]
+  );
+
+  await queryable.query(
+    `insert into question_other_tags (question_id, tag_key, tag_value, is_manual)
+     select bindings.question_id, bindings.tag_key, sources.tag_value, false
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.id = $1
+       and bindings.target_type = 'question_other'
+     on conflict (question_id, tag_key, tag_value) do nothing`,
+    [bindingId]
+  );
+
+  await queryable.query(
+    `insert into question_value_tags (
+       question_id,
+       integer_min,
+       integer_max,
+       tag_key,
+       tag_value,
+       is_manual
+     )
+     select
+       bindings.question_id,
+       bindings.integer_min,
+       bindings.integer_max,
+       bindings.tag_key,
+       sources.tag_value,
+       false
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.id = $1
+       and bindings.target_type = 'question_value'
+       and not exists (
+         select 1
+         from question_value_tags existing_target
+         where existing_target.question_id = bindings.question_id
+           and existing_target.integer_min is not distinct from bindings.integer_min
+           and existing_target.integer_max is not distinct from bindings.integer_max
+           and existing_target.tag_key = bindings.tag_key
+           and existing_target.tag_value = sources.tag_value
+       )`,
+    [bindingId]
+  );
+}
+
+export async function createHiddenTagAllBinding(
+  queryable: Queryable,
+  input: HiddenTagAllBindingInput
+): Promise<void> {
+  const result = await queryable.query<{ id: number }>(
+    `insert into hidden_tag_all_bindings (
+       target_type,
+       answer_option_id,
+       question_id,
+       integer_min,
+       integer_max,
+       tag_key
+     )
+     values ($1, $2, $3, $4, $5, $6)
+     on conflict do nothing
+     returning id`,
+    [
+      input.targetType,
+      input.answerOptionId ?? null,
+      input.questionId ?? null,
+      input.integerMin ?? null,
+      input.integerMax ?? null,
+      input.tagKey
+    ]
+  );
+
+  const bindingId = result.rows[0]?.id ?? (await fetchHiddenTagAllBinding(queryable, input))?.id;
+
+  if (!bindingId) {
+    throw new Error("Unable to create hidden tag subscription");
+  }
+
+  await applyHiddenTagAllBindingSources(queryable, bindingId);
+}
+
+export async function deleteHiddenTagAllBinding(
+  queryable: Queryable,
+  input: HiddenTagAllBindingInput
+): Promise<boolean> {
+  const binding = await fetchHiddenTagAllBinding(queryable, input);
+
+  if (!binding) {
+    return false;
+  }
+
+  await queryable.query(
+    `delete from hidden_tag_all_bindings
+     where id = $1`,
+    [binding.id]
+  );
+
+  await cleanupInheritedHiddenTagsForBinding(queryable, binding);
+
+  return true;
+}
+
+async function cleanupInheritedHiddenTagsForBinding(
+  queryable: Queryable,
+  binding: HiddenTagAllBindingRow
+): Promise<void> {
+  if (binding.target_type === "answer_option") {
+    await queryable.query(
+      `delete from answer_tags target
+       where target.answer_option_id = $1
+         and target.tag_key = $2
+         and target.is_manual = false
+         and not exists (
+           select 1
+           from hidden_tag_all_bindings bindings
+           join hidden_tag_all_binding_tags sources
+             on sources.binding_id = bindings.id
+           where bindings.target_type = 'answer_option'
+             and bindings.answer_option_id = target.answer_option_id
+             and bindings.tag_key = target.tag_key
+             and sources.tag_value = target.tag_value
+         )`,
+      [binding.answer_option_id, binding.tag_key]
+    );
+  } else if (binding.target_type === "question_other") {
+    await queryable.query(
+      `delete from question_other_tags target
+       where target.question_id = $1
+         and target.tag_key = $2
+         and target.is_manual = false
+         and not exists (
+           select 1
+           from hidden_tag_all_bindings bindings
+           join hidden_tag_all_binding_tags sources
+             on sources.binding_id = bindings.id
+           where bindings.target_type = 'question_other'
+             and bindings.question_id = target.question_id
+             and bindings.tag_key = target.tag_key
+             and sources.tag_value = target.tag_value
+         )`,
+      [binding.question_id, binding.tag_key]
+    );
+  } else {
+    await queryable.query(
+      `delete from question_value_tags target
+       where target.question_id = $1
+         and target.integer_min is not distinct from $2
+         and target.integer_max is not distinct from $3
+         and target.tag_key = $4
+         and target.is_manual = false
+         and not exists (
+           select 1
+           from hidden_tag_all_bindings bindings
+           join hidden_tag_all_binding_tags sources
+             on sources.binding_id = bindings.id
+           where bindings.target_type = 'question_value'
+             and bindings.question_id = target.question_id
+             and bindings.integer_min is not distinct from target.integer_min
+             and bindings.integer_max is not distinct from target.integer_max
+             and bindings.tag_key = target.tag_key
+             and sources.tag_value = target.tag_value
+         )`,
+      [binding.question_id, binding.integer_min, binding.integer_max, binding.tag_key]
+    );
+  }
+}
+
+export async function removeHiddenTagAllValueFromBindings(
+  queryable: Queryable,
+  input: { tagKey: string; tagValue: string }
+): Promise<void> {
+  const bindingsResult = await queryable.query<HiddenTagAllBindingRow>(
+    `select distinct bindings.id,
+            bindings.target_type,
+            bindings.answer_option_id,
+            bindings.question_id,
+            bindings.integer_min,
+            bindings.integer_max,
+            bindings.tag_key
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.tag_key = $1
+       and sources.tag_value = $2`,
+    [input.tagKey, input.tagValue]
+  );
+
+  await queryable.query(
+    `delete from hidden_tag_all_binding_tags sources
+     using hidden_tag_all_bindings bindings
+     where bindings.id = sources.binding_id
+       and bindings.tag_key = $1
+       and sources.tag_value = $2`,
+    [input.tagKey, input.tagValue]
+  );
+
+  for (const binding of bindingsResult.rows) {
+    await cleanupInheritedHiddenTagsForBinding(queryable, binding);
+  }
+}
+
+export async function applyTagDefinitionToHiddenAllTargets(
+  queryable: Queryable,
+  input: { tagKey: string; tagValue: string }
+): Promise<void> {
+  await queryable.query(
+    `insert into hidden_tag_all_binding_tags (binding_id, tag_value)
+     select id, $2
+     from hidden_tag_all_bindings
+     where tag_key = $1
+     on conflict (binding_id, tag_value) do nothing`,
+    [input.tagKey, input.tagValue]
+  );
+
+  await queryable.query(
+    `insert into answer_tags (answer_option_id, tag_key, tag_value, is_manual)
+     select bindings.answer_option_id, bindings.tag_key, sources.tag_value, false
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.target_type = 'answer_option'
+       and bindings.tag_key = $1
+       and sources.tag_value = $2
+     on conflict (answer_option_id, tag_key, tag_value) do nothing`,
+    [input.tagKey, input.tagValue]
+  );
+
+  await queryable.query(
+    `insert into question_other_tags (question_id, tag_key, tag_value, is_manual)
+     select bindings.question_id, bindings.tag_key, sources.tag_value, false
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.target_type = 'question_other'
+       and bindings.tag_key = $1
+       and sources.tag_value = $2
+     on conflict (question_id, tag_key, tag_value) do nothing`,
+    [input.tagKey, input.tagValue]
+  );
+
+  await queryable.query(
+    `insert into question_value_tags (
+       question_id,
+       integer_min,
+       integer_max,
+       tag_key,
+       tag_value,
+       is_manual
+     )
+     select
+       bindings.question_id,
+       bindings.integer_min,
+       bindings.integer_max,
+       bindings.tag_key,
+       sources.tag_value,
+       false
+     from hidden_tag_all_bindings bindings
+     join hidden_tag_all_binding_tags sources
+       on sources.binding_id = bindings.id
+     where bindings.target_type = 'question_value'
+       and bindings.tag_key = $1
+       and sources.tag_value = $2
+       and not exists (
+       select 1
+       from question_value_tags existing_target
+       where existing_target.question_id = bindings.question_id
+         and existing_target.integer_min is not distinct from bindings.integer_min
+         and existing_target.integer_max is not distinct from bindings.integer_max
+         and existing_target.tag_key = bindings.tag_key
+         and existing_target.tag_value = sources.tag_value
+     )`,
+    [input.tagKey, input.tagValue]
+  );
+}
+
 const duplicateTitleSuffix = " (copy)";
 const duplicateTitleMaxLength = 180;
 
@@ -984,8 +1341,9 @@ export async function duplicateSurveyTree(
     answer_option_id: number;
     tag_key: string;
     tag_value: string;
+    is_manual: boolean;
   }>(
-    `select answer_tags.answer_option_id, answer_tags.tag_key, answer_tags.tag_value
+    `select answer_tags.answer_option_id, answer_tags.tag_key, answer_tags.tag_value, answer_tags.is_manual
      from answer_tags
      join answer_options on answer_options.id = answer_tags.answer_option_id
      join survey_questions on survey_questions.id = answer_options.question_id
@@ -1002,9 +1360,9 @@ export async function duplicateSurveyTree(
     }
 
     await queryable.query(
-      `insert into answer_tags (answer_option_id, tag_key, tag_value)
-       values ($1, $2, $3)`,
-      [newOptionId, tag.tag_key, tag.tag_value]
+      `insert into answer_tags (answer_option_id, tag_key, tag_value, is_manual)
+       values ($1, $2, $3, $4)`,
+      [newOptionId, tag.tag_key, tag.tag_value, tag.is_manual]
     );
   }
 
@@ -1014,8 +1372,9 @@ export async function duplicateSurveyTree(
     integer_max: number | null;
     tag_key: string;
     tag_value: string;
+    is_manual: boolean;
   }>(
-    `select question_id, integer_min, integer_max, tag_key, tag_value
+    `select question_id, integer_min, integer_max, tag_key, tag_value, is_manual
      from question_value_tags
      join survey_questions on survey_questions.id = question_value_tags.question_id
      where survey_questions.survey_id = $1
@@ -1031,9 +1390,16 @@ export async function duplicateSurveyTree(
     }
 
     await queryable.query(
-      `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value)
-       values ($1, $2, $3, $4, $5)`,
-      [newQuestionId, valueTag.integer_min, valueTag.integer_max, valueTag.tag_key, valueTag.tag_value]
+      `insert into question_value_tags (question_id, integer_min, integer_max, tag_key, tag_value, is_manual)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [
+        newQuestionId,
+        valueTag.integer_min,
+        valueTag.integer_max,
+        valueTag.tag_key,
+        valueTag.tag_value,
+        valueTag.is_manual
+      ]
     );
   }
 
@@ -1041,8 +1407,12 @@ export async function duplicateSurveyTree(
     question_id: number;
     tag_key: string;
     tag_value: string;
+    is_manual: boolean;
   }>(
-    `select question_other_tags.question_id, question_other_tags.tag_key, question_other_tags.tag_value
+    `select question_other_tags.question_id,
+            question_other_tags.tag_key,
+            question_other_tags.tag_value,
+            question_other_tags.is_manual
      from question_other_tags
      join survey_questions on survey_questions.id = question_other_tags.question_id
      where survey_questions.survey_id = $1
@@ -1058,9 +1428,101 @@ export async function duplicateSurveyTree(
     }
 
     await queryable.query(
-      `insert into question_other_tags (question_id, tag_key, tag_value)
-       values ($1, $2, $3)`,
-      [newQuestionId, otherTag.tag_key, otherTag.tag_value]
+      `insert into question_other_tags (question_id, tag_key, tag_value, is_manual)
+       values ($1, $2, $3, $4)`,
+      [newQuestionId, otherTag.tag_key, otherTag.tag_value, otherTag.is_manual]
+    );
+  }
+
+  const allBindingsResult = await queryable.query<{
+    id: number;
+    target_type: HiddenTagAllBindingTargetType;
+    answer_option_id: number | null;
+    question_id: number | null;
+    integer_min: number | null;
+    integer_max: number | null;
+    tag_key: string;
+  }>(
+    `select bindings.id,
+            bindings.target_type,
+            bindings.answer_option_id,
+            bindings.question_id,
+            bindings.integer_min,
+            bindings.integer_max,
+            bindings.tag_key
+     from hidden_tag_all_bindings bindings
+     left join answer_options
+       on answer_options.id = bindings.answer_option_id
+     left join survey_questions option_questions
+       on option_questions.id = answer_options.question_id
+     left join survey_questions direct_questions
+       on direct_questions.id = bindings.question_id
+     where option_questions.survey_id = $1
+        or direct_questions.survey_id = $1
+     order by bindings.id`,
+    [surveyId]
+  );
+  const allBindingIdMap = new Map<number, number>();
+
+  for (const binding of allBindingsResult.rows) {
+    const newOptionId =
+      binding.answer_option_id === null ? null : optionIdMap.get(binding.answer_option_id);
+    const newQuestionId =
+      binding.question_id === null ? null : questionIdMap.get(binding.question_id);
+
+    if (
+      (binding.target_type === "answer_option" && !newOptionId) ||
+      (binding.target_type !== "answer_option" && !newQuestionId)
+    ) {
+      continue;
+    }
+
+    const inserted = await queryable.query<{ id: number }>(
+      `insert into hidden_tag_all_bindings (
+         target_type,
+         answer_option_id,
+         question_id,
+         integer_min,
+         integer_max,
+         tag_key
+       )
+       values ($1, $2, $3, $4, $5, $6)
+       returning id`,
+      [
+        binding.target_type,
+        newOptionId,
+        newQuestionId,
+        binding.integer_min,
+        binding.integer_max,
+        binding.tag_key
+      ]
+    );
+    allBindingIdMap.set(binding.id, inserted.rows[0].id);
+  }
+
+  const allBindingSourcesResult = await queryable.query<{
+    binding_id: number;
+    tag_value: string;
+  }>(
+    `select sources.binding_id, sources.tag_value
+     from hidden_tag_all_binding_tags sources
+     where sources.binding_id = any($1::int[])
+     order by sources.id`,
+    [allBindingsResult.rows.map((binding) => binding.id)]
+  );
+
+  for (const source of allBindingSourcesResult.rows) {
+    const newBindingId = allBindingIdMap.get(source.binding_id);
+
+    if (!newBindingId) {
+      continue;
+    }
+
+    await queryable.query(
+      `insert into hidden_tag_all_binding_tags (binding_id, tag_value)
+       values ($1, $2)
+       on conflict (binding_id, tag_value) do nothing`,
+      [newBindingId, source.tag_value]
     );
   }
 

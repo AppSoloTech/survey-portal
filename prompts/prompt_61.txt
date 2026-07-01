@@ -1,0 +1,320 @@
+# Phase 61 — Category All Review Tags
+
+## Purpose
+
+Add an admin-only convenience tag for every tag category so an admin can apply
+all review tags from a category to a text answer in one dropdown action.
+
+Source feedback or planning note:
+
+```txt
+User request in chat, 2026-06-30.
+```
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_61.txt`
+* Claude review: `notes/claude_review_phase_61.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/TAG_CATALOG_SEED.md`
+* `database/migrations/0008_tag_definitions.sql`
+* `database/migrations/0028_tag_groups.sql`
+* `database/migrations/0034_tag_catalog_settings.sql`
+* `database/migrations/0036_response_answer_tags.sql`
+* Current tag catalog, Admin Tags, survey results, review-tag mutation, CSV,
+  and reporting tests.
+
+---
+
+# Received Feedback
+
+1. Add a default tag for each current and future tag category.
+2. The default tag's name/key should be the category name.
+3. The default tag's value should be exactly `<ALL>`.
+4. The default category tag must not show on the tag management side of the app.
+5. The default category tag should exist in the answer review tag dropdown.
+6. When an admin applies the `<ALL>` tag to an answer, all tags within that
+   category should be applied to that answer.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* feature request
+* admin reporting workflow improvement
+* admin-only bulk action
+* API contract change
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: yes, persist category-level review tag
+  bindings without creating real `<ALL>` tag definition rows.
+* API contracts: yes, the answer review-tag mutation needs a category-level
+  bulk-apply path or equivalent virtual selector handling.
+* Participant-facing survey behavior: no.
+* Hidden-tag visibility: preserve existing participant/anonymous privacy
+  guardrails; this is admin-only review-tag behavior.
+* Authentication or authorization: no model change; preserve admin-only access.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, cover current categories, future category
+  creation, hidden management visibility, and expansion behavior.
+
+---
+
+# Design Decision
+
+Use a virtual `<ALL>` selector, not persisted `tag_definitions` rows.
+
+The selector should be synthesized from current `tag_groups` and normal
+category tag definitions in the answer review-tag dropdown. Selecting it should
+call an admin-only bulk action that stores a category-level binding for the
+answer and inserts the category's current real `tag_definition_id` values into
+`response_answer_tags`.
+
+Do not create, backfill, sync, delete, or hide real `<ALL>` rows in
+`tag_definitions`. The virtual approach avoids schema churn, category-delete
+orphaning, seed drift, reporting/CSV leakage, and accidental exposure in other
+tag catalog queries.
+
+Persist the binding separately so future tag definitions added to that category
+propagate to answers where the category `<ALL>` selector was already applied,
+including completed/submitted attempts.
+
+---
+
+# Scope
+
+Implement:
+
+* Add one virtual category `<ALL>` selector for each current and future tag
+  category in the answer review-tag dropdown.
+* Add a visible virtual `<ALL>` value to builder hidden-tag add and existing tag
+  forms after a tag category is selected, including answer option tags, Other
+  tags, and text/integer value tags.
+* Render the virtual selector under its category using clear admin-facing copy
+  that includes the visible value: `<ALL> - Apply all in {category}`.
+* Represent the virtual selector internally without a persisted tag definition,
+  for example with a sentinel dropdown value such as `category-all:{groupId}`
+  or an explicit category bulk-apply API call.
+* When the admin selects a category `<ALL>` option for an answer, apply every
+  normal tag definition currently in that category to the answer.
+* When the admin selects hidden-tag value `<ALL>` in the builder, create a
+  living auto-apply subscription for that option/question target and expand the
+  current normal tag values in that category.
+* When Admin Tags values are created, edited, or deleted later, propagate that
+  change to hidden-tag option/question targets with a matching `<ALL>`
+  subscription while preserving manually added hidden tags.
+* Treat `<ALL>` as a living category binding:
+  * applying it stores that this answer should receive all tags in the category
+  * if tags are added or moved into the category later, previously bound answers
+    automatically gain those new real review tags
+  * if tags are moved out of the category later, inherited-only copies are
+    removed from bound answers
+  * manually added tags are preserved even if the same tag was also inherited
+  * submitted/completed attempts are included in this propagation.
+* Make the expansion idempotent:
+  * already-applied tags remain applied
+  * missing category tags are inserted
+  * duplicate response-answer tags are not created
+  * if the category `<ALL>` binding already exists for that answer, the `<ALL>`
+    option is hidden for that category.
+* Do not persist `<ALL>` itself as an answer review chip. The intended result is
+  that the answer shows the expanded real tags.
+* Show a clear `Auto-applying all in {category}` binding indicator with a
+  `Stop` action. Stopping auto-apply removes inherited category tags that are
+  not also manual tags and prevents future propagation for that category.
+* Keep ungrouped tags unchanged; there is no `<ALL>` default for the virtual
+  Ungrouped section unless the product owner requests one later.
+* Update release notes, phase log, and handoff.
+
+## Non-Goals
+
+Do not implement:
+
+* Participant-visible tags, category names, or tag metadata.
+* Changes to issue-profile progress or emoji burst logic.
+* Bulk remove for a category.
+* A category `<ALL>` tag for the virtual Ungrouped catalog section.
+* Real `<ALL>` rows in `tag_definitions`, including an `is_system` discriminator
+  or migration/backfill for system tags.
+* CSV/reporting semantics beyond showing the expanded real review tags already
+  supported by the existing review-tag model.
+
+## Assumptions
+
+* "Tag name" maps to the current `tag_key` field.
+* "Category" maps to `tag_groups.name`.
+* `<ALL>` is a virtual convenience selector, not a normal managed catalog tag.
+* Selecting `<ALL>` should apply only normal tag definitions in the category,
+  not a marker tag.
+* A category with no normal tags may still be bound so future tags in that
+  category propagate to the answer.
+* Category creation and rename need no `<ALL>` tag-row handling because the
+  selector is synthesized from the current category list.
+* Category deletion removes the binding, inherited source rows, and
+  inherited-only expanded review tags; manual review tags remain.
+* Moving a tag out of a bound category removes inherited copies from bound
+  answers but preserves manually added copies.
+
+## Open Questions
+
+None. Product decision: future tags added to a category must propagate to all
+answers where that category `<ALL>` selector was applied, including submitted
+answers.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Review-tag dropdown virtual selector behavior.
+2. Category binding persistence and idempotent expansion inserts.
+3. Propagation when tags are created, edited, or moved into a bound category.
+4. Guardrails preserving existing Admin Tags management behavior.
+5. Regression tests for visibility, idempotency, category lifecycle, and future
+   propagation.
+6. Documentation and closeout notes.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* No real `<ALL>` tag definitions are created in the database.
+* Category `<ALL>` bindings are persisted separately from `tag_definitions`.
+* The Admin Tags management page and `/api/tags` catalog behavior remain
+  unchanged except for any strictly necessary data needed by the review-tag
+  dropdown.
+* Creating, renaming, or deleting a category automatically affects the virtual
+  dropdown choices because they are derived from current categories.
+* The answer review-tag dropdown shows `<ALL> - Apply all in {category}` for
+  categories that are not yet bound to that answer, including categories whose
+  current tags were already applied individually.
+* The answer review-tag dropdown hides the category `<ALL>` selector only after
+  the category binding exists for that answer.
+* Selecting a category `<ALL>` option applies all unapplied normal tags in that
+  category to the answer and returns the refreshed review tags.
+* New tags created, edited, or moved into a bound category are automatically
+  applied to all bound answers, including completed/submitted attempts.
+* Tags moved out of a bound category are automatically removed from bound
+  answers unless they were also manually applied.
+* Admins can stop category auto-apply for an answer; inherited-only tags from
+  that category are removed, manual tags remain, and future category tags no
+  longer propagate.
+* Applying `<ALL>` is idempotent and never creates duplicate
+  `response_answer_tags` rows.
+* `<ALL>` never appears as an answer review chip, reporting aggregate, CSV
+  value, tag catalog row, or Admin Tags management item.
+* Existing authorization rules still require an admin and a valid answered text
+  response.
+* Participant and anonymous payloads still do not expose admin review tags,
+  tag catalog entries, or hidden tag metadata.
+* Every received feedback item is fixed, deferred with a reason, or blocked by
+  a documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+Add or update automated tests for:
+
+* migration creates category-level review tag bindings without `<ALL>` tag
+  definitions
+* new category creation exposes the corresponding virtual `<ALL>` selector
+* category rename updates the virtual selector label
+* category deletion removes the binding and inherited-only expanded review tags
+  without orphaned category-binding rows
+* Admin Tags catalog responses and UI remain free of `<ALL>` management rows
+* review-tag dropdown includes category `<ALL>` options where appropriate
+* review-tag dropdown labels use `<ALL> - Apply all in {category}`
+* selecting `<ALL>` applies all normal category tags to the answer
+* duplicate/idempotent `<ALL>` application
+* categories with all tags already applied, categories with no normal tags, and
+  future propagation after tags are created/edited/moved into a bound category
+* moving tags out of a bound category removes inherited-only tags while
+  preserving manual tags
+* stopping category auto-apply removes inherited-only tags and prevents future
+  propagation
+* non-admin, missing answer, non-text answer, blank text answer, and unknown tag
+  validation paths remain protected
+* reporting aggregates and CSV contain only expanded real tags, never `<ALL>`
+* participant/anonymous visibility guardrails remain intact
+
+Manual checks to perform or document:
+
+* Admin Tags page after local DB reset: no `<ALL>` rows visible in management
+  because none exist.
+* Survey Results answer review dropdown: `<ALL> - Apply all in {category}`
+  appears under categories that are not yet bound to the answer.
+* Questions tab hidden-tag add and existing tag forms: `<ALL>` appears in the
+  value dropdown after selecting a catalog category and expands into the
+  category's real values.
+* Adding a new Admin Tags value after `<ALL>` expansion updates existing
+  marker-backed hidden-tag targets and submitted-attempt admin reporting.
+* Selecting `<ALL>` on a text answer expands into the category's real tags.
+* Re-selecting or applying after some tags are already present creates no
+  duplicates and leaves existing tags intact.
+* Category creation, rename, deletion, tag creation, and tag movement flows
+  produce the expected virtual dropdown and future-propagation behavior.
+* Inherited-only review chips do not offer a misleading individual remove
+  action; Stop auto-apply is the removal path for auto-applied category tags.
+* Stop auto-apply and category deletion remove the category binding and
+  inherited-only tags while preserving manual review tags.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes.
+* `markdown/FOLLOW_UPS.md` for deferred or newly discovered follow-ups.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* `markdown/TAG_CATALOG_SEED.md` only if seeded catalog behavior changes; the
+  virtual selector approach should not require seed changes.
+* `notes/claude_handoff_phase_61.txt` before marking implementation complete.

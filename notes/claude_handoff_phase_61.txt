@@ -1,0 +1,243 @@
+# Claude Handoff — Phase 61 Category All Review Tags
+
+## Summary
+
+Phase 61 adds an admin-only virtual category `<ALL>` action for manual review
+tags on text answers in Survey Results, and applies the same living
+subscription model to builder hidden tags in the Questions tab.
+
+The implementation intentionally does not create real `<ALL>` rows in
+`tag_definitions`. The Results dropdown synthesizes `<ALL> - Apply all in {category}`
+options from the current tag groups, and the API stores a category-level
+binding plus expands the selected category into real tag definition IDs.
+
+Product clarification after initial review: subscribed answers should maintain
+category parity. Future tags added or moved into a category must propagate to
+answers where that category `<ALL>` selector was already applied, and tags moved
+out of or removed with the category should be removed unless they were manually
+added. The same product expectation now applies to builder hidden tags: option,
+Other, and value-condition hidden-tag targets that use `<ALL>` should stay in
+parity with future Admin Tags catalog changes.
+
+## Main Changes
+
+- Added migration `database/migrations/0040_response_answer_tag_groups.sql` for
+  persisted category-level review tag bindings.
+- Added migration `database/migrations/0041_response_answer_tag_group_sources.sql`
+  for inherited tag sources and a manual-source flag on effective review tags.
+- Added `addResponseAnswerReviewTagCategory` in
+  `apps/api/src/services/surveyReporting.ts`.
+- Added `applyTagDefinitionToBoundReviewTagCategory` so tag catalog mutations
+  can propagate new/moved category tags onto already-bound answers.
+- Added `removeTagDefinitionFromBoundReviewTagCategory` so tag catalog
+  mutations remove inherited-only tags that leave a bound category.
+- Updated tag category deletion to remove inherited-only expanded review tags
+  before category bindings and sources cascade away.
+- Added `POST /api/surveys/:id/attempts/:attemptId/answers/:answerId/review-tags/category`
+  in `apps/api/src/routes/surveyReportingRoutes.ts`.
+- Added `DELETE /api/surveys/:id/attempts/:attemptId/answers/:answerId/review-tags/category/:groupId`
+  to stop category auto-apply for one answer.
+- Updated tag create/edit/move routes in `apps/api/src/routes/tags.ts` to
+  sync bound answers when category membership changes.
+- Added `addAnswerReviewTagCategory` in `apps/web/src/api/surveys.ts`.
+- Added `removeAnswerReviewTagCategory` in `apps/web/src/api/surveys.ts`.
+- Updated `apps/web/src/pages/admin/SurveyResultsPage.tsx` so grouped review
+  tag dropdowns include a virtual `<ALL> - Apply all in {category}` option whenever
+  that category is not yet bound to the answer.
+- Updated the Questions tab hidden-tag add and existing tag forms so the
+  selected category's value dropdown includes a virtual `<ALL>` option that
+  creates a living auto-apply subscription for option, Other, and text/integer
+  value tags.
+- Added migration `database/migrations/0043_hidden_tag_all_bindings.sql` for
+  builder hidden-tag subscriptions, inherited source rows, and `is_manual`
+  flags on `answer_tags`, `question_other_tags`, and `question_value_tags`.
+- Converted older `All`/`<ALL>` marker targets into real subscriptions and
+  removed the marker rows.
+- Added hidden-tag category propagation so Admin Tags values created, edited,
+  or deleted later sync to option, Other, and text/integer value-tag targets
+  with active `<ALL>` subscriptions while preserving manual hidden tags.
+- Added migration `database/migrations/0042_hidden_tag_all_marker_backfill.sql`
+  to backfill existing marker targets with all current catalog values.
+- Added `Auto-applying all in {category}` indicators with Stop buttons.
+- Suppressed individual remove buttons for inherited-only review chips; Stop is
+  the intended removal path for category-applied tags.
+- Added API tests in `apps/api/test/reporting.test.ts` for category expansion,
+  idempotency, future propagation, move-out removal, manual preservation,
+  category deletion cleanup, stop-auto-apply, empty/unknown groups, CSV/detail
+  output, and non-text answer rejection.
+- Added a web source/helper guardrail in
+  `apps/web/src/pages/admin/SurveyResultsPage.test.ts`.
+- Added a web source/helper guardrail in
+  `apps/web/src/pages/admin/SurveyQuestionsPage.test.ts`.
+- Updated `markdown/releases/unreleased.md`, `markdown/FOLLOW_UPS.md`, and
+  `markdown/PHASE_LOG.md`.
+
+## Semantics
+
+- `<ALL>` is virtual UI/API behavior, not a catalog row.
+- On the Questions tab, selecting hidden-tag value `<ALL>` stores one
+  `hidden_tag_all_bindings` row for the target and inherited source rows in
+  `hidden_tag_all_binding_tags`, then expands all current real catalog values
+  into the effective hidden-tag table for that target.
+- Builder hidden-tag `<ALL>` is a living category binding keyed by `tag_key`.
+  Future Admin Tags values with the same `tag_key` propagate to all subscribed
+  option, Other, and value-condition targets, including published surveys and
+  already submitted attempts because reporting reads the current hidden-tag
+  metadata.
+- Deleting or editing a catalog value removes inherited-only hidden tags from
+  subscribed builder targets. Manual hidden tags are preserved.
+- Stopping a builder hidden-tag `<ALL>` subscription deletes the binding and
+  inherited source rows, then removes inherited-only effective hidden tags for
+  that target.
+- Migration `0042` backfills old marker targets with current catalog values,
+  and migration `0043` converts those old marker targets into real
+  subscriptions.
+- Selecting `<ALL> - Apply all in {category}` stores one
+  `response_answer_tag_groups` binding, inherited source rows in
+  `response_answer_tag_group_tags`, and effective real tag chips in
+  `response_answer_tags`.
+- The action is a living category binding.
+- Future tags created, edited, or moved into a bound category are inserted onto
+  all bound answers, including submitted/completed attempts.
+- Tags moved out of a bound category are removed from bound answers when they
+  were inherited-only.
+- Deleting a bound category removes inherited-only expanded review tags before
+  the binding and inherited source rows cascade away.
+- Manual review tags are sticky. If a tag is both manual and inherited, moving
+  it out of the category, deleting the category, or stopping auto-apply removes
+  only the inherited source and leaves the visible manual tag.
+- Existing `response_answer_tags(answer_id, tag_definition_id)` uniqueness makes
+  visible chips idempotent, `response_answer_tag_groups(answer_id, group_id)`
+  makes binding idempotent, and
+  `response_answer_tag_group_tags(answer_id, group_id, tag_definition_id)` makes
+  inherited sources idempotent.
+- If a category binding already exists for an answer, the category all option
+  is hidden.
+- Stopping category auto-apply deletes the binding and inherited sources, then
+  removes inherited-only visible tags for that category.
+- Empty groups can be bound so future category tags propagate.
+- Ungrouped tags keep their existing individual options and have no virtual all
+  selector.
+
+## Review Focus
+
+- Confirm no real `<ALL>` tag definitions are created or needed.
+- Confirm `response_answer_tag_groups` and `response_answer_tag_group_tags` have
+  the right foreign keys, cascade behavior, and uniqueness.
+- Confirm the new category endpoint keeps the same admin-only authorization and
+  answered-text validation as individual review tags.
+- Confirm tag create/edit/move propagation occurs inside the catalog mutation
+  transaction, syncs move-in and move-out behavior, and remains idempotent.
+- Confirm category deletion removes inherited-only expanded tags while
+  preserving manual tags.
+- Confirm stopping auto-apply removes inherited-only tags but preserves manual
+  tags.
+- Confirm wrong survey/attempt/answer ownership remains protected.
+- Confirm `<ALL>` never appears as a review chip, CSV value, report aggregate,
+  tag catalog row, or Admin Tags management item.
+- Confirm the dropdown label and sentinel value are clear and do not collide
+  with numeric tag IDs.
+- Confirm living binding behavior is documented and tested, including submitted
+  answers.
+- Confirm builder hidden-tag add forms expose visible `<ALL>` values for option,
+  Other, and text/integer value tags without persisting `<ALL>` as a hidden tag.
+- Confirm builder hidden-tag `<ALL>` creates `hidden_tag_all_bindings` rows and
+  managed effective hidden-tag rows with `isManual: false`.
+- Confirm Admin Tags create/edit/delete operations propagate to builder
+  hidden-tag subscriptions, including submitted attempts, while preserving
+  `isManual: true` hidden tags.
+- Confirm older marker rows are converted by migration `0043` and no `All` or
+  `<ALL>` hidden-tag values remain after migration.
+
+## Tests Added Or Updated
+
+- `apps/api/test/reporting.test.ts`
+  - category review tags expand into all grouped real tags
+  - repeated category application does not duplicate review tags
+  - later-created category tags automatically propagate to bound answers
+  - moved and edited-into-category tags automatically propagate to bound answers
+  - tags moved out of a bound category are removed when inherited-only
+  - manually added tags survive move-out, category deletion, and stop-auto-apply
+  - category deletion removes inherited-only expanded review tags
+  - stop-auto-apply prevents future category propagation
+  - submitted answers receive future propagated tags
+  - ungrouped tags are not included in category expansion
+  - `<ALL>` is not created in `/api/tags`, details, or CSV
+  - empty groups can be bound for future tags; unknown groups 404
+  - non-text answer validation applies to category action
+  - authorization matrix includes the category action
+- `apps/api/test/tagCatalog.test.ts`
+  - new catalog values propagate to hidden-tag `<ALL>` subscriptions and appear
+    in admin detail for submitted attempts without an `All` marker tag
+  - value-tag and Other hidden-tag subscriptions receive future catalog values
+  - catalog value rename and delete sync inherited-only hidden tags
+  - Stop removes inherited-only hidden tags while preserving manual hidden tags
+  - individual hidden-tag delete downgrades a manual+inherited tag back to
+    inherited-only while the subscription remains active
+- `apps/api/test/surveyDuplicate.test.ts`
+  - duplicated surveys copy hidden-tag `<ALL>` bindings with remapped target IDs
+    and continue receiving future catalog values
+- `apps/web/src/pages/admin/SurveyResultsPage.test.ts`
+  - virtual sentinel value
+  - dropdown label, Stop control, inherited-chip guardrail, and source guardrails
+  - no hardcoded `<ALL>` tag row payload
+- `apps/web/src/pages/admin/SurveyQuestionsPage.test.ts`
+  - virtual hidden-tag `<ALL>` value sentinel
+  - hidden-tag add-form label and expansion guardrails
+
+## Validation Completed
+
+```bash
+npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts
+npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts test/surveyDuplicate.test.ts
+npm run test -w apps/web -- SurveyQuestionsPage.test.ts SurveyResultsPage.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm run db:migrate
+npm test
+npm run release:check
+git diff --check
+git diff --check -- database/migrations/0040_response_answer_tag_groups.sql database/migrations/0041_response_answer_tag_group_sources.sql packages/shared/src/index.ts apps/api/src/services/surveyReporting.ts apps/api/src/routes/surveyReportingRoutes.ts apps/api/src/routes/tags.ts apps/api/test/helpers/setup.ts apps/api/test/reporting.test.ts apps/web/src/api/surveys.ts apps/web/src/pages/admin/SurveyResultsPage.tsx apps/web/src/pages/admin/SurveyResultsPage.test.ts apps/web/src/styles.css markdown/releases/unreleased.md markdown/FOLLOW_UPS.md markdown/PHASE_LOG.md notes/claude_handoff_phase_61.txt notes/claude_review_phase_61.txt prompts/prompt_61.txt
+```
+
+- Passed: `npm run test -w apps/web -- SurveyResultsPage.test.ts`
+- Passed after builder hidden-tag `<ALL>` update:
+  `npm run test -w apps/web -- SurveyQuestionsPage.test.ts SurveyResultsPage.test.ts`
+- Initial sandboxed API test could not connect to local PostgreSQL; rerun with
+  approved local DB access passed:
+  `npm run test -w apps/api -- test/reporting.test.ts`
+- After Claude's second review, focused API reporting tests passed again with
+  approved local DB access:
+  `npm run test -w apps/api -- test/reporting.test.ts` (26 tests)
+- After the migration split, local `npm run db:migrate` passed and applied
+  `0041_response_answer_tag_group_sources.sql`.
+- After builder hidden-tag subscriptions, local `npm run db:migrate` passed and
+  applied `0043_hidden_tag_all_bindings.sql`; a follow-up run reported no
+  pending migrations.
+- Passed after builder hidden-tag subscriptions:
+  `npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts`
+  (73 tests)
+- Passed after Claude's builder-side coverage finding was addressed:
+  `npm run test -w apps/api -- test/tagCatalog.test.ts test/reporting.test.ts test/surveyBuilder.test.ts test/surveyDuplicate.test.ts`
+  (83 tests)
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed with approved local DB access after the parity update:
+  `npm test`
+- Passed with approved local DB access after the second-review fixes:
+  `npm test` (shared 71, web 105, API 306, release 9, loadtest 29)
+- Passed with approved local DB access after the migration split:
+  `npm test` (shared 71, web 105, API 306, release 9, loadtest 29)
+- `git diff --check` reported unrelated trailing whitespace in
+  `notes/game_plan-test_notes.txt`, which was already modified outside this
+  phase and left untouched.
+- Scoped `git diff --check -- ...` passed for the Phase 61 files.
+
+## Notes
+
+- No seed update was made by design.
+- Manual browser QA passed on 2026-07-01. The matching follow-up items in
+  `markdown/FOLLOW_UPS.md` are marked complete.

@@ -744,6 +744,36 @@ export async function deleteAnswerTag(input: {
   );
 }
 
+export async function createAnswerTagAllBinding(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+  tagKey: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}/tags/all`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey }),
+      method: "POST"
+    }
+  );
+}
+
+export async function deleteAnswerTagAllBinding(input: {
+  surveyId: number;
+  questionId: number;
+  optionId: number;
+  tagKey: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/options/${input.optionId}/tags/all`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey }),
+      method: "DELETE"
+    }
+  );
+}
+
 export async function createQuestionOtherTag(input: {
   surveyId: number;
   questionId: number;
@@ -783,6 +813,34 @@ export async function deleteQuestionOtherTag(input: {
   return apiRequest<SurveyResponse>(
     `/api/surveys/${input.surveyId}/questions/${input.questionId}/other-tags/${input.tagId}`,
     { method: "DELETE" }
+  );
+}
+
+export async function createQuestionOtherTagAllBinding(input: {
+  surveyId: number;
+  questionId: number;
+  tagKey: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/other-tags/all`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey }),
+      method: "POST"
+    }
+  );
+}
+
+export async function deleteQuestionOtherTagAllBinding(input: {
+  surveyId: number;
+  questionId: number;
+  tagKey: string;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/other-tags/all`,
+    {
+      body: JSON.stringify({ tagKey: input.tagKey }),
+      method: "DELETE"
+    }
   );
 }
 
@@ -846,6 +904,46 @@ export async function deleteQuestionValueTag(input: {
   return apiRequest<SurveyResponse>(
     `/api/surveys/${input.surveyId}/questions/${input.questionId}/value-tags/${input.valueTagId}`,
     { method: "DELETE" }
+  );
+}
+
+export async function createQuestionValueTagAllBinding(input: {
+  surveyId: number;
+  questionId: number;
+  tagKey: string;
+  integerMin: number | null;
+  integerMax: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/value-tags/all`,
+    {
+      body: JSON.stringify({
+        tagKey: input.tagKey,
+        integerMin: input.integerMin,
+        integerMax: input.integerMax
+      }),
+      method: "POST"
+    }
+  );
+}
+
+export async function deleteQuestionValueTagAllBinding(input: {
+  surveyId: number;
+  questionId: number;
+  tagKey: string;
+  integerMin: number | null;
+  integerMax: number | null;
+}): Promise<SurveyResponse> {
+  return apiRequest<SurveyResponse>(
+    `/api/surveys/${input.surveyId}/questions/${input.questionId}/value-tags/all`,
+    {
+      body: JSON.stringify({
+        tagKey: input.tagKey,
+        integerMin: input.integerMin,
+        integerMax: input.integerMax
+      }),
+      method: "DELETE"
+    }
   );
 }
 
@@ -980,6 +1078,21 @@ export async function addAnswerReviewTag(input: {
   );
 }
 
+export async function addAnswerReviewTagCategory(input: {
+  answerId: number;
+  attemptId: number;
+  groupId: number;
+  surveyId: number;
+}): Promise<UpdateResponseAnswerReviewTagsResponse> {
+  return apiRequest<UpdateResponseAnswerReviewTagsResponse>(
+    `/api/surveys/${input.surveyId}/attempts/${input.attemptId}/answers/${input.answerId}/review-tags/category`,
+    {
+      body: JSON.stringify({ groupId: input.groupId }),
+      method: "POST"
+    }
+  );
+}
+
 export async function removeAnswerReviewTag(input: {
   answerId: number;
   attemptId: number;
@@ -988,6 +1101,18 @@ export async function removeAnswerReviewTag(input: {
 }): Promise<UpdateResponseAnswerReviewTagsResponse> {
   return apiRequest<UpdateResponseAnswerReviewTagsResponse>(
     `/api/surveys/${input.surveyId}/attempts/${input.attemptId}/answers/${input.answerId}/review-tags/${input.tagDefinitionId}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function removeAnswerReviewTagCategory(input: {
+  answerId: number;
+  attemptId: number;
+  groupId: number;
+  surveyId: number;
+}): Promise<UpdateResponseAnswerReviewTagsResponse> {
+  return apiRequest<UpdateResponseAnswerReviewTagsResponse>(
+    `/api/surveys/${input.surveyId}/attempts/${input.attemptId}/answers/${input.answerId}/review-tags/category/${input.groupId}`,
     { method: "DELETE" }
   );
 }

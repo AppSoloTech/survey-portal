@@ -1,0 +1,2 @@
+1) When adding a tag to a category that already has an Emoji associated with it, the new tag does not inherit that emoji. New tags that match existing categories should inherit assigned emojie. 
+2) Results section: reduce the noice and prep for a large amount of data. The summary section should be collapsable. The very bottom of the page fills with user results, but this can get out of hand: need to prep this data for large amounts of data presentation. 

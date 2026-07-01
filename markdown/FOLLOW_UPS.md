@@ -45,6 +45,31 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Active Follow-Ups
 
+### Phase 61 Category All Review Tags
+
+- ~~Run the manual browser pass for virtual category review tags: Admin Tags page
+  after local DB reset shows no `<ALL>` rows, Survey Results text-answer
+  dropdown shows `<ALL> - Apply all in {category}` for unbound categories,
+  selecting it expands into real review-tag chips, future tags added or moved
+  into that category propagate to previously bound submitted answers, tags
+  moved out of the category are removed unless they were manual, Stop
+  auto-apply removes the binding and inherited-only tags, inherited-only chips
+  do not show an individual remove action, repeated selection creates no
+  duplicates, and category create/rename/delete flows update the virtual
+  dropdown behavior and remove inherited-only tags on category delete.~~ Done
+  2026-07-01 (developer manual testing passed).
+- ~~Run the manual browser pass for builder hidden-tag `<ALL>` values:
+  Questions tab option hidden tags, Other hidden tags, and text/integer value
+  tags should show `<ALL>` in add and existing value dropdowns after a catalog
+  category is selected, and selecting it should create a managed auto-apply
+  subscription without creating a persisted `<ALL>` tag row.~~ Done 2026-07-01
+  (developer manual testing passed).
+- ~~Confirm hidden-tag `<ALL>` propagation manually: after an option/Other/value
+  tag target has a category `<ALL>` subscription, add a new value through Admin
+  Tags and verify the target, existing submitted attempts, and future attempts
+  all show the new hidden tag.~~ Done 2026-07-01 (developer manual testing
+  passed).
+
 ### Phase 60 Issue Profile Emoji Burst
 
 - Run the manual browser/accessibility pass for admin tag emoji create/edit,

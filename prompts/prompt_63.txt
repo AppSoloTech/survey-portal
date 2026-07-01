@@ -1,0 +1,280 @@
+# Phase 63 — Results Large-Data UX
+
+## Purpose
+
+Reduce noise on the Admin Results page and make participant attempt browsing
+work better when an assessment has many attempts.
+
+Source feedback or planning note:
+
+```txt
+notes/1.0_test_notes.txt
+```
+
+This phase owns the larger frontend/product and API scalability work. Tag
+category emoji inheritance is split into `prompts/prompt_62.txt`.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_63.txt`
+* Claude review: `notes/claude_review_phase_63.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/1.0_test_notes.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* Results/reporting history and current files, especially:
+  * `prompts/prompt_8.txt`
+  * `prompts/prompt_47.txt`
+  * `prompts/prompt_48.txt`
+  * `prompts/prompt_61.txt`
+  * `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+  * `apps/web/src/pages/admin/SurveyResultsPage.test.ts`
+  * `apps/web/src/api/surveys.ts`
+  * `apps/web/src/styles.css`
+  * `apps/api/src/routes/surveyReportingRoutes.ts`
+  * `apps/api/src/services/surveyReporting.ts`
+  * `apps/api/test/reporting.test.ts`
+  * `packages/shared/src/index.ts`
+
+Confirm the working tree before implementation. If Phase 61 remains
+uncommitted, do not modify Phase 61 behavior except where this phase must work
+with the current Results page shape.
+
+---
+
+# Received Feedback
+
+1. Results section: reduce the noise and prepare for a large amount of data.
+2. The summary section should be collapsible.
+3. The very bottom of the page fills with user results and can get out of hand;
+   prepare this data for large amounts of data presentation.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* UX polish
+* reporting/data presentation improvement
+* admin workflow improvement
+* API contract change
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none expected.
+* API contracts: yes, the Admin attempts list should become paginated instead
+  of returning every attempt.
+* Participant-facing survey behavior: none.
+* Hidden-tag visibility: no new participant exposure; Admin Results continues
+  to show internal reporting metadata only to admins.
+* Authentication or authorization: no model change; Results endpoints remain
+  Admin-only.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, add API and web coverage for pagination
+  and collapsible summary behavior.
+
+Ask for clarification only if the implementation requires a product decision
+between materially different Results browsing models.
+
+---
+
+# Scope
+
+Implement:
+
+* Make the Results summary area collapsible with an accessible disclosure
+  control using `aria-expanded` and clear keyboard behavior.
+* Preserve existing summary content, date filters, Refresh, CSV export,
+  question stats, option distributions, and hidden-tag rollup semantics.
+* Keep the date range filter applied consistently to the summary, CSV export,
+  and attempt list.
+* Replace the bottom all-attempts rendering with a large-data-friendly attempt
+  browser:
+  * the API must support bounded server-side pagination for
+    `GET /api/surveys/:id/attempts`
+  * the frontend must request only the visible page
+  * the UI must show total count or visible range context
+  * the UI must provide previous/next or numbered page controls
+  * the UI must provide a conservative page-size choice, such as 25, 50, and
+    100 attempts per page
+  * the list should use a denser table-like or row layout that remains usable
+    at 375/768/1280px widths
+* Reset or clamp the current attempts page when date filters or page size change.
+* Preserve attempt detail loading by attempt id and existing review-tag editing
+  behavior.
+* Handle loading, empty, and error states for paginated attempts separately from
+  summary loading where practical.
+* Update shared response types and web API helpers for pagination metadata.
+* Add focused automated tests for API pagination and Results UI guardrails.
+* Update release notes, phase log, and handoff during implementation.
+
+## Non-Goals
+
+Do not implement:
+
+* New charts, analytics definitions, or reporting calculations.
+* Materialized report tables, background jobs, queues, or caching layers.
+* CSV pagination. CSV export should continue exporting the selected date range.
+* Attempt-detail pagination or virtualization inside one selected attempt.
+* Search, status filtering, sorting controls, or saved report views unless the
+  human explicitly adds them to this phase.
+* Changes to review-tag, hidden-tag, `<ALL>`, or category emoji semantics.
+* Participant-facing UI changes.
+* A third-party data-grid dependency unless the human approves it first.
+
+## Assumptions
+
+* Offset/page-number pagination is acceptable for this admin MVP phase, provided
+  the query is bounded and ordered deterministically.
+* The existing attempt ordering should remain newest first:
+  `started_at desc nulls last, id desc`.
+* Page size should default to a modest value, such as 25.
+* A selected attempt detail may close when the attempt is no longer visible
+  after changing filters/page; preserving it is optional if the UI remains
+  understandable.
+* The summary disclosure can default to expanded for continuity, but it must be
+  easy to collapse and keep the attempts browser prominent.
+
+## Open Questions
+
+None blocking. Status filters, attempt search, and saved report views are useful
+future enhancements but are intentionally out of scope for this phase.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Admin-only paginated attempts API contract and validation.
+2. Frontend attempts browser that requests one bounded page at a time.
+3. Accessible collapsible summary.
+4. Focused regression tests for pagination, date-range interaction, and summary
+   disclosure guardrails.
+5. Release notes and closeout artifacts.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The Results summary can be expanded and collapsed with an accessible control.
+* Collapsing the summary reduces visual noise without removing Refresh, CSV,
+  date-range, or reporting capabilities from the page.
+* The attempts endpoint validates pagination input and returns a bounded page of
+  attempts plus pagination metadata.
+* The attempts endpoint does not return every attempt by default.
+* Attempts remain ordered newest first with deterministic tie-breaking.
+* Date-range filters apply to both summary and paginated attempts.
+* Changing date range or page size resets/clamps pagination so the page does not
+  become empty due only to stale page state.
+* The frontend shows visible range/total context and disabled states for
+  unavailable pagination actions.
+* Attempt detail fetch, display, and review-tag editing still work from the
+  paginated list.
+* Empty, loading, and error states remain clear.
+* Admin-only authorization remains enforced on report, attempts, detail, review
+  tag, and CSV endpoints.
+* Participant and anonymous payloads remain unchanged.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a
+  documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+At minimum, add or update focused API tests around:
+
+* attempts pagination default page size and metadata
+* custom valid page/pageSize
+* invalid page/pageSize validation
+* deterministic newest-first ordering
+* date-range filtering with pagination metadata
+* non-admin and unauthenticated access still forbidden
+* unknown survey still returns the existing not-found behavior
+
+At minimum, add or update focused web tests/source guardrails around:
+
+* summary disclosure includes `aria-expanded`
+* attempts fetch includes page/pageSize parameters
+* pagination controls and visible range/total copy exist
+* date-range or page-size changes reset attempt pagination
+* existing review-tag category `<ALL>` controls remain present
+
+Suggested focused commands before the full gate:
+
+```bash
+npm run test -w apps/api -- test/reporting.test.ts
+npm run test -w apps/web -- SurveyResultsPage.test.ts
+```
+
+Manual checks to perform or document:
+
+* Results page at 375/768/1280px with summary expanded and collapsed.
+* Large seeded or manually created attempt set where page 1, next page, previous
+  page, and page-size changes behave predictably.
+* Date-range changes update both summary numbers and the attempts page.
+* CSV export still uses the selected date range.
+* Opening attempt detail from a paginated row still shows answers and review-tag
+  controls.
+* Empty-state behavior for no attempts in a date range.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for this
+  production-bound admin-visible UX/scalability improvement.
+* `markdown/FOLLOW_UPS.md` for deferred Results enhancements such as status
+  filters, search, saved views, indexed reporting, or deeper table
+  virtualization if discovered during implementation.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* `notes/claude_handoff_phase_63.txt` before marking implementation complete.
+* `notes/claude_review_phase_63.txt` after Claude review, or mark review
+  pending in the phase log.

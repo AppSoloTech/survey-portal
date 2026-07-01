@@ -2,6 +2,7 @@ import {
   getOrderedQuestions,
   type AnswerOption,
   type ConditionalLogicRule,
+  type HiddenTagAllBinding,
   type ParticipantGlossaryEntry,
   type QuestionValueTag,
   type Survey,
@@ -22,6 +23,7 @@ export const questionTypes: SurveyQuestionType[] = [
 ];
 
 const customTagOptionValue = "__custom_tag_value__";
+export const allTagValueOption = "__all_tag_values__";
 
 export interface TagPreset {
   tagKey: string;
@@ -136,10 +138,13 @@ export function QuestionEditor({
   onAddTag,
   onAddValueTag,
   onDeleteOtherTag,
+  onDeleteOtherTagAllBinding,
   onDeleteOption,
   onDeleteQuestion,
   onDeleteTag,
+  onDeleteTagAllBinding,
   onDeleteValueTag,
+  onDeleteValueTagAllBinding,
   onMoveOption,
   onMoveQuestion,
   onSaveOption,
@@ -167,13 +172,26 @@ export function QuestionEditor({
   ) => Promise<void>;
   onAddValueTag: (event: FormEvent<HTMLFormElement>, question: SurveyQuestion) => Promise<void>;
   onDeleteOtherTag: (question: SurveyQuestion, tagId: number) => Promise<void>;
+  onDeleteOtherTagAllBinding: (
+    question: SurveyQuestion,
+    binding: HiddenTagAllBinding
+  ) => Promise<void>;
   onDeleteValueTag: (question: SurveyQuestion, valueTagId: number) => Promise<void>;
+  onDeleteValueTagAllBinding: (
+    question: SurveyQuestion,
+    binding: HiddenTagAllBinding
+  ) => Promise<void>;
   onDeleteOption: (question: SurveyQuestion, optionId: number) => Promise<void>;
   onDeleteQuestion: (questionId: number) => Promise<void>;
   onDeleteTag: (
     question: SurveyQuestion,
     option: AnswerOption,
     tagId: number
+  ) => Promise<void>;
+  onDeleteTagAllBinding: (
+    question: SurveyQuestion,
+    option: AnswerOption,
+    binding: HiddenTagAllBinding
   ) => Promise<void>;
   onMoveOption: (
     question: SurveyQuestion,
@@ -219,12 +237,13 @@ export function QuestionEditor({
   const supportsOther = selectedQuestionType === "single_select" || selectedQuestionType === "multi_select";
   const isOptionBacked = isSelectionQuestion(question) || question.questionType === "scale";
   const areTagsLocked = !canEditTags;
-  const valueTagCount = question.valueTags?.length ?? 0;
+  const valueTagCount = (question.valueTags?.length ?? 0) + (question.valueTagAllBindings?.length ?? 0);
   const optionTagCount = question.answerOptions.reduce(
-    (count, option) => count + (option.answerTags?.length ?? 0),
+    (count, option) =>
+      count + (option.answerTags?.length ?? 0) + (option.answerTagAllBindings?.length ?? 0),
     0
   );
-  const otherTagCount = question.otherTags?.length ?? 0;
+  const otherTagCount = (question.otherTags?.length ?? 0) + (question.otherTagAllBindings?.length ?? 0);
 
   useEffect(() => {
     setSelectedQuestionType(question.questionType);
@@ -414,14 +433,31 @@ export function QuestionEditor({
                 : "Tags apply whenever the respondent gives a non-blank answer."}
             </p>
 
+          {(question.valueTagAllBindings ?? []).map((binding) => (
+            <HiddenTagAllBindingRow
+              binding={binding}
+              disabled={areTagsLocked}
+              isSubmitting={isSubmitting}
+              key={binding.id}
+              onStop={() => void onDeleteValueTagAllBinding(question, binding)}
+              questionType={question.questionType}
+            />
+          ))}
+
           {(question.valueTags ?? []).map((valueTag) => (
             <form
               className="builder-grid value-tag-form"
               key={valueTag.id}
               onSubmit={(event) => void onSaveValueTag(event, question, valueTag.id)}
             >
+              {(() => {
+                const isInheritedOnly = valueTag.isManual === false;
+
+                return (
+                  <>
               <TagFields
-                disabled={areTagsLocked}
+                allowAllValue
+                disabled={areTagsLocked || isInheritedOnly}
                 existingTags={(question.valueTags ?? [])
                   .filter((item) => item.id !== valueTag.id)
                   .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
@@ -436,7 +472,7 @@ export function QuestionEditor({
                     <input
                       autoComplete="off"
                       defaultValue={valueTag.integerMin ?? ""}
-                      disabled={areTagsLocked}
+                      disabled={areTagsLocked || isInheritedOnly}
                       inputMode="numeric"
                       name="integerMin"
                       type="number"
@@ -447,7 +483,7 @@ export function QuestionEditor({
                     <input
                       autoComplete="off"
                       defaultValue={valueTag.integerMax ?? ""}
-                      disabled={areTagsLocked}
+                      disabled={areTagsLocked || isInheritedOnly}
                       inputMode="numeric"
                       name="integerMax"
                       type="number"
@@ -461,19 +497,26 @@ export function QuestionEditor({
               )}
               <button
                 className="button-link compact-button secondary-button"
-                disabled={isSubmitting || areTagsLocked}
+                disabled={isSubmitting || areTagsLocked || isInheritedOnly}
                 type="submit"
               >
                 Save tag
               </button>
-              <button
-                className="button-link compact-button danger-button"
-                disabled={isSubmitting || areTagsLocked}
-                onClick={() => void onDeleteValueTag(question, valueTag.id)}
-                type="button"
-              >
-                Remove
-              </button>
+              {isInheritedOnly ? (
+                <span className="tag-managed-note">Managed by &lt;ALL&gt;</span>
+              ) : (
+                <button
+                  className="button-link compact-button danger-button"
+                  disabled={isSubmitting || areTagsLocked}
+                  onClick={() => void onDeleteValueTag(question, valueTag.id)}
+                  type="button"
+                >
+                  Remove
+                </button>
+              )}
+                  </>
+                );
+              })()}
             </form>
           ))}
 
@@ -482,8 +525,9 @@ export function QuestionEditor({
             onSubmit={(event) => void onAddValueTag(event, question)}
           >
             <TagFields
-              existingTags={question.valueTags ?? []}
+              allowAllValue
               disabled={areTagsLocked}
+              existingTags={question.valueTags ?? []}
               tagPresets={tagPresets}
             />
             {question.questionType === "integer" ? (
@@ -630,14 +674,29 @@ export function QuestionEditor({
                         : "Use Add hidden tag for new tags. Save option text does not save tag fields."}
                     </p>
                   </div>
+                  {(option.answerTagAllBindings ?? []).map((binding) => (
+                    <HiddenTagAllBindingRow
+                      binding={binding}
+                      disabled={areTagsLocked}
+                      isSubmitting={isSubmitting}
+                      key={binding.id}
+                      onStop={() => void onDeleteTagAllBinding(question, option, binding)}
+                    />
+                  ))}
                   {(option.answerTags ?? []).map((tag) => (
                     <form
                       className="tag-row"
                       key={tag.id}
                       onSubmit={(event) => void onSaveTag(event, question, option, tag.id)}
                     >
+                      {(() => {
+                        const isInheritedOnly = tag.isManual === false;
+
+                        return (
+                          <>
                       <TagFields
-                        disabled={areTagsLocked}
+                        allowAllValue
+                        disabled={areTagsLocked || isInheritedOnly}
                         existingTags={(option.answerTags ?? [])
                           .filter((item) => item.id !== tag.id)
                           .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
@@ -647,19 +706,26 @@ export function QuestionEditor({
                       />
                       <button
                         className="button-link compact-button secondary-button"
-                        disabled={isSubmitting || areTagsLocked}
+                        disabled={isSubmitting || areTagsLocked || isInheritedOnly}
                         type="submit"
                       >
                         Save tag
                       </button>
-                      <button
-                        className="button-link compact-button danger-button"
-                        disabled={isSubmitting || areTagsLocked}
-                        onClick={() => void onDeleteTag(question, option, tag.id)}
-                        type="button"
-                      >
-                        Remove tag
-                      </button>
+                      {isInheritedOnly ? (
+                        <span className="tag-managed-note">Managed by &lt;ALL&gt;</span>
+                      ) : (
+                        <button
+                          className="button-link compact-button danger-button"
+                          disabled={isSubmitting || areTagsLocked}
+                          onClick={() => void onDeleteTag(question, option, tag.id)}
+                          type="button"
+                        >
+                          Remove tag
+                        </button>
+                      )}
+                          </>
+                        );
+                      })()}
                     </form>
                   ))}
                   <form
@@ -668,6 +734,7 @@ export function QuestionEditor({
                     onSubmit={(event) => void onAddTag(event, question, option)}
                   >
                     <TagFields
+                      allowAllValue
                       disabled={areTagsLocked}
                       existingTags={(option.answerTags ?? []).map((item) => ({
                         tagKey: item.tagKey,
@@ -713,14 +780,29 @@ export function QuestionEditor({
             <p className="builder-heading-note">
               Tags apply when a respondent enters an Other answer. Other is not an answer option and cannot drive jump rules.
             </p>
+          {(question.otherTagAllBindings ?? []).map((binding) => (
+            <HiddenTagAllBindingRow
+              binding={binding}
+              disabled={areTagsLocked}
+              isSubmitting={isSubmitting}
+              key={binding.id}
+              onStop={() => void onDeleteOtherTagAllBinding(question, binding)}
+            />
+          ))}
           {(question.otherTags ?? []).map((tag) => (
             <form
               className="tag-row"
               key={tag.id}
               onSubmit={(event) => void onSaveOtherTag(event, question, tag.id)}
             >
+              {(() => {
+                const isInheritedOnly = tag.isManual === false;
+
+                return (
+                  <>
               <TagFields
-                disabled={areTagsLocked}
+                allowAllValue
+                disabled={areTagsLocked || isInheritedOnly}
                 existingTags={(question.otherTags ?? [])
                   .filter((item) => item.id !== tag.id)
                   .map((item) => ({ tagKey: item.tagKey, tagValue: item.tagValue }))}
@@ -730,19 +812,26 @@ export function QuestionEditor({
               />
               <button
                 className="button-link compact-button secondary-button"
-                disabled={isSubmitting || areTagsLocked}
+                disabled={isSubmitting || areTagsLocked || isInheritedOnly}
                 type="submit"
               >
                 Save tag
               </button>
-              <button
-                className="button-link compact-button danger-button"
-                disabled={isSubmitting || areTagsLocked}
-                onClick={() => void onDeleteOtherTag(question, tag.id)}
-                type="button"
-              >
-                Remove tag
-              </button>
+              {isInheritedOnly ? (
+                <span className="tag-managed-note">Managed by &lt;ALL&gt;</span>
+              ) : (
+                <button
+                  className="button-link compact-button danger-button"
+                  disabled={isSubmitting || areTagsLocked}
+                  onClick={() => void onDeleteOtherTag(question, tag.id)}
+                  type="button"
+                >
+                  Remove tag
+                </button>
+              )}
+                  </>
+                );
+              })()}
             </form>
           ))}
           <form
@@ -751,6 +840,7 @@ export function QuestionEditor({
             onSubmit={(event) => void onAddOtherTag(event, question)}
           >
             <TagFields
+              allowAllValue
               disabled={areTagsLocked}
               existingTags={(question.otherTags ?? []).map((item) => ({
                 tagKey: item.tagKey,
@@ -1010,13 +1100,54 @@ export function describeValueTagCondition(
   return "any answered value";
 }
 
+function HiddenTagAllBindingRow({
+  binding,
+  disabled,
+  isSubmitting,
+  onStop,
+  questionType
+}: {
+  binding: HiddenTagAllBinding;
+  disabled: boolean;
+  isSubmitting: boolean;
+  onStop: () => void;
+  questionType?: SurveyQuestionType;
+}) {
+  return (
+    <div className="tag-row hidden-tag-all-row">
+      <div className="hidden-tag-all-summary">
+        <strong>{`<ALL>`}</strong>
+        <span>Auto-applying all values in {binding.tagKey}</span>
+        {questionType ? (
+          <em>
+            {describeValueTagCondition(questionType, {
+              integerMin: binding.integerMin,
+              integerMax: binding.integerMax
+            })}
+          </em>
+        ) : null}
+      </div>
+      <button
+        className="button-link compact-button danger-button"
+        disabled={isSubmitting || disabled}
+        onClick={onStop}
+        type="button"
+      >
+        Stop
+      </button>
+    </div>
+  );
+}
+
 function TagFields({
+  allowAllValue = false,
   disabled = false,
   existingTags = [],
   initialTagKey,
   initialTagValue,
   tagPresets
 }: {
+  allowAllValue?: boolean;
   disabled?: boolean;
   existingTags?: { tagKey: string; tagValue: string }[];
   initialTagKey?: string;
@@ -1051,8 +1182,12 @@ function TagFields({
     initialTagKey === activeKey ? initialTagValue : undefined
   ]);
   const isCustomValue = selectedValue === customTagOptionValue;
+  const isAllValue = selectedValue === allTagValueOption;
   const activeValue = isCustomKey || isCustomValue || valueOptions.length === 0 ? customValue : selectedValue;
-  const isDuplicatePair = isDuplicateTagPair(existingTags, activeKey, activeValue);
+  const isDuplicatePair =
+    !isAllValue && isDuplicateTagPair(existingTags, activeKey, activeValue);
+  const shouldShowAllValueOption =
+    allowAllValue && !isCustomKey && activeKey.trim() !== "" && valueOptions.length > 0;
 
   function handleKeyChange(nextKey: string) {
     setSelectedKey(nextKey);
@@ -1113,6 +1248,7 @@ function TagFields({
             value={selectedValue}
           >
             <option value="">Choose tag value</option>
+            {shouldShowAllValueOption ? <option value={allTagValueOption}>{"<ALL>"}</option> : null}
             {valueOptions.map((tagValue) => (
               <option key={tagValue} value={tagValue}>
                 {tagValue}

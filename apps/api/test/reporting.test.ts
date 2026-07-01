@@ -111,6 +111,44 @@ async function seedReviewTagFixture(admin: TestSession) {
   };
 }
 
+async function createTagGroup(
+  admin: TestSession,
+  name: string
+): Promise<{ displayOrder: number; id: number; name: string }> {
+  const response = await request(app)
+    .post("/api/tags/groups")
+    .set("Cookie", admin.cookie)
+    .send({ name });
+
+  if (response.status !== 201) {
+    throw new Error(`Tag group create failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body.group as { displayOrder: number; id: number; name: string };
+}
+
+async function createGroupedTagDefinition(
+  admin: TestSession,
+  input: { groupId: number; tagKey: string; tagValue: string }
+): Promise<{ emoji: string | null; groupId: number; id: number; tagKey: string; tagValue: string }> {
+  const response = await request(app)
+    .post("/api/tags")
+    .set("Cookie", admin.cookie)
+    .send(input);
+
+  if (response.status !== 201) {
+    throw new Error(`Tag create failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body.tag as {
+    emoji: string | null;
+    groupId: number;
+    id: number;
+    tagKey: string;
+    tagValue: string;
+  };
+}
+
 describe("reporting authorization", () => {
   it("requires admin role on every reporting endpoint", async () => {
     const admin = await registerAdmin(app);
@@ -122,20 +160,22 @@ describe("reporting authorization", () => {
       `/api/surveys/${survey.id}/attempts`,
       `/api/surveys/${survey.id}/attempts/1`,
       `/api/surveys/${survey.id}/attempts/1/answers/1/review-tags`,
+      `/api/surveys/${survey.id}/attempts/1/answers/1/review-tags/category`,
+      `/api/surveys/${survey.id}/attempts/1/answers/1/review-tags/category/1`,
       `/api/surveys/${survey.id}/attempts/1/answers/1/review-tags/1`,
       `/api/surveys/${survey.id}/export.csv`
     ];
 
     for (const path of paths) {
       const unauthenticated = path.includes("review-tags")
-        ? path.endsWith("/1")
+        ? path.endsWith("/1") && !path.endsWith("category")
           ? await request(app).delete(path)
           : await request(app).post(path).send({ tagDefinitionId: 1 })
         : await request(app).get(path);
       expect(unauthenticated.status).toBe(401);
 
       const forbidden = path.includes("review-tags")
-        ? path.endsWith("/1")
+        ? path.endsWith("/1") && !path.endsWith("category")
           ? await request(app).delete(path).set("Cookie", user.cookie)
           : await request(app).post(path).set("Cookie", user.cookie).send({ tagDefinitionId: 1 })
         : await request(app).get(path).set("Cookie", user.cookie);
@@ -581,6 +621,317 @@ describe("response answer review tags", () => {
     expect(answerAfterCascade.reviewTags).toEqual([]);
   });
 
+  it("applies category review tags through a virtual all selector without creating all tags", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReviewTagFixture(admin);
+    await completeAttempt(app, fixture.user, fixture.survey.id, fixture.attemptId);
+    const group = await createTagGroup(admin, "Review category");
+    const firstTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "review_category",
+      tagValue: "first"
+    });
+    const secondTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "review_category",
+      tagValue: "second"
+    });
+    const ungroupedTag = await createTagDefinition(app, admin, "ungrouped_review", "outside");
+
+    const addCategory = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id });
+
+    expect(addCategory.status).toBe(201);
+    expect(addCategory.body.reviewTagGroupIds).toEqual([group.id]);
+    expect(addCategory.body.reviewTags).toHaveLength(2);
+    expect(addCategory.body.reviewTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tagDefinitionId: firstTag.id,
+          tagKey: "review_category",
+          tagValue: "first",
+          isManual: false
+        }),
+        expect.objectContaining({
+          tagDefinitionId: secondTag.id,
+          tagKey: "review_category",
+          tagValue: "second",
+          isManual: false
+        })
+      ])
+    );
+    expect(
+      addCategory.body.reviewTags.some(
+        (tag: { tagDefinitionId: number; tagValue: string }) =>
+          tag.tagDefinitionId === ungroupedTag.id || tag.tagValue === "<ALL>"
+      )
+    ).toBe(false);
+
+    const duplicate = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id });
+
+    expect(duplicate.status).toBe(201);
+    expect(duplicate.body.reviewTagGroupIds).toEqual([group.id]);
+    expect(duplicate.body.reviewTags).toHaveLength(2);
+
+    const laterTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "review_category",
+      tagValue: "later"
+    });
+
+    const movedTag = await createTagDefinition(app, admin, "review_category", "moved");
+    const moveResponse = await request(app)
+      .patch(`/api/tags/${movedTag.id}/group`)
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id, displayOrder: 1 });
+    expect(moveResponse.status).toBe(200);
+
+    const manualMovedTag = await createTagDefinition(app, admin, "review_category", "manual-moved");
+    const manualMoveInResponse = await request(app)
+      .patch(`/api/tags/${manualMovedTag.id}/group`)
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id, displayOrder: 1 });
+    expect(manualMoveInResponse.status).toBe(200);
+    const markManual = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: manualMovedTag.id });
+    expect(markManual.status).toBe(201);
+
+    const editedIntoGroupTag = await createTagDefinition(app, admin, "review_category", "edited-in");
+    const editResponse = await request(app)
+      .put(`/api/tags/${editedIntoGroupTag.id}`)
+      .set("Cookie", admin.cookie)
+      .send({
+        groupId: group.id,
+        tagKey: editedIntoGroupTag.tagKey,
+        tagValue: editedIntoGroupTag.tagValue
+      });
+    expect(editResponse.status).toBe(200);
+
+    const moveOutResponse = await request(app)
+      .patch(`/api/tags/${movedTag.id}/group`)
+      .set("Cookie", admin.cookie)
+      .send({ groupId: null, displayOrder: 1 });
+    expect(moveOutResponse.status).toBe(200);
+    const manualMoveOutResponse = await request(app)
+      .patch(`/api/tags/${manualMovedTag.id}/group`)
+      .set("Cookie", admin.cookie)
+      .send({ groupId: null, displayOrder: 1 });
+    expect(manualMoveOutResponse.status).toBe(200);
+
+    const catalog = await request(app).get("/api/tags").set("Cookie", admin.cookie);
+    expect(catalog.body.tags).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ tagValue: "<ALL>" })])
+    );
+
+    const detail = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}`)
+      .set("Cookie", admin.cookie);
+    const taggedAnswer = detail.body.answers.find(
+      (answer: { responseAnswerId: number | null }) => answer.responseAnswerId === fixture.answerId
+    );
+    const manualMovedReviewTag = taggedAnswer.reviewTags.find(
+      (tag: { tagDefinitionId: number }) => tag.tagDefinitionId === manualMovedTag.id
+    );
+    expect(manualMovedReviewTag).toEqual(expect.objectContaining({ isManual: true }));
+    expect(taggedAnswer.reviewTagGroupIds).toEqual([group.id]);
+    expect(taggedAnswer.reviewTags.map((tag: { tagValue: string }) => tag.tagValue)).toEqual([
+      "edited-in",
+      "first",
+      "later",
+      "manual-moved",
+      "second"
+    ]);
+
+    const csv = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/export.csv`)
+      .set("Cookie", admin.cookie);
+    expect(csv.text).toContain("review_category=first");
+    expect(csv.text).toContain("review_category=edited-in");
+    expect(csv.text).toContain("review_category=later");
+    expect(csv.text).not.toContain("review_category=moved");
+    expect(csv.text).toContain("review_category=manual-moved");
+    expect(csv.text).toContain("review_category=second");
+    expect(csv.text).not.toContain("<ALL>");
+  });
+
+  it("stops category review tag auto-apply and removes only inherited tags", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReviewTagFixture(admin);
+    const group = await createTagGroup(admin, "Stop review category");
+    const inheritedTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "stop_category",
+      tagValue: "inherited"
+    });
+    const manualTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "stop_category",
+      tagValue: "manual"
+    });
+
+    const addCategory = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id });
+    expect(addCategory.status).toBe(201);
+    expect(addCategory.body.reviewTags).toHaveLength(2);
+
+    const markManual = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: manualTag.id });
+    expect(markManual.status).toBe(201);
+
+    const stop = await request(app)
+      .delete(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category/${group.id}`
+      )
+      .set("Cookie", admin.cookie);
+    expect(stop.status).toBe(200);
+    expect(stop.body.reviewTagGroupIds).toEqual([]);
+    expect(stop.body.reviewTags).toEqual([
+      expect.objectContaining({ tagDefinitionId: manualTag.id, tagValue: "manual", isManual: true })
+    ]);
+    expect(
+      stop.body.reviewTags.some(
+        (tag: { tagDefinitionId: number }) => tag.tagDefinitionId === inheritedTag.id
+      )
+    ).toBe(false);
+
+    const futureTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "stop_category",
+      tagValue: "future"
+    });
+    const detail = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}`)
+      .set("Cookie", admin.cookie);
+    const taggedAnswer = detail.body.answers.find(
+      (answer: { responseAnswerId: number | null }) => answer.responseAnswerId === fixture.answerId
+    );
+    expect(
+      taggedAnswer.reviewTags.some(
+        (tag: { tagDefinitionId: number }) => tag.tagDefinitionId === futureTag.id
+      )
+    ).toBe(false);
+  });
+
+  it("deleting a category removes inherited-only review tags and preserves manual tags", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReviewTagFixture(admin);
+    const group = await createTagGroup(admin, "Deleted review category");
+    const inheritedTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "delete_category",
+      tagValue: "inherited"
+    });
+    const manualTag = await createGroupedTagDefinition(admin, {
+      groupId: group.id,
+      tagKey: "delete_category",
+      tagValue: "manual"
+    });
+
+    const addCategory = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id });
+    expect(addCategory.status).toBe(201);
+    expect(addCategory.body.reviewTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagDefinitionId: inheritedTag.id, isManual: false }),
+        expect.objectContaining({ tagDefinitionId: manualTag.id, isManual: false })
+      ])
+    );
+
+    const markManual = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagDefinitionId: manualTag.id });
+    expect(markManual.status).toBe(201);
+
+    const deleteGroup = await request(app)
+      .delete(`/api/tags/groups/${group.id}`)
+      .set("Cookie", admin.cookie);
+    expect(deleteGroup.status).toBe(200);
+
+    const detail = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}`)
+      .set("Cookie", admin.cookie);
+    const taggedAnswer = detail.body.answers.find(
+      (answer: { responseAnswerId: number | null }) => answer.responseAnswerId === fixture.answerId
+    );
+    expect(taggedAnswer.reviewTagGroupIds).toEqual([]);
+    expect(taggedAnswer.reviewTags).toEqual([
+      expect.objectContaining({ tagDefinitionId: manualTag.id, tagValue: "manual", isManual: true })
+    ]);
+    expect(
+      taggedAnswer.reviewTags.some(
+        (tag: { tagDefinitionId: number }) => tag.tagDefinitionId === inheritedTag.id
+      )
+    ).toBe(false);
+  });
+
+  it("binds empty category review tags for future tags and 404s unknown groups", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReviewTagFixture(admin);
+    const emptyGroup = await createTagGroup(admin, "Empty review category");
+
+    const empty = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: emptyGroup.id });
+    expect(empty.status).toBe(201);
+    expect(empty.body.reviewTagGroupIds).toEqual([emptyGroup.id]);
+    expect(empty.body.reviewTags).toEqual([]);
+
+    const futureTag = await createGroupedTagDefinition(admin, {
+      groupId: emptyGroup.id,
+      tagKey: "empty_category",
+      tagValue: "future"
+    });
+    const detail = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}`)
+      .set("Cookie", admin.cookie);
+    const taggedAnswer = detail.body.answers.find(
+      (answer: { responseAnswerId: number | null }) => answer.responseAnswerId === fixture.answerId
+    );
+    expect(taggedAnswer.reviewTags).toEqual([
+      expect.objectContaining({ tagDefinitionId: futureTag.id, tagValue: "future" })
+    ]);
+
+    const unknown = await request(app)
+      .post(
+        `/api/surveys/${fixture.survey.id}/attempts/${fixture.attemptId}/answers/${fixture.answerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: emptyGroup.id + 1_000_000 });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toBe("Tag category not found");
+  });
+
   it("rejects wrong ownership, unknown tags, and non-text answers", async () => {
     const admin = await registerAdmin(app);
     const fixture = await seedReviewTagFixture(admin);
@@ -633,6 +984,18 @@ describe("response answer review tags", () => {
       .send({ tagDefinitionId: fixture.tag.id });
     expect(nonText.status).toBe(400);
     expect(nonText.body.error).toBe("Review tags can only be applied to answered text responses");
+
+    const group = await createTagGroup(admin, "Non-text review category");
+    const nonTextCategory = await request(app)
+      .post(
+        `/api/surveys/${integerSurvey.id}/attempts/${integerStarted.attempt.id}/answers/${integerAnswer.responseAnswerId}/review-tags/category`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ groupId: group.id });
+    expect(nonTextCategory.status).toBe(400);
+    expect(nonTextCategory.body.error).toBe(
+      "Review tags can only be applied to answered text responses"
+    );
   });
 });
 

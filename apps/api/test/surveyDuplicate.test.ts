@@ -10,6 +10,7 @@ import {
   collectObjectKeys,
   completeAttempt,
   createDraftSurvey,
+  createTagDefinition,
   createPublishedJumpSurvey,
   deleteSurvey,
   duplicateSurvey,
@@ -115,6 +116,64 @@ describe("survey duplicate", () => {
     expect(keys.has("tagKey")).toBe(false);
     expect(keys.has("tagValue")).toBe(false);
     expect(keys.has("answerTags")).toBe(false);
+  });
+
+  it("copies hidden tag all subscriptions onto cloned options", async () => {
+    const admin = await registerAdmin(app);
+
+    let survey = await createDraftSurvey(app, admin, "Subscribed source");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Pick one",
+      questionType: "single_select"
+    });
+    const questionId = findQuestion(survey, "Pick one").id;
+    survey = await addOption(app, admin, survey.id, questionId, "Yes");
+    const optionId = findQuestion(survey, "Pick one").answerOptions[0].id;
+
+    await createTagDefinition(app, admin, "CloneCat", "first");
+    const bindingResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${questionId}/options/${optionId}/tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "CloneCat" });
+    expect(bindingResponse.status).toBe(201);
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const clone = await duplicateSurvey(app, admin, survey.id);
+    const cloneQuestion = findQuestion(clone, "Pick one");
+    const cloneOption = cloneQuestion.answerOptions[0];
+
+    expect(cloneOption.answerTagAllBindings).toEqual([
+      expect.objectContaining({
+        answerOptionId: cloneOption.id,
+        tagKey: "CloneCat"
+      })
+    ]);
+    expect(cloneOption.answerTags).toEqual([
+      expect.objectContaining({
+        answerOptionId: cloneOption.id,
+        tagKey: "CloneCat",
+        tagValue: "first",
+        isManual: false
+      })
+    ]);
+
+    await createTagDefinition(app, admin, "CloneCat", "second");
+    const cloneRefresh = await request(app)
+      .get(`/api/surveys/${clone.id}`)
+      .set("Cookie", admin.cookie);
+    expect(cloneRefresh.status).toBe(200);
+
+    const refreshedOption = findQuestion(cloneRefresh.body.survey, "Pick one").answerOptions[0];
+    expect(refreshedOption.answerTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          answerOptionId: refreshedOption.id,
+          tagKey: "CloneCat",
+          tagValue: "second",
+          isManual: false
+        })
+      ])
+    );
   });
 
   it("clones blank-text skip rules with a null source option", async () => {

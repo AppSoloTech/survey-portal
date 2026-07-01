@@ -13,6 +13,7 @@ import {
   type SurveyReportSummary,
   type SurveyResponseAnswer
 } from "@survey-portal/shared";
+import type { Pool, PoolClient } from "pg";
 
 import { pool } from "../db.js";
 import { buildCsv, type CsvFieldValue } from "./csv.js";
@@ -25,6 +26,8 @@ import {
   type SurveyResponseAnswerRecord
 } from "./surveyRecords.js";
 import { fetchSurveyStructures } from "./surveyStructure.js";
+
+type Queryable = Pool | PoolClient;
 
 interface AttemptCountRecord {
   status: SurveyAttemptStatus;
@@ -51,12 +54,13 @@ interface ResponseAnswerTagRecord {
   tag_definition_id: number;
   tag_key: string;
   tag_value: string;
+  is_manual: boolean;
   assigned_by: number | null;
   created_at: Date;
 }
 
 type ReviewTagMutationResult =
-  | { ok: true; reviewTags: AdminAttemptReviewTag[] }
+  | { ok: true; reviewTagGroupIds: number[]; reviewTags: AdminAttemptReviewTag[] }
   | { ok: false; status: 404; error: string }
   | { ok: false; status: 400; error: string };
 
@@ -400,13 +404,16 @@ export async function fetchAdminAttemptDetail(
   const reviewTagsByAnswerId = await fetchReviewTagsByAnswerIds(
     attempt.responses.map((response) => response.id)
   );
+  const reviewTagGroupIdsByAnswerId = await fetchReviewTagGroupIdsByAnswerIds(
+    attempt.responses.map((response) => response.id)
+  );
 
   return {
     surveyId: survey.id,
     surveyTitle: survey.title,
     participant,
     attempt,
-    answers: buildAdminAttemptAnswers(survey, attempt, reviewTagsByAnswerId)
+    answers: buildAdminAttemptAnswers(survey, attempt, reviewTagsByAnswerId, reviewTagGroupIdsByAnswerId)
   };
 }
 
@@ -533,7 +540,8 @@ export function collectFinalPathQuestionIds(
 export function buildAdminAttemptAnswers(
   survey: Survey,
   attempt: SurveyAttempt,
-  reviewTagsByAnswerId: Map<number, AdminAttemptReviewTag[]> = new Map()
+  reviewTagsByAnswerId: Map<number, AdminAttemptReviewTag[]> = new Map(),
+  reviewTagGroupIdsByAnswerId: Map<number, number[]> = new Map()
 ): AdminAttemptAnswer[] {
   const responsesByQuestionId = new Map(
     attempt.responses.map((response) => [response.questionId, response])
@@ -579,6 +587,7 @@ export function buildAdminAttemptAnswers(
         .filter((valueTag) => valueTagMatchesResponse(question, valueTag, response))
         .map((valueTag) => ({ tagKey: valueTag.tagKey, tagValue: valueTag.tagValue })),
       reviewTags: response ? (reviewTagsByAnswerId.get(response.id) ?? []) : [],
+      reviewTagGroupIds: response ? (reviewTagGroupIdsByAnswerId.get(response.id) ?? []) : [],
       onFinalPath: finalPathQuestionIds.has(question.id)
     };
   });
@@ -597,14 +606,156 @@ export async function addResponseAnswerReviewTag(input: {
     return validation;
   }
 
+  const tagValidation = await validateReviewTagDefinition(input.tagDefinitionId);
+
+  if (!tagValidation.ok) {
+    return tagValidation;
+  }
+
   await pool.query(
-    `insert into response_answer_tags (answer_id, tag_definition_id, assigned_by)
-     values ($1, $2, $3)
-     on conflict (answer_id, tag_definition_id) do nothing`,
+    `insert into response_answer_tags (answer_id, tag_definition_id, assigned_by, is_manual)
+     values ($1, $2, $3, true)
+     on conflict (answer_id, tag_definition_id) do update
+       set is_manual = true`,
     [input.answerId, input.tagDefinitionId, input.assignedByUserId]
   );
 
-  return { ok: true, reviewTags: await fetchReviewTagsForAnswer(input.answerId) };
+  return { ok: true, ...(await fetchReviewTagMutationPayload(input.answerId)) };
+}
+
+export async function addResponseAnswerReviewTagCategory(input: {
+  answerId: number;
+  assignedByUserId: number;
+  attemptId: number;
+  groupId: number;
+  surveyId: number;
+}): Promise<ReviewTagMutationResult> {
+  const validation = await validateReviewTagMutationTarget(input);
+
+  if (!validation.ok) {
+    return validation;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    if (!(await reviewTagGroupExists(client, input.groupId))) {
+      await client.query("rollback");
+      return { ok: false, status: 404, error: "Tag category not found" };
+    }
+
+    await client.query(
+      `insert into response_answer_tag_groups (answer_id, group_id, assigned_by)
+       values ($1, $2, $3)
+       on conflict (answer_id, group_id) do nothing`,
+      [input.answerId, input.groupId, input.assignedByUserId]
+    );
+
+    await client.query(
+      `insert into response_answer_tag_group_tags (
+         answer_id,
+         group_id,
+         tag_definition_id,
+         assigned_by
+       )
+       select $1, $2, tag_definitions.id, $3
+       from tag_definitions
+       where tag_definitions.group_id = $2
+       on conflict (answer_id, group_id, tag_definition_id) do nothing`,
+      [input.answerId, input.groupId, input.assignedByUserId]
+    );
+
+    await insertEffectiveReviewTagsFromCategorySources(client, {
+      answerId: input.answerId,
+      groupId: input.groupId
+    });
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return { ok: true, ...(await fetchReviewTagMutationPayload(input.answerId)) };
+}
+
+export async function applyTagDefinitionToBoundReviewTagCategory(
+  queryable: Queryable,
+  input: { groupId: number; tagDefinitionId: number }
+): Promise<void> {
+  await queryable.query(
+    `insert into response_answer_tag_group_tags (
+       answer_id,
+       group_id,
+       tag_definition_id,
+       assigned_by
+     )
+     select
+       response_answer_tag_groups.answer_id,
+       $2,
+       $1,
+       response_answer_tag_groups.assigned_by
+     from response_answer_tag_groups
+     where response_answer_tag_groups.group_id = $2
+     on conflict (answer_id, group_id, tag_definition_id) do nothing`,
+    [input.tagDefinitionId, input.groupId]
+  );
+
+  await insertEffectiveReviewTagsFromCategorySources(queryable, input);
+}
+
+export async function removeTagDefinitionFromBoundReviewTagCategory(
+  queryable: Queryable,
+  input: { groupId: number; tagDefinitionId: number }
+): Promise<void> {
+  await queryable.query(
+    `delete from response_answer_tag_group_tags
+     where group_id = $1
+       and tag_definition_id = $2`,
+    [input.groupId, input.tagDefinitionId]
+  );
+
+  await queryable.query(
+    `delete from response_answer_tags
+     where response_answer_tags.tag_definition_id = $1
+       and response_answer_tags.is_manual = false
+       and not exists (
+         select 1
+         from response_answer_tag_group_tags remaining_sources
+         where remaining_sources.answer_id = response_answer_tags.answer_id
+           and remaining_sources.tag_definition_id = response_answer_tags.tag_definition_id
+       )`,
+    [input.tagDefinitionId]
+  );
+}
+
+async function insertEffectiveReviewTagsFromCategorySources(
+  queryable: Queryable,
+  input: { answerId?: number; groupId: number; tagDefinitionId?: number }
+): Promise<void> {
+  await queryable.query(
+    `insert into response_answer_tags (
+       answer_id,
+       tag_definition_id,
+       assigned_by,
+       is_manual
+     )
+     select
+       response_answer_tag_group_tags.answer_id,
+       response_answer_tag_group_tags.tag_definition_id,
+       response_answer_tag_group_tags.assigned_by,
+       false
+     from response_answer_tag_group_tags
+     where response_answer_tag_group_tags.group_id = $1
+       and ($2::int is null or response_answer_tag_group_tags.tag_definition_id = $2)
+       and ($3::int is null or response_answer_tag_group_tags.answer_id = $3)
+     on conflict (answer_id, tag_definition_id) do nothing`,
+    [input.groupId, input.tagDefinitionId ?? null, input.answerId ?? null]
+  );
 }
 
 export async function removeResponseAnswerReviewTag(input: {
@@ -619,21 +770,119 @@ export async function removeResponseAnswerReviewTag(input: {
     return validation;
   }
 
+  const tagValidation = await validateReviewTagDefinition(input.tagDefinitionId);
+
+  if (!tagValidation.ok) {
+    return tagValidation;
+  }
+
   await pool.query(
-    `delete from response_answer_tags
+    `update response_answer_tags
+     set is_manual = false
      where answer_id = $1
        and tag_definition_id = $2`,
     [input.answerId, input.tagDefinitionId]
   );
 
-  return { ok: true, reviewTags: await fetchReviewTagsForAnswer(input.answerId) };
+  await deleteOrphanedInheritedReviewTag(pool, {
+    answerId: input.answerId,
+    tagDefinitionId: input.tagDefinitionId
+  });
+
+  return { ok: true, ...(await fetchReviewTagMutationPayload(input.answerId)) };
+}
+
+export async function removeResponseAnswerReviewTagCategory(input: {
+  answerId: number;
+  attemptId: number;
+  groupId: number;
+  surveyId: number;
+}): Promise<ReviewTagMutationResult> {
+  const validation = await validateReviewTagMutationTarget(input);
+
+  if (!validation.ok) {
+    return validation;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    if (!(await reviewTagGroupExists(client, input.groupId))) {
+      await client.query("rollback");
+      return { ok: false, status: 404, error: "Tag category not found" };
+    }
+
+    const sourceResult = await client.query<{ tag_definition_id: number }>(
+      `select tag_definition_id
+       from response_answer_tag_group_tags
+       where answer_id = $1
+         and group_id = $2`,
+      [input.answerId, input.groupId]
+    );
+
+    await client.query(
+      `delete from response_answer_tag_groups
+       where answer_id = $1
+         and group_id = $2`,
+      [input.answerId, input.groupId]
+    );
+
+    for (const source of sourceResult.rows) {
+      await deleteOrphanedInheritedReviewTag(client, {
+        answerId: input.answerId,
+        tagDefinitionId: source.tag_definition_id
+      });
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return { ok: true, ...(await fetchReviewTagMutationPayload(input.answerId)) };
+}
+
+async function deleteOrphanedInheritedReviewTag(
+  queryable: Queryable,
+  input: { answerId: number; tagDefinitionId: number }
+): Promise<void> {
+  await queryable.query(
+    `delete from response_answer_tags
+     where answer_id = $1
+       and tag_definition_id = $2
+       and is_manual = false
+       and not exists (
+         select 1
+         from response_answer_tag_group_tags
+         where response_answer_tag_group_tags.answer_id = response_answer_tags.answer_id
+           and response_answer_tag_group_tags.tag_definition_id = response_answer_tags.tag_definition_id
+       )`,
+    [input.answerId, input.tagDefinitionId]
+  );
+}
+
+async function reviewTagGroupExists(queryable: Queryable, groupId: number): Promise<boolean> {
+  const groupResult = await queryable.query<{ exists: boolean }>(
+    `select exists (
+       select 1
+       from tag_groups
+       where id = $1
+     ) as exists`,
+    [groupId]
+  );
+
+  return groupResult.rows[0]?.exists ?? false;
 }
 
 async function validateReviewTagMutationTarget(input: {
   answerId: number;
   attemptId: number;
   surveyId: number;
-  tagDefinitionId: number;
 }): Promise<
   | { ok: true }
   | { ok: false; status: 404; error: string }
@@ -671,13 +920,19 @@ async function validateReviewTagMutationTarget(input: {
     };
   }
 
+  return { ok: true };
+}
+
+async function validateReviewTagDefinition(
+  tagDefinitionId: number
+): Promise<{ ok: true } | { ok: false; status: 404; error: string }> {
   const tagResult = await pool.query<{ exists: boolean }>(
     `select exists (
        select 1
        from tag_definitions
        where id = $1
      ) as exists`,
-    [input.tagDefinitionId]
+    [tagDefinitionId]
   );
 
   if (!tagResult.rows[0]?.exists) {
@@ -687,8 +942,18 @@ async function validateReviewTagMutationTarget(input: {
   return { ok: true };
 }
 
-async function fetchReviewTagsForAnswer(answerId: number): Promise<AdminAttemptReviewTag[]> {
-  return (await fetchReviewTagsByAnswerIds([answerId])).get(answerId) ?? [];
+async function fetchReviewTagMutationPayload(
+  answerId: number
+): Promise<{ reviewTagGroupIds: number[]; reviewTags: AdminAttemptReviewTag[] }> {
+  const [reviewTagsByAnswerId, reviewTagGroupIdsByAnswerId] = await Promise.all([
+    fetchReviewTagsByAnswerIds([answerId]),
+    fetchReviewTagGroupIdsByAnswerIds([answerId])
+  ]);
+
+  return {
+    reviewTags: reviewTagsByAnswerId.get(answerId) ?? [],
+    reviewTagGroupIds: reviewTagGroupIdsByAnswerId.get(answerId) ?? []
+  };
 }
 
 async function fetchReviewTagsByAnswerIds(
@@ -705,6 +970,7 @@ async function fetchReviewTagsByAnswerIds(
        response_answer_tags.tag_definition_id,
        tag_definitions.tag_key,
        tag_definitions.tag_value,
+       response_answer_tags.is_manual,
        response_answer_tags.assigned_by,
        response_answer_tags.created_at
      from response_answer_tags
@@ -725,12 +991,36 @@ async function fetchReviewTagsByAnswerIds(
   return tagsByAnswerId;
 }
 
+async function fetchReviewTagGroupIdsByAnswerIds(answerIds: number[]): Promise<Map<number, number[]>> {
+  if (answerIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await pool.query<{ answer_id: number; group_id: number }>(
+    `select answer_id, group_id
+     from response_answer_tag_groups
+     where answer_id = any($1::int[])
+     order by answer_id, group_id`,
+    [answerIds]
+  );
+  const groupIdsByAnswerId = new Map<number, number[]>();
+
+  for (const row of result.rows) {
+    const groupIds = groupIdsByAnswerId.get(row.answer_id) ?? [];
+    groupIds.push(row.group_id);
+    groupIdsByAnswerId.set(row.answer_id, groupIds);
+  }
+
+  return groupIdsByAnswerId;
+}
+
 function mapResponseAnswerTagRecord(record: ResponseAnswerTagRecord): AdminAttemptReviewTag {
   return {
     id: record.id,
     tagDefinitionId: record.tag_definition_id,
     tagKey: record.tag_key,
     tagValue: record.tag_value,
+    isManual: record.is_manual,
     assignedByUserId: record.assigned_by,
     createdAt: record.created_at.toISOString()
   };

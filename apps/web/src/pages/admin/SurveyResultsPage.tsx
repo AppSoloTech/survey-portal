@@ -16,9 +16,11 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   addAnswerReviewTag,
+  addAnswerReviewTagCategory,
   fetchSurveyAttemptDetail,
   fetchSurveyAttempts,
   fetchSurveyReport,
+  removeAnswerReviewTagCategory,
   removeAnswerReviewTag,
   surveyExportCsvUrl
 } from "../../api/surveys.js";
@@ -26,6 +28,12 @@ import { fetchTagDefinitions } from "../../api/tags.js";
 import { formatQuestionLocator } from "../../components/admin/SurveyBuilderComponents.js";
 import { useToast } from "../../components/ToastProvider.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
+
+const categoryAllValuePrefix = "category-all:";
+
+export function categoryAllValue(groupId: number): string {
+  return `${categoryAllValuePrefix}${groupId}`;
+}
 
 // Results come back from the report/attempt APIs keyed by question id; order
 // them by the survey's page-then-question flow and label them with the same
@@ -177,10 +185,44 @@ export function SurveyResultsPage() {
         surveyId: survey.id,
         tagDefinitionId
       });
-      updateDetailReviewTags(answer.responseAnswerId, response.reviewTags);
+      updateDetailReviewTags(
+        answer.responseAnswerId,
+        response.reviewTags,
+        response.reviewTagGroupIds
+      );
       toast.success("Review tag added");
     } catch (mutationError) {
       toast.error(mutationError instanceof Error ? mutationError.message : "Could not add tag");
+      void refreshTagCatalog();
+    } finally {
+      clearPendingReviewMutation(mutationKey);
+    }
+  }
+
+  async function handleAddReviewTagCategory(answer: AdminAttemptAnswer, groupId: number) {
+    if (!answer.responseAnswerId || !detail) {
+      return;
+    }
+
+    const mutationKey = `${answer.responseAnswerId}:add`;
+    setPendingReviewMutations((current) => new Set(current).add(mutationKey));
+    setError(null);
+
+    try {
+      const response = await addAnswerReviewTagCategory({
+        answerId: answer.responseAnswerId,
+        attemptId: detail.attempt.id,
+        groupId,
+        surveyId: survey.id
+      });
+      updateDetailReviewTags(
+        answer.responseAnswerId,
+        response.reviewTags,
+        response.reviewTagGroupIds
+      );
+      toast.success("Review tags added");
+    } catch (mutationError) {
+      toast.error(mutationError instanceof Error ? mutationError.message : "Could not add tags");
       void refreshTagCatalog();
     } finally {
       clearPendingReviewMutation(mutationKey);
@@ -203,10 +245,46 @@ export function SurveyResultsPage() {
         surveyId: survey.id,
         tagDefinitionId
       });
-      updateDetailReviewTags(answer.responseAnswerId, response.reviewTags);
+      updateDetailReviewTags(
+        answer.responseAnswerId,
+        response.reviewTags,
+        response.reviewTagGroupIds
+      );
       toast.success("Review tag removed");
     } catch (mutationError) {
       toast.error(mutationError instanceof Error ? mutationError.message : "Could not remove tag");
+      void refreshTagCatalog();
+    } finally {
+      clearPendingReviewMutation(mutationKey);
+    }
+  }
+
+  async function handleRemoveReviewTagCategory(answer: AdminAttemptAnswer, groupId: number) {
+    if (!answer.responseAnswerId || !detail) {
+      return;
+    }
+
+    const mutationKey = `${answer.responseAnswerId}:remove-category:${groupId}`;
+    setPendingReviewMutations((current) => new Set(current).add(mutationKey));
+    setError(null);
+
+    try {
+      const response = await removeAnswerReviewTagCategory({
+        answerId: answer.responseAnswerId,
+        attemptId: detail.attempt.id,
+        groupId,
+        surveyId: survey.id
+      });
+      updateDetailReviewTags(
+        answer.responseAnswerId,
+        response.reviewTags,
+        response.reviewTagGroupIds
+      );
+      toast.success("Category auto-apply stopped");
+    } catch (mutationError) {
+      toast.error(
+        mutationError instanceof Error ? mutationError.message : "Could not stop auto-apply"
+      );
       void refreshTagCatalog();
     } finally {
       clearPendingReviewMutation(mutationKey);
@@ -232,13 +310,19 @@ export function SurveyResultsPage() {
     });
   }
 
-  function updateDetailReviewTags(answerId: number, reviewTags: AdminAttemptReviewTag[]) {
+  function updateDetailReviewTags(
+    answerId: number,
+    reviewTags: AdminAttemptReviewTag[],
+    reviewTagGroupIds: number[]
+  ) {
     setDetail((current) =>
       current
         ? {
             ...current,
             answers: current.answers.map((answer) =>
-              answer.responseAnswerId === answerId ? { ...answer, reviewTags } : answer
+              answer.responseAnswerId === answerId
+                ? { ...answer, reviewTags, reviewTagGroupIds }
+                : answer
             )
           }
         : current
@@ -444,7 +528,9 @@ export function SurveyResultsPage() {
         {detail ? (
           <AttemptDetailPanel
             detail={detail}
+            onAddReviewTagCategory={handleAddReviewTagCategory}
             onAddReviewTag={handleAddReviewTag}
+            onRemoveReviewTagCategory={handleRemoveReviewTagCategory}
             onRemoveReviewTag={handleRemoveReviewTag}
             orderIndex={orderIndex}
             pendingReviewMutations={pendingReviewMutations}
@@ -461,7 +547,9 @@ export function SurveyResultsPage() {
 
 function AttemptDetailPanel({
   detail,
+  onAddReviewTagCategory,
   onAddReviewTag,
+  onRemoveReviewTagCategory,
   onRemoveReviewTag,
   orderIndex,
   pendingReviewMutations,
@@ -471,7 +559,9 @@ function AttemptDetailPanel({
   ungroupedTags
 }: {
   detail: AdminAttemptDetailResponse;
+  onAddReviewTagCategory: (answer: AdminAttemptAnswer, groupId: number) => Promise<void>;
   onAddReviewTag: (answer: AdminAttemptAnswer, tagDefinitionId: number) => Promise<void>;
+  onRemoveReviewTagCategory: (answer: AdminAttemptAnswer, groupId: number) => Promise<void>;
   onRemoveReviewTag: (answer: AdminAttemptAnswer, tagDefinitionId: number) => Promise<void>;
   orderIndex: Map<number, number>;
   pendingReviewMutations: ReadonlySet<string>;
@@ -512,7 +602,9 @@ function AttemptDetailPanel({
           </div>
           <AnswerValue
             answer={answer}
+            onAddReviewTagCategory={onAddReviewTagCategory}
             onAddReviewTag={onAddReviewTag}
+            onRemoveReviewTagCategory={onRemoveReviewTagCategory}
             onRemoveReviewTag={onRemoveReviewTag}
             pendingReviewMutations={pendingReviewMutations}
             tagCatalog={tagCatalog}
@@ -559,7 +651,9 @@ function formatParticipantEmail(participant: { email: string; type: "user" | "an
 
 function AnswerValue({
   answer,
+  onAddReviewTagCategory,
   onAddReviewTag,
+  onRemoveReviewTagCategory,
   onRemoveReviewTag,
   pendingReviewMutations,
   tagCatalog,
@@ -567,7 +661,9 @@ function AnswerValue({
   ungroupedTags
 }: {
   answer: AdminAttemptAnswer;
+  onAddReviewTagCategory: (answer: AdminAttemptAnswer, groupId: number) => Promise<void>;
   onAddReviewTag: (answer: AdminAttemptAnswer, tagDefinitionId: number) => Promise<void>;
+  onRemoveReviewTagCategory: (answer: AdminAttemptAnswer, groupId: number) => Promise<void>;
   onRemoveReviewTag: (answer: AdminAttemptAnswer, tagDefinitionId: number) => Promise<void>;
   pendingReviewMutations: ReadonlySet<string>;
   tagCatalog: TagDefinition[];
@@ -621,7 +717,9 @@ function AnswerValue({
         ) : null}
         <ReviewTagEditor
           answer={answer}
+          onAddReviewTagCategory={onAddReviewTagCategory}
           onAddReviewTag={onAddReviewTag}
+          onRemoveReviewTagCategory={onRemoveReviewTagCategory}
           onRemoveReviewTag={onRemoveReviewTag}
           pendingReviewMutations={pendingReviewMutations}
           tagCatalog={tagCatalog}
@@ -637,7 +735,9 @@ function AnswerValue({
 
 function ReviewTagEditor({
   answer,
+  onAddReviewTagCategory,
   onAddReviewTag,
+  onRemoveReviewTagCategory,
   onRemoveReviewTag,
   pendingReviewMutations,
   tagCatalog,
@@ -645,7 +745,9 @@ function ReviewTagEditor({
   ungroupedTags
 }: {
   answer: AdminAttemptAnswer;
+  onAddReviewTagCategory: (answer: AdminAttemptAnswer, groupId: number) => Promise<void>;
   onAddReviewTag: (answer: AdminAttemptAnswer, tagDefinitionId: number) => Promise<void>;
+  onRemoveReviewTagCategory: (answer: AdminAttemptAnswer, groupId: number) => Promise<void>;
   onRemoveReviewTag: (answer: AdminAttemptAnswer, tagDefinitionId: number) => Promise<void>;
   pendingReviewMutations: ReadonlySet<string>;
   tagCatalog: TagDefinition[];
@@ -662,14 +764,18 @@ function ReviewTagEditor({
   }
 
   const appliedTagIds = new Set(answer.reviewTags.map((tag) => tag.tagDefinitionId));
+  const appliedGroupIds = new Set(answer.reviewTagGroupIds);
+  const boundGroups = tagGroups.filter((group) => appliedGroupIds.has(group.id));
   const availableTags = tagCatalog.filter((tag) => !appliedTagIds.has(tag.id));
+  const availableCategoryGroups = tagGroups.filter((group) => !appliedGroupIds.has(group.id));
   const isAdding = pendingReviewMutations.has(`${answer.responseAnswerId}:add`);
+  const availableOptionCount = availableTags.length + availableCategoryGroups.length;
   const groupedAvailableTags = tagGroups
+    .filter((group) => !appliedGroupIds.has(group.id))
     .map((group) => ({
       ...group,
       tags: group.tags.filter((tag) => !appliedTagIds.has(tag.id))
-    }))
-    .filter((group) => group.tags.length > 0);
+    }));
   const availableUngroupedTags = ungroupedTags.filter((tag) => !appliedTagIds.has(tag.id));
 
   return (
@@ -683,29 +789,69 @@ function ReviewTagEditor({
             const isRemoving = pendingReviewMutations.has(mutationKey);
 
             return (
-              <span className="results-review-tag" key={tag.tagDefinitionId}>
+              <span
+                className="results-review-tag"
+                key={tag.tagDefinitionId}
+                title={tag.isManual ? undefined : "Managed by auto-applied category"}
+              >
                 {tag.tagKey}: {tag.tagValue}
-                <button
-                  aria-label={`Remove review tag ${tag.tagKey}: ${tag.tagValue}`}
-                  className="results-review-tag-remove"
-                  disabled={isRemoving}
-                  onClick={() => void onRemoveReviewTag(answer, tag.tagDefinitionId)}
-                  type="button"
-                >
-                  &times;
-                </button>
+                {tag.isManual ? (
+                  <button
+                    aria-label={`Remove review tag ${tag.tagKey}: ${tag.tagValue}`}
+                    className="results-review-tag-remove"
+                    disabled={isRemoving}
+                    onClick={() => void onRemoveReviewTag(answer, tag.tagDefinitionId)}
+                    type="button"
+                  >
+                    &times;
+                  </button>
+                ) : null}
               </span>
             );
           })
         )}
       </div>
+      {boundGroups.length > 0 ? (
+        <div className="results-review-tag-list" aria-label="Auto-applied tag categories">
+          {boundGroups.map((group) => {
+            const mutationKey = `${answer.responseAnswerId}:remove-category:${group.id}`;
+            const isRemoving = pendingReviewMutations.has(mutationKey);
+
+            return (
+              <span className="results-review-tag" key={group.id}>
+                Auto-applying all in {group.name}
+                <button
+                  aria-label={`Stop auto-applying all review tags in ${group.name}`}
+                  className="results-review-tag-remove results-review-tag-stop"
+                  disabled={isRemoving}
+                  onClick={() => void onRemoveReviewTagCategory(answer, group.id)}
+                  type="button"
+                >
+                  Stop
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
       <label className="results-review-tag-picker">
         Add review tag
         <select
-          disabled={isAdding || availableTags.length === 0}
+          disabled={isAdding || availableOptionCount === 0}
           onChange={(event) => {
-            const tagDefinitionId = Number(event.target.value);
+            const selection = event.target.value;
             event.target.value = "";
+
+            if (selection.startsWith(categoryAllValuePrefix)) {
+              const groupId = Number(selection.slice(categoryAllValuePrefix.length));
+
+              if (Number.isSafeInteger(groupId) && groupId > 0) {
+                void onAddReviewTagCategory(answer, groupId);
+              }
+              return;
+            }
+
+            const tagDefinitionId = Number(selection);
 
             if (Number.isSafeInteger(tagDefinitionId) && tagDefinitionId > 0) {
               void onAddReviewTag(answer, tagDefinitionId);
@@ -714,10 +860,13 @@ function ReviewTagEditor({
           value=""
         >
           <option value="">
-            {availableTags.length === 0 ? "All catalog tags applied" : "Select a tag"}
+            {availableOptionCount === 0 ? "All catalog tags applied" : "Select a tag"}
           </option>
           {groupedAvailableTags.map((group) => (
             <optgroup key={group.id} label={group.name}>
+              <option value={categoryAllValue(group.id)}>
+                {"<ALL>"} - Apply all in {group.name}
+              </option>
               {group.tags.map((tag) => (
                 <option key={tag.id} value={tag.id}>
                   {tag.tagKey}: {tag.tagValue}

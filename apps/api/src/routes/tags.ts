@@ -10,7 +10,15 @@ import pg from "pg";
 
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { isTagDefinitionUniqueViolation } from "../services/surveyBuilder.js";
+import {
+  applyTagDefinitionToBoundReviewTagCategory,
+  removeTagDefinitionFromBoundReviewTagCategory
+} from "../services/surveyReporting.js";
+import {
+  applyTagDefinitionToHiddenAllTargets,
+  isTagDefinitionUniqueViolation,
+  removeHiddenTagAllValueFromBindings
+} from "../services/surveyBuilder.js";
 import {
   readPositiveIntegerParam,
   sameIdSet,
@@ -522,6 +530,14 @@ tagsRouter.delete("/groups/:groupId", async (req, res, next) => {
 
     const ungroupedTagIds = await fetchTagIdsForGroup(client, null);
     const groupTagIds = await fetchTagIdsForGroup(client, groupId);
+
+    for (const tagDefinitionId of groupTagIds) {
+      await removeTagDefinitionFromBoundReviewTagCategory(client, {
+        groupId,
+        tagDefinitionId
+      });
+    }
+
     const groupResult = await client.query<TagGroupRecord>(
       `delete from tag_groups
        where id = $1
@@ -614,6 +630,18 @@ tagsRouter.post("/", async (req, res, next) => {
        returning id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at`,
       [validation.value.tagKey, validation.value.tagValue, validation.value.emoji, groupId, displayOrder]
     );
+
+    if (groupId !== null) {
+      await applyTagDefinitionToBoundReviewTagCategory(client, {
+        groupId,
+        tagDefinitionId: result.rows[0].id
+      });
+    }
+
+    await applyTagDefinitionToHiddenAllTargets(client, {
+      tagKey: result.rows[0].tag_key,
+      tagValue: result.rows[0].tag_value
+    });
 
     await client.query("commit");
 
@@ -718,6 +746,20 @@ tagsRouter.patch("/:id/group", async (req, res, next) => {
     );
     await reorderTags(client, targetGroupId, targetIds);
 
+    if (targetGroupId !== null && sourceGroupId !== targetGroupId) {
+      await applyTagDefinitionToBoundReviewTagCategory(client, {
+        groupId: targetGroupId,
+        tagDefinitionId: id
+      });
+    }
+
+    if (sourceGroupId !== null && sourceGroupId !== targetGroupId) {
+      await removeTagDefinitionFromBoundReviewTagCategory(client, {
+        groupId: sourceGroupId,
+        tagDefinitionId: id
+      });
+    }
+
     if (sourceGroupId !== targetGroupId) {
       await reorderTags(client, sourceGroupId, await fetchTagIdsForGroup(client, sourceGroupId));
     }
@@ -753,8 +795,13 @@ tagsRouter.put("/:id", async (req, res, next) => {
   try {
     await client.query("begin");
 
-    const existing = await client.query<{ group_id: number | null; display_order: number }>(
-      `select group_id, display_order
+    const existing = await client.query<{
+      group_id: number | null;
+      display_order: number;
+      tag_key: string;
+      tag_value: string;
+    }>(
+      `select group_id, display_order, tag_key, tag_value
        from tag_definitions
        where id = $1`,
       [id]
@@ -791,6 +838,35 @@ tagsRouter.put("/:id", async (req, res, next) => {
        returning id, tag_key, tag_value, emoji, group_id, display_order, created_at, updated_at`,
       [id, validation.value.tagKey, validation.value.tagValue, validation.value.emoji, nextGroupId, displayOrder]
     );
+
+    if (nextGroupId !== null && movedGroups) {
+      await applyTagDefinitionToBoundReviewTagCategory(client, {
+        groupId: nextGroupId,
+        tagDefinitionId: result.rows[0].id
+      });
+    }
+
+    await applyTagDefinitionToHiddenAllTargets(client, {
+      tagKey: result.rows[0].tag_key,
+      tagValue: result.rows[0].tag_value
+    });
+
+    if (
+      existing.rows[0].tag_key !== result.rows[0].tag_key ||
+      existing.rows[0].tag_value !== result.rows[0].tag_value
+    ) {
+      await removeHiddenTagAllValueFromBindings(client, {
+        tagKey: existing.rows[0].tag_key,
+        tagValue: existing.rows[0].tag_value
+      });
+    }
+
+    if (currentGroupId !== null && movedGroups) {
+      await removeTagDefinitionFromBoundReviewTagCategory(client, {
+        groupId: currentGroupId,
+        tagDefinitionId: result.rows[0].id
+      });
+    }
 
     if (movedGroups) {
       await reorderTags(client, currentGroupId, await fetchTagIdsForGroup(client, currentGroupId));
@@ -841,6 +917,11 @@ tagsRouter.delete("/:id", async (req, res, next) => {
       res.status(404).json({ error: "Tag not found" });
       return;
     }
+
+    await removeHiddenTagAllValueFromBindings(client, {
+      tagKey: result.rows[0].tag_key,
+      tagValue: result.rows[0].tag_value
+    });
 
     await reorderTags(client, result.rows[0].group_id, await fetchTagIdsForGroup(client, result.rows[0].group_id));
     await client.query("commit");

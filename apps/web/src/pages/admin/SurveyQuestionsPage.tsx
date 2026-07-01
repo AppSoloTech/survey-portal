@@ -1,5 +1,6 @@
 import type {
   AnswerOption,
+  HiddenTagAllBinding,
   SurveyPage,
   SurveyQuestion,
   SurveyTemplateSummary,
@@ -12,13 +13,19 @@ import { Link, useLocation } from "react-router-dom";
 import {
   createAnswerOption,
   createAnswerTag,
+  createAnswerTagAllBinding,
   createQuestionOtherTag,
+  createQuestionOtherTagAllBinding,
   createQuestionValueTag,
+  createQuestionValueTagAllBinding,
   createQuestion,
   deleteAnswerOption,
   deleteAnswerTag,
+  deleteAnswerTagAllBinding,
   deleteQuestionOtherTag,
+  deleteQuestionOtherTagAllBinding,
   deleteQuestionValueTag,
+  deleteQuestionValueTagAllBinding,
   deleteQuestion,
   reorderAnswerOptions,
   reorderQuestions,
@@ -45,6 +52,7 @@ import { PageSwitcher } from "../../components/admin/PageSwitcher.js";
 import {
   QuestionEditor,
   ScaleRangeFields,
+  allTagValueOption,
   formatQuestionLocator,
   formatQuestionType,
   questionTypes
@@ -565,23 +573,35 @@ export function SurveyQuestionsPage() {
 
     const form = event.currentTarget;
     const data = new FormData(form);
+    const tagKey = readFormText(data, "tagKey");
+    const tagValue = readFormText(data, "tagValue");
     const readOptionalBound = (field: string): number | null => {
       const raw = String(data.get(field) ?? "").trim();
 
       return raw === "" ? null : Number(raw);
     };
+    const integerMin = question.questionType === "integer" ? readOptionalBound("integerMin") : null;
+    const integerMax = question.questionType === "integer" ? readOptionalBound("integerMax") : null;
 
     const didSave = await runSurveyMutation(
       () =>
-        createQuestionValueTag({
-          surveyId: survey.id,
-          questionId: question.id,
-          tagKey: readFormText(data, "tagKey"),
-          tagValue: readFormText(data, "tagValue"),
-          integerMin: question.questionType === "integer" ? readOptionalBound("integerMin") : null,
-          integerMax: question.questionType === "integer" ? readOptionalBound("integerMax") : null
-        }),
-      "Hidden tag added"
+        tagValue === allTagValueOption
+          ? createQuestionValueTagAllBinding({
+              surveyId: survey.id,
+              questionId: question.id,
+              tagKey,
+              integerMin,
+              integerMax
+            })
+          : createQuestionValueTag({
+            surveyId: survey.id,
+            questionId: question.id,
+            tagKey,
+              tagValue,
+            integerMin,
+            integerMax
+            }),
+      tagValue === allTagValueOption ? "Hidden tag auto-apply started" : "Hidden tag added"
     );
 
     if (didSave) {
@@ -605,6 +625,27 @@ export function SurveyQuestionsPage() {
     );
   }
 
+  async function handleDeleteValueTagAllBinding(
+    question: SurveyQuestion,
+    binding: HiddenTagAllBinding
+  ) {
+    if (!confirmAdminAction(`Stop auto-applying all "${binding.tagKey}" tags here?`)) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        deleteQuestionValueTagAllBinding({
+          surveyId: survey.id,
+          questionId: question.id,
+          tagKey: binding.tagKey,
+          integerMin: binding.integerMin,
+          integerMax: binding.integerMax
+        }),
+      "Hidden tag auto-apply stopped"
+    );
+  }
+
   async function handleSaveValueTag(
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion,
@@ -613,24 +654,36 @@ export function SurveyQuestionsPage() {
     event.preventDefault();
 
     const data = new FormData(event.currentTarget);
+    const tagKey = readFormText(data, "tagKey");
+    const tagValue = readFormText(data, "tagValue");
     const readOptionalBound = (field: string): number | null => {
       const raw = String(data.get(field) ?? "").trim();
 
       return raw === "" ? null : Number(raw);
     };
+    const integerMin = question.questionType === "integer" ? readOptionalBound("integerMin") : null;
+    const integerMax = question.questionType === "integer" ? readOptionalBound("integerMax") : null;
 
     await runSurveyMutation(
       () =>
-        updateQuestionValueTag({
-          surveyId: survey.id,
-          questionId: question.id,
-          valueTagId,
-          tagKey: readFormText(data, "tagKey"),
-          tagValue: readFormText(data, "tagValue"),
-          integerMin: question.questionType === "integer" ? readOptionalBound("integerMin") : null,
-          integerMax: question.questionType === "integer" ? readOptionalBound("integerMax") : null
-        }),
-      "Hidden tag saved"
+        tagValue === allTagValueOption
+          ? createQuestionValueTagAllBinding({
+              surveyId: survey.id,
+              questionId: question.id,
+              tagKey,
+              integerMin,
+              integerMax
+            })
+          : updateQuestionValueTag({
+              surveyId: survey.id,
+              questionId: question.id,
+              valueTagId,
+              tagKey,
+              tagValue,
+              integerMin,
+              integerMax
+            }),
+      tagValue === allTagValueOption ? "Hidden tag auto-apply started" : "Hidden tag saved"
     );
   }
 
@@ -639,16 +692,24 @@ export function SurveyQuestionsPage() {
 
     const form = event.currentTarget;
     const data = new FormData(form);
+    const tagKey = readFormText(data, "tagKey");
+    const tagValue = readFormText(data, "tagValue");
 
     const didSave = await runSurveyMutation(
       () =>
-        createQuestionOtherTag({
-          surveyId: survey.id,
-          questionId: question.id,
-          tagKey: readFormText(data, "tagKey"),
-          tagValue: readFormText(data, "tagValue")
-        }),
-      "Other hidden tag added"
+        tagValue === allTagValueOption
+          ? createQuestionOtherTagAllBinding({
+            surveyId: survey.id,
+            questionId: question.id,
+              tagKey
+          })
+          : createQuestionOtherTag({
+              surveyId: survey.id,
+              questionId: question.id,
+              tagKey,
+              tagValue
+            }),
+      tagValue === allTagValueOption ? "Other hidden tag auto-apply started" : "Other hidden tag added"
     );
 
     if (didSave) {
@@ -664,17 +725,25 @@ export function SurveyQuestionsPage() {
     event.preventDefault();
 
     const data = new FormData(event.currentTarget);
+    const tagKey = readFormText(data, "tagKey");
+    const tagValue = readFormText(data, "tagValue");
 
     await runSurveyMutation(
       () =>
-        updateQuestionOtherTag({
-          surveyId: survey.id,
-          questionId: question.id,
-          tagId,
-          tagKey: readFormText(data, "tagKey"),
-          tagValue: readFormText(data, "tagValue")
-        }),
-      "Other hidden tag saved"
+        tagValue === allTagValueOption
+          ? createQuestionOtherTagAllBinding({
+              surveyId: survey.id,
+              questionId: question.id,
+              tagKey
+            })
+          : updateQuestionOtherTag({
+              surveyId: survey.id,
+              questionId: question.id,
+              tagId,
+              tagKey,
+              tagValue
+            }),
+      tagValue === allTagValueOption ? "Other hidden tag auto-apply started" : "Other hidden tag saved"
     );
   }
 
@@ -700,6 +769,25 @@ export function SurveyQuestionsPage() {
     );
   }
 
+  async function handleDeleteOtherTagAllBinding(
+    question: SurveyQuestion,
+    binding: HiddenTagAllBinding
+  ) {
+    if (!confirmAdminAction(`Stop auto-applying all "${binding.tagKey}" tags to Other answers?`)) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        deleteQuestionOtherTagAllBinding({
+          surveyId: survey.id,
+          questionId: question.id,
+          tagKey: binding.tagKey
+        }),
+      "Other hidden tag auto-apply stopped"
+    );
+  }
+
   async function handleAddTag(
     event: FormEvent<HTMLFormElement>,
     question: SurveyQuestion,
@@ -709,17 +797,26 @@ export function SurveyQuestionsPage() {
 
     const form = event.currentTarget;
     const data = new FormData(form);
+    const tagKey = readFormText(data, "tagKey");
+    const tagValue = readFormText(data, "tagValue");
 
     const didSave = await runSurveyMutation(
       () =>
-        createAnswerTag({
-          surveyId: survey.id,
-          questionId: question.id,
-          optionId: option.id,
-          tagKey: readFormText(data, "tagKey"),
-          tagValue: readFormText(data, "tagValue")
-        }),
-      "Hidden tag added"
+        tagValue === allTagValueOption
+          ? createAnswerTagAllBinding({
+            surveyId: survey.id,
+            questionId: question.id,
+            optionId: option.id,
+              tagKey
+          })
+          : createAnswerTag({
+              surveyId: survey.id,
+              questionId: question.id,
+              optionId: option.id,
+              tagKey,
+              tagValue
+            }),
+      tagValue === allTagValueOption ? "Hidden tag auto-apply started" : "Hidden tag added"
     );
 
     if (didSave) {
@@ -736,18 +833,27 @@ export function SurveyQuestionsPage() {
     event.preventDefault();
 
     const data = new FormData(event.currentTarget);
+    const tagKey = readFormText(data, "tagKey");
+    const tagValue = readFormText(data, "tagValue");
 
     await runSurveyMutation(
       () =>
-        updateAnswerTag({
-          surveyId: survey.id,
-          questionId: question.id,
-          optionId: option.id,
-          tagId,
-          tagKey: readFormText(data, "tagKey"),
-          tagValue: readFormText(data, "tagValue")
-        }),
-      "Hidden tag saved"
+        tagValue === allTagValueOption
+          ? createAnswerTagAllBinding({
+              surveyId: survey.id,
+              questionId: question.id,
+              optionId: option.id,
+              tagKey
+            })
+          : updateAnswerTag({
+              surveyId: survey.id,
+              questionId: question.id,
+              optionId: option.id,
+              tagId,
+              tagKey,
+              tagValue
+            }),
+      tagValue === allTagValueOption ? "Hidden tag auto-apply started" : "Hidden tag saved"
     );
   }
 
@@ -775,6 +881,27 @@ export function SurveyQuestionsPage() {
           tagId
         }),
       "Hidden tag removed"
+    );
+  }
+
+  async function handleDeleteTagAllBinding(
+    question: SurveyQuestion,
+    option: AnswerOption,
+    binding: HiddenTagAllBinding
+  ) {
+    if (!confirmAdminAction(`Stop auto-applying all "${binding.tagKey}" tags here?`)) {
+      return;
+    }
+
+    await runSurveyMutation(
+      () =>
+        deleteAnswerTagAllBinding({
+          surveyId: survey.id,
+          questionId: question.id,
+          optionId: option.id,
+          tagKey: binding.tagKey
+        }),
+      "Hidden tag auto-apply stopped"
     );
   }
 
@@ -1061,10 +1188,13 @@ export function SurveyQuestionsPage() {
                   onAddTag={handleAddTag}
                   onAddValueTag={handleAddValueTag}
                   onDeleteOtherTag={handleDeleteOtherTag}
+                  onDeleteOtherTagAllBinding={handleDeleteOtherTagAllBinding}
                   onDeleteValueTag={handleDeleteValueTag}
+                  onDeleteValueTagAllBinding={handleDeleteValueTagAllBinding}
                   onDeleteOption={handleDeleteOption}
                   onDeleteQuestion={handleDeleteQuestion}
                   onDeleteTag={handleDeleteTag}
+                  onDeleteTagAllBinding={handleDeleteTagAllBinding}
                   onMoveOption={handleMoveOption}
                   onMoveQuestion={handleMoveQuestion}
                   onSaveOption={handleSaveOption}

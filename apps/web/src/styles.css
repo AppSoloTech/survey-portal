@@ -3901,6 +3901,40 @@ main:focus {
   margin: 0.25rem 0 0;
 }
 
+.hidden-tag-all-row {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  grid-template-columns: minmax(220px, 1fr) auto;
+  padding: 0.75rem;
+}
+
+.hidden-tag-all-summary {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.hidden-tag-all-summary strong {
+  color: var(--ink);
+}
+
+.hidden-tag-all-summary span,
+.hidden-tag-all-summary em,
+.tag-managed-note {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.hidden-tag-all-summary em {
+  font-style: normal;
+}
+
+.tag-managed-note {
+  align-self: center;
+  font-weight: 650;
+}
+
 .option-subheading {
   color: var(--text-muted);
   font-size: 0.875rem;
@@ -5450,6 +5484,10 @@ main:focus {
 .results-review-tag-remove:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+.results-review-tag-stop {
+  padding: 0 0.4rem;
 }
 
 .results-review-tag-picker {

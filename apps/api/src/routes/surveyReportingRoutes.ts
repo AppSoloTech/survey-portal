@@ -3,10 +3,12 @@ import express from "express";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import {
   addResponseAnswerReviewTag,
+  addResponseAnswerReviewTagCategory,
   buildSurveyCsvExport,
   fetchAdminAttemptDetail,
   fetchAdminAttempts,
   fetchSurveyReportSummary,
+  removeResponseAnswerReviewTagCategory,
   removeResponseAnswerReviewTag
 } from "../services/surveyReporting.js";
 import {
@@ -158,7 +160,102 @@ surveyReportingRouter.post(
         return;
       }
 
-      res.status(201).json({ reviewTags: result.reviewTags });
+      res.status(201).json({
+        reviewTags: result.reviewTags,
+        reviewTagGroupIds: result.reviewTagGroupIds
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyReportingRouter.post(
+  "/:id/attempts/:attemptId/answers/:answerId/review-tags/category",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res, next) => {
+    try {
+      const surveyId = readPositiveIntegerParam(req.params.id);
+      const attemptId = readPositiveIntegerParam(req.params.attemptId);
+      const answerId = readPositiveIntegerParam(req.params.answerId);
+
+      if (!surveyId || !attemptId || !answerId) {
+        res.status(400).json({
+          error: "Survey id, attempt id, and answer id must be positive integers"
+        });
+        return;
+      }
+
+      if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+        res.status(400).json({ error: "Request body is required" });
+        return;
+      }
+
+      const groupId = readPositiveIntegerField(req.body as Record<string, unknown>, "groupId");
+
+      if (!groupId) {
+        res.status(400).json({ error: "groupId must be a positive integer" });
+        return;
+      }
+
+      const result = await addResponseAnswerReviewTagCategory({
+        answerId,
+        assignedByUserId: (req as AuthenticatedRequest).user.id,
+        attemptId,
+        groupId,
+        surveyId
+      });
+
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+
+      res.status(201).json({
+        reviewTags: result.reviewTags,
+        reviewTagGroupIds: result.reviewTagGroupIds
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyReportingRouter.delete(
+  "/:id/attempts/:attemptId/answers/:answerId/review-tags/category/:groupId",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res, next) => {
+    try {
+      const surveyId = readPositiveIntegerParam(req.params.id);
+      const attemptId = readPositiveIntegerParam(req.params.attemptId);
+      const answerId = readPositiveIntegerParam(req.params.answerId);
+      const groupId = readPositiveIntegerParam(req.params.groupId);
+
+      if (!surveyId || !attemptId || !answerId || !groupId) {
+        res.status(400).json({
+          error: "Survey id, attempt id, answer id, and tag category id must be positive integers"
+        });
+        return;
+      }
+
+      const result = await removeResponseAnswerReviewTagCategory({
+        answerId,
+        attemptId,
+        groupId,
+        surveyId
+      });
+
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+
+      res.json({
+        reviewTags: result.reviewTags,
+        reviewTagGroupIds: result.reviewTagGroupIds
+      });
     } catch (error) {
       next(error);
     }
@@ -195,7 +292,10 @@ surveyReportingRouter.delete(
         return;
       }
 
-      res.json({ reviewTags: result.reviewTags });
+      res.json({
+        reviewTags: result.reviewTags,
+        reviewTagGroupIds: result.reviewTagGroupIds
+      });
     } catch (error) {
       next(error);
     }

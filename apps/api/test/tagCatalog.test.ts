@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   addOption,
+  addOtherTag,
   addQuestion,
   addTag,
+  addValueTag,
   createDraftSurvey,
   createTagDefinition,
   findQuestion,
@@ -39,6 +41,23 @@ async function createTagGroup(
   }
 
   return response.body.group as { id: number; name: string; displayOrder: number };
+}
+
+async function fetchAdminSurvey(admin: { cookie: string }, surveyId: number) {
+  const response = await request(app).get(`/api/surveys/${surveyId}`).set("Cookie", admin.cookie);
+
+  if (response.status !== 200) {
+    throw new Error(`Survey fetch failed with ${response.status}: ${JSON.stringify(response.body)}`);
+  }
+
+  return response.body.survey as Awaited<ReturnType<typeof createDraftSurvey>>;
+}
+
+function tagValues(tags: Array<{ tagKey: string; tagValue: string }> | undefined, tagKey: string): string[] {
+  return (tags ?? [])
+    .filter((tag) => tag.tagKey === tagKey)
+    .map((tag) => tag.tagValue)
+    .sort();
 }
 
 describe("tag catalog", () => {
@@ -139,6 +158,313 @@ describe("tag catalog", () => {
 
     const finalList = await request(app).get("/api/tags").set("Cookie", admin.cookie);
     expect(finalList.body.tags.some((item: { id: number }) => item.id === tag.id)).toBe(false);
+  });
+
+  it("propagates new catalog values to hidden tag all subscriptions and submitted answers", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Hidden all propagation survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Which department do you work in?",
+      questionType: "single_select"
+    });
+    const question = findQuestion(survey, "Which department do you work in?");
+    survey = await addOption(app, admin, survey.id, question.id, "Engineering");
+    const option = findQuestion(survey, "Which department do you work in?").answerOptions[0];
+
+    await createTagDefinition(app, admin, "Equity", "baseline_a");
+    await createTagDefinition(app, admin, "Equity", "baseline_b");
+    const bindingResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "Equity" });
+    expect(bindingResponse.status).toBe(201);
+    survey = bindingResponse.body.survey;
+
+    const boundOption = findQuestion(survey, "Which department do you work in?").answerOptions[0];
+    expect(boundOption.answerTagAllBindings).toEqual([
+      expect.objectContaining({ tagKey: "Equity" })
+    ]);
+    expect(boundOption.answerTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "Equity", tagValue: "baseline_a", isManual: false }),
+        expect.objectContaining({ tagKey: "Equity", tagValue: "baseline_b", isManual: false })
+      ])
+    );
+    expect(boundOption.answerTags?.some((tag) => tag.tagValue === "All")).toBe(false);
+
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+
+    const user = await registerUser(app);
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: question.id,
+      selectedAnswerOptionIds: [option.id]
+    });
+    await completeAttempt(app, user, survey.id, started.attempt.id);
+
+    await createTagDefinition(app, admin, "Equity", "test_1");
+
+    const detail = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+    expect(detail.status).toBe(200);
+    const answer = detail.body.answers.find(
+      (candidate: { questionText: string }) =>
+        candidate.questionText === "Which department do you work in?"
+    );
+    expect(answer.selectedOptions[0].hiddenTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "Equity", tagValue: "baseline_a" }),
+        expect.objectContaining({ tagKey: "Equity", tagValue: "baseline_b" }),
+        expect.objectContaining({ tagKey: "Equity", tagValue: "test_1" })
+      ])
+    );
+    expect(
+      answer.selectedOptions[0].hiddenTags.some(
+        (tag: { tagKey: string; tagValue: string }) => tag.tagKey === "Equity" && tag.tagValue === "All"
+      )
+    ).toBe(false);
+
+    const adminSurvey = await request(app).get(`/api/surveys/${survey.id}`).set("Cookie", admin.cookie);
+    const propagatedOption = adminSurvey.body.survey.questions
+      .find(
+        (candidate: { questionText: string }) =>
+          candidate.questionText === "Which department do you work in?"
+      )
+      .answerOptions.find((candidate: { optionText: string }) => candidate.optionText === "Engineering");
+    expect(propagatedOption.answerTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "Equity", tagValue: "test_1", isManual: false })
+      ])
+    );
+    expect(propagatedOption.answerTagAllBindings).toEqual([
+      expect.objectContaining({ tagKey: "Equity" })
+    ]);
+  });
+
+  it("propagates new catalog values to value-tag and Other hidden-tag subscriptions", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Hidden all value and other survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Score",
+      questionType: "integer"
+    });
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Choice",
+      questionType: "single_select",
+      allowOther: true
+    });
+    const score = findQuestion(survey, "Score");
+    const choice = findQuestion(survey, "Choice");
+    survey = await addOption(app, admin, survey.id, choice.id, "Standard");
+    const standardOption = findQuestion(survey, "Choice").answerOptions[0];
+
+    await createTagDefinition(app, admin, "Risk", "baseline");
+    await createTagDefinition(app, admin, "OtherSignal", "baseline");
+
+    const valueBinding = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${score.id}/value-tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "Risk", integerMin: 5, integerMax: 10 });
+    expect(valueBinding.status).toBe(201);
+
+    const otherBinding = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${choice.id}/other-tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "OtherSignal" });
+    expect(otherBinding.status).toBe(201);
+
+    survey = await setSurveyStatus(app, admin, survey.id, "published");
+    const user = await registerUser(app);
+    const started = await startAttempt(app, user, survey.id);
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: score.id,
+      answerInteger: 7
+    });
+    await submitAnswer(app, user, survey.id, {
+      attemptId: started.attempt.id,
+      questionId: choice.id,
+      selectedAnswerOptionIds: [standardOption.id]
+    });
+    await completeAttempt(app, user, survey.id, started.attempt.id);
+
+    await createTagDefinition(app, admin, "Risk", "later");
+    await createTagDefinition(app, admin, "OtherSignal", "later");
+
+    const updatedSurvey = await fetchAdminSurvey(admin, survey.id);
+    const updatedScore = findQuestion(updatedSurvey, "Score");
+    const updatedChoice = findQuestion(updatedSurvey, "Choice");
+
+    expect(updatedScore.valueTagAllBindings).toEqual([
+      expect.objectContaining({
+        tagKey: "Risk",
+        integerMin: 5,
+        integerMax: 10
+      })
+    ]);
+    expect(updatedScore.valueTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tagKey: "Risk",
+          tagValue: "later",
+          integerMin: 5,
+          integerMax: 10,
+          isManual: false
+        })
+      ])
+    );
+    expect(updatedChoice.otherTagAllBindings).toEqual([
+      expect.objectContaining({ tagKey: "OtherSignal" })
+    ]);
+    expect(updatedChoice.otherTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "OtherSignal", tagValue: "later", isManual: false })
+      ])
+    );
+
+    const detail = await request(app)
+      .get(`/api/surveys/${survey.id}/attempts/${started.attempt.id}`)
+      .set("Cookie", admin.cookie);
+    expect(detail.status).toBe(200);
+    const scoreAnswer = detail.body.answers.find(
+      (answer: { questionText: string }) => answer.questionText === "Score"
+    );
+    expect(scoreAnswer.valueTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "Risk", tagValue: "baseline" }),
+        expect.objectContaining({ tagKey: "Risk", tagValue: "later" })
+      ])
+    );
+  });
+
+  it("syncs catalog value rename and delete through hidden tag all subscriptions", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Hidden all catalog lifecycle survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Pick",
+      questionType: "single_select"
+    });
+    const question = findQuestion(survey, "Pick");
+    survey = await addOption(app, admin, survey.id, question.id, "Yes");
+    const option = findQuestion(survey, "Pick").answerOptions[0];
+
+    await createTagDefinition(app, admin, "Lifecycle", "stable");
+    const changing = await createTagDefinition(app, admin, "Lifecycle", "old");
+    const bindingResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "Lifecycle" });
+    expect(bindingResponse.status).toBe(201);
+
+    const renameResponse = await request(app)
+      .put(`/api/tags/${changing.id}`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "Lifecycle", tagValue: "renamed", emoji: null });
+    expect(renameResponse.status).toBe(200);
+
+    let updatedSurvey = await fetchAdminSurvey(admin, survey.id);
+    let updatedOption = findQuestion(updatedSurvey, "Pick").answerOptions[0];
+    expect(tagValues(updatedOption.answerTags, "Lifecycle")).toEqual(["renamed", "stable"]);
+    expect(updatedOption.answerTags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tagKey: "Lifecycle", tagValue: "renamed", isManual: false })
+      ])
+    );
+
+    const deleteResponse = await request(app)
+      .delete(`/api/tags/${changing.id}`)
+      .set("Cookie", admin.cookie);
+    expect(deleteResponse.status).toBe(200);
+
+    updatedSurvey = await fetchAdminSurvey(admin, survey.id);
+    updatedOption = findQuestion(updatedSurvey, "Pick").answerOptions[0];
+    expect(tagValues(updatedOption.answerTags, "Lifecycle")).toEqual(["stable"]);
+    expect(updatedOption.answerTagAllBindings).toEqual([
+      expect.objectContaining({ tagKey: "Lifecycle" })
+    ]);
+  });
+
+  it("stops hidden tag all subscriptions without deleting manual hidden tags", async () => {
+    const admin = await registerAdmin(app);
+    let survey = await createDraftSurvey(app, admin, "Hidden all stop survey");
+    survey = await addQuestion(app, admin, survey.id, {
+      questionText: "Pick",
+      questionType: "single_select"
+    });
+    const question = findQuestion(survey, "Pick");
+    survey = await addOption(app, admin, survey.id, question.id, "Yes");
+    const option = findQuestion(survey, "Pick").answerOptions[0];
+
+    await createTagDefinition(app, admin, "StopCat", "inherited-only");
+    await createTagDefinition(app, admin, "StopCat", "manual-too");
+    const bindingResponse = await request(app)
+      .post(`/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "StopCat" });
+    expect(bindingResponse.status).toBe(201);
+
+    let updatedOption = findQuestion(bindingResponse.body.survey, "Pick").answerOptions[0];
+    const manualCandidate = updatedOption.answerTags?.find(
+      (tag: { tagKey: string; tagValue: string }) =>
+        tag.tagKey === "StopCat" && tag.tagValue === "manual-too"
+    );
+    expect(manualCandidate).toBeDefined();
+
+    const manualUpdate = await request(app)
+      .put(
+        `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${manualCandidate?.id}`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "StopCat", tagValue: "manual-too" });
+    expect(manualUpdate.status).toBe(200);
+    updatedOption = findQuestion(manualUpdate.body.survey, "Pick").answerOptions[0];
+    expect(
+      updatedOption.answerTags?.find(
+        (tag: { tagKey: string; tagValue: string }) =>
+          tag.tagKey === "StopCat" && tag.tagValue === "manual-too"
+      )
+    ).toEqual(expect.objectContaining({ isManual: true }));
+
+    const downgradeResponse = await request(app)
+      .delete(
+        `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${manualCandidate?.id}`
+      )
+      .set("Cookie", admin.cookie);
+    expect(downgradeResponse.status).toBe(200);
+    updatedOption = findQuestion(downgradeResponse.body.survey, "Pick").answerOptions[0];
+    expect(
+      updatedOption.answerTags?.find(
+        (tag: { tagKey: string; tagValue: string }) =>
+          tag.tagKey === "StopCat" && tag.tagValue === "manual-too"
+      )
+    ).toEqual(expect.objectContaining({ isManual: false }));
+
+    const redoneManual = updatedOption.answerTags?.find(
+      (tag: { tagKey: string; tagValue: string }) =>
+        tag.tagKey === "StopCat" && tag.tagValue === "manual-too"
+    );
+    const restoreManualResponse = await request(app)
+      .put(
+        `/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/${redoneManual?.id}`
+      )
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "StopCat", tagValue: "manual-too" });
+    expect(restoreManualResponse.status).toBe(200);
+
+    const stopResponse = await request(app)
+      .delete(`/api/surveys/${survey.id}/questions/${question.id}/options/${option.id}/tags/all`)
+      .set("Cookie", admin.cookie)
+      .send({ tagKey: "StopCat" });
+    expect(stopResponse.status).toBe(200);
+
+    updatedOption = findQuestion(stopResponse.body.survey, "Pick").answerOptions[0];
+    expect(tagValues(updatedOption.answerTags, "StopCat")).toEqual(["manual-too"]);
+    expect(updatedOption.answerTags).toEqual([
+      expect.objectContaining({ tagKey: "StopCat", tagValue: "manual-too", isManual: true })
+    ]);
+    expect(updatedOption.answerTagAllBindings).toEqual([]);
   });
 
   it("creates, renames, reorders, and deletes tag groups", async () => {

@@ -4,6 +4,8 @@ import type {
   AnswerTag,
   ConditionalLogicActionType,
   ConditionalLogicConditionOperator,
+  HiddenTagAllBinding,
+  HiddenTagAllBindingTarget,
   QuestionOtherTag,
   ConditionalLogicRule,
   QuestionValueTag,
@@ -61,6 +63,19 @@ export interface AnswerTagRecord {
   tag_key: string;
   tag_value: string;
   emoji: string | null;
+  is_manual?: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface HiddenTagAllBindingRecord {
+  id: number;
+  target_type: HiddenTagAllBindingTarget;
+  answer_option_id: number | null;
+  question_id: number | null;
+  integer_min: number | null;
+  integer_max: number | null;
+  tag_key: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -73,6 +88,7 @@ export interface QuestionValueTagRecord {
   tag_key: string;
   tag_value: string;
   emoji: string | null;
+  is_manual?: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -83,6 +99,7 @@ export interface QuestionOtherTagRecord {
   tag_key: string;
   tag_value: string;
   emoji: string | null;
+  is_manual?: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -251,6 +268,21 @@ export function mapAnswerTagRecord(record: AnswerTagRecord): AnswerTag {
     tagKey: record.tag_key,
     tagValue: record.tag_value,
     emoji: record.emoji,
+    isManual: record.is_manual ?? true,
+    createdAt: record.created_at.toISOString(),
+    updatedAt: record.updated_at.toISOString()
+  };
+}
+
+export function mapHiddenTagAllBindingRecord(record: HiddenTagAllBindingRecord): HiddenTagAllBinding {
+  return {
+    id: record.id,
+    targetType: record.target_type,
+    answerOptionId: record.answer_option_id,
+    questionId: record.question_id,
+    integerMin: record.integer_min,
+    integerMax: record.integer_max,
+    tagKey: record.tag_key,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -265,6 +297,7 @@ export function mapQuestionValueTagRecord(record: QuestionValueTagRecord): Quest
     tagKey: record.tag_key,
     tagValue: record.tag_value,
     emoji: record.emoji,
+    isManual: record.is_manual ?? true,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -277,6 +310,7 @@ export function mapQuestionOtherTagRecord(record: QuestionOtherTagRecord): Quest
     tagKey: record.tag_key,
     tagValue: record.tag_value,
     emoji: record.emoji,
+    isManual: record.is_manual ?? true,
     createdAt: record.created_at.toISOString(),
     updatedAt: record.updated_at.toISOString()
   };
@@ -398,6 +432,7 @@ export async function fetchTagForOption(
        answer_tags.tag_key,
        answer_tags.tag_value,
        null::text as emoji,
+       answer_tags.is_manual,
        answer_tags.created_at,
        answer_tags.updated_at
      from answer_tags
@@ -426,6 +461,7 @@ export async function fetchOtherTagForQuestion(
        question_other_tags.tag_key,
        question_other_tags.tag_value,
        null::text as emoji,
+       question_other_tags.is_manual,
        question_other_tags.created_at,
        question_other_tags.updated_at
      from question_other_tags

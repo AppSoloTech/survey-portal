@@ -5,6 +5,8 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../middlewa
 import {
   categoryExists,
   countPagesForSurvey,
+  createHiddenTagAllBinding,
+  deleteHiddenTagAllBinding,
   duplicateSurveyTree,
   fetchFirstPageForSurvey,
   fetchNextOptionDisplayOrder,
@@ -72,6 +74,52 @@ import {
 } from "../services/surveyTiming.js";
 
 export const surveyBuilderRouter = express.Router();
+
+function validateHiddenTagAllBody(body: unknown): { ok: true; value: { tagKey: string } } | { ok: false; error: string } {
+  if (!body || typeof body !== "object") {
+    return { ok: false, error: "Request body must be an object" };
+  }
+
+  const tagKey = typeof (body as { tagKey?: unknown }).tagKey === "string"
+    ? (body as { tagKey: string }).tagKey.trim()
+    : "";
+
+  if (!tagKey) {
+    return { ok: false, error: "Tag category is required" };
+  }
+
+  return { ok: true, value: { tagKey } };
+}
+
+function validateHiddenValueTagAllBody(
+  body: unknown
+): { ok: true; value: { tagKey: string; integerMin: number | null; integerMax: number | null } } | { ok: false; error: string } {
+  const base = validateHiddenTagAllBody(body);
+
+  if (!base.ok) {
+    return base;
+  }
+
+  const readNullableInteger = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    return typeof value === "number" && Number.isInteger(value) ? value : Number.NaN;
+  };
+  const integerMin = readNullableInteger((body as { integerMin?: unknown }).integerMin);
+  const integerMax = readNullableInteger((body as { integerMax?: unknown }).integerMax);
+
+  if (Number.isNaN(integerMin) || Number.isNaN(integerMax)) {
+    return { ok: false, error: "Integer bounds must be whole numbers" };
+  }
+
+  if (integerMin !== null && integerMax !== null && integerMin > integerMax) {
+    return { ok: false, error: "Min value cannot be greater than max value" };
+  }
+
+  return { ok: true, value: { ...base.value, integerMin, integerMax } };
+}
 
 // Soft-deleted surveys are retained for analytics but closed to builder
 // changes. Runs after the role check so it never leaks survey state to
@@ -1842,6 +1890,109 @@ surveyBuilderRouter.post(
   }
 );
 
+surveyBuilderRouter.post(
+  "/:id/questions/:questionId/options/:optionId/tags/all",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+    const optionId = readPositiveIntegerParam(req.params.optionId);
+
+    if (!surveyId || !questionId || !optionId) {
+      res.status(400).json({ error: "Survey, question, and option ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateHiddenTagAllBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const option = await fetchOptionForQuestion(pool, optionId, questionId, surveyId);
+
+      if (!option) {
+        res.status(404).json({ error: "Answer option not found" });
+        return;
+      }
+
+      await createHiddenTagAllBinding(pool, {
+        targetType: "answer_option",
+        answerOptionId: optionId,
+        tagKey: validation.value.tagKey
+      });
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.delete(
+  "/:id/questions/:questionId/options/:optionId/tags/all",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+    const optionId = readPositiveIntegerParam(req.params.optionId);
+
+    if (!surveyId || !questionId || !optionId) {
+      res.status(400).json({ error: "Survey, question, and option ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateHiddenTagAllBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const option = await fetchOptionForQuestion(pool, optionId, questionId, surveyId);
+
+      if (!option) {
+        res.status(404).json({ error: "Answer option not found" });
+        return;
+      }
+
+      const didDelete = await deleteHiddenTagAllBinding(pool, {
+        targetType: "answer_option",
+        answerOptionId: optionId,
+        tagKey: validation.value.tagKey
+      });
+
+      if (!didDelete) {
+        res.status(404).json({ error: "Hidden tag subscription not found" });
+        return;
+      }
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 surveyBuilderRouter.put(
   "/:id/questions/:questionId/options/:optionId/tags/:tagId",
   requireAuth,
@@ -1877,6 +2028,7 @@ surveyBuilderRouter.put(
         `update answer_tags
          set tag_key = $3,
              tag_value = $4,
+             is_manual = true,
              updated_at = now()
          where id = $1
            and answer_option_id = $2`,
@@ -1919,7 +2071,36 @@ surveyBuilderRouter.delete(
     }
 
     try {
-      const result = await pool.query(
+      const inheritedResult = await pool.query(
+        `update answer_tags
+         set is_manual = false,
+             updated_at = now()
+         where id = $1
+           and answer_option_id = $2
+           and exists (
+             select 1
+             from answer_options
+             join survey_questions on survey_questions.id = answer_options.question_id
+             where answer_options.id = answer_tags.answer_option_id
+               and answer_options.id = $2
+               and survey_questions.id = $3
+               and survey_questions.survey_id = $4
+           )
+           and exists (
+             select 1
+             from hidden_tag_all_bindings bindings
+             join hidden_tag_all_binding_tags sources
+               on sources.binding_id = bindings.id
+             where bindings.target_type = 'answer_option'
+               and bindings.answer_option_id = answer_tags.answer_option_id
+               and bindings.tag_key = answer_tags.tag_key
+               and sources.tag_value = answer_tags.tag_value
+           )`,
+        [tagId, optionId, questionId, surveyId]
+      );
+
+      const result = inheritedResult.rowCount === 0
+        ? await pool.query(
         `delete from answer_tags
          where id = $1
            and answer_option_id = $2
@@ -1932,8 +2113,9 @@ surveyBuilderRouter.delete(
                and survey_questions.id = $3
                and survey_questions.survey_id = $4
            )`,
-        [tagId, optionId, questionId, surveyId]
-      );
+          [tagId, optionId, questionId, surveyId]
+        )
+        : inheritedResult;
 
       if (result.rowCount === 0) {
         res.status(404).json({ error: "Answer tag not found" });
@@ -2019,6 +2201,117 @@ surveyBuilderRouter.post(
   }
 );
 
+surveyBuilderRouter.post(
+  "/:id/questions/:questionId/other-tags/all",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey and question ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateHiddenTagAllBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      if (
+        (question.question_type !== "single_select" && question.question_type !== "multi_select") ||
+        !question.allow_other
+      ) {
+        res.status(400).json({
+          error: "Other hidden tags require Allow Other on a single-select or multi-select question"
+        });
+        return;
+      }
+
+      await createHiddenTagAllBinding(pool, {
+        targetType: "question_other",
+        questionId,
+        tagKey: validation.value.tagKey
+      });
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.delete(
+  "/:id/questions/:questionId/other-tags/all",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey and question ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateHiddenTagAllBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      const didDelete = await deleteHiddenTagAllBinding(pool, {
+        targetType: "question_other",
+        questionId,
+        tagKey: validation.value.tagKey
+      });
+
+      if (!didDelete) {
+        res.status(404).json({ error: "Hidden tag subscription not found" });
+        return;
+      }
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 surveyBuilderRouter.put(
   "/:id/questions/:questionId/other-tags/:tagId",
   requireAuth,
@@ -2070,6 +2363,7 @@ surveyBuilderRouter.put(
         `update question_other_tags
          set tag_key = $3,
              tag_value = $4,
+             is_manual = true,
              updated_at = now()
          where id = $1
            and question_id = $2`,
@@ -2111,7 +2405,33 @@ surveyBuilderRouter.delete(
     }
 
     try {
-      const result = await pool.query(
+      const inheritedResult = await pool.query(
+        `update question_other_tags
+         set is_manual = false,
+             updated_at = now()
+         where id = $1
+           and question_id = $2
+           and exists (
+             select 1
+             from survey_questions
+             where survey_questions.id = $2
+               and survey_questions.survey_id = $3
+           )
+           and exists (
+             select 1
+             from hidden_tag_all_bindings bindings
+             join hidden_tag_all_binding_tags sources
+               on sources.binding_id = bindings.id
+             where bindings.target_type = 'question_other'
+               and bindings.question_id = question_other_tags.question_id
+               and bindings.tag_key = question_other_tags.tag_key
+               and sources.tag_value = question_other_tags.tag_value
+           )`,
+        [tagId, questionId, surveyId]
+      );
+
+      const result = inheritedResult.rowCount === 0
+        ? await pool.query(
         `delete from question_other_tags
          where id = $1
            and question_id = $2
@@ -2121,8 +2441,9 @@ surveyBuilderRouter.delete(
              where survey_questions.id = $2
                and survey_questions.survey_id = $3
            )`,
-        [tagId, questionId, surveyId]
-      );
+          [tagId, questionId, surveyId]
+        )
+        : inheritedResult;
 
       if (result.rowCount === 0) {
         res.status(404).json({ error: "Other hidden tag not found" });
@@ -2215,6 +2536,126 @@ surveyBuilderRouter.post(
   }
 );
 
+surveyBuilderRouter.post(
+  "/:id/questions/:questionId/value-tags/all",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey and question ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateHiddenValueTagAllBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      if (question.question_type !== "text" && question.question_type !== "integer") {
+        res.status(400).json({
+          error: "Value tags are only supported on text and integer questions; tag the answer options instead"
+        });
+        return;
+      }
+
+      if (
+        question.question_type === "text" &&
+        (validation.value.integerMin !== null || validation.value.integerMax !== null)
+      ) {
+        res.status(400).json({ error: "Text questions do not support integer bounds" });
+        return;
+      }
+
+      await createHiddenTagAllBinding(pool, {
+        targetType: "question_value",
+        questionId,
+        integerMin: validation.value.integerMin,
+        integerMax: validation.value.integerMax,
+        tagKey: validation.value.tagKey
+      });
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.status(201).json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+surveyBuilderRouter.delete(
+  "/:id/questions/:questionId/value-tags/all",
+  requireAuth,
+  requireRole("admin"),
+  rejectTagMetadataLockedSurvey,
+  async (req, res, next) => {
+    const surveyId = readPositiveIntegerParam(req.params.id);
+    const questionId = readPositiveIntegerParam(req.params.questionId);
+
+    if (!surveyId || !questionId) {
+      res.status(400).json({ error: "Survey and question ids must be positive integers" });
+      return;
+    }
+
+    const validation = validateHiddenValueTagAllBody(req.body);
+
+    if (!validation.ok) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    try {
+      const question = await fetchQuestionForSurvey(pool, questionId, surveyId);
+
+      if (!question) {
+        res.status(404).json({ error: "Question not found" });
+        return;
+      }
+
+      const didDelete = await deleteHiddenTagAllBinding(pool, {
+        targetType: "question_value",
+        questionId,
+        integerMin: validation.value.integerMin,
+        integerMax: validation.value.integerMax,
+        tagKey: validation.value.tagKey
+      });
+
+      if (!didDelete) {
+        res.status(404).json({ error: "Hidden tag subscription not found" });
+        return;
+      }
+
+      const [updatedSurvey] = await fetchSurveyStructures({
+        surveyId,
+        includeAllStatuses: true,
+        includeHiddenTags: true
+      });
+
+      res.json({ survey: updatedSurvey });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 surveyBuilderRouter.put(
   "/:id/questions/:questionId/value-tags/:valueTagId",
   requireAuth,
@@ -2266,6 +2707,7 @@ surveyBuilderRouter.put(
              integer_max = $4,
              tag_key = $5,
              tag_value = $6,
+             is_manual = true,
              updated_at = now()
          where id = $1
            and question_id = $2`,
@@ -2315,7 +2757,35 @@ surveyBuilderRouter.delete(
     }
 
     try {
-      const result = await pool.query(
+      const inheritedResult = await pool.query(
+        `update question_value_tags
+         set is_manual = false,
+             updated_at = now()
+         where id = $1
+           and question_id = $2
+           and exists (
+             select 1
+             from survey_questions
+             where survey_questions.id = $2
+               and survey_questions.survey_id = $3
+           )
+           and exists (
+             select 1
+             from hidden_tag_all_bindings bindings
+             join hidden_tag_all_binding_tags sources
+               on sources.binding_id = bindings.id
+             where bindings.target_type = 'question_value'
+               and bindings.question_id = question_value_tags.question_id
+               and bindings.integer_min is not distinct from question_value_tags.integer_min
+               and bindings.integer_max is not distinct from question_value_tags.integer_max
+               and bindings.tag_key = question_value_tags.tag_key
+               and sources.tag_value = question_value_tags.tag_value
+           )`,
+        [valueTagId, questionId, surveyId]
+      );
+
+      const result = inheritedResult.rowCount === 0
+        ? await pool.query(
         `delete from question_value_tags
          where id = $1
            and question_id = $2
@@ -2325,8 +2795,9 @@ surveyBuilderRouter.delete(
              where survey_questions.id = $2
                and survey_questions.survey_id = $3
            )`,
-        [valueTagId, questionId, surveyId]
-      );
+          [valueTagId, questionId, surveyId]
+        )
+        : inheritedResult;
 
       if (result.rowCount === 0) {
         res.status(404).json({ error: "Value tag not found" });

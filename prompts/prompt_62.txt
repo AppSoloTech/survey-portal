@@ -1,0 +1,255 @@
+# Phase 62 — Tag Category Emoji Inheritance
+
+## Purpose
+
+Fix the Admin Tags workflow so new catalog tags inherit an existing issue-profile
+emoji when they are added to a tag category that already has one assigned.
+
+Source feedback or planning note:
+
+```txt
+notes/1.0_test_notes.txt
+```
+
+This phase owns the smaller emoji-inheritance bug only. Results-page large-data
+UX is split into `prompts/prompt_63.txt`.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_62.txt`
+* Claude review: `notes/claude_review_phase_62.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/1.0_test_notes.txt`
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/RELEASE_NOTES.md`
+* `prompts/prompt_60.txt`
+* `prompts/prompt_61.txt`
+* Current tag catalog and issue-profile emoji files, especially:
+  * `apps/api/src/routes/tags.ts`
+  * `apps/api/src/services/validation.ts`
+  * `apps/api/test/tagCatalog.test.ts`
+  * `apps/web/src/pages/admin/AdminTagsPage.tsx`
+  * `apps/web/src/api/tags.ts`
+  * `packages/shared/src/index.ts`
+  * `database/migrations/0039_tag_definition_emoji.sql`
+
+Confirm the working tree before implementation. If Phase 61 remains
+uncommitted, do not modify Phase 61 files except where this phase explicitly
+needs to touch shared tag-catalog behavior.
+
+---
+
+# Received Feedback
+
+1. When adding a tag to a category that already has an emoji associated with it,
+   the new tag does not inherit that emoji.
+2. New tags matching an existing category should inherit the category emoji.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* bug or regression
+* admin workflow polish
+* issue-profile emoji behavior
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none expected.
+* API contracts: no new endpoint expected; create-tag behavior may change.
+* Participant-facing survey behavior: indirect only. Participants may receive
+  emoji aggregates for newly created matching tags after the admin saves them,
+  but hidden tag keys, values, categories, labels, and IDs must remain private.
+* Hidden-tag visibility: preserve existing participant/anonymous privacy
+  guardrails.
+* Authentication or authorization: no model change; tag catalog mutation routes
+  remain Admin-only.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, add focused regression coverage for new
+  tag creation after a category emoji exists.
+
+Terminology note:
+
+* In the Admin Tags UI, "Apply emoji to tag category" currently groups by
+  `tag_definitions.tag_key`, not by the visual `tag_groups` section.
+* For this phase, "matching an existing category" means a new tag with the same
+  normalized `tagKey` as existing catalog definitions that share a category
+  emoji.
+
+Ask for clarification only if implementation proves that the product owner meant
+visual tag groups instead of tag-key categories.
+
+---
+
+# Scope
+
+Implement:
+
+* When an Admin creates a new tag definition with a `tagKey` that already has a
+  single common non-null emoji across existing catalog entries, the new tag
+  inherits that emoji if the create request does not provide a non-blank emoji.
+* Preserve explicit per-tag emoji entry on create. If the Admin provides a
+  non-blank emoji, use that value instead of inherited category emoji.
+* Do not infer an emoji when the matching category has no emoji or has multiple
+  conflicting non-null emoji values.
+* Preserve the existing category-emoji action that applies or clears an emoji
+  across all current definitions for a `tagKey`.
+* Ensure the created tag response and subsequent catalog fetches include the
+  inherited emoji.
+* Add focused automated regression tests for inherited, explicit override,
+  cleared/no-emoji, and mixed-emoji cases where practical.
+* Update release notes, phase log, and handoff during implementation.
+
+## Non-Goals
+
+Do not implement:
+
+* A new emoji column on `tag_groups`.
+* A redesign of tag groups, category naming, or the Admin Tags page.
+* Any changes to Phase 61 virtual `<ALL>` bindings except incidental regression
+  safety if the touched tag creation path requires it.
+* Participant-visible hidden tag/category metadata.
+* Changes to emoji burst animation, thermometer scoring, or issue-profile copy.
+* Backfilling historical tags beyond the existing category-emoji action.
+
+## Assumptions
+
+* `tagKey` is the category identity used by the issue-profile emoji bulk action.
+* Blank, null, or omitted emoji on create means "use the category default if one
+  can be inferred."
+* A non-blank emoji on create is an intentional per-tag override.
+* If a category emoji was cleared, future matching tags should not inherit an
+  old emoji.
+* If existing matching tags have mixed emoji values, the server should avoid
+  guessing and leave the new tag's emoji blank unless the request explicitly
+  provided one.
+
+## Open Questions
+
+None blocking. If manual QA shows the client meant visual `tag_groups` rather
+than `tagKey` categories, stop and revise this prompt before implementing a
+schema change.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Server-side tag creation behavior, because it is the source of truth.
+2. Focused API regression tests.
+3. Minimal Admin Tags UI polish only if needed to avoid confusing the Admin
+   before submit.
+4. Release notes and closeout artifacts.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* After applying an emoji to a tag-key category, creating a new tag with the
+  same `tagKey` and a blank/null/omitted emoji stores the inherited emoji.
+* Creating a new tag with the same `tagKey` and an explicit non-blank emoji
+  stores the explicit emoji.
+* Creating a new tag for a category with no common emoji leaves emoji null.
+* Creating a new tag for a category with mixed existing emoji values does not
+  guess an inherited emoji.
+* Clearing a category emoji means future matching tags do not inherit the old
+  emoji.
+* Existing Admin-only authorization and validation behavior for `/api/tags`
+  remains intact.
+* Participant and anonymous survey payloads still expose only participant-safe
+  emoji/count aggregates, never hidden tag identities.
+* Phase 61 category `<ALL>` behavior still has focused coverage or is not
+  affected.
+* Every received feedback item is fixed, deferred with a reason, or blocked by a
+  documented question.
+
+---
+
+# Testing Requirements
+
+Default full validation gate:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+At minimum, add or update focused tests around:
+
+* category emoji apply then new matching tag creation inherits emoji
+* explicit emoji on create overrides inherited category emoji
+* cleared category emoji does not inherit
+* mixed existing emoji values do not infer a category default
+* non-admin tag creation remains forbidden
+
+Suggested focused commands before the full gate:
+
+```bash
+npm run test -w apps/api -- test/tagCatalog.test.ts
+npm run test -w apps/web -- AdminTagsPage
+```
+
+Manual checks to perform or document:
+
+* In Admin Tags, apply an emoji to an existing tag category, add a new tag with
+  the same category, and confirm the new row shows the emoji.
+* Add another matching tag with an explicit different emoji and confirm the
+  explicit value is kept.
+* Clear the category emoji and confirm a later matching tag does not inherit the
+  old emoji.
+* Confirm the participant runner still receives only emoji/count aggregates and
+  no hidden tag metadata.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with admin-readable draft notes for this
+  production-bound admin-visible fix.
+* `markdown/FOLLOW_UPS.md` for deferred or newly discovered follow-ups.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* `notes/claude_handoff_phase_62.txt` before marking implementation complete.
+* `notes/claude_review_phase_62.txt` after Claude review, or mark review
+  pending in the phase log.

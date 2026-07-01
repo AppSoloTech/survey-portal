@@ -2,6 +2,7 @@ import type {
   AnswerOption,
   AnswerTag,
   ConditionalLogicRule,
+  HiddenTagAllBinding,
   QuestionValueTag,
   QuestionOtherTag,
   Survey,
@@ -13,6 +14,7 @@ import {
   mapAnswerOptionRecord,
   mapAnswerTagRecord,
   mapConditionalLogicRuleRecord,
+  mapHiddenTagAllBindingRecord,
   mapQuestionOtherTagRecord,
   mapQuestionValueTagRecord,
   mapSurveyPageRecord,
@@ -21,6 +23,7 @@ import {
   type AnswerOptionRecord,
   type AnswerTagRecord,
   type ConditionalLogicRuleRecord,
+  type HiddenTagAllBindingRecord,
   type QuestionOtherTagRecord,
   type QuestionValueTagRecord,
   type SurveyPageRecord,
@@ -157,6 +160,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
              answer_tags.tag_key,
              answer_tags.tag_value,
              tag_definitions.emoji,
+             answer_tags.is_manual,
              answer_tags.created_at,
              answer_tags.updated_at
            from answer_tags
@@ -180,6 +184,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
              question_value_tags.tag_key,
              question_value_tags.tag_value,
              tag_definitions.emoji,
+             question_value_tags.is_manual,
              question_value_tags.created_at,
              question_value_tags.updated_at
            from question_value_tags
@@ -201,6 +206,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
              question_other_tags.tag_key,
              question_other_tags.tag_value,
              tag_definitions.emoji,
+             question_other_tags.is_manual,
              question_other_tags.created_at,
              question_other_tags.updated_at
            from question_other_tags
@@ -212,6 +218,27 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
           [questionIds]
         )
       : { rows: [] as QuestionOtherTagRecord[] };
+
+  const hiddenTagAllBindingsResult =
+    options.includeHiddenTags && (optionIds.length > 0 || questionIds.length > 0)
+      ? await pool.query<HiddenTagAllBindingRecord>(
+          `select
+             id,
+             target_type,
+             answer_option_id,
+             question_id,
+             integer_min,
+             integer_max,
+             tag_key,
+             created_at,
+             updated_at
+           from hidden_tag_all_bindings
+           where (answer_option_id = any($1::int[]))
+              or (question_id = any($2::int[]))
+           order by target_type, tag_key, id`,
+          [optionIds, questionIds]
+        )
+      : { rows: [] as HiddenTagAllBindingRecord[] };
 
   const rulesResult = await pool.query<ConditionalLogicRuleRecord>(
     `select
@@ -261,6 +288,28 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     tagsByOptionId.set(tag.answer_option_id, tags);
   }
 
+  const allBindingsByOptionId = new Map<number, HiddenTagAllBinding[]>();
+  const otherAllBindingsByQuestionId = new Map<number, HiddenTagAllBinding[]>();
+  const valueAllBindingsByQuestionId = new Map<number, HiddenTagAllBinding[]>();
+
+  for (const binding of hiddenTagAllBindingsResult.rows) {
+    const mappedBinding = mapHiddenTagAllBindingRecord(binding);
+
+    if (binding.target_type === "answer_option" && binding.answer_option_id !== null) {
+      const bindings = allBindingsByOptionId.get(binding.answer_option_id) ?? [];
+      bindings.push(mappedBinding);
+      allBindingsByOptionId.set(binding.answer_option_id, bindings);
+    } else if (binding.target_type === "question_other" && binding.question_id !== null) {
+      const bindings = otherAllBindingsByQuestionId.get(binding.question_id) ?? [];
+      bindings.push(mappedBinding);
+      otherAllBindingsByQuestionId.set(binding.question_id, bindings);
+    } else if (binding.target_type === "question_value" && binding.question_id !== null) {
+      const bindings = valueAllBindingsByQuestionId.get(binding.question_id) ?? [];
+      bindings.push(mappedBinding);
+      valueAllBindingsByQuestionId.set(binding.question_id, bindings);
+    }
+  }
+
   const optionsByQuestionId = new Map<number, AnswerOption[]>();
 
   for (const option of optionsResult.rows) {
@@ -268,6 +317,7 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
 
     if (options.includeHiddenTags) {
       mappedOption.answerTags = tagsByOptionId.get(option.id) ?? [];
+      mappedOption.answerTagAllBindings = allBindingsByOptionId.get(option.id) ?? [];
     }
 
     const optionsForQuestion = optionsByQuestionId.get(option.question_id) ?? [];
@@ -286,6 +336,8 @@ export async function fetchSurveyStructures(options: FetchSurveyStructuresOption
     if (options.includeHiddenTags) {
       mappedQuestion.valueTags = valueTagsByQuestionId.get(question.id) ?? [];
       mappedQuestion.otherTags = otherTagsByQuestionId.get(question.id) ?? [];
+      mappedQuestion.valueTagAllBindings = valueAllBindingsByQuestionId.get(question.id) ?? [];
+      mappedQuestion.otherTagAllBindings = otherAllBindingsByQuestionId.get(question.id) ?? [];
     }
 
     const questionsForSurvey = questionsBySurveyId.get(question.survey_id) ?? [];
