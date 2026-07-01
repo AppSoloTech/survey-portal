@@ -3,16 +3,17 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("SurveyAttemptPage participant accessibility", () => {
-  it("renders semantic progress for the current assessment path", () => {
+  it("keeps the participant question header free of assessment progress details", () => {
     const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("<progress");
-    expect(source).toContain('aria-label="Assessment progress"');
-    expect(source).toContain("on your current assessment path");
+    expect(source).not.toContain("<progress");
+    expect(source).not.toContain('aria-label="Assessment progress"');
+    expect(source).not.toContain("on your current assessment path");
+    expect(source).not.toContain('className="survey-progress-meter"');
     expect(source).not.toMatch(/Question\s*\{[^}]+\}\s*of\s*\{[^}]+\}/);
   });
 
-  it("renders a separate semantic issue profile thermometer without replacing assessment progress", () => {
+  it("renders a semantic issue profile thermometer", () => {
     const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("IssueProfileThermometer");
@@ -21,7 +22,6 @@ describe("SurveyAttemptPage participant accessibility", () => {
     expect(source).toContain('role="progressbar"');
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('role="status"');
-    expect(source).toContain('className="survey-progress-meter"');
     expect(source).toContain('className="issue-profile-sticky-shell"');
     expect(source).toContain("displayFillPercent");
     expect(source).toContain("Issue profile in progress");

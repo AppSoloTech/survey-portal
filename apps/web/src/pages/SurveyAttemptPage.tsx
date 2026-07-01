@@ -995,21 +995,7 @@ function SurveyRunner({
     responses: attempt.responses,
     survey
   });
-  const progressPercent =
-    remainingEstimate.totalEstimateSeconds > 0
-      ? Math.round(
-          ((remainingEstimate.totalEstimateSeconds - remainingEstimate.remainingSeconds) /
-            remainingEstimate.totalEstimateSeconds) *
-            100
-        )
-      : 0;
-  const progressValue = Math.max(0, Math.min(100, progressPercent));
-  const totalPathPages = Math.max(path.length, 1);
-  const currentPathPageNumber =
-    currentIndex >= 0 ? Math.min(currentIndex + 1, totalPathPages) : totalPathPages;
-  const progressContextId = `survey-progress-context-${attempt.id}`;
   const progressTimeId = `survey-progress-time-${attempt.id}`;
-  const progressValueText = `Page ${currentPathPageNumber} of ${totalPathPages} on your current assessment path, ${progressValue}% complete. ${remainingEstimate.copy}`;
   const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
   const pageQuestions = currentPageQuestionIds
     .map((questionId) => questionsById.get(questionId))
@@ -1027,23 +1013,10 @@ function SurveyRunner({
         <div>
           <p className="eyebrow">{survey.title}</p>
           <h3>{currentPage.title}</h3>
-          <p className="progress-context" id={progressContextId}>
-            Page {currentPathPageNumber} of {totalPathPages} on your current assessment path
-          </p>
           <p aria-live="polite" className="remaining-time-label" id={progressTimeId}>
             {remainingEstimate.copy}
           </p>
         </div>
-        <progress
-          aria-describedby={`${progressContextId} ${progressTimeId}`}
-          aria-label="Assessment progress"
-          aria-valuetext={progressValueText}
-          className="survey-progress-meter"
-          max={100}
-          value={progressValue}
-        >
-          {progressValue}%
-        </progress>
       </div>
 
       {currentPage.description ? <p className="muted">{currentPage.description}</p> : null}

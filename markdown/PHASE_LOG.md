@@ -69,6 +69,10 @@ Review Artifacts:
 - Preserved the existing burst-key replay behavior, static emoji collection,
   polite screen-reader announcement, and reduced-motion suppression of the
   decorative burst layer.
+- Post-acceptance participant header cleanup: removed the horizontal assessment
+  progress bar and "Page X of Y on your current assessment path" copy from
+  question pages while keeping the assessment name, page name, and remaining-time
+  label.
 - Updated web source guardrail tests, release notes, follow-ups, and handoff.
 
 ## Important Decisions
@@ -106,7 +110,9 @@ participant-facing accessibility surface.
 - API contract impact: none.
 - Frontend UX impact: issue-profile thermometer is a cleaner SVG visual with
   intact and broken states, a continuous blue-to-red warming fill, liquid
-  meniscus polish, and a richer Ready to submit burst.
+  meniscus polish, and a richer Ready to submit burst. Participant question
+  headers are also less noisy because they no longer show the horizontal
+  assessment progress meter or page-path location copy.
 - Hidden-tag/reporting impact: none; participant-facing copy and payloads do
   not expose hidden tags or admin metadata.
 - Release impact: `markdown/releases/unreleased.md` includes this
@@ -129,6 +135,10 @@ Validation notes:
   Claude's visual overhaul.
 - Manual browser/accessibility checks remain pending and are tracked in
   `markdown/FOLLOW_UPS.md`.
+
+Post-acceptance header cleanup validation:
+- Passed: `npm test --workspace apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run typecheck --workspace apps/web`
 
 ## Follow-Ups
 

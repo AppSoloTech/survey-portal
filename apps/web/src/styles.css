@@ -1722,50 +1722,6 @@ main:focus {
   margin: 0.35rem 0 0;
 }
 
-.progress-context {
-  color: var(--ink);
-  font-size: var(--text-sm);
-  font-weight: 750;
-  margin: 0.45rem 0 0;
-}
-
-.survey-progress-meter {
-  accent-color: var(--brand);
-  block-size: 0.75rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  width: min(220px, 38vw);
-}
-
-.survey-progress-meter::-webkit-progress-bar {
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-}
-
-.survey-progress-meter::-webkit-progress-value {
-  background: linear-gradient(90deg, var(--brand), var(--accent));
-  background-size: 200% 100%;
-  animation: progress-shimmer 2.4s linear infinite;
-  border-radius: var(--radius-pill);
-}
-
-.survey-progress-meter::-moz-progress-bar {
-  background: linear-gradient(90deg, var(--brand), var(--accent));
-  border-radius: var(--radius-pill);
-}
-
-@keyframes progress-shimmer {
-  from {
-    background-position: 0% 50%;
-  }
-
-  to {
-    background-position: 200% 50%;
-  }
-}
-
 .issue-profile-thermometer {
   --issue-profile-padding-x: 1rem;
   --issue-profile-visual-width: 4.6rem;
@@ -6878,10 +6834,6 @@ main:focus {
     max-height: none;
     overflow: visible;
     padding-right: 0;
-  }
-
-  .survey-progress-meter {
-    width: 100%;
   }
 
   .nav-link,
