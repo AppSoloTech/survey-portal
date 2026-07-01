@@ -21,7 +21,7 @@
     "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "libphonenumber-js": "^1.13.7",
-    "pg": "^8.13.1"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
