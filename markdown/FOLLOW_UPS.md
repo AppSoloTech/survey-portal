@@ -45,6 +45,15 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Active Follow-Ups
 
+### Phase 65 Participant Survey Review
+
+- Run the manual browser/accessibility pass for participant answer review:
+  registered and anonymous attempts at 375/768/1280px, keyboard-only navigation
+  through search, status filters, page groups, Edit, answer save, and
+  return-to-review, screen reader sanity for grouped sections and answer
+  summaries, a branch/jump survey where editing an earlier answer prunes a later
+  branch, and a large-survey scenario with many pages/questions.
+
 ### Phase 64 Thermometer Break-Off Explosion
 
 - Run the manual browser/accessibility pass for the enhanced Ready to submit

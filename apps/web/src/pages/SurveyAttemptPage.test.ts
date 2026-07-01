@@ -135,6 +135,34 @@ describe("SurveyAttemptPage participant accessibility", () => {
     expect(source).toContain("Review and submit when ready");
   });
 
+  it("adds a path-aware participant answer review with large-survey controls", () => {
+    const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+    expect(source).toContain("SurveyReviewPanel");
+    expect(source).toContain("Review answers");
+    expect(source).toContain("buildSurveyReviewGroups");
+    expect(source).toContain("visibleQuestionIdsByPageId");
+    expect(source).toContain("getParticipantAnswerSummary");
+    expect(source).toContain("Search answers");
+    expect(source).toContain("statusFilter");
+    expect(source).toContain('"answered"');
+    expect(source).toContain('"unanswered"');
+    expect(source).toContain("totalQuestionCount > 20");
+    expect(source).toContain("onEditFromReview");
+    expect(source).toContain("returnToReviewQuestionId");
+    expect(source).toContain("setIsReviewOpen(true)");
+    expect(source).toContain("resolveAttemptPagePath(activeSurvey.survey");
+    expect(source).toContain("isNavigationSourceQuestion");
+    expect(source).toContain("shouldPreserveReviewedPage");
+    expect(source).toContain("activeQuestionHasSavedResponse");
+    expect(source).toContain('"Update answer"');
+    expect(source).not.toMatch(/hidden tag|tagKey|tagValue|score|severity|issue categor/i);
+    expect(styles).toContain(".survey-review-panel");
+    expect(styles).toContain(".survey-review-group");
+    expect(styles).toContain(".survey-review-row");
+  });
+
   it("keeps issue profile participant copy abstract and non-scoring", () => {
     const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
     const issueProfileSource = source.slice(source.indexOf("function IssueProfileThermometer"));

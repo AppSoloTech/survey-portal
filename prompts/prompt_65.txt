@@ -1,0 +1,307 @@
+# Phase 65 — Participant Survey Review
+
+## Purpose
+
+Add a participant-facing answer review experience before survey submission.
+Participants should be able to open a simplified review page, scan saved
+answers by page, jump to a question, update the answer, and return to review
+before submitting.
+
+Source feedback or planning note:
+
+```txt
+User request in chat, 2026-07-01.
+```
+
+This phase is frontend-first and path-aware. It improves participant survey
+completion ergonomics without adding Admin response review functionality.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_65.txt`
+* Claude review: `notes/claude_review_phase_65.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `prompts/MASTER_PRODUCT_CONTEXT.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/DATA_MODEL_VISION.md`
+* `markdown/GLOBAL_DEVELOPMENT_ENVIRONMENT.txt`
+* `markdown/FLOW.md`
+* `markdown/CLIENT_REVIEW_INTAKE.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `markdown/ACCESSIBILITY_TEST_PLAN.md`
+* Recent participant runner phases and review context:
+  * `prompts/prompt_59.txt`
+  * `prompts/prompt_60.txt`
+  * `prompts/prompt_64.txt`
+  * `notes/claude_handoff_phase_64.txt`
+  * `notes/claude_review_phase_64.txt`
+* Current runner and shared path logic:
+  * `apps/web/src/pages/SurveyAttemptPage.tsx`
+  * `apps/web/src/pages/SurveyAttemptPage.test.ts`
+  * `apps/web/src/styles.css`
+  * `packages/shared/src/index.ts`
+  * `packages/shared/test/resolveAttemptPagePath.test.ts`
+  * `packages/shared/test/resolveAttemptPath.test.ts`
+
+Confirm the working tree before implementation. Keep the phase scoped to
+participant answer review, edit-from-review navigation, focused tests, and
+closeout documentation.
+
+---
+
+# Received Feedback
+
+1. There is no survey review functionality right now; participants can only use
+   navigation buttons to go back through the survey.
+2. Add a page where the user can see a simplified version of the survey.
+3. Consider construction and how to manage large surveys with hundreds of
+   questions.
+4. Let the participant jump to a question from review and update an answer.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* feature request
+* participant-facing survey behavior
+* frontend UX improvement
+* accessibility-sensitive navigation/form workflow
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none expected.
+* API contracts: none expected.
+* Participant-facing survey behavior: yes.
+* Hidden-tag visibility: preserve existing privacy boundaries; do not expose
+  hidden tags, issue categories, scoring, admin metadata, or internal IDs.
+* Authentication or authorization: no model change; registered and anonymous
+  attempts should both support review through existing attempt access rules.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, add or update focused web/source tests.
+
+Ask for clarification only if implementation discovers a materially different
+review model is required.
+
+---
+
+# Scope
+
+Implement:
+
+* Add a survey answer review view inside the existing participant attempt
+  experience. Prefer a runner state/view over a new route unless routing proves
+  clearly simpler without increasing complexity.
+* Make the review view reachable:
+  * from the Ready to submit screen
+  * during an in-progress attempt through a lightweight `Review answers` action
+* Show a simplified, participant-safe survey review:
+  * assessment name
+  * page names
+  * question prompts
+  * saved answer summaries
+  * unanswered status
+  * an `Edit` or equivalent jump action for each review row
+* Group review rows by page using the participant's resolved attempt path.
+  Use `resolveAttemptPagePath` and `visibleQuestionIdsByPageId` so review shows
+  only questions that are visible on the participant's current path.
+* Handle large surveys with a grouped searchable list:
+  * group rows by page
+  * collapse page groups by default when the survey is large
+  * keep current, incomplete, or matching sections easy to find
+  * add client-side search over page title, question prompt, and visible answer
+    text
+  * add simple status filters: all, unanswered, answered
+  * render summary rows rather than full answer controls for every question
+* Reuse existing question answer controls when a participant chooses to edit.
+  Do not duplicate every question type as editable controls inside the review
+  list.
+* Selecting `Edit` should move the participant to the selected question in the
+  existing runner.
+* After saving from a review-origin edit, recompute the attempt path and return
+  to review when the edited question remains valid.
+* If the edited answer changes conditional logic and removes later pages or
+  answers from the path, preserve existing server/shared pruning behavior and
+  update the review list to reflect the new resolved path.
+* Registered and anonymous attempts must both support review.
+* Completed attempts remain read-only; do not add post-submission editing.
+* Preserve existing Previous, Resume, Continue, Submit, Back to assessments,
+  anonymous contact email, anonymous registration, and issue-profile
+  thermometer behavior.
+* Prefer local frontend helper types/functions for deriving review rows from
+  `Survey`, `SurveyAttempt`, `resolveAttemptPagePath`, and
+  `visibleQuestionIdsByPageId`.
+* If shared helpers are useful, keep them pure and add focused shared tests. Do
+  not change persisted data shapes.
+* Update release notes, phase log, follow-ups if needed, and handoff during
+  implementation.
+
+## Non-Goals
+
+Do not implement:
+
+* Admin response review, Admin Results changes, review tags, hidden-tag rollups,
+  reporting changes, CSV changes, or analytics changes.
+* Database migrations or persisted attempt shape changes.
+* A new third-party grid, table, or virtualization dependency.
+* Full editable controls for every question inside the review list.
+* Post-submission participant editing of completed attempts.
+* New question types.
+* Hidden tag names, hidden tag values, issue categories, scores, severities,
+  recommendations, admin metadata, internal IDs, or reporting-only data in any
+  participant or anonymous UI.
+* Deep filtering/sorting beyond search and all/answered/unanswered status
+  filters.
+
+## Assumptions
+
+* The desired entry model is Ready to submit plus a lightweight in-progress
+  `Review answers` action.
+* The desired large-survey model is grouped, searchable, summary-only rows with
+  simple status filters.
+* After review-origin edits, the preferred behavior is save, recompute path,
+  and return to review.
+* "Survey review functionality" means participant answer review before
+  submission, not Admin response review.
+* No API contract changes are expected.
+
+## Open Questions
+
+None.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Preserve hidden-tag privacy, participant-safe copy, and existing attempt
+   access boundaries.
+2. Model the review view state and edit-from-review return behavior in the
+   existing participant runner.
+3. Build the grouped searchable review UI with large-survey guardrails.
+4. Recompute path-aware review rows after answer changes.
+5. Add focused automated tests and source guardrails.
+6. Update release notes and closeout artifacts.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* Participants can open answer review from Ready to submit.
+* Participants can open answer review during an in-progress attempt.
+* Review shows a simplified path-aware survey summary grouped by page.
+* Review rows show question prompt, participant-visible answer summary, and
+  answered/unanswered state.
+* Review does not render full answer controls for every question.
+* Search filters review rows by page title, question prompt, and visible answer
+  text.
+* All/answered/unanswered filters work client-side.
+* Large surveys avoid a single overwhelming always-expanded list; page groups
+  collapse by default when appropriate while incomplete or matching content
+  remains discoverable.
+* Choosing Edit jumps to the selected question using the existing answer
+  controls.
+* Saving from a review-origin edit returns to review when the edited question
+  remains valid.
+* Path-changing edits recompute the review list and do not show pruned or
+  off-path answers.
+* Registered and anonymous survey attempts both support review.
+* Completed attempts remain read-only.
+* Existing Previous, Resume, Continue, Submit, Back to assessments, anonymous
+  follow-up, anonymous registration, and issue-profile thermometer behavior
+  still works.
+* Hidden tags, issue categories, scores, severities, recommendations, admin
+  metadata, and internal IDs remain absent from participant and anonymous UI.
+* Every received feedback item is fixed, deferred with a reason, or blocked by
+  a documented question.
+
+---
+
+# Testing Requirements
+
+Default validation gate:
+
+```bash
+npm run test -w apps/web -- SurveyAttemptPage.test.ts
+npm run test -w packages/shared
+npm run typecheck
+npm run lint
+npm run build
+npm run release:check
+git diff --check
+```
+
+Add or update focused automated tests/source guardrails for:
+
+* Review entry points exist on Ready to submit and during an in-progress
+  attempt.
+* Review rows are grouped by page and use path-aware visible question IDs.
+* Hidden tags/admin-only metadata/scoring language do not appear in participant
+  review UI.
+* Search and answered/unanswered filters are present and client-side.
+* Large-survey guardrails exist, such as collapsed page groups or summary-only
+  rows.
+* Edit from review returns to review after save.
+* Path-changing edits recompute the review list and do not show pruned/off-path
+  answers.
+* Registered and anonymous attempts preserve existing completion and
+  contact-email behavior.
+
+Add shared tests only if this phase introduces or changes shared pure helper
+logic.
+
+Manual checks to perform or document:
+
+* Registered attempt review at 375px, 768px, and 1280px.
+* Anonymous attempt review at 375px, 768px, and 1280px.
+* Keyboard-only navigation through review, search, filters, page groups, edit
+  buttons, answer save, and return-to-review.
+* Screen reader sanity check for review heading, grouped sections, answer
+  summaries, unanswered state, and edit actions.
+* Branch/jump survey where changing an earlier answer removes a later branch;
+  confirm review updates and no off-path/pruned answer remains visible.
+* Large-survey scenario with many pages/questions; confirm page groups, search,
+  and status filters remain usable.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with participant-facing review notes.
+* `markdown/FOLLOW_UPS.md` if deeper large-survey virtualization, additional
+  review filters, or manual browser/accessibility checks remain deferred.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* `notes/claude_handoff_phase_65.txt` before marking implementation complete.
+* `notes/claude_review_phase_65.txt` after Claude review, or mark review
+  pending in the phase log.

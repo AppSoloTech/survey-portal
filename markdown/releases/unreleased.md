@@ -2,7 +2,7 @@
 
 Release title: Next Release
 
-Summary: Admin review tagging now supports category-level living bindings without adding system rows to the tag catalog, tag category emoji defaults apply more predictably to new catalog values, the participant issue-profile thermometer has a richer ending animation, and the survey question header is simpler for participants.
+Summary: Admin review tagging now supports category-level living bindings without adding system rows to the tag catalog, tag category emoji defaults apply more predictably to new catalog values, the participant issue-profile thermometer has a richer ending animation, the survey question header is simpler for participants, and participants can review answers before submitting.
 
 ## Changed
 
@@ -13,6 +13,7 @@ Summary: Admin review tagging now supports category-level living bindings withou
 - The Admin attempts API now returns bounded pages by default, with pagination metadata and date-range-aware counts instead of returning every attempt at once.
 - The participant issue-profile thermometer now uses a cleaner classic SVG shape with a continuous blue-to-red warming fill, intact and broken-rim states, liquid meniscus polish, and a top-centered GSAP cap break-off, shard, puff, spark, and emoji burst while preserving reduced-motion fallback behavior.
 - Participant survey question pages now keep the assessment name and page name while removing the horizontal assessment progress bar and page-path location copy from the question header.
+- Participant survey attempts now include a path-aware answer review view with page grouping, search, answered/unanswered filters, and edit links that return to review after saving.
 
 ## Fixed
 

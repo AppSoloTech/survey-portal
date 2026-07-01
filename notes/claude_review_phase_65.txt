@@ -1,0 +1,66 @@
+# Claude Review — Phase 65 Participant Survey Review
+
+Date:
+2026-07-01
+
+Status:
+Completed; one documentation finding addressed.
+
+## Summary
+
+Claude verified the Phase 65 docs against the implementation. The concrete
+claims hold: `SurveyReviewPanel`, the `totalQuestionCount > 20` large-review
+guardrail, answered/unanswered filters, path-aware review groups, and read-only
+completed-attempt edit behavior all match the code.
+
+Claude also confirmed the handoff naming convention is consistent with prior
+phases: `notes/claude_handoff_phase_65.txt` is authored by Codex as the handoff
+to Claude and is labeled "Codex handoff" in `markdown/PHASE_LOG.md`.
+
+## Finding Addressed
+
+### Release Summary Omitted A Still-Shipping Change
+
+Finding:
+`markdown/releases/unreleased.md` replaced the participant header cleanup in
+the summary with the Phase 65 review feature, while both changes remained in
+the Changed list.
+
+Resolution:
+Updated the release summary so it mentions both the simpler participant survey
+question header and the new review-before-submit flow.
+
+Validation:
+
+```bash
+npm run release:check
+git diff --check
+```
+
+## Non-Blocking Notes
+
+- Phase log heading levels match the existing phase template and prior entries.
+- "Codex handoff" in the phase log and "Claude Review Handoff" in the handoff
+  title are both consistent with established project convention.
+
+## Post-Review Runtime Follow-Up
+
+After manual inspection of the department branch question flow, Codex applied a
+small frontend unblock:
+
+- Branch-driving saved questions now defer to the server's recomputed
+  current-page/current-question state after save instead of preserving stale
+  reviewed-page state.
+- Active questions with an existing saved response now label the submit action
+  as `Update answer`, making the department answer change path clearer.
+
+Validation:
+
+```bash
+npm run test -w apps/web -- SurveyAttemptPage.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm run release:check
+git diff --check
+```

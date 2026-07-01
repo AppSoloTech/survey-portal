@@ -1,0 +1,96 @@
+# Claude Review Handoff — Phase 65 Participant Survey Review
+
+## Review Goal
+
+Review the participant-facing answer review experience. Focus on path-aware
+survey behavior, edit-from-review return flow, large-survey usability,
+accessibility, and hidden-tag/privacy boundaries.
+
+## Phase Scope
+
+Implemented:
+
+- Created `prompts/prompt_65.txt`.
+- Added a `SurveyReviewPanel` runner view in
+  `apps/web/src/pages/SurveyAttemptPage.tsx`.
+- Added Review answers entry points from Ready to submit and in-progress
+  attempt pages.
+- Built review groups from `resolveAttemptPagePath` and
+  `visibleQuestionIdsByPageId` so review rows follow the participant's current
+  path.
+- Added compact row summaries for participant-visible answer text, integer
+  values, selected answer option labels, and Other text.
+- Added search over page title, question prompt, and visible answer summary.
+- Added all/answered/unanswered filters.
+- Added a large-review guardrail: review groups collapse by default above 20
+  questions while unanswered/search/filter matches remain discoverable.
+- Added edit-from-review navigation that reuses the existing question controls,
+  saves through the existing answer path, recomputes the path, and returns to
+  review only when the edited question remains visible.
+- Added a post-review branch-answer unblock: edits to saved
+  conditional-navigation source questions now use the server's recomputed
+  current state after save, and active saved questions label the submit action
+  as `Update answer`.
+- Kept completed attempts read-only by disabling review edit actions.
+- Updated review panel CSS and responsive stacking.
+- Updated `SurveyAttemptPage.test.ts` source guardrails.
+- Updated `markdown/releases/unreleased.md`, `markdown/FOLLOW_UPS.md`, and
+  `markdown/PHASE_LOG.md`.
+
+Not in scope:
+
+- No Admin Results, review-tag, hidden-tag rollup, reporting, CSV, analytics,
+  or post-submission editing changes.
+- No backend, API contract, shared type, database, or migration changes.
+- No new npm dependency, grid dependency, or virtualization dependency.
+- No participant-visible hidden tag metadata, issue category, scoring,
+  severity, recommendation, admin metadata, or internal id content.
+
+## Key Files
+
+- `prompts/prompt_65.txt`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/pages/SurveyAttemptPage.test.ts`
+- `apps/web/src/styles.css`
+- `markdown/releases/unreleased.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+
+## Validation Completed
+
+```bash
+npm run test -w apps/web -- SurveyAttemptPage.test.ts
+npm run test -w packages/shared
+npm run typecheck
+npm run lint
+npm run build
+npm run release:check
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run test -w packages/shared`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+Notes:
+
+- `npm run build` emitted the existing Vite large chunk warning.
+- Manual browser/accessibility checks remain pending and are tracked in
+  `markdown/FOLLOW_UPS.md`.
+
+## Reviewer Questions
+
+1. Does edit-from-review preserve the intended progressive path behavior when
+   an answer changes branch/page logic and prunes later answers?
+2. Is the large-survey review model sufficiently lightweight without adding a
+   virtualization dependency?
+3. Are the review rows and controls accessible enough for keyboard and screen
+   reader users, pending manual assistive-technology checks?
+4. Does the participant review surface avoid hidden-tag, issue-profile,
+   scoring, admin metadata, and internal-id exposure?

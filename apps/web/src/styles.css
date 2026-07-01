@@ -1722,6 +1722,210 @@ main:focus {
   margin: 0.35rem 0 0;
 }
 
+.survey-review-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-2);
+  display: grid;
+  gap: 1.35rem;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+}
+
+.survey-review-heading {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.survey-review-heading h3 {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.survey-review-totals {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(5rem, auto));
+  margin: 0;
+}
+
+.survey-review-totals div {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.75rem;
+}
+
+.survey-review-totals dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 750;
+}
+
+.survey-review-totals dd {
+  color: var(--ink);
+  font-size: var(--text-lg);
+  font-weight: 850;
+  margin: 0.1rem 0 0;
+}
+
+.survey-review-controls {
+  align-items: end;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(14rem, 1fr) auto;
+}
+
+.survey-review-search {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.survey-review-search span,
+.survey-review-filter legend {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.survey-review-search input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  min-height: 2.75rem;
+  padding: 0 0.85rem;
+  width: 100%;
+}
+
+.survey-review-filter {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 0;
+}
+
+.survey-review-filter legend {
+  margin-bottom: 0.35rem;
+  width: 100%;
+}
+
+.survey-review-filter label {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.survey-review-filter input {
+  accent-color: var(--brand);
+}
+
+.survey-review-filter span {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 750;
+}
+
+.survey-review-groups {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.survey-review-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.survey-review-group summary {
+  align-items: center;
+  background: var(--surface-2);
+  cursor: pointer;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  list-style-position: inside;
+  padding: 0.85rem 1rem;
+}
+
+.survey-review-group summary span {
+  color: var(--ink);
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.survey-review-group summary small {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-weight: 750;
+}
+
+.survey-review-row-list {
+  display: grid;
+}
+
+.survey-review-row {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 1rem;
+}
+
+.survey-review-row-main {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.survey-review-row h4,
+.survey-review-row p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.survey-review-row h4 {
+  color: var(--ink);
+  font-size: var(--text-base);
+}
+
+.survey-review-row p {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.survey-review-status {
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 850;
+  justify-self: start;
+  padding: 0.2rem 0.5rem;
+}
+
+.survey-review-status.answered {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success-strong);
+}
+
+.survey-review-status.unanswered {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn-strong);
+}
+
 .issue-profile-thermometer {
   --issue-profile-padding-x: 1rem;
   --issue-profile-visual-width: 4.6rem;
@@ -6692,6 +6896,7 @@ main:focus {
 
   .survey-card-footer,
   .question-progress,
+  .survey-review-heading,
   .completion-heading,
   .builder-section-heading,
   .option-row-header,
@@ -6763,6 +6968,35 @@ main:focus {
 
   .survey-actions {
     flex-wrap: wrap;
+  }
+
+  .survey-review-controls {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .survey-review-filter {
+    justify-content: flex-start;
+  }
+
+  .survey-review-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .survey-review-group summary,
+  .survey-review-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .survey-review-group summary {
+    flex-direction: column;
+  }
+
+  .survey-review-group summary small,
+  .survey-review-row .button-link {
+    width: fit-content;
   }
 
   .survey-actions .button-link {

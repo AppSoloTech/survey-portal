@@ -6,6 +6,157 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 65 — Participant Survey Review
+
+Date:
+2026-07-01
+
+Status:
+Implemented; validation passed; Claude review documentation finding addressed; branch-answer unblock added
+
+Prompt:
+`prompts/prompt_65.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_65.txt`
+- Claude review: `notes/claude_review_phase_65.txt`
+
+## Goals
+
+- Add a participant-facing answer review surface before submission.
+- Let participants scan saved answers by page, search/filter review rows, and
+  jump back to a question to update an answer.
+- Keep the review path-aware for page and question skip logic.
+- Preserve hidden-tag privacy, existing attempt access boundaries, and existing
+  runner controls.
+
+## Built
+
+- Created `prompts/prompt_65.txt` from the approved Phase 65 plan.
+- Added an in-runner `SurveyReviewPanel` reachable from Ready to submit and
+  during in-progress attempts.
+- Built path-aware review groups from `resolveAttemptPagePath` and
+  `visibleQuestionIdsByPageId`, showing only participant-visible questions on
+  the current attempt path.
+- Added compact review rows with page grouping, participant-visible answer
+  summaries, answered/unanswered status, and disabled read-only edit actions
+  for completed attempts.
+- Added client-side search over page title, question prompt, and visible answer
+  text, plus all/answered/unanswered status filters.
+- Added a large-survey guardrail: review page groups collapse by default after
+  the review exceeds 20 questions, while unanswered or matching groups open.
+- Added edit-from-review navigation that reuses the existing question controls,
+  saves through the existing answer API path, recomputes the resolved path, and
+  returns to review only if the edited question remains visible.
+- Added a post-review branch-answer unblock: saved active questions now show
+  `Update answer`, and edits to conditional-navigation source questions defer
+  to the server's recomputed current state instead of preserving stale reviewed
+  page state.
+- Preserved existing Previous, Resume, Continue, Submit, Back to assessments,
+  anonymous contact email, anonymous registration, and issue-profile
+  thermometer behavior.
+- Updated participant source guardrail tests, release notes, follow-ups, and
+  handoff.
+
+## Important Decisions
+
+### Runner State Instead Of New Route
+
+Decision:
+Implement answer review as a runner view state inside `SurveyAttemptPage`.
+
+Reason:
+The review surface needs the current hydrated attempt, draft state, path helper,
+and existing answer controls. Keeping it inside the runner avoids new routing or
+API contract complexity.
+
+Consequence:
+No backend, API, shared type, or database changes were introduced.
+
+### Summary Rows Only
+
+Decision:
+Render review rows as compact summaries with Edit actions instead of rendering
+full answer controls for every question.
+
+Reason:
+This keeps hundreds-question surveys manageable and avoids duplicating answer
+control logic.
+
+Consequence:
+Editing jumps into the existing page/question form and returns to review after
+the save path succeeds.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Frontend UX impact: participants can review answers by page before
+  submission, search/filter review rows, and edit visible answers from review.
+- Hidden-tag/reporting impact: none; review summaries use only
+  participant-visible prompts, answer option text, answer text, numbers, and
+  Other text.
+- Release impact: `markdown/releases/unreleased.md` includes this
+  participant-facing review improvement.
+
+## Validation
+
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run test -w packages/shared`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+Validation notes:
+- `npm run build` emitted the existing Vite large chunk warning.
+- Manual browser/accessibility checks are tracked in `markdown/FOLLOW_UPS.md`.
+
+Post-review branch-answer unblock validation:
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+## Follow-Ups
+
+- Run the Phase 65 manual browser/accessibility pass for registered and
+  anonymous review flows, responsive layouts, keyboard navigation, screen reader
+  sanity, branch pruning, and large-survey usability.
+
+## Claude Review Notes
+
+Status:
+Completed 2026-07-01.
+
+Findings:
+- Documentation finding addressed: release summary now mentions both the simpler
+  participant question header and the Phase 65 review-before-submit flow.
+- Claude verified the Phase 65 docs against code and found the documented scope
+  accurate.
+- Non-blocking notes on heading levels and handoff naming required no changes.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes; no backend, API, or database
+  changes were introduced.
+- Security review complete: Yes. Claude verified docs against code; source
+  guardrails assert the participant review UI avoids hidden-tag, admin metadata,
+  scoring, and severity language.
+- Review findings addressed or deferred: Yes.
+- Manual testing complete: No; tracked as follow-up.
+- Ready to commit: Pending manual acceptance.
+
+---
+
 ## Phase 64 — Thermometer Break-Off Explosion
 
 Date:

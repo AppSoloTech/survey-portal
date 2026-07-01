@@ -71,6 +71,25 @@ interface AnonymousRegistrationDraft {
 
 type DraftAnswerMap<T> = Record<number, T>;
 type DraftAnswerSetter<T> = Dispatch<SetStateAction<DraftAnswerMap<T>>>;
+type SurveyReviewStatusFilter = "all" | "answered" | "unanswered";
+
+interface SurveyReviewQuestionRow {
+  answerSummary: string;
+  id: string;
+  isAnswered: boolean;
+  pageId: number;
+  pageTitle: string;
+  question: SurveyQuestion;
+  searchText: string;
+}
+
+interface SurveyReviewPageGroup {
+  answeredCount: number;
+  id: number;
+  page: SurveyPage;
+  rows: SurveyReviewQuestionRow[];
+  unansweredCount: number;
+}
 
 export function SurveyAttemptPage() {
   return <SurveyAttemptExperience mode="authenticated" />;
@@ -87,6 +106,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
   const navigate = useNavigate();
   const { updateSessionUser } = useAuth();
   const [activeSurvey, setActiveSurvey] = useState<ActiveSurveyState | null>(null);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [returnToReviewQuestionId, setReturnToReviewQuestionId] = useState<number | null>(null);
   const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<DraftAnswerMap<string>>({});
   const [answerIntegerByQuestionId, setAnswerIntegerByQuestionId] = useState<
     DraftAnswerMap<string>
@@ -275,6 +296,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
 
   useEffect(() => {
     if (!activeSurvey) {
+      setIsReviewOpen(false);
+      setReturnToReviewQuestionId(null);
       setAnswerTextByQuestionId({});
       setAnswerIntegerByQuestionId({});
       setSelectedAnswerOptionIdsByQuestionId({});
@@ -373,7 +396,11 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
     setIsSubmitting(true);
 
     try {
+      const shouldReturnToReview = returnToReviewQuestionId === question.id;
       const isUpdatingReviewedQuestion = question.id !== activeSurvey.currentQuestion?.id;
+      const isNavigationSourceQuestion = activeSurvey.survey.conditionalLogicRules.some(
+        (rule) => rule.sourceQuestionId === question.id
+      );
       const answerInput = {
         attemptId: activeSurvey.attempt.id,
         questionId: question.id,
@@ -408,6 +435,8 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
               ...answerInput,
               surveyId: activeSurvey.survey.id
             });
+      const shouldPreserveReviewedPage =
+        isUpdatingReviewedQuestion && !isNavigationSourceQuestion && response.currentPage === null;
 
       setActiveSurvey({
         survey: activeSurvey.survey,
@@ -417,24 +446,77 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
         attempt: response.attempt,
         attemptAccessToken: activeSurvey.attemptAccessToken,
         currentQuestion:
-          isUpdatingReviewedQuestion && response.currentPage === null
+          shouldPreserveReviewedPage
             ? activeSurvey.currentQuestion
             : response.currentQuestion,
         currentPage:
-          isUpdatingReviewedQuestion && response.currentPage === null
+          shouldPreserveReviewedPage
             ? activeSurvey.currentPage
             : response.currentPage,
         currentPageQuestionIds:
-          isUpdatingReviewedQuestion && response.currentPage === null
+          shouldPreserveReviewedPage
             ? activeSurvey.currentPageQuestionIds
             : response.currentPageQuestionIds
       });
+      if (shouldReturnToReview) {
+        const updatedPagePath = resolveAttemptPagePath(
+          activeSurvey.survey,
+          response.attempt.responses
+        );
+        const isEditedQuestionStillVisible = updatedPagePath.path.some((page) =>
+          updatedPagePath.visibleQuestionIdsByPageId[page.id]?.includes(question.id)
+        );
+
+        setReturnToReviewQuestionId(null);
+        setIsReviewOpen(isEditedQuestionStillVisible);
+      }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not save answer");
       setErrorQuestionId(question.id);
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function handleOpenReview() {
+    setIsReviewOpen(true);
+    setReturnToReviewQuestionId(null);
+    setError(null);
+    setErrorQuestionId(null);
+  }
+
+  function handleCloseReview() {
+    setIsReviewOpen(false);
+    setReturnToReviewQuestionId(null);
+  }
+
+  function handleEditFromReview(questionId: number) {
+    if (!activeSurvey || activeSurvey.attempt.status === "completed") {
+      return;
+    }
+
+    const pagePath = resolveAttemptPagePath(activeSurvey.survey, activeSurvey.attempt.responses);
+    const targetQuestion = activeSurvey.survey.questions.find((question) => question.id === questionId);
+    const targetPage = pagePath.path.find((page) =>
+      pagePath.visibleQuestionIdsByPageId[page.id]?.includes(questionId)
+    );
+    const visibleQuestionIds =
+      targetPage ? pagePath.visibleQuestionIdsByPageId[targetPage.id] ?? [] : [];
+
+    if (!targetQuestion || !targetPage || !visibleQuestionIds.includes(questionId)) {
+      return;
+    }
+
+    setActiveSurvey({
+      ...activeSurvey,
+      currentPage: targetPage,
+      currentQuestion: targetQuestion,
+      currentPageQuestionIds: visibleQuestionIds
+    });
+    setIsReviewOpen(false);
+    setReturnToReviewQuestionId(questionId);
+    setError(null);
+    setErrorQuestionId(null);
   }
 
   async function handleComplete() {
@@ -771,11 +853,15 @@ function SurveyAttemptExperience({ mode }: { mode: "authenticated" | "anonymous"
             hasDeclinedAnonymousRegistration={hasDeclinedAnonymousRegistration}
             isAnonymous={mode === "anonymous"}
             isAnonymousRegistrationSubmitting={isAnonymousRegistrationSubmitting}
+            isReviewOpen={isReviewOpen}
             isSubmitting={isSubmitting}
             onClose={handleClose}
             onComplete={() => void handleComplete()}
             onAnonymousRegistrationChange={handleAnonymousRegistrationDraftChange}
+            onCloseReview={handleCloseReview}
             onDeclineAnonymousRegistration={handleDeclineAnonymousRegistration}
+            onEditFromReview={handleEditFromReview}
+            onOpenReview={handleOpenReview}
             onOpenContactEmailModal={handleOpenContactEmailModal}
             onIntegerChange={handleIntegerChange}
             onOtherSelectionChange={handleOtherSelection}
@@ -826,11 +912,15 @@ function SurveyRunner({
   isAnonymous,
   isAnonymousRegistrationSubmitting,
   isOtherSelectedByQuestionId,
+  isReviewOpen,
   isSubmitting,
   onClose,
   onComplete,
   onAnonymousRegistrationChange,
+  onCloseReview,
   onDeclineAnonymousRegistration,
+  onEditFromReview,
+  onOpenReview,
   onOpenContactEmailModal,
   onIntegerChange,
   onOtherSelectionChange,
@@ -856,11 +946,15 @@ function SurveyRunner({
   isAnonymous: boolean;
   isAnonymousRegistrationSubmitting: boolean;
   isOtherSelectedByQuestionId: DraftAnswerMap<boolean>;
+  isReviewOpen: boolean;
   isSubmitting: boolean;
   onClose: () => void;
   onComplete: () => void;
   onAnonymousRegistrationChange: (field: keyof AnonymousRegistrationDraft, value: string) => void;
+  onCloseReview: () => void;
   onDeclineAnonymousRegistration: () => void;
+  onEditFromReview: (questionId: number) => void;
+  onOpenReview: () => void;
   onOpenContactEmailModal: () => void;
   onIntegerChange: (questionId: number, value: string) => void;
   onOtherSelectionChange: (question: SurveyQuestion, checked: boolean) => void;
@@ -895,6 +989,21 @@ function SurveyRunner({
     ? path.findIndex((page) => page.id === currentPage.id)
     : path.length;
   const previousPage = currentIndex > 0 ? path[currentIndex - 1] ?? null : null;
+
+  if (isReviewOpen) {
+    return (
+      <SurveyReviewPanel
+        attempt={attempt}
+        canSubmit={currentPage === null && attempt.status !== "completed"}
+        isSubmitting={isSubmitting}
+        onCloseReview={onCloseReview}
+        onComplete={onComplete}
+        onEditQuestion={onEditFromReview}
+        pagePath={pagePath}
+        survey={survey}
+      />
+    );
+  }
 
   if (!currentPage) {
     const savedAnswerCount = countSavedAnswers(survey, attempt, path);
@@ -969,6 +1078,14 @@ function SurveyRunner({
             Previous
           </button>
           <button
+            className="button-link secondary-button"
+            disabled={isSubmitting}
+            onClick={onOpenReview}
+            type="button"
+          >
+            Review answers
+          </button>
+          <button
             className="button-link primary-button"
             disabled={isSubmitting || attempt.status === "completed"}
             onClick={onComplete}
@@ -1002,6 +1119,8 @@ function SurveyRunner({
     .filter((question): question is SurveyQuestion => Boolean(question));
   const activeQuestionId = currentQuestion?.id ?? null;
   const isReviewingPreviousPage = activeQuestionId === null;
+  const responseQuestionIds = new Set(attempt.responses.map((response) => response.questionId));
+  const activeQuestionHasSavedResponse = activeQuestionId !== null && responseQuestionIds.has(activeQuestionId);
 
   return (
     <div
@@ -1102,7 +1221,7 @@ function SurveyRunner({
             form={`question-form-${currentQuestion.id}`}
             type="submit"
           >
-            {isSubmitting ? "Saving..." : "Continue"}
+            {isSubmitting ? "Saving..." : activeQuestionHasSavedResponse ? "Update answer" : "Continue"}
           </button>
         ) : isReviewingPreviousPage ? (
           <button
@@ -1122,9 +1241,291 @@ function SurveyRunner({
         >
           Back to assessments
         </button>
+        <button
+          className="button-link secondary-button"
+          disabled={isSubmitting}
+          onClick={onOpenReview}
+          type="button"
+        >
+          Review answers
+        </button>
       </div>
     </div>
   );
+}
+
+function SurveyReviewPanel({
+  attempt,
+  canSubmit,
+  isSubmitting,
+  onCloseReview,
+  onComplete,
+  onEditQuestion,
+  pagePath,
+  survey
+}: {
+  attempt: SurveyAttempt;
+  canSubmit: boolean;
+  isSubmitting: boolean;
+  onCloseReview: () => void;
+  onComplete: () => void;
+  onEditQuestion: (questionId: number) => void;
+  pagePath: ReturnType<typeof resolveAttemptPagePath>;
+  survey: Survey;
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<SurveyReviewStatusFilter>("all");
+  const groups = useMemo(
+    () => buildSurveyReviewGroups(survey, attempt, pagePath),
+    [attempt, pagePath, survey]
+  );
+  const totalQuestionCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  const answeredCount = groups.reduce((sum, group) => sum + group.answeredCount, 0);
+  const unansweredCount = totalQuestionCount - answeredCount;
+  const isLargeReview = totalQuestionCount > 20;
+  const normalizedSearch = normalizeReviewSearchText(searchQuery);
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      rows: group.rows.filter((row) => {
+        const matchesStatus =
+          statusFilter === "all" ||
+          (statusFilter === "answered" && row.isAnswered) ||
+          (statusFilter === "unanswered" && !row.isAnswered);
+        const matchesSearch =
+          !normalizedSearch ||
+          row.searchText.includes(normalizedSearch) ||
+          normalizeReviewSearchText(group.page.title).includes(normalizedSearch);
+
+        return matchesStatus && matchesSearch;
+      })
+    }))
+    .filter((group) => group.rows.length > 0);
+  const isCompleted = attempt.status === "completed";
+
+  return (
+    <div className="survey-review-panel">
+      <div className="survey-review-heading">
+        <div>
+          <p className="eyebrow">{survey.title}</p>
+          <h3>Review answers</h3>
+          <p className="muted">
+            {isCompleted
+              ? "This completed assessment is read-only."
+              : "Check your saved answers by page before submitting. You can edit any visible question on your current path."}
+          </p>
+        </div>
+        <dl className="survey-review-totals" aria-label="Answer review summary">
+          <div>
+            <dt>Answered</dt>
+            <dd>{answeredCount}</dd>
+          </div>
+          <div>
+            <dt>Unanswered</dt>
+            <dd>{unansweredCount}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="survey-review-controls" aria-label="Filter review answers">
+        <label className="survey-review-search">
+          <span>Search answers</span>
+          <input
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search page, question, or answer"
+            type="search"
+            value={searchQuery}
+          />
+        </label>
+        <fieldset className="survey-review-filter">
+          <legend>Status</legend>
+          {(["all", "unanswered", "answered"] as SurveyReviewStatusFilter[]).map((filter) => (
+            <label key={filter}>
+              <input
+                checked={statusFilter === filter}
+                onChange={() => setStatusFilter(filter)}
+                type="radio"
+              />
+              <span>{formatReviewStatusFilter(filter)}</span>
+            </label>
+          ))}
+        </fieldset>
+      </div>
+
+      <div className="survey-review-groups">
+        {visibleGroups.length === 0 ? (
+          <div className="builder-empty-state">
+            <strong>No matching answers</strong>
+            <span>Adjust the search or status filter to review more questions.</span>
+          </div>
+        ) : (
+          visibleGroups.map((group) => (
+            <details
+              className="survey-review-group"
+              key={group.id}
+              open={
+                !isLargeReview ||
+                normalizedSearch.length > 0 ||
+                statusFilter !== "all" ||
+                group.unansweredCount > 0
+              }
+            >
+              <summary>
+                <span>{group.page.title}</span>
+                <small>
+                  {group.answeredCount} answered, {group.unansweredCount} unanswered
+                </small>
+              </summary>
+              <div className="survey-review-row-list">
+                {group.rows.map((row) => (
+                  <article className="survey-review-row" key={row.id}>
+                    <div className="survey-review-row-main">
+                      <span
+                        className={
+                          row.isAnswered
+                            ? "survey-review-status answered"
+                            : "survey-review-status unanswered"
+                        }
+                      >
+                        {row.isAnswered ? "Answered" : "Unanswered"}
+                      </span>
+                      <h4>{row.question.questionText}</h4>
+                      <p>{row.answerSummary}</p>
+                    </div>
+                    <button
+                      aria-label={`Edit answer for ${row.question.questionText}`}
+                      className="button-link secondary-button compact-button"
+                      disabled={isSubmitting || isCompleted}
+                      onClick={() => onEditQuestion(row.question.id)}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </details>
+          ))
+        )}
+      </div>
+
+      <div className="survey-actions">
+        <button
+          className="button-link secondary-button"
+          disabled={isSubmitting}
+          onClick={onCloseReview}
+          type="button"
+        >
+          Back to survey
+        </button>
+        {canSubmit ? (
+          <button
+            className="button-link primary-button"
+            disabled={isSubmitting}
+            onClick={onComplete}
+            type="button"
+          >
+            {isSubmitting ? "Submitting..." : "Submit assessment"}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function buildSurveyReviewGroups(
+  survey: Survey,
+  attempt: SurveyAttempt,
+  pagePath: ReturnType<typeof resolveAttemptPagePath>
+): SurveyReviewPageGroup[] {
+  const questionsById = new Map(survey.questions.map((question) => [question.id, question]));
+  const responsesByQuestionId = new Map(
+    attempt.responses.map((response) => [response.questionId, response])
+  );
+
+  return pagePath.path
+    .map((page) => {
+      const rows = (pagePath.visibleQuestionIdsByPageId[page.id] ?? [])
+        .map((questionId) => {
+          const question = questionsById.get(questionId);
+
+          if (!question) {
+            return null;
+          }
+
+          const response = responsesByQuestionId.get(question.id);
+          const answerSummary = getParticipantAnswerSummary(question, response);
+          const isAnswered = answerSummary !== "Unanswered";
+          const row: SurveyReviewQuestionRow = {
+            answerSummary,
+            id: `${page.id}:${question.id}`,
+            isAnswered,
+            pageId: page.id,
+            pageTitle: page.title,
+            question,
+            searchText: normalizeReviewSearchText(
+              [page.title, question.questionText, answerSummary].join(" ")
+            )
+          };
+
+          return row;
+        })
+        .filter((row): row is SurveyReviewQuestionRow => Boolean(row));
+      const answeredCount = rows.filter((row) => row.isAnswered).length;
+
+      return {
+        answeredCount,
+        id: page.id,
+        page,
+        rows,
+        unansweredCount: rows.length - answeredCount
+      };
+    })
+    .filter((group) => group.rows.length > 0);
+}
+
+function getParticipantAnswerSummary(
+  question: SurveyQuestion,
+  response: SurveyResponseAnswer | undefined
+): string {
+  if (!response) {
+    return "Unanswered";
+  }
+
+  if (question.questionType === "text") {
+    return response.answerText?.trim() || "Unanswered";
+  }
+
+  if (question.questionType === "integer") {
+    return Number.isInteger(response.answerInteger) ? String(response.answerInteger) : "Unanswered";
+  }
+
+  const selectedOptionIds = new Set(response.selectedAnswerOptionIds);
+  const selectedOptionText = [...question.answerOptions]
+    .sort((left, right) => left.displayOrder - right.displayOrder || left.id - right.id)
+    .filter((option) => selectedOptionIds.has(option.id))
+    .map((option) => option.optionText.trim())
+    .filter(Boolean);
+  const otherText = response.otherText?.trim();
+  const visibleAnswers = otherText ? [...selectedOptionText, `Other: ${otherText}`] : selectedOptionText;
+
+  return visibleAnswers.length > 0 ? visibleAnswers.join(", ") : "Unanswered";
+}
+
+function normalizeReviewSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function formatReviewStatusFilter(filter: SurveyReviewStatusFilter): string {
+  if (filter === "answered") {
+    return "Answered";
+  }
+
+  if (filter === "unanswered") {
+    return "Unanswered";
+  }
+
+  return "All";
 }
 
 function AnonymousRegistrationPanel({
