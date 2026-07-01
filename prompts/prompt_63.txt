@@ -57,9 +57,9 @@ Read before implementation:
   * `apps/api/test/reporting.test.ts`
   * `packages/shared/src/index.ts`
 
-Confirm the working tree before implementation. If Phase 61 remains
-uncommitted, do not modify Phase 61 behavior except where this phase must work
-with the current Results page shape.
+Confirm the working tree before implementation. Phase 61 and Phase 62 should be
+committed before starting this phase. Do not modify Phase 61/62 behavior except
+where this phase must work with the current Results page shape.
 
 ---
 
@@ -112,12 +112,23 @@ Implement:
   control using `aria-expanded` and clear keyboard behavior.
 * Preserve existing summary content, date filters, Refresh, CSV export,
   question stats, option distributions, and hidden-tag rollup semantics.
+* Keep Results header actions and date-range controls reachable even when the
+  dense summary body is collapsed. Collapsing should hide the noisy report body
+  such as counts, question stats, and hidden-tag rollup, not strand core
+  controls behind an unclear state.
 * Keep the date range filter applied consistently to the summary, CSV export,
   and attempt list.
 * Replace the bottom all-attempts rendering with a large-data-friendly attempt
   browser:
   * the API must support bounded server-side pagination for
     `GET /api/surveys/:id/attempts`
+  * the API must apply pagination in SQL with `limit`/`offset` and a matching
+    filtered count query; do not fetch every attempt and slice in memory
+  * the API should default to page 1 and page size 25 when pagination query
+    parameters are omitted
+  * the shared response should preserve top-level `surveyId` and `attempts`,
+    and add pagination metadata, for example:
+    `{ page, pageSize, totalCount, totalPages, hasNextPage, hasPreviousPage }`
   * the frontend must request only the visible page
   * the UI must show total count or visible range context
   * the UI must provide previous/next or numbered page controls
@@ -126,10 +137,18 @@ Implement:
   * the list should use a denser table-like or row layout that remains usable
     at 375/768/1280px widths
 * Reset or clamp the current attempts page when date filters or page size change.
+  Prefer resetting to page 1 on filter or page-size changes; clamp only when the
+  server response proves the requested page is beyond the filtered result set.
 * Preserve attempt detail loading by attempt id and existing review-tag editing
   behavior.
+* Keep attempt detail as a single detail panel, not content repeated inside
+  every paginated row. It may close when the selected attempt falls off the
+  current page after filters, pagination, or page-size changes.
 * Handle loading, empty, and error states for paginated attempts separately from
   summary loading where practical.
+* Avoid refetching the full report summary or tag catalog when only the attempts
+  page changes. Refresh and date-range changes may reload both summary and
+  attempts.
 * Update shared response types and web API helpers for pagination metadata.
 * Add focused automated tests for API pagination and Results UI guardrails.
 * Update release notes, phase log, and handoff during implementation.
@@ -160,6 +179,9 @@ Do not implement:
   understandable.
 * The summary disclosure can default to expanded for continuity, but it must be
   easy to collapse and keep the attempts browser prominent.
+* This phase completes the "reporting pagination" part of the existing
+  `markdown/FOLLOW_UPS.md` item. Hidden-tag filtering remains deferred unless
+  explicitly added later.
 
 ## Open Questions
 
@@ -193,12 +215,15 @@ The phase is ready for review when:
 * The attempts endpoint validates pagination input and returns a bounded page of
   attempts plus pagination metadata.
 * The attempts endpoint does not return every attempt by default.
+* The attempts endpoint uses database-level pagination and a filtered total
+  count rather than in-memory slicing.
 * Attempts remain ordered newest first with deterministic tie-breaking.
 * Date-range filters apply to both summary and paginated attempts.
 * Changing date range or page size resets/clamps pagination so the page does not
   become empty due only to stale page state.
 * The frontend shows visible range/total context and disabled states for
   unavailable pagination actions.
+* Changing only attempt page does not refetch report summary or tag catalog.
 * Attempt detail fetch, display, and review-tag editing still work from the
   paginated list.
 * Empty, loading, and error states remain clear.
@@ -227,18 +252,23 @@ At minimum, add or update focused API tests around:
 
 * attempts pagination default page size and metadata
 * custom valid page/pageSize
+* omitted pagination query params default to page 1 and page size 25
 * invalid page/pageSize validation
 * deterministic newest-first ordering
 * date-range filtering with pagination metadata
+* requested page beyond total pages returns an empty bounded page plus accurate
+  metadata, or otherwise follows a clearly tested clamp behavior
 * non-admin and unauthenticated access still forbidden
 * unknown survey still returns the existing not-found behavior
 
 At minimum, add or update focused web tests/source guardrails around:
 
 * summary disclosure includes `aria-expanded`
+* summary collapse leaves core actions/date controls reachable
 * attempts fetch includes page/pageSize parameters
 * pagination controls and visible range/total copy exist
 * date-range or page-size changes reset attempt pagination
+* page-only changes do not intentionally refetch report summary or tag catalog
 * existing review-tag category `<ALL>` controls remain present
 
 Suggested focused commands before the full gate:
@@ -270,9 +300,10 @@ Update as needed:
 
 * `markdown/releases/unreleased.md` with admin-readable draft notes for this
   production-bound admin-visible UX/scalability improvement.
-* `markdown/FOLLOW_UPS.md` for deferred Results enhancements such as status
-  filters, search, saved views, indexed reporting, or deeper table
-  virtualization if discovered during implementation.
+* `markdown/FOLLOW_UPS.md` to complete or narrow the existing reporting
+  pagination follow-up and keep deferred Results enhancements visible, such as
+  hidden-tag filtering, status filters, search, saved views, indexed reporting,
+  or deeper table virtualization if discovered during implementation.
 * `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
   commit readiness.
 * `notes/claude_handoff_phase_63.txt` before marking implementation complete.

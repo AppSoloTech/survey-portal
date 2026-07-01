@@ -1,0 +1,38 @@
+# Phase 63 — Claude Review
+
+Date: 2026-07-01
+
+Verdict:
+Accept with one layout fix to check.
+
+## Accepted Findings
+
+### Tablet-width attempts layout clipping
+
+The desktop Results attempts grid used fixed column minimums that could require
+roughly 880px of usable width, while the stacked mobile layout only engaged at
+the existing site mobile breakpoint. At tablet widths around 768px to 880px,
+the table could clip the rightmost Review column because the table had
+`overflow: hidden`.
+
+Disposition:
+Addressed. The Results attempts table now switches to the stacked row layout at
+`max-width: 56.25rem` (900px), keeping the View answers action reachable in the
+tablet band while preserving the denser table at wider desktop widths.
+
+## Accepted Clean Areas
+
+- API pagination validation and beyond-range empty-page semantics are sound.
+- Count and list date-range predicates stay aligned.
+- Summary/tag catalog fetching is separated from attempts page fetching.
+- The summary disclosure is accessible and leaves Refresh, CSV export, and date
+  controls reachable while collapsed.
+- Participant/anonymous payloads and hidden-tag visibility boundaries are
+  unchanged.
+
+## Minor Notes
+
+- The Results web tests are source-string guardrails rather than behavioral
+  render tests. This matches the existing convention in that file.
+- `hasPreviousPage` is true for beyond-range pages when total pages exist; this
+  is acceptable and the frontend clamps stale pages.

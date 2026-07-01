@@ -1206,9 +1206,19 @@ export interface AdminAttemptSummary {
   answeredCount: number;
 }
 
+export interface PaginationMetadata {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
 export interface SurveyAttemptsListResponse {
   surveyId: number;
   attempts: AdminAttemptSummary[];
+  pagination: PaginationMetadata;
 }
 
 export interface AdminAttemptAnswerOption {

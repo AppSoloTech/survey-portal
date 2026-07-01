@@ -4,6 +4,7 @@ import {
   type AdminAttemptDetailResponse,
   type AdminAttemptReviewTag,
   type AdminAttemptSummary,
+  type PaginationMetadata,
   type Survey,
   type SurveyAttemptStatus,
   type TagCatalogGroup,
@@ -30,6 +31,15 @@ import { useToast } from "../../components/ToastProvider.js";
 import { useSurveyWorkspace } from "./SurveyWorkspaceLayout.js";
 
 const categoryAllValuePrefix = "category-all:";
+const attemptsPageSizeOptions = [25, 50, 100];
+const defaultAttemptsPagination: PaginationMetadata = {
+  page: 1,
+  pageSize: 25,
+  totalCount: 0,
+  totalPages: 0,
+  hasNextPage: false,
+  hasPreviousPage: false
+};
 
 export function categoryAllValue(groupId: number): string {
   return `${categoryAllValuePrefix}${groupId}`;
@@ -71,15 +81,23 @@ export function SurveyResultsPage() {
   const orderIndex = questionOrderIndex(survey);
   const [report, setReport] = useState<SurveyReportSummary | null>(null);
   const [attempts, setAttempts] = useState<AdminAttemptSummary[] | null>(null);
+  const [attemptsPagination, setAttemptsPagination] =
+    useState<PaginationMetadata>(defaultAttemptsPagination);
   const [detail, setDetail] = useState<AdminAttemptDetailResponse | null>(null);
   const [tagCatalog, setTagCatalog] = useState<TagDefinition[]>([]);
   const [tagGroups, setTagGroups] = useState<TagCatalogGroup[]>([]);
   const [ungroupedTags, setUngroupedTags] = useState<TagDefinition[]>([]);
   const [detailAttemptId, setDetailAttemptId] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [attemptsPage, setAttemptsPage] = useState(1);
+  const [attemptsPageSize, setAttemptsPageSize] = useState(25);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(true);
+  const [isAttemptsLoading, setIsAttemptsLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [pendingReviewMutations, setPendingReviewMutations] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [attemptsError, setAttemptsError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   // Inclusive started-at window applied to the report, attempts list, and
   // CSV export together so every number on the page describes one cohort.
@@ -96,23 +114,15 @@ export function SurveyResultsPage() {
   useEffect(() => {
     let isActive = true;
 
-    detailRequestIdRef.current += 1;
-    setIsLoading(true);
-    setError(null);
-    setDetail(null);
-    setDetailAttemptId(null);
+    setIsSummaryLoading(true);
+    setSummaryError(null);
 
     const range = { from: fromDate || undefined, to: toDate || undefined };
 
-    Promise.all([
-      fetchSurveyReport(survey.id, range),
-      fetchSurveyAttempts(survey.id, range),
-      fetchTagDefinitions()
-    ])
-      .then(([reportResponse, attemptsResponse, tagResponse]) => {
+    Promise.all([fetchSurveyReport(survey.id, range), fetchTagDefinitions()])
+      .then(([reportResponse, tagResponse]) => {
         if (isActive) {
           setReport(reportResponse.report);
-          setAttempts(attemptsResponse.attempts);
           setTagCatalog(tagResponse.tags);
           setTagGroups(tagResponse.groups);
           setUngroupedTags(tagResponse.ungroupedTags);
@@ -120,12 +130,14 @@ export function SurveyResultsPage() {
       })
       .catch((loadError) => {
         if (isActive) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load results");
+          setSummaryError(
+            loadError instanceof Error ? loadError.message : "Could not load results summary"
+          );
         }
       })
       .finally(() => {
         if (isActive) {
-          setIsLoading(false);
+          setIsSummaryLoading(false);
         }
       });
 
@@ -133,6 +145,56 @@ export function SurveyResultsPage() {
       isActive = false;
     };
   }, [survey.id, reloadKey, fromDate, toDate]);
+
+  useEffect(() => {
+    let isActive = true;
+    const requestPage = attemptsPage;
+    const range = { from: fromDate || undefined, to: toDate || undefined };
+
+    detailRequestIdRef.current += 1;
+    setIsAttemptsLoading(true);
+    setAttemptsError(null);
+    setDetail(null);
+    setDetailAttemptId(null);
+    setIsDetailLoading(false);
+
+    fetchSurveyAttempts(survey.id, range, {
+      page: requestPage,
+      pageSize: attemptsPageSize
+    })
+      .then((attemptsResponse) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (
+          attemptsResponse.pagination.totalPages > 0 &&
+          requestPage > attemptsResponse.pagination.totalPages
+        ) {
+          setAttemptsPage(attemptsResponse.pagination.totalPages);
+          return;
+        }
+
+        setAttempts(attemptsResponse.attempts);
+        setAttemptsPagination(attemptsResponse.pagination);
+      })
+      .catch((loadError) => {
+        if (isActive) {
+          setAttemptsError(
+            loadError instanceof Error ? loadError.message : "Could not load attempts"
+          );
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsAttemptsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [survey.id, reloadKey, fromDate, toDate, attemptsPage, attemptsPageSize]);
 
   async function handleViewAnswers(attemptId: number) {
     if (detailAttemptId === attemptId) {
@@ -149,7 +211,7 @@ export function SurveyResultsPage() {
     setIsDetailLoading(true);
     setDetailAttemptId(attemptId);
     setDetail(null);
-    setError(null);
+    setDetailError(null);
 
     try {
       const response = await fetchSurveyAttemptDetail(survey.id, attemptId);
@@ -159,7 +221,7 @@ export function SurveyResultsPage() {
       }
     } catch (detailError) {
       if (detailRequestIdRef.current === requestId) {
-        setError(detailError instanceof Error ? detailError.message : "Could not load answers");
+        setDetailError(detailError instanceof Error ? detailError.message : "Could not load answers");
         setDetailAttemptId(null);
       }
     } finally {
@@ -176,7 +238,7 @@ export function SurveyResultsPage() {
 
     const mutationKey = `${answer.responseAnswerId}:add`;
     setPendingReviewMutations((current) => new Set(current).add(mutationKey));
-    setError(null);
+    setDetailError(null);
 
     try {
       const response = await addAnswerReviewTag({
@@ -206,7 +268,7 @@ export function SurveyResultsPage() {
 
     const mutationKey = `${answer.responseAnswerId}:add`;
     setPendingReviewMutations((current) => new Set(current).add(mutationKey));
-    setError(null);
+    setDetailError(null);
 
     try {
       const response = await addAnswerReviewTagCategory({
@@ -236,7 +298,7 @@ export function SurveyResultsPage() {
 
     const mutationKey = `${answer.responseAnswerId}:remove:${tagDefinitionId}`;
     setPendingReviewMutations((current) => new Set(current).add(mutationKey));
-    setError(null);
+    setDetailError(null);
 
     try {
       const response = await removeAnswerReviewTag({
@@ -266,7 +328,7 @@ export function SurveyResultsPage() {
 
     const mutationKey = `${answer.responseAnswerId}:remove-category:${groupId}`;
     setPendingReviewMutations((current) => new Set(current).add(mutationKey));
-    setError(null);
+    setDetailError(null);
 
     try {
       const response = await removeAnswerReviewTagCategory({
@@ -329,29 +391,55 @@ export function SurveyResultsPage() {
     );
   }
 
-  if (isLoading) {
+  if (isSummaryLoading && !report) {
     return <p className="status muted">Loading results...</p>;
   }
 
-  if (error && !report) {
-    return <p className="status error">{error}</p>;
+  if (summaryError && !report) {
+    return <p className="status error">{summaryError}</p>;
   }
 
-  if (!report || !attempts) {
+  if (!report) {
     return <p className="status error">Could not load results.</p>;
   }
 
   return (
     <div className="builder-workspace">
-      <section className="builder-form results-summary-panel">
+      <section
+        className={`builder-form results-summary-panel${
+          isSummaryExpanded ? "" : " collapsed"
+        }`}
+      >
         <div className="builder-section-heading">
           <div>
             <p className="eyebrow">Results</p>
-            <h3>Completion summary</h3>
+            <div className="results-summary-title-row">
+              <h3>Completion summary</h3>
+              <button
+                aria-controls="results-summary-body"
+                aria-expanded={isSummaryExpanded}
+                className="results-summary-toggle"
+                onClick={() => setIsSummaryExpanded((current) => !current)}
+                type="button"
+              >
+                <span aria-hidden="true" className="results-summary-toggle-indicator">
+                  {isSummaryExpanded ? "-" : "+"}
+                </span>
+                <span>{isSummaryExpanded ? "Collapse" : "Expand"}</span>
+              </button>
+            </div>
             <p className="builder-heading-note">
               Counts cover every attempt of this assessment. Hidden tags shown here are
               internal metadata and are never visible to participants.
             </p>
+            {!isSummaryExpanded ? (
+              <div className="results-summary-compact" aria-label="Collapsed summary counts">
+                <span>{report.attemptCounts.completed} completed</span>
+                <span>{report.attemptCounts.inProgress} in progress</span>
+                <span>{report.attemptCounts.abandoned} abandoned</span>
+                <span>{formatPercent(report.completionRate)} rate</span>
+              </div>
+            ) : null}
           </div>
           <div className="inline-actions">
             <button
@@ -375,7 +463,10 @@ export function SurveyResultsPage() {
             From
             <input
               max={toDate || undefined}
-              onChange={(event) => setFromDate(event.target.value)}
+              onChange={(event) => {
+                setAttemptsPage(1);
+                setFromDate(event.target.value);
+              }}
               type="date"
               value={fromDate}
             />
@@ -384,7 +475,10 @@ export function SurveyResultsPage() {
             To
             <input
               min={fromDate || undefined}
-              onChange={(event) => setToDate(event.target.value)}
+              onChange={(event) => {
+                setAttemptsPage(1);
+                setToDate(event.target.value);
+              }}
               type="date"
               value={toDate}
             />
@@ -393,6 +487,7 @@ export function SurveyResultsPage() {
             <button
               className="button-link compact-button ghost-button"
               onClick={() => {
+                setAttemptsPage(1);
                 setFromDate("");
                 setToDate("");
               }}
@@ -403,67 +498,72 @@ export function SurveyResultsPage() {
           ) : null}
         </div>
 
-        <dl className="results-summary-grid" aria-label="Attempt counts">
-          <div>
-            <dt>Completed</dt>
-            <dd>{report.attemptCounts.completed}</dd>
-          </div>
-          <div>
-            <dt>In progress</dt>
-            <dd>{report.attemptCounts.inProgress}</dd>
-          </div>
-          <div>
-            <dt>Abandoned</dt>
-            <dd>{report.attemptCounts.abandoned}</dd>
-          </div>
-          <div>
-            <dt>Completion rate</dt>
-            <dd>{formatPercent(report.completionRate)}</dd>
-          </div>
-        </dl>
+        {summaryError ? <p className="status error">{summaryError}</p> : null}
+        {isSummaryLoading ? <p className="status muted">Refreshing summary...</p> : null}
 
-        {report.questionStats.length > 0 ? (
-          <div className="results-question-stats">
-            <h4>Answers per question</h4>
-            {[...report.questionStats]
-              .sort((left, right) =>
-                compareByQuestionOrder(orderIndex, left.questionId, right.questionId)
-              )
-              .map((stat) => {
-              // Bars scale against the most-answered question so the list
-              // reads as a drop-off funnel through the survey.
-              const maxAnswered = Math.max(
-                1,
-                ...report.questionStats.map((each) => each.answeredCount)
-              );
-              const barPercent = Math.round((stat.answeredCount / maxAnswered) * 100);
+        <div className="results-summary-body" hidden={!isSummaryExpanded} id="results-summary-body">
+          <dl className="results-summary-grid" aria-label="Attempt counts">
+            <div>
+              <dt>Completed</dt>
+              <dd>{report.attemptCounts.completed}</dd>
+            </div>
+            <div>
+              <dt>In progress</dt>
+              <dd>{report.attemptCounts.inProgress}</dd>
+            </div>
+            <div>
+              <dt>Abandoned</dt>
+              <dd>{report.attemptCounts.abandoned}</dd>
+            </div>
+            <div>
+              <dt>Completion rate</dt>
+              <dd>{formatPercent(report.completionRate)}</dd>
+            </div>
+          </dl>
 
-              return (
-                <div className="results-question-stat-row" key={stat.questionId}>
-                  <span className="results-question-label">
-                    {resultsQuestionLabel(survey, stat.questionId, stat.displayOrder, stat.questionText)}
-                  </span>
-                  <span className="results-question-counts">
-                    {formatCount(stat.answeredCount, "answer")}
-                    {stat.blankCount > 0 ? `, ${stat.blankCount} blank` : ""}
-                    {stat.otherResponseCount > 0
-                      ? `, ${stat.otherResponseCount} other`
-                      : ""}
-                  </span>
-                  <span aria-hidden="true" className="results-question-bar">
-                    <span
-                      className="results-question-bar-fill"
-                      style={{ width: `${barPercent}%` }}
-                    />
-                  </span>
-                  <OptionDistribution optionStats={stat.optionStats} />
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
+          {report.questionStats.length > 0 ? (
+            <div className="results-question-stats">
+              <h4>Answers per question</h4>
+              {[...report.questionStats]
+                .sort((left, right) =>
+                  compareByQuestionOrder(orderIndex, left.questionId, right.questionId)
+                )
+                .map((stat) => {
+                // Bars scale against the most-answered question so the list
+                // reads as a drop-off funnel through the survey.
+                const maxAnswered = Math.max(
+                  1,
+                  ...report.questionStats.map((each) => each.answeredCount)
+                );
+                const barPercent = Math.round((stat.answeredCount / maxAnswered) * 100);
 
-        <TagRollup tagStats={report.tagStats} />
+                return (
+                  <div className="results-question-stat-row" key={stat.questionId}>
+                    <span className="results-question-label">
+                      {resultsQuestionLabel(survey, stat.questionId, stat.displayOrder, stat.questionText)}
+                    </span>
+                    <span className="results-question-counts">
+                      {formatCount(stat.answeredCount, "answer")}
+                      {stat.blankCount > 0 ? `, ${stat.blankCount} blank` : ""}
+                      {stat.otherResponseCount > 0
+                        ? `, ${stat.otherResponseCount} other`
+                        : ""}
+                    </span>
+                    <span aria-hidden="true" className="results-question-bar">
+                      <span
+                        className="results-question-bar-fill"
+                        style={{ width: `${barPercent}%` }}
+                      />
+                    </span>
+                    <OptionDistribution optionStats={stat.optionStats} />
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <TagRollup tagStats={report.tagStats} />
+        </div>
       </section>
 
       <section className="builder-form results-attempts-panel">
@@ -471,43 +571,79 @@ export function SurveyResultsPage() {
           <div>
             <p className="eyebrow">Attempts</p>
             <h3>Participant attempts</h3>
+            <p className="builder-heading-note">
+              {formatAttemptRange(attemptsPagination, attempts?.length ?? 0)}
+            </p>
           </div>
+          <label className="results-page-size-control">
+            Rows
+            <select
+              onChange={(event) => {
+                setAttemptsPage(1);
+                setAttemptsPageSize(Number(event.target.value));
+              }}
+              value={attemptsPageSize}
+            >
+              {attemptsPageSizeOptions.map((pageSize) => (
+                <option key={pageSize} value={pageSize}>
+                  {pageSize}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
-        {error ? <p className="status error">{error}</p> : null}
+        {attemptsError ? <p className="status error">{attemptsError}</p> : null}
+        {detailError ? <p className="status error">{detailError}</p> : null}
+        {isAttemptsLoading ? <p className="status muted">Loading attempts...</p> : null}
 
-        {attempts.length === 0 ? (
+        {!isAttemptsLoading && !attemptsError && (attempts?.length ?? 0) === 0 ? (
           <div className="builder-empty-state">
             <strong>No attempts yet</strong>
             <span>
-              Results appear here once participants start the published assessment.
+              Results appear here once participants match the selected date range.
             </span>
           </div>
-        ) : (
-          <div className="results-attempt-list">
-            {attempts.map((attempt) => (
+        ) : null}
+
+        {attempts && attempts.length > 0 ? (
+          <div className="results-attempt-table" role="table" aria-label="Participant attempts">
+            <div className="results-attempt-table-head" role="row">
+              <span role="columnheader">Participant</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Started</span>
+              <span role="columnheader">Activity</span>
+              <span role="columnheader">Answers</span>
+              <span role="columnheader">Review</span>
+            </div>
+            <div className="results-attempt-list" role="rowgroup">
+              {attempts.map((attempt) => (
               <div className="results-attempt-row" key={attempt.attemptId}>
-                <div className="results-attempt-main">
+                <div className="results-attempt-main" role="cell" data-label="Participant">
                   <strong>
                     {attempt.participant.firstName} {attempt.participant.lastName}
                   </strong>
                   <span className="results-attempt-email">
                     {formatParticipantEmail(attempt.participant)}
                   </span>
-                  <div className="results-attempt-meta">
-                    <span>Started {formatDateTime(attempt.startedAt)}</span>
-                    <span>
-                      {attempt.status === "completed"
-                        ? `Completed ${formatDateTime(attempt.completedAt)}`
-                        : `Last activity ${formatDateTime(attempt.lastActivityAt)}`}
-                    </span>
-                    <span>{formatCount(attempt.answeredCount, "answer")} saved</span>
-                  </div>
                 </div>
-                <div className="results-attempt-actions">
+                <div role="cell" data-label="Status">
                   <span className={`status-pill ${attempt.status}`}>
                     {formatAttemptStatus(attempt.status)}
                   </span>
+                </div>
+                <span role="cell" data-label="Started">
+                  {formatDateTime(attempt.startedAt)}
+                </span>
+                <span role="cell" data-label="Activity">
+                  {attempt.status === "completed"
+                    ? formatDateTime(attempt.completedAt)
+                    : formatDateTime(attempt.lastActivityAt)}
+                </span>
+                <span role="cell" data-label="Answers">
+                  {formatCount(attempt.answeredCount, "answer")}
+                </span>
+                <div className="results-attempt-actions" role="cell" data-label="Review">
                   <button
                     className="button-link compact-button secondary-button"
                     disabled={isDetailLoading && detailAttemptId === attempt.attemptId}
@@ -520,9 +656,34 @@ export function SurveyResultsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              ))}
+            </div>
           </div>
-        )}
+        ) : null}
+
+        <div className="pagination-row results-pagination-row" aria-label="Attempt pages">
+          <button
+            className="button-link compact-button secondary-button"
+            disabled={isAttemptsLoading || !attemptsPagination.hasPreviousPage}
+            onClick={() => setAttemptsPage((page) => Math.max(1, page - 1))}
+            type="button"
+          >
+            Previous
+          </button>
+          <span aria-atomic="true" aria-live="polite" className="pagination-status" role="status">
+            {attemptsPagination.totalPages > 0
+              ? `Page ${attemptsPagination.page} of ${attemptsPagination.totalPages}`
+              : "Page 0 of 0"}
+          </span>
+          <button
+            className="button-link compact-button secondary-button"
+            disabled={isAttemptsLoading || !attemptsPagination.hasNextPage}
+            onClick={() => setAttemptsPage((page) => page + 1)}
+            type="button"
+          >
+            Next
+          </button>
+        </div>
 
         {isDetailLoading ? <p className="status muted">Loading answers...</p> : null}
         {detail ? (
@@ -982,6 +1143,24 @@ function formatPercent(rate: number): string {
 
 function formatCount(count: number, singularLabel: string): string {
   return `${count} ${singularLabel}${count === 1 ? "" : "s"}`;
+}
+
+function formatAttemptRange(pagination: PaginationMetadata, visibleCount: number): string {
+  if (pagination.totalCount === 0) {
+    return "0 attempts";
+  }
+
+  if (visibleCount === 0) {
+    return `${formatCount(pagination.totalCount, "attempt")} total`;
+  }
+
+  const firstVisible = (pagination.page - 1) * pagination.pageSize + 1;
+  const lastVisible = Math.min(firstVisible + visibleCount - 1, pagination.totalCount);
+
+  return `Showing ${firstVisible}-${lastVisible} of ${formatCount(
+    pagination.totalCount,
+    "attempt"
+  )}`;
 }
 
 function formatDateTime(isoDate: string | null): string {

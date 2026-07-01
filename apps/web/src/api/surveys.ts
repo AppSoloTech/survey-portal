@@ -1020,7 +1020,15 @@ export interface AttemptDateRange {
   to?: string;
 }
 
-function rangeQueryString(range?: AttemptDateRange): string {
+interface AttemptsPaginationRequest {
+  page?: number;
+  pageSize?: number;
+}
+
+function rangeQueryString(
+  range?: AttemptDateRange,
+  pagination?: AttemptsPaginationRequest
+): string {
   const params = new URLSearchParams();
 
   if (range?.from) {
@@ -1029,6 +1037,14 @@ function rangeQueryString(range?: AttemptDateRange): string {
 
   if (range?.to) {
     params.set("to", range.to);
+  }
+
+  if (pagination?.page) {
+    params.set("page", String(pagination.page));
+  }
+
+  if (pagination?.pageSize) {
+    params.set("pageSize", String(pagination.pageSize));
   }
 
   const query = params.toString();
@@ -1047,10 +1063,11 @@ export async function fetchSurveyReport(
 
 export async function fetchSurveyAttempts(
   surveyId: number,
-  range?: AttemptDateRange
+  range?: AttemptDateRange,
+  pagination?: AttemptsPaginationRequest
 ): Promise<SurveyAttemptsListResponse> {
   return apiRequest<SurveyAttemptsListResponse>(
-    `/api/surveys/${surveyId}/attempts${rangeQueryString(range)}`
+    `/api/surveys/${surveyId}/attempts${rangeQueryString(range, pagination)}`
   );
 }
 

@@ -18,4 +18,29 @@ describe("SurveyResultsPage review tag helpers", () => {
     expect(source).toContain("removeAnswerReviewTagCategory");
     expect(source).not.toContain("tagValue: \"<ALL>\"");
   });
+
+  it("keeps the summary body behind an accessible disclosure control", () => {
+    expect(source).toContain('aria-controls="results-summary-body"');
+    expect(source).toContain("aria-expanded={isSummaryExpanded}");
+    expect(source).toContain('id="results-summary-body"');
+    expect(source).toContain("hidden={!isSummaryExpanded}");
+    expect(source).toContain("results-summary-title-row");
+    expect(source).toContain("results-summary-toggle");
+    expect(source).toContain("results-summary-compact");
+    expect(source).toContain("Collapse");
+    expect(source).toContain("Expand");
+  });
+
+  it("loads paginated attempts separately from summary and tag catalog data", () => {
+    expect(source).toContain("fetchSurveyAttempts(survey.id, range, {");
+    expect(source).toContain("page: requestPage");
+    expect(source).toContain("pageSize: attemptsPageSize");
+    expect(source).toContain("setAttemptsPage(attemptsResponse.pagination.totalPages)");
+    expect(source).toContain("setAttemptsPage(1)");
+    expect(source).toContain("formatAttemptRange(attemptsPagination");
+    expect(source).toContain("results-page-size-control");
+    expect(source).toContain("results-attempt-table");
+    expect(source).toContain('aria-label="Attempt pages"');
+    expect(source).not.toContain("fetchSurveyAttempts(survey.id, range),");
+  });
 });

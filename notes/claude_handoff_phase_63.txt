@@ -1,0 +1,103 @@
+# Phase 63 — Results Large-Data UX Handoff
+
+Date: 2026-07-01
+
+Prompt: `prompts/prompt_63.txt`
+
+## Implementation Summary
+
+- Added bounded pagination to `GET /api/surveys/:id/attempts`.
+- The endpoint now defaults to `page=1&pageSize=25`, caps page size at 100,
+  validates invalid pagination input with 400s, and returns:
+  `{ surveyId, attempts, pagination }`.
+- Pagination is applied in SQL with `limit`/`offset`; a matching filtered count
+  query supplies `totalCount`, `totalPages`, and previous/next metadata.
+- Date-range filters continue to apply to report summary, CSV export, and the
+  attempts list.
+- The Results page now loads report summary/tag catalog separately from the
+  paginated attempts browser, so page changes do not refetch the summary or tag
+  catalog.
+- Added an accessible summary disclosure button with `aria-expanded` and
+  `aria-controls`; Refresh, CSV export, and date controls remain visible when
+  collapsed.
+- Replaced the bottom all-attempts card list with a denser table-like attempts
+  browser, page-size choices (25/50/100), visible range text, and previous/next
+  controls.
+- Attempt detail remains a single panel loaded by attempt id and closes when
+  pagination/date/page-size changes.
+- Existing review-tag editing behavior is preserved inside the selected detail
+  panel.
+- Post-review: adjusted the attempts browser responsive breakpoint so tablet
+  widths use stacked rows before the desktop grid can clip the Review action.
+
+## Files Changed
+
+- `packages/shared/src/index.ts`
+- `apps/api/src/routes/surveyReportingRoutes.ts`
+- `apps/api/src/services/surveyReporting.ts`
+- `apps/api/test/reporting.test.ts`
+- `apps/web/src/api/surveys.ts`
+- `apps/web/src/pages/admin/SurveyResultsPage.tsx`
+- `apps/web/src/pages/admin/SurveyResultsPage.test.ts`
+- `apps/web/src/styles.css`
+- `markdown/releases/unreleased.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+- `notes/claude_review_phase_63.txt`
+
+## Tests Added Or Updated
+
+- API reporting tests now cover:
+  - default page 1 / page size 25
+  - custom valid page and page size
+  - invalid pagination params
+  - deterministic newest-first ordering with id tie-break
+  - date-range-filtered pagination metadata
+  - beyond-range page returning an empty bounded page with metadata
+- Web Results source guardrails now cover:
+  - accessible summary disclosure markup
+  - attempts loading separately from summary/tag catalog loading
+  - page reset/clamp and attempt browser controls
+
+## Validation
+
+Passed:
+
+```bash
+npm run typecheck
+npm run lint
+npm run test -w apps/api -- test/reporting.test.ts
+npm run test -w apps/web -- SurveyResultsPage
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+Notes:
+
+- The first sandboxed API test attempt could not connect to local PostgreSQL
+  (`EPERM 127.0.0.1:5432`); rerun with approved local DB access passed.
+- Full `npm test` passed with approved local DB access:
+  shared 71 tests, web 108 tests, API 318 tests, release 9 tests, loadtest 29
+  tests.
+- `npm run build` passed with the existing Vite large-chunk warning.
+
+## Review Focus
+
+- Confirm pagination validation and metadata semantics are appropriate,
+  especially beyond-range pages returning an empty page rather than server-side
+  clamping.
+- Confirm the SQL count/list queries keep the date-range predicate aligned.
+- Confirm page changes do not refetch report summary or tag catalog.
+- Confirm summary collapse keeps core controls reachable and accessible.
+- Confirm the denser attempts layout remains acceptable for admin use at
+  mobile/tablet/desktop widths.
+- Confirm no participant/anonymous payloads or hidden-tag visibility boundaries
+  changed.
+
+## Deferred Work
+
+- Hidden-tag filtering remains deferred as a future reporting-analysis feature.
+  Phase 63 completes the pagination/large-data presentation portion of the old
+  reporting follow-up.

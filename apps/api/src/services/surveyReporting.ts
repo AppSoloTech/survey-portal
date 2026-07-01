@@ -5,6 +5,7 @@ import {
   type AdminAttemptDetailResponse,
   type AdminAttemptReviewTag,
   type AdminAttemptSummary,
+  type PaginationMetadata,
   type ReportParticipant,
   type Survey,
   type SurveyAttempt,
@@ -63,6 +64,16 @@ type ReviewTagMutationResult =
   | { ok: true; reviewTagGroupIds: number[]; reviewTags: AdminAttemptReviewTag[] }
   | { ok: false; status: 404; error: string }
   | { ok: false; status: 400; error: string };
+
+export interface AdminAttemptsPaginationInput {
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminAttemptsPage {
+  attempts: AdminAttemptSummary[];
+  pagination: PaginationMetadata;
+}
 
 function buildAnonymousParticipant(contactEmail: string | null): ReportParticipant {
   return {
@@ -327,16 +338,29 @@ export async function fetchSurveyReportSummary(
 
 export async function fetchAdminAttempts(
   surveyId: number,
-  range?: AttemptDateRange
-): Promise<AdminAttemptSummary[] | null> {
+  range: AttemptDateRange | undefined,
+  pagination: AdminAttemptsPaginationInput
+): Promise<AdminAttemptsPage | null> {
   const survey = await fetchSurveyRecord(pool, surveyId);
 
   if (!survey) {
     return null;
   }
 
+  const countValues: unknown[] = [surveyId];
+  const countRangeSql = attemptRangeSql("survey_attempts", range, countValues);
+  const countResult = await pool.query<{ count: string }>(
+    `select count(*)::text as count
+     from survey_attempts
+     where survey_id = $1${countRangeSql}`,
+    countValues
+  );
+  const totalCount = Number(countResult.rows[0]?.count ?? 0);
+  const totalPages = Math.ceil(totalCount / pagination.pageSize);
+  const offset = (pagination.page - 1) * pagination.pageSize;
   const values: unknown[] = [surveyId];
   const rangeSql = attemptRangeSql("survey_attempts", range, values);
+  values.push(pagination.pageSize, offset);
   const attemptsResult = await pool.query<
     SurveyAttemptRecord & ParticipantRecord & { attempt_id: number; answered_count: string }
   >(
@@ -359,21 +383,33 @@ export async function fetchAdminAttempts(
        on survey_response_answers.survey_attempt_id = survey_attempts.id
      where survey_attempts.survey_id = $1${rangeSql}
      group by survey_attempts.id, users.id
-     order by survey_attempts.started_at desc nulls last, survey_attempts.id desc`,
+     order by survey_attempts.started_at desc nulls last, survey_attempts.id desc
+     limit $${values.length - 1}
+     offset $${values.length}`,
     values
   );
 
-  return attemptsResult.rows.map((row) => ({
-    attemptId: row.attempt_id,
-    participant: row.user_id
-      ? mapParticipantRecord(row)
-      : buildAnonymousParticipant(row.anonymous_contact_email),
-    status: row.status,
-    startedAt: row.started_at?.toISOString() ?? null,
-    lastActivityAt: row.last_activity_at?.toISOString() ?? null,
-    completedAt: row.completed_at?.toISOString() ?? null,
-    answeredCount: Number(row.answered_count)
-  }));
+  return {
+    attempts: attemptsResult.rows.map((row) => ({
+      attemptId: row.attempt_id,
+      participant: row.user_id
+        ? mapParticipantRecord(row)
+        : buildAnonymousParticipant(row.anonymous_contact_email),
+      status: row.status,
+      startedAt: row.started_at?.toISOString() ?? null,
+      lastActivityAt: row.last_activity_at?.toISOString() ?? null,
+      completedAt: row.completed_at?.toISOString() ?? null,
+      answeredCount: Number(row.answered_count)
+    })),
+    pagination: {
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      totalCount,
+      totalPages,
+      hasNextPage: pagination.page < totalPages,
+      hasPreviousPage: totalPages > 0 && pagination.page > 1
+    }
+  };
 }
 
 export async function fetchAdminAttemptDetail(

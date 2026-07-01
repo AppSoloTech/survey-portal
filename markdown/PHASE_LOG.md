@@ -6,6 +6,165 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 63 — Results Large-Data UX
+
+Date:
+2026-07-01
+
+Status:
+Implemented; validation passed; Claude review finding addressed
+
+Prompt:
+`prompts/prompt_63.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_63.txt`
+- Claude review: `notes/claude_review_phase_63.txt`
+
+## Goals
+
+- Reduce noise on the Admin Results page.
+- Make the summary body collapsible while keeping date filters, Refresh, and
+  CSV export reachable.
+- Replace the all-attempts Results rendering with a large-data-friendly,
+  server-paginated attempts browser.
+
+## Built
+
+- Added page/pageSize validation to `GET /api/surveys/:id/attempts` with
+  defaults of page 1 and page size 25 and a maximum page size of 100.
+- Updated the attempts reporting service to use a filtered SQL count query and
+  SQL-level `limit`/`offset` pagination, ordered by
+  `started_at desc nulls last, id desc`.
+- Extended the shared attempts response with pagination metadata:
+  `page`, `pageSize`, `totalCount`, `totalPages`, `hasNextPage`, and
+  `hasPreviousPage`.
+- Split the Results page loading so summary/tag catalog fetches are separate
+  from attempts-page fetches. Attempts page changes no longer refetch the
+  report summary or tag catalog.
+- Added a summary disclosure control with `aria-expanded` and
+  `aria-controls`; collapsed state hides summary counts, question stats, option
+  distributions, and hidden-tag rollup only.
+- Added a denser table-like attempts browser with visible range context,
+  Previous/Next controls, and 25/50/100 page-size choices.
+- Adjusted the attempts browser responsive breakpoint so tablet-width layouts
+  use stacked rows instead of clipping the Review action column.
+- Preserved single-panel attempt detail loading, review-tag editing, hidden-tag
+  rollup semantics, CSV date-range export, and Admin-only authorization.
+
+## Important Decisions
+
+### Beyond-Range Pages
+
+Decision:
+The API returns an empty bounded page with accurate metadata when a requested
+page is beyond the result set. The frontend detects that condition and clamps
+to the last available page.
+
+Reason:
+This keeps the API contract simple, avoids surprise redirects in a read
+endpoint, and still gives the UI enough information to recover from stale page
+state.
+
+### Summary And Attempts Loading
+
+Decision:
+Date-range changes and Refresh reload both summary and attempts. Attempts-page
+and page-size changes reload only the attempts endpoint.
+
+Reason:
+The report summary/tag catalog are denser and more expensive data. Paging
+through participant rows should not churn them.
+
+## Architecture Notes
+
+- Database/schema impact: none.
+- API contract impact: `GET /api/surveys/:id/attempts` is now paginated and
+  returns pagination metadata.
+- Auth or authorization impact: none; reporting routes remain Admin-only.
+- Participant/anonymous impact: none.
+- Hidden-tag visibility impact: none; Admin Results still shows internal
+  metadata only to admins.
+- Deferred work: hidden-tag filtering remains a future reporting feature.
+
+## Validation
+
+Commands run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run test -w apps/api -- test/reporting.test.ts
+npm run test -w apps/web -- SurveyResultsPage
+npm run build
+npm test
+npm run release:check
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run typecheck`.
+- Passed: `npm run lint`.
+- Passed with approved local DB access:
+  `npm run test -w apps/api -- test/reporting.test.ts` (31 tests).
+- Passed: `npm run test -w apps/web -- SurveyResultsPage` (3 tests).
+- Passed: `npm run build` (Vite emitted the existing large-chunk warning).
+- Passed with approved local DB access: `npm test`.
+  - shared: 71 tests
+  - web: 108 tests
+  - API: 318 tests
+  - release: 9 tests
+  - loadtest: 29 tests
+- Passed: `npm run release:check`.
+- Passed: `git diff --check`.
+
+Problems encountered:
+
+- Initial sandboxed focused API test command could not connect to local
+  PostgreSQL (`EPERM 127.0.0.1:5432`) and used the wrong Vitest filter before
+  setup ran.
+- First approved focused API run hit auth registration rate limiting in the
+  pagination fixture. The fixture was changed to seed user/attempt records
+  directly in the test database.
+
+## Follow-Up Tasks
+
+- None.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Codex handoff created: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes.
+- Security review complete: Yes; Claude review found no boundary issues.
+- Review findings addressed or deferred: Yes; tablet layout clipping finding
+  addressed.
+- Manual testing complete: Not run.
+- Ready to commit: Yes.
+
+## Claude Review Notes
+
+Source:
+
+- `notes/claude_review_phase_63.txt`
+
+Status:
+
+- Completed; accepted with one layout fix.
+
+Findings and disposition:
+
+- Tablet-width attempts grid clipping risk: addressed by switching the Results
+  attempts browser to stacked rows at `max-width: 56.25rem` (900px), before the
+  desktop grid can clip the Review action column.
+
+---
+
 ## Phase 62 — Tag Category Emoji Inheritance
 
 Date:

@@ -19,6 +19,32 @@ import {
 
 export const surveyReportingRouter = express.Router();
 
+const defaultAttemptsPageSize = 25;
+const maxAttemptsPageSize = 100;
+
+function readAttemptsPaginationParam(
+  value: unknown,
+  fallback: number,
+  max: number,
+  name: "page" | "pageSize"
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (value === undefined) {
+    return { ok: true, value: fallback };
+  }
+
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    return { ok: false, error: `${name} must be a positive integer` };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return { ok: false, error: `${name} must be a positive integer` };
+  }
+
+  return { ok: true, value: Math.min(parsed, max) };
+}
+
 surveyReportingRouter.get(
   "/:id/report",
   requireAuth,
@@ -73,14 +99,40 @@ surveyReportingRouter.get(
         return;
       }
 
-      const attempts = await fetchAdminAttempts(surveyId, rangeValidation.value);
+      const page = readAttemptsPaginationParam(
+        req.query.page,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "page"
+      );
+      const pageSize = readAttemptsPaginationParam(
+        req.query.pageSize,
+        defaultAttemptsPageSize,
+        maxAttemptsPageSize,
+        "pageSize"
+      );
 
-      if (!attempts) {
+      if (!page.ok) {
+        res.status(400).json({ error: page.error });
+        return;
+      }
+
+      if (!pageSize.ok) {
+        res.status(400).json({ error: pageSize.error });
+        return;
+      }
+
+      const attemptsPage = await fetchAdminAttempts(surveyId, rangeValidation.value, {
+        page: page.value,
+        pageSize: pageSize.value
+      });
+
+      if (!attemptsPage) {
         res.status(404).json({ error: "Survey not found" });
         return;
       }
 
-      res.json({ surveyId, attempts });
+      res.json({ surveyId, attempts: attemptsPage.attempts, pagination: attemptsPage.pagination });
     } catch (error) {
       next(error);
     }

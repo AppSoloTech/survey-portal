@@ -138,7 +138,7 @@ Review this file before starting each implementation phase. When a follow-up is 
 - Consider moving the full health response shape, including database status, into `packages/shared`.
 - Confirm with the client that the enforced attempt policy matches the business need: a completed attempt blocks new starts (409), while an abandoned attempt allows a fresh start and stays visible in reports as history.
 - ~~Migrate `collectFinalPathQuestionIds` in `apps/api/src/services/surveyReporting.ts` onto the shared `resolveAttemptPath` helper~~ — superseded in Phase 14: it now uses `resolveProgressivePageState` (the page runtime's resolver) so the `onFinalPath` flag matches what the participant was shown for page-jump surveys.
-- Add reporting pagination and hidden-tag filtering when attempt volume or analysis needs grow.
+- Add hidden-tag filtering to reporting and CSV export if category/value analysis needs grow.
 - The surveys overview fetches one report per non-draft survey for its completion indicator (now only for the visible page); replace with a batched count endpoint if survey count grows.
 - Add a lightweight server-paginated survey list endpoint (without full question trees) when survey volume outgrows client-side pagination on the dashboard and admin overview.
 - Phase 56 glossary question search scaling: the first Admin helper endpoint
@@ -206,6 +206,9 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Completed Follow-Ups
 
+- Phase 63: Added server-side pagination for the Admin Results attempts API and
+  frontend attempts browser. Hidden-tag filtering remains deferred as a
+  separate reporting-analysis enhancement.
 - Phase 44: Manual accessibility/browser pass completed 2026-06-27.
   Developer verified invalid login, register missing/invalid fields,
   forgot/reset password success and error states, reset success modal focus

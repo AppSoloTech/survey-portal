@@ -111,6 +111,47 @@ async function seedReviewTagFixture(admin: TestSession) {
   };
 }
 
+async function seedPaginatedAttemptsFixture(admin: TestSession, count = 28) {
+  let survey = await createDraftSurvey(app, admin, "Paginated attempts survey");
+  survey = await addQuestion(app, admin, survey.id, {
+    questionText: "Any notes?",
+    isRequired: false
+  });
+  survey = await setSurveyStatus(app, admin, survey.id, "published");
+  const { pool } = await import("../src/db.js");
+  const attemptIds: number[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const userResult = await pool.query<{ id: number }>(
+      `insert into users (first_name, last_name, email, password_hash)
+       values ($1, $2, $3, $4)
+       returning id`,
+      ["Paged", `User ${index + 1}`, `paged.${survey.id}.${index + 1}@example.com`, "test-hash"]
+    );
+    const day = Math.min(index + 1, count);
+    const startedAt =
+      index >= count - 2
+        ? "2026-01-28T12:00:00.000Z"
+        : `2026-01-${String(day).padStart(2, "0")}T12:00:00.000Z`;
+    const attemptResult = await pool.query<{ id: number }>(
+      `insert into survey_attempts (
+         survey_id,
+         user_id,
+         status,
+         started_at,
+         last_activity_at
+       )
+       values ($1, $2, 'in_progress', $3, $3)
+       returning id`,
+      [survey.id, userResult.rows[0].id, startedAt]
+    );
+
+    attemptIds.push(attemptResult.rows[0].id);
+  }
+
+  return { survey, attemptIds };
+}
+
 async function createTagGroup(
   admin: TestSession,
   name: string
@@ -274,6 +315,128 @@ describe("GET /api/surveys/:id/attempts", () => {
     expect(byAttemptId.get(fixture.abandonedAttemptId)).toMatchObject({
       status: "abandoned",
       answeredCount: 0
+    });
+    expect(response.body.pagination).toMatchObject({
+      page: 1,
+      pageSize: 25,
+      totalCount: 3,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPreviousPage: false
+    });
+  });
+
+  it("defaults to page 1 and page size 25 with bounded pagination metadata", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedPaginatedAttemptsFixture(admin, 28);
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.attempts).toHaveLength(25);
+    expect(response.body.pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      totalCount: 28,
+      totalPages: 2,
+      hasNextPage: true,
+      hasPreviousPage: false
+    });
+  });
+
+  it("returns custom pages newest first with deterministic id tie-breaking", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedPaginatedAttemptsFixture(admin, 28);
+
+    const firstPage = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts?page=1&pageSize=2`)
+      .set("Cookie", admin.cookie);
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.attempts.map((attempt: { attemptId: number }) => attempt.attemptId)).toEqual([
+      fixture.attemptIds[27],
+      fixture.attemptIds[26]
+    ]);
+    expect(firstPage.body.pagination).toEqual({
+      page: 1,
+      pageSize: 2,
+      totalCount: 28,
+      totalPages: 14,
+      hasNextPage: true,
+      hasPreviousPage: false
+    });
+
+    const secondPage = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts?page=2&pageSize=2`)
+      .set("Cookie", admin.cookie);
+
+    expect(secondPage.status).toBe(200);
+    expect(
+      secondPage.body.attempts.map((attempt: { attemptId: number }) => attempt.attemptId)
+    ).toEqual([fixture.attemptIds[25], fixture.attemptIds[24]]);
+    expect(secondPage.body.pagination).toMatchObject({
+      page: 2,
+      pageSize: 2,
+      totalCount: 28,
+      totalPages: 14,
+      hasNextPage: true,
+      hasPreviousPage: true
+    });
+  });
+
+  it("validates pagination query parameters", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedReportingFixture(admin);
+
+    for (const query of ["page=0", "page=abc", "pageSize=0", "pageSize=abc"]) {
+      const response = await request(app)
+        .get(`/api/surveys/${fixture.survey.id}/attempts?${query}`)
+        .set("Cookie", admin.cookie);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/must be a positive integer/);
+    }
+  });
+
+  it("applies date-range filtering to attempts pagination metadata", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedPaginatedAttemptsFixture(admin, 28);
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts?from=2026-01-10&to=2026-01-14&page=1&pageSize=2`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.attempts).toHaveLength(2);
+    expect(response.body.pagination).toEqual({
+      page: 1,
+      pageSize: 2,
+      totalCount: 5,
+      totalPages: 3,
+      hasNextPage: true,
+      hasPreviousPage: false
+    });
+  });
+
+  it("returns an empty bounded page when the requested page is beyond the filtered result set", async () => {
+    const admin = await registerAdmin(app);
+    const fixture = await seedPaginatedAttemptsFixture(admin, 28);
+
+    const response = await request(app)
+      .get(`/api/surveys/${fixture.survey.id}/attempts?page=99&pageSize=10`)
+      .set("Cookie", admin.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.attempts).toEqual([]);
+    expect(response.body.pagination).toEqual({
+      page: 99,
+      pageSize: 10,
+      totalCount: 28,
+      totalPages: 3,
+      hasNextPage: false,
+      hasPreviousPage: true
     });
   });
 });
