@@ -6,6 +6,172 @@ Use `markdown/PHASE_TEMPLATE.md` for phase entries.
 
 ---
 
+## Phase 64 — Thermometer Break-Off Explosion
+
+Date:
+2026-07-01
+
+Status:
+Implemented; validation passed; Claude review addressed; Claude visual overhaul documented
+
+Prompt:
+`prompts/prompt_64.txt`
+
+Git Commit:
+Pending
+
+Review Artifacts:
+- Codex handoff: `notes/claude_handoff_phase_64.txt`
+- Claude review: `notes/claude_review_phase_64.txt`
+
+## Goals
+
+- Improve the participant Ready to submit issue-profile thermometer ending
+  animation.
+- Make the thermometer top visibly break off as part of the final burst.
+- Add richer explosion graphics without adding a new animation dependency.
+- Preserve existing accessibility, reduced-motion, and hidden-tag privacy
+  boundaries.
+
+## Built
+
+- Created `prompts/prompt_64.txt` for the frontend-only polish phase.
+- Updated the Ready to submit issue-profile burst to use the existing GSAP
+  motion layer for one coordinated timeline.
+- Added a decorative break-off thermometer cap, five shard pieces, smoke/puff
+  particles, and richer spark motion around the thermometer top.
+- Enlarged the thermometer visual and tied the burst origin to the top-center
+  of the meter's visual column so the explosion starts from the meter edge.
+- Replaced the decorative div/CSS thermometer with an SVG thermometer stage for
+  more precise tube, bulb, fill, glow, crack, and burst-ray visuals.
+- Reworked the SVG thermometer into a consistent classic thermometer silhouette:
+  matching glass/well geometry, tube walls at `x35/x61`, a bulb centered at
+  `(48,136)`, a shared stem/bulb silhouette, a thinner cyan glass stroke, and
+  interior tick marks.
+- Added a continuous `gradientUnits="userSpaceOnUse"` blue-to-red warming
+  gradient from bottom to top so tube, bulb, neck, and meniscus sample the same
+  ramp instead of restarting per shape.
+- Added the missing `--danger-soft` theme token in light and dark mode so the
+  orange/red gradient stop renders correctly.
+- Added liquid polish: a curved meniscus at the fill top, heat-scaled fill glow
+  through `--thermo-heat`, spring fill transitions, and reduced-motion
+  transition suppression.
+- Made the broken rim a Ready to submit state only: in-progress uses an intact
+  rounded cap and Ready to submit uses a jagged broken-glass rim synchronized
+  with the burst.
+- Moved the burst layer inside the SVG visual wrapper and removed the white
+  halo/background so mobile and desktop explosions originate from the meter
+  itself instead of a nearby circular glow.
+- Kept the existing emoji particles and capped particle selection, now animated
+  by the same GSAP timeline as the cap/shard/spark effect.
+- Raised the burst self-clear timeout to cover the full max-particle GSAP
+  timeline and removed obsolete CSS keyframes from the prior implementation.
+- Preserved the existing burst-key replay behavior, static emoji collection,
+  polite screen-reader announcement, and reduced-motion suppression of the
+  decorative burst layer.
+- Updated web source guardrail tests, release notes, follow-ups, and handoff.
+
+## Important Decisions
+
+### Reuse GSAP
+
+Decision:
+Use the existing `gsap` dependency exported from the shared web motion helper.
+
+Reason:
+The web app already depends on GSAP for motion, so this gives the ending burst a
+coordinated timeline without adding package or bundle-management churn.
+
+Consequence:
+The old CSS-keyframe particle motion is replaced by GSAP-owned movement for the
+decorative burst layer.
+
+### Decorative-Only Break-Off
+
+Decision:
+Keep cap, shard, puff, spark, and emoji particles inside the existing
+`aria-hidden` burst layer.
+
+Reason:
+The effect should feel more polished visually without changing issue-profile
+meaning, progress semantics, or screen-reader output.
+
+Consequence:
+The progressbar value text and polite live-region announcement remain the
+participant-facing accessibility surface.
+
+## Impact
+
+- Database/schema impact: none.
+- API contract impact: none.
+- Frontend UX impact: issue-profile thermometer is a cleaner SVG visual with
+  intact and broken states, a continuous blue-to-red warming fill, liquid
+  meniscus polish, and a richer Ready to submit burst.
+- Hidden-tag/reporting impact: none; participant-facing copy and payloads do
+  not expose hidden tags or admin metadata.
+- Release impact: `markdown/releases/unreleased.md` includes this
+  participant-facing polish.
+
+## Validation
+
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+- Claude reported standalone headless-Chromium visual renders for intact and
+  broken states in both themes.
+
+Validation notes:
+- `npm run build` emitted the existing Vite large chunk warning.
+- The current thermometer has not yet been observed in the running app after
+  Claude's visual overhaul.
+- Manual browser/accessibility checks remain pending and are tracked in
+  `markdown/FOLLOW_UPS.md`.
+
+## Follow-Ups
+
+- Run the Phase 64 manual browser/accessibility pass for registered and
+  anonymous bursts, replay after navigating away/back to Ready to submit,
+  reduced-motion static presentation, light/dark themes, and 375/768/1280px
+  layouts.
+
+## Claude Review Notes
+
+Status:
+Completed 2026-07-01.
+
+Findings:
+- No blockers.
+- Addressed max-particle tail clipping by raising the burst self-clear timeout
+  from 3400ms to 4600ms.
+- Removed dead CSS keyframes left after moving particle/spark motion to GSAP.
+- Post-review note: a later client-requested SVG completion-stage enhancement
+  replaced the decorative div/CSS thermometer after the Claude review above.
+  Automated validation passed, but that newest visual-stage diff has not had a
+  separate Claude review.
+- Claude follow-up visual overhaul documented the final SVG thermometer shape,
+  continuous gradient, missing token fix, meniscus/heat glow, intact/broken rim
+  states, and standalone headless-Chromium visual render checks. It also noted
+  that the running app transition still needs a quick manual pass.
+
+## Commit Readiness
+
+- Requirements implemented: Yes.
+- Product context still aligned: Yes.
+- Architecture principles still aligned: Yes; no backend, API, or database
+  changes were introduced.
+- Security review complete: Partial; Claude review confirmed the participant-safe
+  copy and hidden-tag isolation boundaries for the GSAP refactor. The later SVG
+  visual overhaul remains frontend-only and participant-safe by source
+  guardrail, with no participant metadata exposure.
+- Review findings addressed or deferred: Yes.
+- Manual testing complete: No; tracked as follow-up.
+- Ready to commit: Pending manual acceptance of the running app transition.
+
+---
+
 ## Phase 63 — Results Large-Data UX
 
 Date:

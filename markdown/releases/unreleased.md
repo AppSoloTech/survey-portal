@@ -2,7 +2,7 @@
 
 Release title: Next Release
 
-Summary: Admin review tagging now supports category-level living bindings without adding system rows to the tag catalog, and tag category emoji defaults apply more predictably to new catalog values.
+Summary: Admin review tagging now supports category-level living bindings without adding system rows to the tag catalog, tag category emoji defaults apply more predictably to new catalog values, and the participant issue-profile thermometer has a richer ending animation.
 
 ## Changed
 
@@ -11,6 +11,7 @@ Summary: Admin review tagging now supports category-level living bindings withou
 - New, edited, or deleted Admin Tags catalog values now sync through builder hidden-tag `<ALL>` subscriptions, keeping expanded hidden tags current for submitted and future responses while preserving manual hidden tags; migrations backfill older marker targets into subscriptions.
 - Admin Results now keeps summary details collapsible and browses participant attempts through a paginated, table-like list with page-size controls and visible range context.
 - The Admin attempts API now returns bounded pages by default, with pagination metadata and date-range-aware counts instead of returning every attempt at once.
+- The participant issue-profile thermometer now uses a cleaner classic SVG shape with a continuous blue-to-red warming fill, intact and broken-rim states, liquid meniscus polish, and a top-centered GSAP cap break-off, shard, puff, spark, and emoji burst while preserving reduced-motion fallback behavior.
 
 ## Fixed
 

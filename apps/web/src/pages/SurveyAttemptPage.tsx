@@ -16,12 +16,15 @@ import {
 } from "@survey-portal/shared";
 import {
   useEffect,
+  useLayoutEffect,
   useCallback,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
   type CSSProperties,
   type FormEvent,
+  type ReactNode,
   type SetStateAction
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -45,7 +48,7 @@ import { useAuth } from "../auth/AuthContext.js";
 import { AnimatedNumber } from "../components/AnimatedNumber.js";
 import { AccessibleModal } from "../components/AccessibleModal.js";
 import { InlineGlossaryText } from "../components/InlineGlossaryText.js";
-import { prefersReducedMotion, useReveal } from "../motion/motion.js";
+import { gsap, prefersReducedMotion, useReveal } from "../motion/motion.js";
 
 interface ActiveSurveyState {
   survey: Survey;
@@ -1305,7 +1308,7 @@ function IssueProfileThermometer({
 
     const timeoutId = window.setTimeout(() => {
       setActiveBurstKey(null);
-    }, 3400);
+    }, 4600);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -1320,24 +1323,18 @@ function IssueProfileThermometer({
         aria-valuemin={0}
         aria-valuenow={safeDisplayFillPercent}
         aria-valuetext={valueText}
-        className={`issue-profile-thermometer ${progress.status}${isReadyToSubmit ? " ready" : ""}`}
+        className={`issue-profile-thermometer ${progress.status}${isReadyToSubmit ? " ready completion-stage" : ""}`}
         data-reveal
         role="progressbar"
       >
-        <div aria-hidden="true" className="issue-profile-thermometer-visual">
-          <div className="issue-profile-thermometer-tube">
-            <span
-              className="issue-profile-thermometer-fill"
-              style={{ height: `${safeDisplayFillPercent}%` }}
-            />
-          </div>
-          <div className="issue-profile-thermometer-bulb">
-            <span
-              className="issue-profile-thermometer-bulb-fill"
-              style={{ transform: `scale(${safeDisplayFillPercent > 0 ? 1 : 0})` }}
-            />
-          </div>
-        </div>
+        <IssueProfileThermometerVisual
+          fillPercent={safeDisplayFillPercent}
+          isReadyToSubmit={isReadyToSubmit}
+        >
+          {shouldShowEmojiCollection && activeBurstKey ? (
+            <IssueProfileEmojiBurst collection={emojiCollection} key={activeBurstKey} />
+          ) : null}
+        </IssueProfileThermometerVisual>
         <div className="issue-profile-thermometer-copy">
           <span>{label}</span>
           <small>{getIssueProfileDetail(progress.status, isReadyToSubmit)}</small>
@@ -1345,9 +1342,6 @@ function IssueProfileThermometer({
             <IssueProfileEmojiCollection collection={emojiCollection} />
           ) : null}
         </div>
-        {shouldShowEmojiCollection && activeBurstKey ? (
-          <IssueProfileEmojiBurst collection={emojiCollection} key={activeBurstKey} />
-        ) : null}
       </div>
       {activeBurstKey ? (
         <span aria-live="polite" className="visually-hidden" role="status">
@@ -1355,6 +1349,124 @@ function IssueProfileThermometer({
         </span>
       ) : null}
     </>
+  );
+}
+
+function IssueProfileThermometerVisual({
+  children,
+  fillPercent,
+  isReadyToSubmit
+}: {
+  children?: ReactNode;
+  fillPercent: number;
+  isReadyToSubmit: boolean;
+}) {
+  const broken = isReadyToSubmit;
+  const tubeTop = broken ? 4 : 16;
+  const tubeHeight = broken ? 116 : 104;
+  const tubeFillHeight = Math.round((tubeHeight * fillPercent) / 100);
+  const tubeFillY = tubeTop + tubeHeight - tubeFillHeight;
+  const bulbFillScale = fillPercent > 0 ? 1 : 0;
+  const heat = Math.round(fillPercent) / 100;
+  // The tube keeps an intact rounded cap while the survey is in progress and
+  // only splits into a jagged broken rim once the profile is ready — the same
+  // moment the burst animation plays. Both the glass rim and the dark inner
+  // well share this silhouette so they stay aligned in either state.
+  const intactSilhouette =
+    "M35 27 a13 13 0 0 1 26 0 V118.25 A22 22 0 1 1 35 118.25 Z";
+  const brokenSilhouette =
+    "M35 16 L38 7 L41.5 14 L45 5 L48.5 12 L52 6 L55.5 15 L58.5 9 L61 17 V118.25 A22 22 0 1 1 35 118.25 Z";
+  const silhouette = broken ? brokenSilhouette : intactSilhouette;
+
+  return (
+    <span aria-hidden="true" className="issue-profile-thermometer-visual">
+      <svg
+        className="issue-profile-thermometer-svg"
+        focusable="false"
+        style={{ "--thermo-heat": heat } as CSSProperties}
+        viewBox="0 0 96 168"
+      >
+        <defs>
+          <linearGradient
+            gradientUnits="userSpaceOnUse"
+            id="issue-profile-thermometer-gradient"
+            x1="48"
+            x2="48"
+            y1="151"
+            y2="16"
+          >
+            <stop offset="0%" stopColor="var(--info)" />
+            <stop offset="26%" stopColor="var(--accent)" />
+            <stop offset="52%" stopColor="var(--warn)" />
+            <stop offset="76%" stopColor="var(--danger-soft)" />
+            <stop offset="100%" stopColor="var(--danger)" />
+          </linearGradient>
+          <clipPath id="issue-profile-thermometer-tube-clip">
+            {broken ? (
+              <path d="M37 16 L39.5 7 L42.5 14 L45.5 5 L48.5 12 L51.5 6 L54.5 15 L57 9 L59 17 V126 H37 Z" />
+            ) : (
+              <rect height="110" rx="11" width="22" x="37" y="16" />
+            )}
+          </clipPath>
+        </defs>
+        {isReadyToSubmit ? (
+          <g className="issue-profile-burst-rays">
+            <path d="M48 8 L48 -12" />
+            <path d="M40 6 L31 -12" />
+            <path d="M56 8 L66 -10" />
+            <path d="M33 12 L14 3" />
+            <path d="M60 13 L80 5" />
+          </g>
+        ) : null}
+        <path className="issue-profile-thermometer-well" d={silhouette} />
+        <path className="issue-profile-thermometer-glass" d={silhouette} />
+        <g clipPath="url(#issue-profile-thermometer-tube-clip)">
+          <rect
+            className="issue-profile-thermometer-fill"
+            height={tubeFillHeight}
+            width="22"
+            x="37"
+            y={tubeFillY}
+          />
+          {fillPercent > 0 ? (
+            <ellipse
+              className="issue-profile-thermometer-meniscus"
+              cx="48"
+              cy={tubeFillY}
+              rx="11"
+              ry="4"
+            />
+          ) : null}
+          <rect className="issue-profile-thermometer-shine" height="98" width="5" x="41" y="20" />
+        </g>
+        <circle
+          className="issue-profile-thermometer-bulb-fill"
+          cx="48"
+          cy="136"
+          r="15"
+          style={{ transform: `scale(${bulbFillScale})` }}
+        />
+        <path
+          className="issue-profile-thermometer-neck-fill"
+          d="M37 112 h22 v26 h-22z"
+          style={{ opacity: fillPercent > 0 ? 1 : 0 }}
+        />
+        <g className="issue-profile-thermometer-ticks">
+          <path d="M46 36 h10" />
+          <path d="M41 48 h15" />
+          <path d="M46 60 h10" />
+          <path d="M41 72 h15" />
+          <path d="M46 84 h10" />
+          <path d="M41 96 h15" />
+          <path d="M46 108 h10" />
+        </g>
+        <path
+          className="issue-profile-thermometer-crack"
+          d="M48 16 l-5 -6 l7 3 l-3 -8 l8 7"
+        />
+      </svg>
+      {children}
+    </span>
   );
 }
 
@@ -1394,11 +1506,212 @@ function IssueProfileEmojiBurst({
 }: {
   collection: SurveyIssueProfileEmojiCollection;
 }) {
-  const particles = buildEmojiBurstParticles(collection);
-  const sparks = buildEmojiBurstSparks(collection, particles.length);
+  const burstRef = useRef<HTMLSpanElement | null>(null);
+  const particles = useMemo(() => buildEmojiBurstParticles(collection), [collection]);
+  const sparks = useMemo(
+    () => buildEmojiBurstSparks(collection, particles.length),
+    [collection, particles.length]
+  );
+  const shards = useMemo(() => buildThermometerBreakoffShards(), []);
+  const puffs = useMemo(() => buildThermometerBreakoffPuffs(), []);
+
+  useLayoutEffect(() => {
+    const root = burstRef.current;
+
+    if (!root || prefersReducedMotion()) {
+      return;
+    }
+
+    const cap = root.querySelector(".issue-profile-thermometer-cap-break");
+    const shardTargets = Array.from(
+      root.querySelectorAll<HTMLElement>(".issue-profile-thermometer-shard")
+    );
+    const puffTargets = Array.from(root.querySelectorAll<HTMLElement>(".issue-profile-burst-puff"));
+    const sparkTargets = Array.from(root.querySelectorAll<HTMLElement>(".issue-profile-burst-spark"));
+    const emojiTargets = Array.from(root.querySelectorAll<HTMLElement>(".issue-profile-emoji-particle"));
+
+    const timeline = gsap.timeline();
+
+    timeline
+      .set(root, { autoAlpha: 1 })
+      .fromTo(
+        cap,
+        { autoAlpha: 1, rotate: 0, scale: 1, x: 0, xPercent: -50, y: 0 },
+        {
+          autoAlpha: 0,
+          duration: 1.18,
+          ease: "power3.out",
+          rotate: 44,
+          scale: 0.82,
+          x: 16,
+          y: -84
+        },
+        0.02
+      )
+      .fromTo(
+        shardTargets,
+        {
+          autoAlpha: 0,
+          rotate: 0,
+          scale: 0.55,
+          x: 0,
+          xPercent: -50,
+          y: 0
+        },
+        {
+          autoAlpha: 0,
+          duration: 1.32,
+          ease: "power2.out",
+          keyframes: [
+            {
+              autoAlpha: 1,
+              duration: 0.12,
+              scale: 1,
+              x: (index: number) => shards[index]?.peakX ?? 0,
+              y: (index: number) => shards[index]?.liftY ?? -42
+            },
+            {
+              autoAlpha: 0,
+              duration: 1.2,
+              rotate: (index: number) => shards[index]?.rotate ?? 28,
+              scale: 0.62,
+              x: (index: number) => shards[index]?.x ?? 0,
+              y: (index: number) => shards[index]?.fallY ?? 36
+            }
+          ]
+        },
+        0.05
+      )
+      .fromTo(
+        puffTargets,
+        { autoAlpha: 0, scale: 0.22, x: 0, xPercent: -50, y: 0 },
+        {
+          autoAlpha: 0,
+          duration: 1.1,
+          ease: "power2.out",
+          keyframes: [
+            {
+              autoAlpha: 0.46,
+              duration: 0.2,
+              scale: 1,
+              x: (index: number) => puffs[index]?.x ?? 0,
+              y: (index: number) => puffs[index]?.y ?? -28
+            },
+            {
+              autoAlpha: 0,
+              duration: 0.9,
+              scale: (index: number) => puffs[index]?.scale ?? 1.7,
+              x: (index: number) => puffs[index]?.x ?? 0,
+              y: (index: number) => (puffs[index]?.y ?? -28) - 12
+            }
+          ]
+        },
+        0
+      )
+      .fromTo(
+        sparkTargets,
+        { autoAlpha: 0, scale: 0.35, x: 0, xPercent: -50, y: 0 },
+        {
+          autoAlpha: 0,
+          duration: 1.22,
+          ease: "power2.out",
+          keyframes: [
+            {
+              autoAlpha: 0.95,
+              duration: 0.16,
+              scale: 1.1,
+              x: (index: number) => sparks[index]?.peakX ?? 0,
+              y: (index: number) => sparks[index]?.liftY ?? -48
+            },
+            {
+              autoAlpha: 0,
+              duration: 1.06,
+              scale: 0.35,
+              x: (index: number) => sparks[index]?.x ?? 0,
+              y: (index: number) => sparks[index]?.fallY ?? 22
+            }
+          ]
+        },
+        0.03
+      )
+      .fromTo(
+        emojiTargets,
+        { autoAlpha: 0, rotate: 0, scale: 0.55, x: 0, xPercent: -50, y: 0 },
+        {
+          autoAlpha: 0,
+          duration: 2.3,
+          ease: "none",
+          keyframes: [
+            {
+              autoAlpha: 1,
+              duration: 0.28,
+              ease: "power2.out",
+              scale: 1.08,
+              x: (index: number) => particles[index]?.xPeak ?? 0,
+              y: (index: number) => particles[index]?.liftY ?? -72
+            },
+            {
+              autoAlpha: 1,
+              duration: 0.38,
+              ease: "power1.inOut",
+              rotate: (index: number) => particles[index]?.rotateFall ?? 0,
+              scale: 1,
+              x: (index: number) => particles[index]?.xFall ?? 0,
+              y: (index: number) => particles[index]?.midY ?? 24
+            },
+            {
+              autoAlpha: 0.92,
+              duration: 0.82,
+              rotate: (index: number) => particles[index]?.rotateFinal ?? 0,
+              scale: 0.9,
+              x: (index: number) => (particles[index]?.x ?? 0) + (particles[index]?.driftSoft ?? 0),
+              y: (index: number) => (particles[index]?.fallY ?? 110) + 28
+            },
+            {
+              autoAlpha: 0,
+              duration: 0.82,
+              rotate: (index: number) => particles[index]?.rotateFinal ?? 0,
+              scale: 0.78,
+              x: (index: number) => (particles[index]?.x ?? 0) + (particles[index]?.drift ?? 0),
+              y: (index: number) => (particles[index]?.fallY ?? 110) + 94
+            }
+          ],
+          stagger: 0.048
+        },
+        0.12
+      );
+
+    return () => {
+      timeline.kill();
+    };
+  }, [particles, puffs, shards, sparks]);
 
   return (
-    <span aria-hidden="true" className="issue-profile-emoji-burst">
+    <span aria-hidden="true" className="issue-profile-emoji-burst" ref={burstRef}>
+      <span className="issue-profile-thermometer-cap-break" />
+      {puffs.map((puff) => (
+        <span
+          className="issue-profile-burst-puff"
+          key={puff.id}
+          style={
+            {
+              "--puff-size": `${puff.size}px`
+            } as CSSProperties
+          }
+        />
+      ))}
+      {shards.map((shard) => (
+        <span
+          className="issue-profile-thermometer-shard"
+          key={shard.id}
+          style={
+            {
+              "--shard-height": `${shard.height}px`,
+              "--shard-width": `${shard.width}px`
+            } as CSSProperties
+          }
+        />
+      ))}
       {sparks.map((spark) => (
         <span
           className="issue-profile-burst-spark"
@@ -1552,6 +1865,39 @@ function buildEmojiBurstSparks(
       x: side * spread
     };
   });
+}
+
+function buildThermometerBreakoffShards(): Array<{
+  fallY: number;
+  height: number;
+  id: string;
+  liftY: number;
+  peakX: number;
+  rotate: number;
+  width: number;
+  x: number;
+}> {
+  return [
+    { fallY: 42, height: 10, id: "shard-left", liftY: -66, peakX: -26, rotate: -74, width: 5, x: -42 },
+    { fallY: 32, height: 12, id: "shard-mid-left", liftY: -78, peakX: -12, rotate: -38, width: 4, x: -20 },
+    { fallY: 54, height: 9, id: "shard-center", liftY: -90, peakX: 3, rotate: 22, width: 5, x: 8 },
+    { fallY: 38, height: 11, id: "shard-mid-right", liftY: -76, peakX: 17, rotate: 48, width: 4, x: 28 },
+    { fallY: 46, height: 8, id: "shard-right", liftY: -62, peakX: 31, rotate: 82, width: 5, x: 46 }
+  ];
+}
+
+function buildThermometerBreakoffPuffs(): Array<{
+  id: string;
+  scale: number;
+  size: number;
+  x: number;
+  y: number;
+}> {
+  return [
+    { id: "puff-left", scale: 1.85, size: 26, x: -26, y: -36 },
+    { id: "puff-center", scale: 2.1, size: 30, x: 0, y: -48 },
+    { id: "puff-right", scale: 1.75, size: 24, x: 26, y: -34 }
+  ];
 }
 
 function getIssueProfileLabel(

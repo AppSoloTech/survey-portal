@@ -1,0 +1,104 @@
+# Claude Review — Phase 64 Thermometer Break-Off Explosion
+
+Review date:
+2026-07-01
+
+Verdict:
+Accept, with two minor cleanup findings addressed.
+
+## Reviewer Questions
+
+### Timeline Cleanup / Stale-Burst Safety
+
+Accepted as safe.
+
+The burst component is keyed by `activeBurstKey`, so a replay unmounts the old
+instance and runs `timeline.kill()` before the new one mounts. The parent
+self-clear also unmounts the layer and kills the timeline. No reviewed path
+leaves a timeline running against a detached node.
+
+### Reduced-Motion Suppression
+
+Accepted as adequate.
+
+The reduced-motion CSS hides the entire `.issue-profile-emoji-burst` layer, so
+cap, shard, puff, spark, and emoji particles are all suppressed together. The
+GSAP effect also early-returns under `prefersReducedMotion()`, while the
+screen-reader status announcement remains outside the decorative burst layer.
+
+### Participant-Safe Copy / Metadata Leak
+
+Accepted as safe.
+
+The burst renders only participant-safe emoji aggregate values and decorative
+geometry. It does not expose hidden tag keys, values, category names, admin
+metadata, counts beyond already-visible emoji chip counts, or scoring/severity
+language.
+
+## Findings
+
+### N1 — Tail Particle Clipping At High Emoji Counts
+
+The parent cleared the burst layer after 3400ms, but the longest staggered GSAP
+emoji timeline can run to roughly 4290ms when `maxParticles = 40`.
+
+Disposition:
+Addressed. The self-clear timeout was raised to 4600ms.
+
+### N2 — Dead CSS Keyframes
+
+`@keyframes issue-profile-emoji-burst` and
+`@keyframes issue-profile-burst-spark` remained in CSS after the animation moved
+to GSAP.
+
+Disposition:
+Addressed. The unused keyframe blocks were removed and web guardrails now assert
+they stay removed.
+
+## Final Review Status
+
+No blocking issues remain after the minor fixes above. Manual browser and
+accessibility verification remains tracked in `markdown/FOLLOW_UPS.md`.
+
+Post-review note:
+A later client-requested enhancement replaced the decorative div/CSS
+thermometer with a larger SVG completion stage after this review was written.
+That follow-up passed automated validation, but it is not covered by this
+Claude review.
+
+## Later Claude Visual Overhaul Note
+
+Claude subsequently rebuilt the thermometer SVG into a consistent classic
+thermometer shape:
+
+- Shared glass/well silhouette with tube walls at `x35/x61`, bulb center
+  `(48,136)`, and a mathematically aligned bulb arc at `V118.25`.
+- Replaced the separate tube-shell and bulb shell with one
+  `.issue-profile-thermometer-well` path; removed
+  `.issue-profile-thermometer-tube-shell` and the shell
+  `.issue-profile-thermometer-bulb`.
+- Added a continuous `gradientUnits="userSpaceOnUse"` blue-to-red warming
+  gradient spanning bottom to top, with `--danger-soft` added for light and dark
+  themes.
+- Added `.issue-profile-thermometer-meniscus`, `--thermo-heat` reactive glow,
+  spring fill transitions, and reduced-motion transition suppression.
+- Made the broken rim conditional on Ready to submit; in-progress remains an
+  intact rounded cap.
+
+Reported verification:
+
+- `npm run test -w apps/web -- SurveyAttemptPage.test.ts` passed.
+- `tsc --noEmit` / typecheck passed.
+- Standalone headless-Chromium renders confirmed intact and broken states in
+  both themes.
+
+Remaining manual check:
+
+- Observe the in-progress to Ready to submit to burst transition in the running
+  app.
+
+Open option:
+
+- In dark mode, `--danger` is a softer salmon. If the client wants a punchier
+  red tip, consider using a stronger final gradient stop locally for the
+  thermometer instead of changing the global token.

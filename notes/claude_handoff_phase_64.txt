@@ -1,0 +1,93 @@
+# Claude Review Handoff — Phase 64 Thermometer Break-Off Explosion
+
+## Review Goal
+
+Review the frontend-only Ready to submit issue-profile thermometer animation
+polish. Focus on regressions in participant accessibility, reduced-motion
+behavior, replay behavior, and hidden-tag/privacy boundaries.
+
+## Phase Scope
+
+Implemented:
+
+- Created `prompts/prompt_64.txt`.
+- Updated `apps/web/src/pages/SurveyAttemptPage.tsx` so
+  `IssueProfileEmojiBurst` uses the existing GSAP motion helper.
+- Added a detachable thermometer cap, five shard pieces, puff particles, and
+  richer spark motion around the thermometer top.
+- Enlarged the thermometer visual and centered the burst origin on the
+  thermometer visual column so the explosion starts from the top middle edge.
+- Replaced the decorative div/CSS thermometer with a consistent classic SVG
+  thermometer using shared glass/well geometry, interior tick marks, a continuous
+  blue-to-red `userSpaceOnUse` gradient, and a meniscus at the fill top.
+- Added light/dark `--danger-soft`, heat-scaled glow through `--thermo-heat`,
+  spring fill/meniscus transitions, and reduced-motion transition suppression.
+- Made the broken rim a Ready to submit state only; in-progress keeps an intact
+  rounded cap while Ready to submit switches to the jagged broken-glass rim.
+- Kept existing emoji burst particle capping and replay through the existing
+  burst key.
+- Kept the decorative burst layer `aria-hidden`, with the existing polite
+  status announcement unchanged.
+- Updated `apps/web/src/styles.css` for the cap/shard/puff/spark elements and
+  reduced-motion suppression.
+- Updated `apps/web/src/pages/SurveyAttemptPage.test.ts` source guardrails.
+- Updated `markdown/releases/unreleased.md`, `markdown/FOLLOW_UPS.md`, and
+  `markdown/PHASE_LOG.md`.
+
+Not in scope:
+
+- No backend, API, shared type, database, reporting, admin-tag, hidden-tag, CSV,
+  or release-version changes.
+- No new npm dependency.
+- No participant-visible hidden tag metadata or scoring/severity/violation
+  language.
+- No canvas/WebGL/Three.js explosion.
+
+## Key Files
+
+- `prompts/prompt_64.txt`
+- `apps/web/src/pages/SurveyAttemptPage.tsx`
+- `apps/web/src/pages/SurveyAttemptPage.test.ts`
+- `apps/web/src/styles.css`
+- `markdown/releases/unreleased.md`
+- `markdown/FOLLOW_UPS.md`
+- `markdown/PHASE_LOG.md`
+
+## Validation Completed
+
+```bash
+npm run test -w apps/web -- SurveyAttemptPage.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm run release:check
+git diff --check
+```
+
+Results:
+
+- Passed: `npm run test -w apps/web -- SurveyAttemptPage.test.ts`
+- Passed: `npm run typecheck`
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run release:check`
+- Passed: `git diff --check`
+
+Notes:
+
+- `npm run build` emitted the existing Vite large chunk warning.
+- Claude reported standalone headless-Chromium visual renders for intact and
+  broken states in both themes.
+- The in-app in-progress to Ready to submit burst transition still needs a quick
+  manual browser pass.
+- Manual browser/accessibility checks remain pending and are tracked in
+  `markdown/FOLLOW_UPS.md`.
+
+## Reviewer Questions
+
+1. Does the GSAP timeline cleanup safely prevent stale burst animations when the
+   burst key changes or the component unmounts?
+2. Does reduced-motion suppression remain adequate now that the decorative layer
+   contains cap/shard/puff elements in addition to emoji particles?
+3. Did the implementation preserve participant-safe, non-scoring issue-profile
+   copy and avoid exposing hidden tag/admin metadata?

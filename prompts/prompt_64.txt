@@ -1,0 +1,214 @@
+# Phase 64 — Thermometer Break-Off Explosion
+
+## Purpose
+
+Improve the Ready to submit ending animation for the participant issue-profile
+thermometer so the top visibly breaks off as part of the final burst and the
+effect feels more complete.
+
+Source feedback or planning note:
+
+```txt
+User request in chat, 2026-07-01.
+```
+
+This is a frontend-only polish phase built on the Phase 59 thermometer and
+Phase 60 emoji burst.
+
+## Role Note
+
+Default arrangement:
+
+* Codex is the implementation assistant.
+* Claude Code is the review assistant.
+
+Closeout artifacts:
+
+* implementation handoff: `notes/claude_handoff_phase_64.txt`
+* Claude review: `notes/claude_review_phase_64.txt`
+
+---
+
+# Required Reading
+
+Read before implementation:
+
+* `notes/game_plan.txt`
+* `prompts/prompt_59.txt`
+* `prompts/prompt_60.txt`
+* `markdown/ARCHITECTURE_PRINCIPLES.md`
+* `markdown/FLOW.md`
+* `markdown/FOLLOW_UPS.md`
+* `markdown/PHASE_LOG.md`
+* `markdown/REVIEW_CHECKLIST.md`
+* `apps/web/src/pages/SurveyAttemptPage.tsx`
+* `apps/web/src/pages/SurveyAttemptPage.test.ts`
+* `apps/web/src/styles.css`
+
+Confirm the working tree before implementation. Keep the change scoped to the
+participant runner animation and phase documentation.
+
+---
+
+# Received Feedback
+
+1. Improve the animation of the ending thermometer.
+2. Make the top of the thermometer break off as part of the explosion.
+3. Add more explosion graphics.
+4. Consider using a library to achieve this.
+
+Do not silently drop feedback. Anything not implemented must be moved to
+Non-Goals, Deferred Work, or Open Questions.
+
+---
+
+# Intake Classification
+
+Classification:
+
+* UX polish
+* participant-facing survey behavior
+* frontend animation improvement
+* accessibility-sensitive visual change
+* validation/test expectation change
+
+Expected change areas:
+
+* Database schema or migrations: none.
+* API contracts: none.
+* Participant-facing assessment behavior: yes, animation only.
+* Hidden-tag visibility: preserve existing privacy guardrails.
+* Authentication or authorization: none.
+* Deployment or secret handling: none.
+* Validation/test expectations: yes, update web guardrails.
+
+---
+
+# Scope
+
+Implement:
+
+* Add a detachable thermometer top/cap element to the Ready to submit burst.
+* Use a larger SVG thermometer stage for the Ready to submit state so the tube,
+  bulb, fill, crack, glow, burst rays, and explosion origin can be positioned
+  precisely. Prefer a classic thermometer silhouette with a continuous
+  blue-to-red warming fill, intact in-progress cap, broken Ready to submit rim,
+  and subtle liquid polish such as a meniscus.
+* Add 3-5 small cap/glass shards that fly outward from the thermometer top.
+* Add richer spark and puff particles around the same burst origin.
+* Keep the existing emoji particles bursting from the thermometer top.
+* Use the existing `gsap` dependency exported from
+  `apps/web/src/motion/motion.ts` to run one coordinated timeline.
+* Preserve the existing burst replay behavior when returning to Ready to submit.
+* Preserve reduced-motion behavior: skip flying/breaking particles while
+  keeping the static collected emoji chips visible.
+* Preserve screen-reader behavior: keep the meaningful polite announcement and
+  do not announce decorative particles.
+* Update release notes, phase log, follow-ups, and handoff.
+
+## Non-Goals
+
+Do not implement:
+
+* A new npm package unless GSAP proves unusable.
+* Canvas, WebGL, or Three.js explosion effects.
+* Participant-visible hidden tag metadata, category names, counts, IDs, or
+  selected tag names.
+* Score, severity, grade, violation-count, or recommendation semantics.
+* Backend, API, shared type, database, hidden-tag, admin-tag, reporting, CSV, or
+  release-version changes.
+
+## Assumptions
+
+* `gsap` is the preferred animation library because it is already installed and
+  used by the web app.
+* The thermometer should look like it breaks open visually, but the effect is
+  decorative only.
+* Accessibility semantics and participant-safe payloads do not change.
+* The static emoji collection remains the reduced-motion and no-animation
+  fallback.
+
+## Open Questions
+
+None.
+
+---
+
+# Implementation Priorities
+
+Handle items in this order unless the human explicitly changes priority:
+
+1. Preserve accessibility and hidden-tag privacy boundaries.
+2. Add the cap, shards, and richer explosion graphics.
+3. Coordinate the cap, shards, sparks/puffs, and emoji with GSAP.
+4. Update focused source guardrail tests.
+5. Update release notes and closeout artifacts.
+
+Keep changes narrowly scoped to this phase.
+
+---
+
+# Acceptance Criteria
+
+The phase is ready for review when:
+
+* The Ready to submit animation visibly detaches the thermometer top.
+* 3-5 cap/glass shards and richer spark/puff graphics appear from the
+  thermometer top without layout shift.
+* Existing emoji particles still burst from the thermometer top-center and
+  remain capped.
+* The burst can replay through the existing burst-key behavior.
+* Reduced-motion users do not receive flying/breaking particles and still see
+  the static collected emoji chips.
+* The issue-profile progressbar, value text, and polite live-region behavior
+  remain intact.
+* Participant-facing copy remains abstract and non-scoring.
+* Hidden tag identities and admin metadata remain absent from participant and
+  anonymous UI/payloads.
+* Every received feedback item is fixed, deferred with a reason, or blocked by
+  a documented question.
+
+---
+
+# Testing Requirements
+
+Default focused validation gate:
+
+```bash
+npm run test -w apps/web -- SurveyAttemptPage.test.ts
+npm run typecheck
+npm run lint
+npm run build
+npm run release:check
+git diff --check
+```
+
+Add or update automated web source guardrails for:
+
+* GSAP import/use in the thermometer burst path.
+* cap, shard, spark, and puff DOM classes.
+* reduced-motion branch.
+* no hidden-tag/scoring copy in the issue-profile UI.
+
+Manual checks to perform or document:
+
+* Registered Ready to submit burst.
+* Anonymous Ready to submit burst.
+* Replay after navigating away from and back to Ready to submit.
+* Reduced-motion static path.
+* Light/dark responsive checks at 375px, 768px, and 1280px.
+
+If a command cannot run, document why and what narrower validation was
+completed.
+
+---
+
+# Documentation And Closeout
+
+Update as needed:
+
+* `markdown/releases/unreleased.md` with participant-facing polish notes.
+* `markdown/FOLLOW_UPS.md` for deferred or newly discovered manual checks.
+* `markdown/PHASE_LOG.md` with scope, decisions, validation, review status, and
+  commit readiness.
+* `notes/claude_handoff_phase_64.txt` before marking implementation complete.

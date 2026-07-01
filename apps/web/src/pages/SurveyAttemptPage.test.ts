@@ -16,7 +16,7 @@ describe("SurveyAttemptPage participant accessibility", () => {
     const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("IssueProfileThermometer");
-    expect(source.match(/<IssueProfileThermometer/g)?.length).toBe(1);
+    expect(source.match(/<IssueProfileThermometer(\s|$)/g)?.length).toBe(1);
     expect(source).toContain('aria-label="Issue profile progress"');
     expect(source).toContain('role="progressbar"');
     expect(source).toContain('aria-live="polite"');
@@ -35,13 +35,31 @@ describe("SurveyAttemptPage participant accessibility", () => {
 
     expect(source).toContain("IssueProfileEmojiBurst");
     expect(source).toContain("IssueProfileEmojiCollection");
+    expect(source).toContain("IssueProfileThermometerVisual");
     expect(source).toContain("buildEmojiBurstParticles");
     expect(source).toContain("buildEmojiBurstSparks");
+    expect(source).toContain("buildThermometerBreakoffShards");
+    expect(source).toContain("buildThermometerBreakoffPuffs");
+    expect(source).toContain("import { gsap, prefersReducedMotion, useReveal }");
+    expect(source).toContain("const timeline = gsap.timeline()");
+    expect(source).toContain("timeline.kill()");
+    expect(source).toContain("xPercent: -50");
+    expect(source).toContain("viewBox=\"0 0 96 168\"");
+    expect(source).toContain("issue-profile-thermometer-crack");
+    expect(source).toContain("issue-profile-thermometer-glass");
+    expect(source).toContain("issue-profile-thermometer-ticks");
+    expect(source).toContain("issue-profile-burst-rays");
+    expect(source).toContain("ready completion-stage");
+    expect(source).not.toContain("issue-profile-thermometer-glow");
     expect(source).toContain('aria-hidden="true" className="issue-profile-emoji-burst"');
     expect(source).toContain("Issue profile details collected");
+    expect(source).toContain("}, 4600)");
     expect(source).toContain("maxParticles = 40");
     expect(source).toContain("--burst-lift-y");
     expect(source).toContain("--burst-fall-y");
+    expect(source).toContain('className="issue-profile-thermometer-cap-break"');
+    expect(source).toContain('className="issue-profile-thermometer-shard"');
+    expect(source).toContain('className="issue-profile-burst-puff"');
     expect(source).toContain('className="issue-profile-burst-spark"');
     expect(source).not.toContain("playedBurstKeysRef");
     expect(source).toContain("setActiveBurstKey(null)");
@@ -50,11 +68,24 @@ describe("SurveyAttemptPage participant accessibility", () => {
     expect(source).toContain("more issue profile detail types collected");
     expect(source).not.toContain('aria-label="Issue profile details collected"');
     expect(styles).toContain(".issue-profile-emoji-burst");
+    expect(styles).toContain(".issue-profile-thermometer.completion-stage");
+    expect(styles).not.toContain("--issue-profile-burst-origin-x");
+    expect(styles).not.toContain("--issue-profile-burst-origin-y");
+    expect(styles).toContain("left: 50%;");
+    expect(styles).not.toContain("radial-gradient(circle at var(--issue-profile-burst-origin-x)");
+    expect(styles).toContain("--issue-profile-visual-width: clamp(6rem, 17vw, 8.25rem);");
+    expect(styles).toContain("height: 9.15rem");
+    expect(styles).toContain(".issue-profile-thermometer-svg");
+    expect(styles).toContain("@keyframes issue-profile-burst-flash");
+    expect(styles).toContain(".issue-profile-thermometer-cap-break");
+    expect(styles).toContain(".issue-profile-thermometer-shard");
+    expect(styles).toContain(".issue-profile-burst-puff");
     expect(styles).toContain(".issue-profile-burst-spark");
-    expect(styles).toContain("@keyframes issue-profile-emoji-burst");
-    expect(styles).toContain("@keyframes issue-profile-burst-spark");
-    expect(styles).toContain("2300ms");
-    expect(styles).toContain("var(--burst-fall-y)");
+    expect(styles).toContain("opacity: 0");
+    expect(styles).toContain("var(--shard-height)");
+    expect(styles).toContain("var(--puff-size)");
+    expect(styles).not.toContain("@keyframes issue-profile-emoji-burst");
+    expect(styles).not.toContain("@keyframes issue-profile-burst-spark");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(styles).toContain(".issue-profile-emoji-burst {\n    display: none;");
   });
@@ -67,16 +98,20 @@ describe("SurveyAttemptPage participant accessibility", () => {
     expect(source).toContain("No profile details were identified");
   });
 
-  it("styles the issue profile fill as a cool-to-warm gradient ending at red", () => {
+  it("styles the issue profile fill as a blue-to-red warming gradient", () => {
+    const source = readFileSync(new URL("./SurveyAttemptPage.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-    const fillStyles = styles.slice(styles.indexOf(".issue-profile-thermometer-fill"));
+    const gradientSource = source.slice(source.indexOf("issue-profile-thermometer-gradient"));
 
-    expect(fillStyles).toContain("linear-gradient");
-    expect(fillStyles).toContain("var(--info) 0%");
-    expect(fillStyles).toContain("var(--teal) 28%");
-    expect(fillStyles).toContain("var(--accent) 54%");
-    expect(fillStyles).toContain("var(--warn) 78%");
-    expect(fillStyles).toContain("var(--danger) 100%");
+    expect(source).toContain("linearGradient");
+    expect(gradientSource).toContain('offset="0%" stopColor="var(--info)"');
+    expect(gradientSource).toContain('offset="26%" stopColor="var(--accent)"');
+    expect(gradientSource).toContain('offset="52%" stopColor="var(--warn)"');
+    expect(gradientSource).toContain('offset="76%" stopColor="var(--danger-soft)"');
+    expect(gradientSource).toContain('offset="100%" stopColor="var(--danger)"');
+    expect(styles).toContain('fill: url("#issue-profile-thermometer-gradient")');
+    expect(styles).toContain(".issue-profile-thermometer-glass");
+    expect(styles).toContain(".issue-profile-thermometer-ticks");
   });
 
   it("uses raw server fill during normal progress so answer changes can reduce the thermometer", () => {

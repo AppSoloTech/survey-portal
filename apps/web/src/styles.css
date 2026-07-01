@@ -78,6 +78,7 @@
   --success-surface: #e9f7ee;
   --success-border: #93cba6;
   --danger: #973027;
+  --danger-soft: #c2604f;
   --danger-surface: #fdf2f0;
   --danger-border: #e5b3aa;
   --danger-border-strong: #cd9189;
@@ -144,6 +145,7 @@
   --success-surface: #14271d;
   --success-border: #2f6147;
   --danger: #ea9b8e;
+  --danger-soft: #d98b6f;
   --danger-surface: #2c1b17;
   --danger-border: #5c372f;
   --danger-border-strong: #7a4a41;
@@ -1765,6 +1767,8 @@ main:focus {
 }
 
 .issue-profile-thermometer {
+  --issue-profile-padding-x: 1rem;
+  --issue-profile-visual-width: 4.6rem;
   align-items: center;
   background:
     linear-gradient(135deg, var(--teal-surface), transparent),
@@ -1773,10 +1777,21 @@ main:focus {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   display: flex;
-  gap: 0.85rem;
+  gap: 1rem;
   overflow: visible;
-  padding: 0.75rem 0.9rem;
+  padding: 0.85rem var(--issue-profile-padding-x);
   position: relative;
+}
+
+.issue-profile-thermometer.completion-stage {
+  --issue-profile-padding-x: clamp(1rem, 3vw, 1.35rem);
+  --issue-profile-visual-width: clamp(6rem, 17vw, 8.25rem);
+  background:
+    linear-gradient(135deg, var(--teal-surface), transparent 52%),
+    var(--surface-2);
+  gap: clamp(1rem, 3vw, 1.6rem);
+  min-height: 11.5rem;
+  padding-block: 1rem;
 }
 
 .issue-profile-thermometer-visual {
@@ -1784,70 +1799,109 @@ main:focus {
   display: grid;
   flex: 0 0 auto;
   justify-items: center;
-  min-height: 4.25rem;
-  width: 2rem;
-}
-
-.issue-profile-thermometer-tube {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  height: 3.4rem;
-  overflow: hidden;
+  min-height: 6.65rem;
   position: relative;
-  width: 0.72rem;
+  width: var(--issue-profile-visual-width);
 }
 
-.issue-profile-thermometer-tube::after {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent);
-  content: "";
-  inset: 0 45% 0 0;
-  pointer-events: none;
-  position: absolute;
+.issue-profile-thermometer.completion-stage .issue-profile-thermometer-visual {
+  min-height: 9.25rem;
+}
+
+.issue-profile-thermometer-svg {
+  display: block;
+  height: 6.55rem;
+  overflow: visible;
+  width: 100%;
+}
+
+.issue-profile-thermometer.completion-stage .issue-profile-thermometer-svg {
+  height: 9.15rem;
+}
+
+.issue-profile-thermometer-glass {
+  fill: color-mix(in srgb, var(--info) 15%, transparent);
+  stroke: color-mix(in srgb, var(--info) 70%, white);
+  stroke-linejoin: round;
+  stroke-width: 5;
+}
+
+.issue-profile-thermometer-well {
+  fill: color-mix(in srgb, var(--danger) 24%, var(--surface));
+}
+
+.issue-profile-thermometer-fill,
+.issue-profile-thermometer-neck-fill,
+.issue-profile-thermometer-bulb-fill,
+.issue-profile-thermometer-meniscus {
+  fill: url("#issue-profile-thermometer-gradient");
+  /* Glow runs hotter and wider as the mercury climbs (--thermo-heat: 0–1). */
+  filter: drop-shadow(
+    0 0 calc(2px + var(--thermo-heat, 0) * 7px)
+    color-mix(in srgb, var(--danger) calc(18% + var(--thermo-heat, 0) * 46%), transparent)
+  );
+}
+
+.issue-profile-thermometer-meniscus {
+  transition: cy var(--speed-slow) var(--ease-spring);
 }
 
 .issue-profile-thermometer-fill {
-  background: linear-gradient(
-    0deg,
-    var(--info) 0%,
-    var(--teal) 28%,
-    var(--accent) 54%,
-    var(--warn) 78%,
-    var(--danger) 100%
-  );
-  border-radius: var(--radius-pill);
-  bottom: 0;
-  box-shadow: 0 0 14px var(--glow);
-  left: 0;
-  position: absolute;
-  right: 0;
-  transition: height var(--speed-slow) var(--ease-out);
-}
-
-.issue-profile-thermometer-bulb {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  height: 1.35rem;
-  margin-top: -0.2rem;
-  overflow: hidden;
-  position: relative;
-  width: 1.35rem;
+  transition:
+    height var(--speed-slow) var(--ease-spring),
+    y var(--speed-slow) var(--ease-spring);
 }
 
 .issue-profile-thermometer-bulb-fill {
-  background: radial-gradient(circle at 35% 30%, var(--accent), var(--teal), var(--info));
-  border-radius: 50%;
-  inset: 0.18rem;
-  position: absolute;
+  transform-box: fill-box;
   transform-origin: center;
   transition: transform var(--speed-slow) var(--ease-spring);
+}
+
+.issue-profile-thermometer-shine {
+  fill: rgba(255, 255, 255, 0.24);
+}
+
+.issue-profile-thermometer-ticks {
+  fill: none;
+  opacity: 0.55;
+  pointer-events: none;
+  stroke: color-mix(in srgb, var(--ink) 70%, var(--danger));
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+
+.issue-profile-burst-rays {
+  fill: none;
+  opacity: 0;
+  stroke: var(--danger);
+  stroke-linecap: round;
+  stroke-width: 4;
+  transform-origin: 48px 18px;
+}
+
+.issue-profile-thermometer-crack {
+  fill: none;
+  opacity: 0;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.issue-profile-thermometer.ready .issue-profile-burst-rays,
+.issue-profile-thermometer.ready .issue-profile-thermometer-crack {
+  animation: issue-profile-burst-flash 980ms ease-out 1;
 }
 
 .issue-profile-thermometer-copy {
   display: grid;
   gap: 0.15rem;
   min-width: 0;
+}
+
+.issue-profile-thermometer.completion-stage .issue-profile-thermometer-copy {
+  gap: 0.35rem;
 }
 
 .issue-profile-thermometer-copy span {
@@ -1889,28 +1943,76 @@ main:focus {
 }
 
 .issue-profile-emoji-burst {
-  left: 1.9rem;
+  left: 50%;
+  opacity: 0;
   pointer-events: none;
   position: absolute;
-  top: -0.25rem;
+  top: 0.9rem;
   z-index: 2;
 }
 
+.issue-profile-thermometer-cap-break {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.82), transparent 42%),
+    var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px 999px 0 0;
+  box-shadow: 0 2px 9px rgba(var(--shadow-color), 0.14);
+  height: 0.58rem;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: -0.12rem;
+  transform-origin: 50% 100%;
+  width: 1.34rem;
+}
+
+.issue-profile-thermometer-shard {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.28)),
+    var(--surface-2);
+  border: 1px solid rgba(var(--shadow-color), 0.16);
+  border-radius: 999px 999px 3px 3px;
+  box-shadow: 0 2px 7px rgba(var(--shadow-color), 0.12);
+  height: var(--shard-height);
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  transform: translate(0, 0) scale(0.55);
+  width: var(--shard-width);
+}
+
+.issue-profile-burst-puff {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.76) 0 35%, rgba(255, 255, 255, 0.34) 56%, transparent 70%),
+    radial-gradient(circle at 65% 35%, rgba(var(--shadow-color), 0.08), transparent 58%);
+  border-radius: 50%;
+  height: var(--puff-size);
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: -0.65rem;
+  transform: translate(0, 0) scale(0.22);
+  width: var(--puff-size);
+}
+
 .issue-profile-emoji-particle {
-  animation: issue-profile-emoji-burst 2300ms linear both;
-  animation-delay: var(--burst-delay);
   font-size: 1.25rem;
   left: 0;
   line-height: 1;
+  opacity: 0;
   position: absolute;
   text-shadow: 0 2px 8px rgba(var(--shadow-color), 0.18);
   top: 0;
   transform: translate(0, 0) scale(0.55) rotate(0deg);
 }
 
+.issue-profile-thermometer.completion-stage .issue-profile-emoji-particle {
+  font-size: 1.45rem;
+}
+
 .issue-profile-burst-spark {
-  animation: issue-profile-burst-spark 1320ms cubic-bezier(0.16, 0.82, 0.22, 1) both;
-  animation-delay: var(--spark-delay);
   background:
     radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 32%, transparent 34%),
     radial-gradient(circle, var(--accent) 0 58%, transparent 62%);
@@ -1924,106 +2026,24 @@ main:focus {
   width: var(--spark-size);
 }
 
-.issue-profile-thermometer.building .issue-profile-thermometer-bulb,
-.issue-profile-thermometer.complete .issue-profile-thermometer-bulb,
-.issue-profile-thermometer.ready .issue-profile-thermometer-bulb {
-  animation: issue-profile-pulse 1.8s ease-out 1;
-}
-
 .issue-profile-thermometer.complete,
 .issue-profile-thermometer.ready {
   border-color: var(--success-border);
 }
 
-@keyframes issue-profile-pulse {
-  0% {
-    box-shadow: 0 0 0 0 var(--glow);
-  }
-
-  70% {
-    box-shadow: 0 0 0 8px transparent;
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-@keyframes issue-profile-emoji-burst {
-  0% {
-    animation-timing-function: cubic-bezier(0.16, 0.82, 0.22, 1);
-    opacity: 0;
-    transform: translate(0, 0) scale(0.55) rotate(0deg);
-  }
-
-  12% {
-    opacity: 1;
-  }
-
-  42% {
-    animation-timing-function: cubic-bezier(0.24, 0.08, 0.42, 0.98);
-    opacity: 1;
-    transform:
-      translate(var(--burst-x-peak), var(--burst-lift-y))
-      scale(1.08)
-      rotate(var(--burst-rotate-peak));
-  }
-
-  58% {
-    opacity: 1;
-    transform:
-      translate(var(--burst-x-fall), var(--burst-mid-y))
-      scale(1)
-      rotate(var(--burst-rotate-fall));
-  }
-
-  74% {
-    opacity: 1;
-    transform:
-      translate(var(--burst-x), calc(var(--burst-fall-y) - 46px))
-      scale(0.96)
-      rotate(var(--burst-rotate-fall));
-  }
-
-  90% {
-    opacity: 0.92;
-    transform:
-      translate(calc(var(--burst-x) + var(--burst-drift-soft)), calc(var(--burst-fall-y) + 28px))
-      scale(0.9)
-      rotate(var(--burst-rotate-final));
-  }
-
-  100% {
-    opacity: 0;
-    transform:
-      translate(calc(var(--burst-x) + var(--burst-drift)), calc(var(--burst-fall-y) + 94px))
-      scale(0.78)
-      rotate(var(--burst-rotate-final));
-  }
-}
-
-@keyframes issue-profile-burst-spark {
+@keyframes issue-profile-burst-flash {
   0% {
     opacity: 0;
-    transform: translate(0, 0) scale(0.4);
+    transform: scale(0.82);
   }
 
   18% {
     opacity: 0.95;
   }
 
-  42% {
-    opacity: 0.9;
-    transform:
-      translate(var(--spark-peak-x), var(--spark-lift-y))
-      scale(1.1);
-  }
-
   100% {
     opacity: 0;
-    transform:
-      translate(var(--spark-x), var(--spark-fall-y))
-      scale(0.35);
+    transform: scale(1.18);
   }
 }
 
@@ -2067,6 +2087,12 @@ main:focus {
 
   .issue-profile-emoji-burst {
     display: none;
+  }
+
+  .issue-profile-thermometer-fill,
+  .issue-profile-thermometer-meniscus,
+  .issue-profile-thermometer-bulb-fill {
+    transition: none;
   }
 }
 
@@ -6603,25 +6629,36 @@ main:focus {
   }
 
   .issue-profile-thermometer {
+    --issue-profile-padding-x: 0.75rem;
+    --issue-profile-visual-width: 3.2rem;
     border-radius: var(--radius-md);
     gap: 0.7rem;
     padding: 0.65rem 0.75rem;
   }
 
+  .issue-profile-thermometer.completion-stage {
+    --issue-profile-visual-width: min(7rem, 42vw);
+    align-items: center;
+    flex-direction: column;
+    min-height: 0;
+    text-align: center;
+  }
+
   .issue-profile-thermometer-visual {
-    min-height: 3rem;
-    width: 1.55rem;
+    min-height: 4.9rem;
+    width: var(--issue-profile-visual-width);
   }
 
-  .issue-profile-thermometer-tube {
-    height: 2.25rem;
-    width: 0.55rem;
+  .issue-profile-thermometer.completion-stage .issue-profile-thermometer-visual {
+    min-height: 8rem;
   }
 
-  .issue-profile-thermometer-bulb {
-    height: 1rem;
-    margin-top: -0.14rem;
-    width: 1rem;
+  .issue-profile-thermometer-svg {
+    height: 4.8rem;
+  }
+
+  .issue-profile-thermometer.completion-stage .issue-profile-thermometer-svg {
+    height: 7.85rem;
   }
 
   .issue-profile-thermometer-copy {

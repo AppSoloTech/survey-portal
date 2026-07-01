@@ -45,6 +45,14 @@ Review this file before starting each implementation phase. When a follow-up is 
 
 ## Active Follow-Ups
 
+### Phase 64 Thermometer Break-Off Explosion
+
+- Run the manual browser/accessibility pass for the enhanced Ready to submit
+  thermometer animation: in-progress intact cap to Ready to submit broken rim
+  transition, registered and anonymous bursts, replay after navigating away and
+  back to Ready to submit, reduced-motion static emoji presentation, light/dark
+  themes, and 375/768/1280px layouts.
+
 ### Phase 61 Category All Review Tags
 
 - ~~Run the manual browser pass for virtual category review tags: Admin Tags page
