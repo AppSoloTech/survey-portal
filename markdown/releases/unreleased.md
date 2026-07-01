@@ -18,3 +18,4 @@ Summary: Admin review tagging now supports category-level living bindings withou
 ## Fixed
 
 - New Admin Tags catalog values now inherit an existing tag category emoji when the category has one shared emoji and the new value does not specify its own emoji.
+- Updating a saved conditional-navigation answer, such as a department branch choice, now follows the recomputed survey path instead of leaving the participant on stale review/edit state.
